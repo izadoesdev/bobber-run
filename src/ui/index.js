@@ -99,12 +99,12 @@ function Minimap() {
   const night = isNight(), c = dayFrac();
   const sail = boatDef().prop === 'SAIL', eff = sail ? sailEfficiency() : 0;
   const wxIcon = WX.state === 'storm' ? 'storm' : WX.state === 'rain' ? 'rain' : WX.state === 'cloudy' ? 'cloud' : night ? 'moon' : 'sun';
-  const part = night ? 'Night' : c > 0.55 ? 'Dusk' : 'Day';
+  const part = night ? ', night' : c > 0.55 ? ', dusk' : '';
   return html`<div class="mini">
     <div class="ring"><${Canvas} draw=${draw}/><span class="n">N</span></div>
     <div class="chips">
       ${best && html`<div class="chip"><${Icon} k="anchor" size="s"/>${best.name}<span class="gold">${Math.round(bd / 10)} m</span></div>`}
-      <div class="chip"><${Icon} k=${wxIcon} size="s"/>Day ${dayNum()}, ${part.toLowerCase()}${WX.state !== 'clear' ? `, ${WX.state}` : ''}</div>
+      <div class="chip"><${Icon} k=${wxIcon} size="s"/>Day ${dayNum()}${part}${WX.state !== 'clear' ? `, ${WX.state}` : ''}</div>
       ${sail && html`<div class="chip"><${Icon} k="arrow" size="s" style=${{ transform: `rotate(${windAngle()}rad)` }}/>Wind <span class=${eff > 0.9 ? 'good' : eff > 0.6 ? '' : 'bad'}>${Math.round(eff * 100)}%</span></div>`}
       ${G.up.radio >= 2 && html`<div class="chip muted"><${Icon} k="radio" size="s"/>${WX.upcoming[0].toUpperCase() + WX.upcoming.slice(1)} in ${Math.floor(WX.next / 60)}:${String(Math.floor(WX.next % 60)).padStart(2, '0')}</div>`}
       ${un && html`<div class="chip"><${Icon} k="sextant" size="s"/>Uncharted <span class="gold">${Math.round(un.d / 10)} m</span></div>`}

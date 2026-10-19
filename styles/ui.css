@@ -44,6 +44,9 @@ h2, .title { font-size: var(--fs-xl); }
 .icon { width: 2em; height: 2em; object-fit: contain; image-rendering: pixelated; flex: none; filter: drop-shadow(0 0.1em 0 rgba(0,0,0,0.35)); }
 .icon.s { width: 1.3em; height: 1.3em; } .icon.l { width: 3em; height: 3em; } .icon.xl { width: 6em; height: 6em; }
 .sil { filter: brightness(0) opacity(0.35); }
+/* a faint light rim keeps dark voxel icons readable on dark wood */
+.panel .icon, .chip .icon, .well .icon { filter: drop-shadow(0 0 0.06em rgba(255,236,190,0.75)) drop-shadow(0 0.1em 0 rgba(0,0,0,0.35)); }
+.panel .icon.sil, .well .icon.sil { filter: brightness(0) opacity(0.35); }
 .swatch { width: 2em; height: 1.4em; border-radius: var(--r); flex: none; box-shadow: inset 0 0 0 0.12em rgba(0,0,0,0.4); }
 
 /* surfaces */
@@ -111,7 +114,7 @@ h2, .title { font-size: var(--fs-xl); }
 .prompt { padding: 0.45em 1em; white-space: nowrap; }
 .prompt.hot { color: var(--gold); animation: pulse 0.5s ease-in-out infinite alternate; }
 @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.05); } }
-.hints { position: absolute; left: 0.8em; bottom: 0.9em; font-size: var(--fs-s); text-shadow: 0 0.1em 0 #000a; }
+.hints { position: absolute; left: 0.8em; bottom: 0.9em; max-width: 28%; display: flex; flex-wrap: wrap; row-gap: 0.35em; font-size: var(--fs-s); text-shadow: 0 0.1em 0 #000a; }
 .shadowed { font-size: var(--fs-s); background: var(--chip); padding: 0.25em 0.6em; border-radius: var(--r); }
 .toasts { position: absolute; left: 50%; top: 0.9em; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 0.3em; }
 .toasts.low { top: 1.6em; }
@@ -176,7 +179,9 @@ h2, .title { font-size: var(--fs-xl); }
 .preview.chart { aspect-ratio: 1.2; filter: sepia(0.3); }
 .stat { display: grid; grid-template-columns: 4.6em 1fr 4.6em; align-items: center; gap: 0.5em; margin: 0.15em 0; }
 .hold-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.35em; align-content: start; }
-.fcard { padding: 0.35em 1.5em 0.55em 0.5em; border-radius: var(--r); background: rgba(0,0,0,0.25); border: 0.12em solid #3a2a1c; display: flex; gap: 0.5em; align-items: center; position: relative; min-height: 3.8em; }
+.fcard { padding: 0.35em 1.2em 0.55em 0.4em; border-radius: var(--r); background: rgba(0,0,0,0.25); border: 0.12em solid #3a2a1c; display: flex; gap: 0.5em; align-items: center; position: relative; min-height: 3.8em; }
+.fcard > .icon.l { width: 2.4em; height: 2.4em; }
+.fcard > div { white-space: nowrap; }
 .fcard.empty { opacity: 0.35; cursor: default; }
 .fcard .badges { position: absolute; right: 0.3em; top: 0.2em; display: flex; gap: 0.1em; }
 .fcard .fresh { position: absolute; left: 0.35em; bottom: 0.2em; height: 0.2em; border-radius: 0.1em; background: var(--good); }
