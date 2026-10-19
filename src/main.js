@@ -39,16 +39,18 @@ let fitLater = null;
 addEventListener('keydown', e => {
   unlockAudio(); G.pad = false;
   if (BLOCK.has(e.key)) e.preventDefault();
-  // cheat console: ` opens it while sailing; it takes all typing until Enter or Esc
+  // cheat console: ` or F2 opens it while sailing; it takes all typing until Enter or Esc.
+  // e.code matches the key left of 1 on any layout, including ones where it types § or is a dead key.
+  const cheatKey = e.key === '`' || e.key === '~' || e.key === 'F2' || e.code === 'Backquote';
   if (G.mode === 'cheat') {
     e.preventDefault();
-    if (e.key === 'Escape' || e.key === '`') { G.mode = G.cheatBack || 'play'; sfx('move'); }
+    if (e.key === 'Escape' || cheatKey) { G.mode = G.cheatBack || 'play'; sfx('move'); }
     else if (e.key === 'Enter') { const back = G.cheatBack || 'play'; G.mode = back; if (!runCheat(G.cheatBuf || '')) { G.mode = 'cheat'; G.cheatErr = true; } else G.cheatBuf = ''; }
     else if (e.key === 'Backspace') G.cheatBuf = (G.cheatBuf || '').slice(0, -1);
     else if (e.key.length === 1 && G.cheatBuf.length < 24) { G.cheatBuf += e.key.toLowerCase(); G.cheatErr = false; }
     return;
   }
-  if ((e.key === '`' || e.key === '~') && (G.mode === 'play' || G.mode === 'port')) { G.cheatBack = G.mode; G.mode = 'cheat'; G.cheatBuf = ''; G.cheatErr = false; sfx('select'); return; }
+  if (cheatKey && (G.mode === 'play' || G.mode === 'port')) { e.preventDefault(); G.cheatBack = G.mode; G.mode = 'cheat'; G.cheatBuf = ''; G.cheatErr = false; sfx('select'); return; }
   if (G.rebinding) {                                   // waiting for a new key on the controls screen
     if (!e.repeat) { if (e.key !== 'Escape') bind(G.rebinding, e.key); G.rebinding = null; sfx('select'); }
     return;

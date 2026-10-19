@@ -399,7 +399,7 @@ function Controls() {
         <${SetRow} cls="item center-t" sel=${sel === ACTIONS.length} onEnter=${() => { G.ctlSel = ACTIONS.length; }} onClick=${() => { G.ctlSel = ACTIONS.length; G.pressed.add('Enter'); }}>Reset to defaults<//>
         <${SetRow} cls="item center-t" sel=${sel === ACTIONS.length + 1} onEnter=${() => { G.ctlSel = ACTIONS.length + 1; }} onClick=${() => { G.ctlSel = ACTIONS.length + 1; G.pressed.add('Enter'); }}>Back<//>
       </div>
-      <p class="help">${G.rebinding ? 'Press the new key, or Esc to cancel.' : 'Choose an action and press Enter to change its key. WASD always steers too. Press ` while sailing for the cheat console. Gamepad: stick steers, A casts, X docks, Y opens the chart, B goes back.'}</p>
+      <p class="help">${G.rebinding ? 'Press the new key, or Esc to cancel.' : 'Choose an action and press Enter to change its key. WASD always steers too. Press ` or F2 while sailing for the cheat console. Gamepad: stick steers, A casts, X docks, Y opens the chart, B goes back.'}</p>
       <footer class="foot"><span class="hints-inline"><${Hint} k="ArrowUp" k2="ArrowDown">Choose<//><${Hint} k="Enter">Change key<//></span><${Hint} k="Escape" pad="B">Back<//></footer>
     </div></div>`;
 }

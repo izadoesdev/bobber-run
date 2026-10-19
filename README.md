@@ -25,6 +25,7 @@ Needs a browser with WebGL2.
 | M / L / J | Sea chart / logbook / journal |
 | F | Fullscreen |
 | Esc | Pause |
+| `` ` `` or F2 | Cheat console (while sailing or docked) |
 
 Keys can be rebound under Controls. Gamepads work too. Settings > Pixel style switches between Chunky, Crisp and Smooth.
 
