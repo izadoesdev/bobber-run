@@ -8,13 +8,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@auth/core": "^0.41.1",
+    "@convex-dev/auth": "^0.0.96",
     "alea": "^1.0.1",
+    "convex": "^1.47.0",
     "htm": "^3.1.1",
-    "preact": "10",
+    "preact": "^11.0.1",
     "simplex-noise": "^4.0.3"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.6",
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2",
     "vite": "^8"
   }
 }
