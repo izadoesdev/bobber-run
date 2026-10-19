@@ -24,7 +24,26 @@ export function updateLife(dt) {
   LIFE.whales = LIFE.whales.filter(w => w.t < 10);
   if ((LIFE.nextPod -= dt) <= 0 && sp > 20 && hAt(b.x, b.y) < -0.3) {
     LIFE.nextPod = 45 + Math.random() * 60;
-    LIFE.pods.push({ t: 0, m: [0, 1, 2].map(k => ({ side: k % 2 ? 1 : -1, off: 12 + k * 6, ph: k * 0.37, lead: 8 + k * 6 })) });
+    // dolphins arrive from one side, each with its own position and velocity
+    const c = Math.cos(b.a), s = Math.sin(b.a), from = Math.random() < 0.5 ? -1 : 1;
+    LIFE.pods.push({ t: 0, m: [0, 1, 2].map(k => {
+      const side = k % 2 ? 1 : -1, x = b.x - c * 30 - s * from * (40 + k * 8), y = b.y - s * 30 + c * from * (40 + k * 8);
+      return { side, off: 10 + k * 6, lead: 6 + k * 7, ph: k * 0.37 + Math.random() * 0.2, x, y, vx: b.vx, vy: b.vy, a: b.a, wv: Math.random() * 6 };
+    }) });
+  }
+  // each dolphin steers toward a loose slot beside the bow; it has its own speed and heading,
+  // so the pod lags behind turns, overtakes, weaves, and peels away at the end
+  const c = Math.cos(b.a), s = Math.sin(b.a);
+  for (const p of LIFE.pods) for (const m of p.m) {
+    const leave = p.t > 8.5 ? (p.t - 8.5) * 18 : 0, weave = Math.sin(p.t * 0.9 + m.wv) * 5;
+    const lead = m.lead + Math.sin(p.t * 0.7 + m.ph) * 5, off = m.side * (m.off + weave + leave);
+    const tx = b.x + c * lead - s * off + b.vx * 0.35, ty = b.y + s * lead + c * off + b.vy * 0.35;
+    let ax = (tx - m.x) * 2.2 + (b.vx - m.vx) * 1.4, ay = (ty - m.y) * 2.2 + (b.vy - m.vy) * 1.4;
+    const al = Math.hypot(ax, ay), amax = 70; if (al > amax) { ax *= amax / al; ay *= amax / al; }
+    m.vx += ax * dt; m.vy += ay * dt;
+    const v = Math.hypot(m.vx, m.vy), vmax = Math.max(30, Math.hypot(b.vx, b.vy) * 1.45); if (v > vmax) { m.vx *= vmax / v; m.vy *= vmax / v; }
+    m.x += m.vx * dt; m.y += m.vy * dt;
+    if (v > 2) { let d = Math.atan2(m.vy, m.vx) - m.a; d = Math.atan2(Math.sin(d), Math.cos(d)); m.a += d * Math.min(1, dt * 5); }
   }
   LIFE.pods = LIFE.pods.filter(p => (p.t += dt) < 11);
 }

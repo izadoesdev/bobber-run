@@ -1,7 +1,7 @@
 // Procedural sound design on the Web Audio API.
 // Everything is synthesised from filtered noise, damped sines and physically-modelled bubbles
 // (a sine whose pitch rises as it decays), mixed through a compressor with a shared reverb send.
-let ac = null, master, comp, dry, revIn, loops = null, BUS = {}, curBus = 'sfx';
+let ac = null, master, comp, dry, revIn, tapeIn = null, loops = null, BUS = {}, curBus = 'sfx';
 const VOL = { sfx: 0.8, music: 0.6, amb: 0.8 };
 export function setVolumes(v) { Object.assign(VOL, v); for (const k in BUS) if (BUS[k]) BUS[k].gain.value = VOL[k]; }
 const bufs = {};
@@ -24,6 +24,15 @@ function buildGraph(ctx, out) {
   revIn = ctx.createGain(); const wet = ctx.createGain(); wet.gain.value = 0.32;
   const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 220;
   revIn.connect(hp).connect(conv).connect(wet).connect(master);
+  // lo-fi tape on the music: voices -> wow/flutter delay line -> soft lowpass -> BUS.music (volume) -> dry + one reverb send.
+  // Pitch deviation of a modulated delay is d'(t) = 2*pi*f*depth: 0.5 ms at 0.5 Hz ~ 2.7 cents of wow,
+  // 0.25 ms at 0.31 Hz ~ 0.8 cents of drift (so the wobble never repeats exactly), 20 us at 6 Hz ~ 1.3 cents of flutter.
+  tapeIn = ctx.createGain(); const wob = ctx.createDelay(0.05), tlp = ctx.createBiquadFilter(), send = ctx.createGain();
+  wob.delayTime.value = 0.006;
+  for (const [hz, depth] of [[0.5, 0.0005], [0.31, 0.00025], [6, 0.00002]]) { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = hz; g.gain.value = depth; o.connect(g).connect(wob.delayTime); o.start(); }
+  tlp.type = 'lowpass'; tlp.frequency.value = 4000; tlp.Q.value = -1;
+  send.gain.value = 0.55;                                         // what each music voice used to send on its own
+  tapeIn.connect(wob).connect(tlp).connect(BUS.music); BUS.music.connect(send).connect(revIn);
 }
 function impulse(ctx, secs, decay) {
   const n = Math.floor(ctx.sampleRate * secs), b = ctx.createBuffer(2, n, ctx.sampleRate);
@@ -48,8 +57,9 @@ function out(ctx, vol, pan, rev) {
   const g = ctx.createGain(); g.gain.value = 0;
   let node = g;
   if (pan && ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan)); g.connect(p); node = p; }
-  const bus = BUS[curBus] || dry; node.connect(bus);
-  if (rev) { const s = ctx.createGain(); s.gain.value = rev * VOL[curBus]; node.connect(s).connect(revIn); }
+  const tape = curBus === 'music' && tapeIn;                     // music goes through the tape, which has its own reverb send
+  node.connect(tape || BUS[curBus] || dry);
+  if (rev && !tape) { const s = ctx.createGain(); s.gain.value = rev * VOL[curBus]; node.connect(s).connect(revIn); }
   return g;
 }
 function envelope(g, t, a, d, peak, hold = 0) {
@@ -126,13 +136,49 @@ const SFX = {
       o.connect(bp).connect(g); o.start(t0); lfo.start(t0); o.stop(t0 + 0.35); lfo.stop(t0 + 0.35);
     }
   },
+  purr: (c, v, p) => {                                           // an out-breath, then a softer in-breath
+    const t0 = c.currentTime;
+    purrBreath(c, t0, 0.62, 0.09 * v, 26, 650, p);
+    purrBreath(c, t0 + 0.68, 0.52, 0.06 * v, 23, 520, p);
+  },
+  meow: (c, v, p) => {                                           // soft "mi-a-ow": a voiced glide through moving formants
+    const t0 = c.currentTime, T = 0.55, o = c.createOscillator(), vib = c.createOscillator(), vg = c.createGain(), open = c.createBiquadFilter(), vol = 0.11 * v, g = out(c, vol, p, 0.12);
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(600, t0); o.frequency.exponentialRampToValueAtTime(900, t0 + 0.17); o.frequency.exponentialRampToValueAtTime(500, t0 + T);
+    vib.frequency.value = 6; vg.gain.value = 8; vib.connect(vg).connect(o.frequency);
+    open.type = 'lowpass'; open.Q.value = 0;                     // lips: closed "m", open "a", rounding to "ow"
+    open.frequency.setValueAtTime(700, t0); open.frequency.exponentialRampToValueAtTime(3000, t0 + 0.08); open.frequency.exponentialRampToValueAtTime(1500, t0 + T);
+    o.connect(open);
+    for (const [[f0, f1, f2], q, k] of [[[380, 950, 520], 4, 1], [[1900, 1500, 950], 6, 0.45]]) {
+      const bp = c.createBiquadFilter(), bg = c.createGain(); bp.type = 'bandpass'; bp.Q.value = q; bg.gain.value = k;
+      bp.frequency.setValueAtTime(f0, t0); bp.frequency.exponentialRampToValueAtTime(f1, t0 + 0.16); bp.frequency.exponentialRampToValueAtTime(f2, t0 + T);
+      open.connect(bp).connect(bg).connect(g);
+    }
+    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(vol, t0 + 0.05); g.gain.setValueAtTime(vol, t0 + 0.22);
+    g.gain.linearRampToValueAtTime(vol * 0.6, t0 + 0.4); g.gain.linearRampToValueAtTime(0, t0 + T);
+    hiss(c, { a: 0.04, d: 0.35, vol: 0.012 * v, f: 1700, q: 1.2, pan: p });   // a little breath
+    o.start(t0); vib.start(t0); o.stop(t0 + T + 0.1); vib.stop(t0 + T + 0.1);
+  },
   thunder: (c, v) => {
     hiss(c, { a: 0.003, d: 0.25, vol: 0.25 * v, type: 'highpass', f: 900, rev: 0.4 });
     hiss(c, { t: 0.05, a: 0.15, d: 3.2, vol: 0.55 * v, type: 'lowpass', f: 700, f1: 90, color: 'brown', rev: 0.3 });
   },
 };
+// one breath of a purr: pink noise and a low sawtooth, both gated by narrow ~25 Hz pulses
+function purrBreath(c, t0, len, vol, hz, fc, p) {
+  const n = c.createBufferSource(), lp = c.createBiquadFilter(), saw = c.createOscillator(), slp = c.createBiquadFilter(), sg = c.createGain(),
+    am = c.createGain(), lfo = c.createOscillator(), sh = c.createWaveShaper(), g = out(c, vol, p, 0.04), end = t0 + len;
+  n.buffer = noise(c, 'pink'); n.loop = true; lp.type = 'lowpass'; lp.frequency.value = fc; lp.Q.value = 2;
+  for (const o of [saw, lfo]) { o.frequency.setValueAtTime(hz, t0); o.frequency.linearRampToValueAtTime(hz * 1.06, end); }
+  saw.type = 'sawtooth'; slp.type = 'lowpass'; slp.frequency.value = 300; sg.gain.value = 0.4;
+  const curve = new Float32Array(257); for (let i = 0; i < 257; i++) curve[i] = Math.pow(i / 256, 4); sh.curve = curve;   // sine -> narrow pulses 0..1
+  am.gain.value = 0.08; lfo.connect(sh).connect(am.gain);
+  n.connect(lp).connect(am); saw.connect(slp).connect(sg).connect(am); am.connect(g);
+  g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(vol, t0 + 0.15); g.gain.setValueAtTime(vol, end - 0.2); g.gain.linearRampToValueAtTime(0, end);
+  n.start(t0, Math.random() * 2); saw.start(t0); lfo.start(t0);
+  for (const o of [n, saw, lfo]) o.stop(end + 0.05);
+}
 // short text for sounds that carry information, shown when captions are on
-const CAPTION = { bite: 'Bobber splashes', snap: 'Line snaps', crash: 'Hull crunches', scrape: 'Hull scrapes', thunder: 'Thunder rumbles', gulls: 'Gulls crying', sink: 'Boat sinking', discover: 'Bell rings', deny: null, oar: null };
+const CAPTION = { bite: 'Bobber splashes', snap: 'Line snaps', crash: 'Hull crunches', scrape: 'Hull scrapes', thunder: 'Thunder rumbles', gulls: 'Gulls crying', sink: 'Boat sinking', discover: 'Bell rings', purr: 'Cat purring', meow: 'Cat meows', deny: null, oar: null };
 let onCaption = null;
 export const setCaptionHook = f => { onCaption = f; };
 export function sfx(name, vol = 1, rate = 1, pan = 0) {
@@ -142,24 +188,30 @@ export function sfx(name, vol = 1, rate = 1, pan = 0) {
 }
 
 // ---------- continuous soundscape ----------
-function loopSource(kind, type, f, q = 0.7) {
+function loopSource(kind, type, f, q = 0.7, dest = BUS.amb) {
   const s = ac.createBufferSource(); s.buffer = noise(ac, kind); s.loop = true;
   const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q;
   const g = ac.createGain(); g.gain.value = 0;
-  s.connect(fl).connect(g).connect(BUS.amb); s.start(0, Math.random() * 2);
+  s.connect(fl).connect(g).connect(dest); s.start(0, Math.random() * 2);
   return { g, fl };
 }
 function startLoops() {
+  // the outdoor ambience runs through a lowpass + gain ("walls") that close while docked in port
+  const wall = ac.createBiquadFilter(), wallG = ac.createGain(); wall.type = 'lowpass'; wall.frequency.value = 18000; wall.Q.value = -3; wall.connect(wallG).connect(BUS.amb);
   loops = {
-    sea: loopSource('brown', 'lowpass', 330),                    // distant swell
-    lap: loopSource('pink', 'bandpass', 650, 0.9),               // water lapping on the hull
-    wash: loopSource('pink', 'lowpass', 500),                    // water rushing past while moving
-    spray: loopSource('white', 'highpass', 2600),                // spray at speed
-    surf: loopSource('brown', 'bandpass', 480, 0.6),             // breakers near shore
-    wind: loopSource('pink', 'bandpass', 600, 1.5),
-    rain: loopSource('white', 'highpass', 1900),
-    luff: loopSource('pink', 'bandpass', 320, 2),                // sail flapping when pointing into the wind
+    sea: loopSource('brown', 'lowpass', 330, 0.7, wall),         // distant swell
+    lap: loopSource('pink', 'bandpass', 650, 0.9, wall),         // water lapping on the hull
+    wash: loopSource('pink', 'lowpass', 500, 0.7, wall),         // water rushing past while moving
+    spray: loopSource('white', 'highpass', 2600, 0.7, wall),     // spray at speed
+    surf: loopSource('brown', 'bandpass', 480, 0.6, wall),       // breakers near shore
+    wind: loopSource('pink', 'bandpass', 600, 1.5, wall),
+    rain: loopSource('white', 'highpass', 1900, 0.7, wall),
+    luff: loopSource('pink', 'bandpass', 320, 2, wall),          // sail flapping when pointing into the wind
+    roof: loopSource('pink', 'lowpass', 480),                    // indoors: rain drumming on the roof, muffled
+    stove: loopSource('brown', 'lowpass', 300),                  // indoors: warm low roar of the stove
+    hiss: loopSource('white', 'bandpass', 2600, 0.5, tapeIn),    // tape hiss under the music (music bus)
   };
+  loops.wall = { fl: wall, g: wallG };
   // engine: two low oscillators, soft-clipped, amplitude-pulsed like a single-cylinder outboard
   const o1 = ac.createOscillator(), o2 = ac.createOscillator(), sh = ac.createWaveShaper(), lp = ac.createBiquadFilter(), am = ac.createGain(), lfo = ac.createOscillator(), lfoG = ac.createGain(), g = ac.createGain();
   o1.type = 'sawtooth'; o2.type = 'sine'; o1.frequency.value = 46; o2.frequency.value = 92;
@@ -169,7 +221,26 @@ function startLoops() {
   o1.start(); o2.start(); lfo.start();
   loops.engine = { g, o1, o2, lfo, lp };
 }
-let lapPhase = 0;
+let lapPhase = 0, portMix = 0;
+const poisson = (rate, dt) => Math.floor(rate * dt + Math.random());   // event count with the right mean
+// one-shots heard inside the harbour office: rain ticking on the wooden roof, a drip, the stove crackling
+function portEvents(dt, rain) {
+  const c = ac, m = portMix; curBus = 'amb';
+  try {
+    for (let i = poisson(8 * rain, dt); i-- > 0;) {
+      const t = r(0, dt), p = r(-0.7, 0.7), v = r(0.4, 1) * m;
+      tone(c, { f: r(420, 760), t, a: 0.001, d: r(0.02, 0.045), vol: 0.03 * v, type: 'triangle', lp: 1000, pan: p });
+      hiss(c, { t, a: 0.001, d: r(0.012, 0.03), vol: 0.06 * v, f: r(700, 1300), q: 1.6, pan: p });
+    }
+    for (let i = poisson(0.3 * rain, dt); i-- > 0;) bubble(c, r(0, dt), r(750, 1100), 0.03 * m, 0.05, r(-0.4, 0.4));
+    for (let i = poisson(2.5, dt); i-- > 0;) {                     // crackles come in little clusters, with the odd pop
+      const t = r(0, dt), p = r(-0.5, -0.25);
+      for (let k = 0, n = 1 + Math.floor(Math.random() * 4); k < n; k++) hiss(c, { t: t + k * r(0.012, 0.06), a: 0.0005, d: r(0.004, 0.012), vol: r(0.06, 0.14) * m, f: r(1300, 2600), q: r(1, 2.5), pan: p });
+      if (Math.random() < 0.15) { hiss(c, { t, a: 0.001, d: 0.035, vol: 0.12 * m, f: r(450, 750), q: 1.2, pan: p }); tone(c, { f: r(140, 210), t, a: 0.001, d: 0.05, vol: 0.03 * m, type: 'triangle', lp: 600, pan: p }); }
+    }
+  } catch (_) { }
+  curBus = 'sfx';
+}
 // called every frame with the state of the world around the boat
 export function soundscape(s, dt) {
   if (!loops || ac.state !== 'running') return;
@@ -190,6 +261,15 @@ export function soundscape(s, dt) {
   set(e.g, s.mute || !s.engine ? 0 : 0.07 + 0.09 * s.throttle, 0.25);
   const rpm = 0.8 + Math.min(1, s.speed / 60) * 1.1 + s.throttle * 0.2;
   e.o1.frequency.setTargetAtTime(46 * rpm, t, 0.3); e.o2.frequency.setTargetAtTime(92 * rpm, t, 0.3); e.lfo.frequency.setTargetAtTime(8 * rpm, t, 0.3); e.lp.frequency.setTargetAtTime(220 + 160 * rpm, t, 0.3);
+  // docked in port: the sea goes muffled behind walls (~0.6 s), the roof and the stove fade in
+  const dtc = Math.min(dt, 0.1), rain = s.rain || 0;
+  portMix += ((s.port && !s.mute ? 1 : 0) - portMix) * (1 - Math.exp(-dtc / 0.2));
+  if (portMix < 0.001) portMix = 0;
+  loops.wall.fl.frequency.setTargetAtTime(18000 * Math.pow(900 / 18000, portMix), t, 0.03);   // sweeps evenly in pitch
+  loops.wall.g.gain.setTargetAtTime(1 - 0.4 * portMix, t, 0.03);
+  set(loops.roof.g, 0.018 * rain * portMix, 0.3);
+  set(loops.stove.g, 0.05 * portMix * (0.8 + 0.2 * Math.sin(t * 1.3) * Math.sin(t * 0.7 + 2)), 0.2);
+  if (portMix > 0.02) portEvents(dtc, rain);
 }
 
 // ---------- music: mallet melody over slow pads, pentatonic, through the reverb ----------
@@ -197,7 +277,9 @@ const DAY = [[0, 4, 7], [9, 12, 16], [5, 9, 12], [7, 11, 14]], NIGHT = [[9, 12, 
 const PENTA = [0, 2, 4, 7, 9];
 let bar = 0, beat = 0, nextBeat = 1.5, chord = 0;
 export function music(dt, on, night) {
-  if (!ac || ac.state !== 'running' || !on) return;
+  if (!ac || ac.state !== 'running') return;
+  if (loops) loops.hiss.g.gain.setTargetAtTime(on ? 0.0045 : 0, ac.currentTime, 0.5);   // tape hiss only while music plays
+  if (!on) return;
   if ((nextBeat -= dt) > 0) return;
   const tempo = night ? 0.62 : 0.48; nextBeat = tempo;
   curBus = 'music';
@@ -219,12 +301,11 @@ export function music(dt, on, night) {
 
 // ---------- offline rendering, used by tests to inspect levels and spectra ----------
 export async function renderOffline(name, secs = 2) {
-  const off = new OfflineAudioContext(2, 44100 * secs, 44100), prev = [master, comp, dry, revIn], prevBus = BUS;
+  const off = new OfflineAudioContext(2, 44100 * secs, 44100), prev = [master, comp, dry, revIn, tapeIn], prevBus = BUS;
   BUS = {};
-  buildGraph(off, off.destination);
-  SFX[name](off, 1, 0);
+  try { buildGraph(off, off.destination); SFX[name](off, 1, 0); }
+  finally { [master, comp, dry, revIn, tapeIn] = prev; BUS = prevBus; }   // restore before awaiting so live sounds keep their graph
   const buf = await off.startRendering();
-  [master, comp, dry, revIn] = prev; BUS = prevBus;
   return buf.getChannelData(0);
 }
 export const SFX_NAMES = Object.keys(SFX);

@@ -85,7 +85,20 @@ export const BOATS = [
   { id: 'row',     name: 'Rowboat',      cost: 0,    speed: 1.0,  accel: 1.0, turn: 1.0,  hold: 4,  hp: 100, L: 13.5, B: 5.8, prop: 'OARS',   sonar: 0, net: 0, what: 'Quiet: easier perfect strikes' },
   { id: 'skiff',   name: 'Sail Skiff',   cost: 450,  speed: 1.45, accel: 0.9, turn: 0.95, hold: 7,  hp: 140, L: 16.5, B: 6.4, prop: 'SAIL',   sonar: 0, net: 0, what: 'Sails: fast across the wind' },
   { id: 'launch',  name: 'Motor Launch', cost: 2200, speed: 1.95, accel: 1.5, turn: 1.05, hold: 10, hp: 210, L: 17.5, B: 7,   prop: 'ENGINE', sonar: 0, net: 0, what: 'Engine: fast, but spooks fish' },
-  { id: 'trawler', name: 'Trawler',      cost: 6000, speed: 2.15, accel: 0.8, turn: 0.75, hold: 18, hp: 360, L: 23,   B: 9,   prop: 'ENGINE', sonar: 1, net: 3, what: 'Big nets + sonar built in' },
+  { id: 'trawler', name: 'Trawler',      cost: 6000, speed: 2.15, accel: 0.8, turn: 0.75, hold: 18, hp: 360, L: 23,   B: 9,   prop: 'ENGINE', sonar: 1, net: 3, what: 'Big nets + sonar built in', req: 'pier' },
+  // the big ships: unlocked by restoring Alderhaven's harbour, not by money alone
+  { id: 'schooner', name: 'Schooner',     cost: 14000, speed: 2.4, accel: 0.85, turn: 0.62, hold: 26, hp: 520, L: 32, B: 10, prop: 'SAIL', sonar: 1, net: 0, crew: 1, what: 'Two masts, very fast across the wind, sails with a deckhand', req: 'drydock' },
+  { id: 'drifter',  name: 'Steam Drifter', cost: 28000, speed: 2.3, accel: 0.7, turn: 0.55, hold: 34, hp: 700, L: 36, B: 11, prop: 'ENGINE', sonar: 2, net: 3, keel: 1, what: 'Steam power and huge nets. Rides out storms', req: 'drydock' },
+  { id: 'flagship', name: 'Flagship',      cost: 60000, speed: 2.6, accel: 0.75, turn: 0.5, hold: 50, hp: 1000, L: 46, B: 14, prop: 'ENGINE', sonar: 3, net: 3, keel: 2, crew: 2, harpoon: 1, what: 'The finest ship afloat: harpoon, sonar dome and a crew of three', req: 'lights' },
+];
+// Restoring Alderhaven: the long goal. Each project takes coins and donated fish, unlocks something, and the last one ends the story.
+// need: { any: n } fish of any kind; { kinds: n } different species; { trophy: n } trophy fish; { sp: id, n } a particular species
+export const PROJECTS = [
+  { id: 'pier', name: 'Mend the pier', cost: 250, need: { any: 5 }, gives: 'The shipyard can build the Trawler', what: 'Rotten planks and a sagging quay. The harbourmaster needs coin and a few fish to feed the carpenters.' },
+  { id: 'market', name: 'Raise the fish market', cost: 1500, need: { kinds: 6 }, gives: 'Opens the Fleet Office: send spare boats out to fish for you', what: 'A covered market hall with a slab for every kind of fish. Bring six different species to stock it.' },
+  { id: 'drydock', name: 'Build the dry dock', cost: 5000, need: { trophy: 3 }, gives: 'Big ships: the Schooner and Steam Drifter, and dry dock upgrades', what: 'A stone dock deep enough for real ships. Shipwrights want proof of serious anglers: three trophy fish.' },
+  { id: 'lights', name: 'Light the coast', cost: 12000, need: { sp: 'beacon', n: 3 }, gives: 'Charts every lighthouse nearby, and the Flagship', what: 'Relight the old lighthouse chain. The keepers say beaconfish oil burns brightest.' },
+  { id: 'grand', name: 'The Grand Harbour', cost: 30000, need: { sp: 'oldone', n: 1 }, gives: 'Alderhaven becomes the greatest harbour on the coast', what: 'Banners, a festival, and the Old One mounted over the harbour gate. Bring it home.' },
 ];
 // upgrade tracks, grouped into shop categories; `lv` describes what each level does.
 export const UPGRADES = {
@@ -99,7 +112,7 @@ export const UPGRADES = {
   reel:     { name: () => 'Reel', cat: 'TACKLE', costs: [110, 380, 1100], lv: ['Reel in 12% faster', 'Reel in 24% faster', 'Reel in 36% faster'] },
   line:     { name: () => 'Braided Line', cat: 'TACKLE', costs: [130, 420, 1200], lv: ['Line takes 12% more strain', '24% more strain', '36% more strain'] },
   tackle:   { name: () => 'Tackle Box', cat: 'TACKLE', costs: [120, 450, 1300], lv: ['Bites 12% faster', 'Bites 24% faster, wider perfect', 'Bites 36% faster, widest perfect'] },
-  ice:      { name: () => 'Ice Box', cat: 'TACKLE', costs: [90, 350, 1100], lv: ['Fish stay fresh 6 min', 'Fresh for 15 min', 'Fish never spoil'] },
+  ice:      { name: () => 'Ice Box', cat: 'TACKLE', costs: [90, 350, 1100], lv: ['Chilled fish sell for 5% more', 'Chilled fish sell for 10% more', 'Chilled fish sell for 15% more'] },
   sonar:    { name: () => 'Sonar', cat: 'NAVIGATION', costs: [150, 600, 1800], lv: ['Schools on the minimap', 'Species on the minimap', 'Legends on the chart'] },
   lantern:  { name: () => 'Lantern', cat: 'NAVIGATION', costs: [100, 400, 1200], lv: ['Brighter light at night', 'Wide light', 'Floodlight'] },
   spyglass: { name: () => 'Spyglass', cat: 'NAVIGATION', costs: [140, 600], lv: ['Chart landmarks from farther', 'See what swims in schools'] },
@@ -108,6 +121,11 @@ export const UPGRADES = {
   deckhand: { name: () => 'Deckhand', cat: 'CREW', costs: [400, 1400], lv: ['25% chance of a bonus catch', '40% bonus, sets the hook for you'] },
   cook:     { name: () => 'Cook', cat: 'CREW', costs: [350, 1200], lv: ['Smoked fish sell for 10% more', 'Smoked fish sell for 20% more'] },
   quarter:  { name: () => 'Quartermaster', cat: 'CREW', costs: [300, 1000], lv: ['+1 contract slot, +15% rewards', '+2 contract slots, +30% rewards'] },
+  // dry dock upgrades (need the dry dock project)
+  pots:     { name: () => 'Crab Pots', cat: 'VESSEL', req: 'drydock', costs: [900, 2600, 6000], lv: ['A pot line hauls a crab every four minutes', 'Hauls every two and a half minutes', 'Hauls every minute'] },
+  keel:     { name: () => 'Storm Keel', cat: 'VESSEL', req: 'drydock', costs: [1200, 3500], lv: ['Storm gusts push you half as much', 'Storms cannot push you, and +25% hull'] },
+  harpoon:  { name: () => 'Harpoon Gun', cat: 'TACKLE', req: 'drydock', costs: [1500, 4000], lv: ['Legends and ocean giants tire 25% faster', 'They tire 50% faster and pull less'] },
+  bell:     { name: () => 'Diving Bell', cat: 'NAVIGATION', req: 'drydock', costs: [2000, 5000], lv: ['Dive each wreck again once a day', 'Deeper dives bring up twice the salvage'] },
 };
 export const UP_CATS = ['VESSEL', 'TACKLE', 'NAVIGATION', 'CREW'];
 export const SUPPLIES = {

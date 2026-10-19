@@ -4,19 +4,19 @@ import { W, H, clamp } from './config.js';
 import { nA } from './noise.js';
 import { hBil, hAt, heightAt, poisNear, schoolsNear, cratesNear, homePort, cellPois, BOSS } from './world.js';
 import { WX, updateWeather, biteMul, trophyBonus } from './weather.js';
-import { SPECIES, SP, BOATS, UPGRADES, UP_CATS, PAINTS, SUPPLIES, activeAt, fmtKg, pickSpecies } from './econ.js';
+import { SPECIES, SP, BOATS, UPGRADES, UP_CATS, PAINTS, SUPPLIES, PROJECTS, activeAt, fmtKg, pickSpecies } from './econ.js';
 import { sfx, soundscape, music, setCaptionHook } from './audio.js';
 import { SET } from './prefs.js';
-import { bladeAt, OAR } from './models.js';
+import { bladeAt, OAR, BOAT_MODELS } from './models.js';
 
 export const G = {
   mode: 'title', t: 0, clock: 0,
-  boat: { x: 0, y: 0, a: 0, vx: 0, vy: 0, w: 0, px: 0, py: 0, pa: 0, phase: 0.5, hp: 100 },
+  boat: { x: 0, y: 0, a: 0, vx: 0, vy: 0, w: 0, px: 0, py: 0, pa: 0, phase: 0.5, phaseL: 0.5, phaseR: 0.5, hp: 100 },
   boatId: 'row', owned: ['row'], coins: 0, coinsShown: 0, earned: 0,
   up: Object.fromEntries(Object.keys(UPGRADES).map(k => [k, 0])), paint: 'classic', paints: ['classic'], shipSel: 0, logPage: 0, bait: { shrimp: 0, glow: 0 }, baitSel: 'shrimp',
   hold: [], log: {}, found: new Set(), salvaged: new Set(), lastPort: null, sat: {}, pity: 0,
   stats: { caught: 0, sold: 0, upgrades: 0, lights: 0, contracts: 0, wrecks: 0, trophies: 0, night: 0, frenzy: 0, treasures: 0 },
-  goalIdx: 0, goalsDone: [], offers: {}, active: [], maps: [], musicOn: true, nearTreasure: null,
+  goalIdx: 0, goalsDone: [], offers: {}, active: [], maps: [], musicOn: true, nearTreasure: null, dry: 0, gifts: {}, pet: null, petCd: 0, projects: [], fleet: {}, dives: {}, potT: 0, finale: false,
   fish: null, catchAnim: null, card: null, toasts: [], captions: [], floaters: [], parts: [], frenzy: null, nextFrenzy: 50,
   cam: { x: 0, y: 0 }, look: { x: 0, y: 0 }, shake: 0, shakeX: 0, shakeY: 0,
   prompt: null, menu: { tab: 0, sel: 0, port: null }, map: { x: 0, y: 0, zoom: 1 },
@@ -34,20 +34,26 @@ export const hit = (...ks) => ks.some(k => G.pressed.has(k));
 // ---------- derived stats ----------
 export const boatDef = () => BOATS.find(b => b.id === G.boatId);
 export const cap = () => boatDef().hold + 2 * G.up.hold;
-export const hpMax = () => Math.round(boatDef().hp * (1 + 0.25 * G.up.hull));
+export const hpMax = () => Math.round(boatDef().hp * (1 + 0.25 * G.up.hull) * (keelLvl() >= 2 ? 1.25 : 1));
+// gear a ship carries built in counts like the upgrade
+const built = k => boatDef()[k] | 0;
+export const crewLvl = () => Math.max(G.up.deckhand, built('crew'));
+export const keelLvl = () => Math.max(G.up.keel | 0, built('keel'));
+export const harpoonLvl = () => Math.max(G.up.harpoon | 0, built('harpoon'));
+export const projDone = id => G.projects.includes(id);
 export const speedMul = () => boatDef().speed * (1 + 0.12 * G.up.prop);
 export const sonarLvl = () => Math.max(G.up.sonar, boatDef().sonar);
-export const lightR = () => 18 + 17 * G.up.lantern;
+export const lightR = () => 21 + 19 * G.up.lantern;
 export const netLvl = () => Math.max(G.up.net, boatDef().net);
 export const lineMax = () => 1 + 0.12 * G.up.line;
 export const contractSlots = () => 3 + G.up.quarter;
-const ICE_GRACE = [150, 360, 900, Infinity];
-export function freshness(f) { const age = G.clock - (f.t ?? G.clock), g = ICE_GRACE[G.up.ice]; return age < g ? 1 : Math.max(0.7, 1 - (age - g) / 600 * 0.3); }
-export const fishValue = f => Math.round(f.value * freshness(f));
+// fish never spoil; the ice box keeps them prime and worth a little more
+export const freshness = () => 1;
+export const fishValue = f => Math.round(f.value * (1 + 0.05 * G.up.ice));
 export const env = () => { const c = dayFrac(); return { night: isNight(), twilight: (c > 0.56 && c < 0.7) || c > 0.88 || c < 0.03, weather: WX.state }; };
 // what the boat should visibly carry
 export function equipment() {
-  const u = G.up; return { paint: G.paint, plate: u.hull, prop: u.prop, lantern: u.lantern, sonar: sonarLvl(), rod: u.rod, ice: u.ice, tackle: u.tackle, net: u.net, radio: u.radio, anchor: u.anchor, hold: u.hold, pile: Math.min(3, Math.ceil(G.hold.length / 3)), deckhand: u.deckhand, cook: u.cook, quarter: u.quarter, bilge: u.bilge, reel: u.reel };
+  const u = G.up; return { paint: G.paint, plate: u.hull, prop: u.prop, lantern: u.lantern, sonar: sonarLvl(), rod: u.rod, ice: u.ice, tackle: u.tackle, net: u.net, radio: u.radio, anchor: u.anchor, hold: u.hold, pile: Math.min(3, Math.ceil(G.hold.length / 3)), deckhand: u.deckhand, cook: u.cook, quarter: u.quarter, bilge: u.bilge, reel: u.reel, pet: G.pet ? 1 : 0, deckhand: crewLvl() };
 }
 export const logged = () => SPECIES.filter(s => G.log[s.id]).length;
 
@@ -122,7 +128,7 @@ export function saveGame() {
     const b = G.boat;
     localStorage.setItem(KEY, JSON.stringify({ coins: G.coins, earned: G.earned, up: G.up, hp: b.hp, hold: G.hold, log: G.log, boatId: G.boatId, owned: G.owned,
       bait: G.bait, baitSel: G.baitSel, paint: G.paint, paints: G.paints, found: [...G.found], salvaged: [...G.salvaged], lastPort: G.lastPort, x: b.x, y: b.y, a: b.a,
-      stats: G.stats, goalIdx: G.goalIdx, goalsDone: G.goalsDone, maps: G.maps, musicOn: G.musicOn, offers: G.offers, active: G.active, pity: G.pity, clock: G.clock }));
+      stats: G.stats, gifts: G.gifts, pet: G.pet, projects: G.projects, fleet: G.fleet, dives: G.dives, finale: G.finale, goalIdx: G.goalIdx, goalsDone: G.goalsDone, maps: G.maps, musicOn: G.musicOn, offers: G.offers, active: G.active, pity: G.pity, clock: G.clock }));
   } catch (_) { }
 }
 export const hasSave = () => { try { return !!(localStorage.getItem(KEY) || localStorage.getItem(OLD)); } catch (_) { return false; } };
@@ -138,7 +144,7 @@ export function newGame() {
   Object.assign(G, { coins: 15, coinsShown: 15, earned: 0, paint: 'classic', paints: ['classic'], up: Object.fromEntries(Object.keys(UPGRADES).map(k => [k, 0])), bait: { shrimp: 3, glow: 0, chum: 1 }, baitSel: 'shrimp',
     hold: [], log: {}, found: new Set(), salvaged: new Set(), sat: {}, fish: null, parts: [], toasts: [], floaters: [], boatId: 'row', owned: ['row'],
     stats: { caught: 0, sold: 0, upgrades: 0, lights: 0, contracts: 0, wrecks: 0, trophies: 0, night: 0, frenzy: 0, treasures: 0, storm: 0 }, goalIdx: 0, goalsDone: [], maps: [], offers: {}, active: [], pity: 0,
-    clock: DAYLEN * 0.08, frenzy: null, nextFrenzy: 45, card: null });
+    clock: DAYLEN * 0.08, frenzy: null, nextFrenzy: 45, card: null, projects: [], fleet: {}, dives: {}, finale: false, gifts: {}, pet: null, dry: 0 });
   const home = homePort(); G.lastPort = home.id; G.found.add(home.id); G.boat.hp = hpMax();
   placeAtPort(home);
 }
@@ -154,7 +160,7 @@ export function loadGame() {
     Object.assign(G, { coins: d.coins | 0, coinsShown: d.coins | 0, earned: d.earned | 0, up: { ...G.up, ...d.up }, hold: (d.hold || []).filter(f => f && typeof f === 'object'),
       log: d.log || {}, boatId: d.boatId || 'row', owned: d.owned || ['row'], bait: { ...G.bait, ...d.bait }, baitSel: d.baitSel || 'shrimp', paint: d.paint || 'classic', paints: d.paints || ['classic'],
       found: new Set(d.found || []), salvaged: new Set(d.salvaged || []), lastPort: d.lastPort || G.lastPort, stats: { ...G.stats, ...d.stats },
-      goalIdx: d.goalIdx | 0, goalsDone: d.goalsDone || [], maps: d.maps || [], musicOn: d.musicOn ?? true, offers: d.offers || {}, active: d.active || [], pity: d.pity | 0, clock: d.clock ?? G.clock });
+      gifts: d.gifts || {}, pet: d.pet || null, projects: d.projects || [], fleet: d.fleet || {}, dives: d.dives || {}, finale: !!d.finale, goalIdx: d.goalIdx | 0, goalsDone: d.goalsDone || [], maps: d.maps || [], musicOn: d.musicOn ?? true, offers: d.offers || {}, active: d.active || [], pity: d.pity | 0, clock: d.clock ?? G.clock });
     G.boat.hp = clamp(d.hp ?? hpMax(), 1, hpMax());
     for (const c of [...G.active, ...Object.values(G.offers).flat()]) if (c && c.to) c.toName = portById(c.to).name;   // older saves stored names in capitals
     if (Number.isFinite(d.x) && hAt(d.x, d.y) < -0.05) { Object.assign(G.boat, { x: d.x, y: d.y, a: d.a || 0, px: d.x, py: d.y, pa: d.a || 0 }); G.cam.x = d.x - W / 2; G.cam.y = d.y - H / 2; }
@@ -222,7 +228,7 @@ function onImpact(I, at) {
   for (let i = 0; i < 3 + k * 10; i++) { const a = Math.random() * 6.28, sp = 6 + Math.random() * 22; spawn({ kind: 'debris', x: at.x, y: at.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1 + Math.random() * 1.5 }); }
   if (I > 11) {
     const dmg = Math.round((I - 11) * 1.7 * (1 - 0.12 * G.up.hull));
-    if (dmg > 0) { G.boat.hp -= dmg; toast(`-${dmg} hull`, 'bad'); if (G.boat.hp <= 0) sink(); else if (G.boat.hp < hpMax() * 0.3) toast('Hull critical. Repair at a port', 'bad'); }
+    if (dmg > 0 && !G.god) { G.boat.hp -= dmg; toast(`-${dmg} hull`, 'bad'); if (G.boat.hp <= 0) sink(); else if (G.boat.hp < hpMax() * 0.3) toast('Hull critical. Repair at a port', 'bad'); }
   }
 }
 export function physicsStep(dt) {
@@ -242,29 +248,35 @@ export function physicsStep(dt) {
   c = Math.cos(b.a); s = Math.sin(b.a);
   b.vx = vf * c - vs * s; b.vy = vf * s + vs * c;
   const anchored = G.up.anchor > 0 && (G.fish || Math.hypot(b.vx, b.vy) < 6) && !thr && !rev;
-  if (WX.wind > 0.3 && !anchored) { const wa = windAngle(), gust = (WX.wind - 0.3) * 10 * (0.6 + 0.4 * Math.sin(G.t * 0.8)) * 13.5 / bd.L; b.vx += Math.cos(wa) * gust * dt; b.vy += Math.sin(wa) * gust * dt; }
+  if (WX.wind > 0.3 && !anchored) { const wa = windAngle(), gust = (WX.wind - 0.3) * 10 * (0.6 + 0.4 * Math.sin(G.t * 0.8)) * 13.5 / bd.L * Math.max(0, 1 - 0.5 * keelLvl()); b.vx += Math.cos(wa) * gust * dt; b.vy += Math.sin(wa) * gust * dt; }
   b.x += b.vx * dt; b.y += b.vy * dt;
   contacts();
   G.throttle = thr || rev;
   if (bd.id !== 'row') return;
-  const rowing = (thr || rev || steer) && !G.fish, prev = b.phase;
-  if (rowing) b.phase += dt * (rev && !thr ? -0.7 : 0.75) * (0.85 + 0.15 * speedMul());
-  else if (Math.abs(frac(b.phase) - 0.5) > 0.03) b.phase += dt * 0.75;
-  if (rowing && Math.floor(prev) !== Math.floor(b.phase)) {
-    for (const sgn of [-1, 1]) {
-      const [x, y] = toWorld(rev && !thr ? -OAR.sweep : OAR.sweep, sgn * OAR.reach);
+  // each oar has its own stroke: forward rows both; turning right pulls the left oar while the right one rests
+  // (and the other way round); rowing ahead while turning works the outer oar harder
+  if (G.fish) return;
+  const pace = 0.75 * (0.85 + 0.15 * speedMul()), back = rev && !thr;
+  const rate = sgn => { const outer = steer && sgn === -steer; if (back) return -0.7; if (thr) return steer ? (outer ? 1 : 0.45) : 1; return steer && outer ? 1.05 : 0; };
+  for (const sgn of [-1, 1]) {
+    const key = sgn < 0 ? 'phaseL' : 'phaseR', prev = b[key] ?? 0.5, r = rate(sgn);
+    if (r) b[key] = prev + dt * pace * r;
+    else b[key] = Math.abs(frac(prev) - 0.5) > 0.03 ? prev + dt * pace : prev;          // drift back to rest
+    if (r && Math.floor(prev) !== Math.floor(b[key])) {
+      const [x, y] = toWorld(back ? -OAR.sweep : OAR.sweep, sgn * OAR.reach);
       spawn({ kind: 'ring', x, y, life: 1.1, r0: 1, grow: 6 });
       for (let i = 0; i < 4; i++) spawn({ kind: 'dot', x, y, vx: (Math.random() - 0.5) * 14, vy: (Math.random() - 0.5) * 14, life: 0.45 });
+      sfx('oar', 0.65, 1, sgn * 0.35);
     }
-    sfx('oar', 0.7, 1, -0.35); setTimeout(() => sfx('oar', 0.6, 1, 0.35), 40);
   }
+  b.phase = b.phaseR;
 }
 
-function sink() {
+export function sink() {
   G.mode = 'sunk'; G.sunkT = 0; sfx('sink');
-  const fee = Math.min(G.coins, 10 + Math.round(G.coins * 0.1)), lost = G.hold.length;
-  G.coins -= fee; G.hold = []; G.fish = null;
-  G.sunkMsg = `You lost ${lost} fish and paid $${fee} for the tow`;
+  const fee = Math.min(G.coins, 5 + Math.min(40, Math.round(G.coins * 0.04)));   // a small tow fee; the catch is kept
+  G.coins -= fee; G.fish = null;
+  G.sunkMsg = `The harbour tug tows you home. Your catch is safe${fee ? `, and the tow cost $${fee}` : ''}`;
   for (let i = 0; i < 30; i++) spawn({ kind: 'debris', x: G.boat.x, y: G.boat.y, vx: (Math.random() - 0.5) * 40, vy: (Math.random() - 0.5) * 40, life: 2 + Math.random() * 2 });
 }
 
@@ -287,6 +299,8 @@ function tryCast() {
   sfx('cast');
 }
 export const TUNE = { k: 1.5, surge: 0.55 };
+// idle fishing: easy, non-legendary fish land on their own if you leave the line alone
+export const idleOk = sp => !sp.legend && sp.diff() < 0.45;
 const FIGHT = {
   steady: ph => 0.45 + 0.25 * Math.sin(ph * 0.6),
   darter: ph => Math.pow(Math.max(0, Math.sin(ph * 1.9)), 5) * 2.6 + 0.1,
@@ -303,28 +317,32 @@ function updateFishing(dt) {
   if (f.st === 'cast') {
     if (f.t >= 0.55) {
       f.st = 'wait'; f.t = 0;
-      f.wait = (1.4 + Math.random() * 2.6) * (1 - 0.1 * rod) * (f.frenzy ? 0.4 : 1) * (f.bait === 'glow' && isNight() ? 0.5 : f.bait ? 0.75 : 1) * biteMul() * (1 - 0.12 * G.up.tackle);
+      f.wait = Math.max(0.4, 1 - 0.15 * G.dry) * (1.4 + Math.random() * 2.6) * (1 - 0.1 * rod) * (f.frenzy ? 0.4 : 1) * (f.bait === 'glow' && isNight() ? 0.5 : f.bait ? 0.75 : 1) * biteMul() * (1 - 0.12 * G.up.tackle);
       spawn({ kind: 'ring', x: f.tx, y: f.ty, life: 0.9, r0: 1, grow: 5 }); sfx('plop', 0.5);
     }
   } else if (f.st === 'wait') {
-    if (strike) { toast('Too early. Wait for the bobber to dip'); f.wait += 1.2; sfx('deny', 0.5); }
+    if (strike) { toast('Too early. Wait for the bobber to dip'); f.wait += 1.2; sfx('deny', 0.5); G.dry++; }
     if (Math.random() < dt * 0.8) spawn({ kind: 'ring', x: f.tx, y: f.ty, life: 0.8, r0: 2, grow: 3 });
     if (f.t >= f.wait) { f.st = 'bite'; f.t = 0; sfx('bite'); for (let i = 0; i < 6; i++) spawn({ kind: 'dot', x: f.tx, y: f.ty, vx: (Math.random() - 0.5) * 20, vy: (Math.random() - 0.5) * 20, life: 0.4 }); }
   } else if (f.st === 'bite') {
-    const relaxed = SET.strike === 'relaxed' ? 1.6 : 1;
+    const relaxed = (SET.strike === 'relaxed' ? 1.6 : 1) * (1 + 0.2 * Math.min(3, G.dry));   // pity: each miss widens the window
     const perfectWin = ((G.boatId === 'row' ? 0.32 : 0.2) + 0.03 * rod + 0.05 * Math.max(0, G.up.tackle - 1)) * relaxed;
-    const auto = (G.up.deckhand >= 2 && f.t > 0.42) || (SET.strike === 'auto' && f.t > 0.3);
+    const auto = (crewLvl() >= 2 && f.t > 0.42) || (SET.strike === 'auto' && f.t > 0.3);
     if (auto && SET.strike !== 'auto') toast('Your deckhand sets the hook');
     if (strike || auto) {
       f.st = 'reel'; f.perfect = f.t < perfectWin; f.t = 0;
-      f.tension = f.perfect ? 0.1 : 0.25; f.prog = f.perfect ? 0.25 : 0.08; f.reeling = true;
+      f.tension = f.perfect ? 0.1 : 0.25; f.prog = f.perfect ? 0.25 : 0.08; f.reeling = true; G.dry = 0;
       sfx(f.perfect ? 'perfect' : 'plop'); if (f.perfect) toast('Perfect strike!', 'good');
-    } else if (f.t > (0.75 + 0.12 * rod) * relaxed) { toast('It got away. Wait for another bite'); f.st = 'wait'; f.t = 0; f.wait = 1.5 + Math.random() * 2.5; }
+    } else if (f.t > (0.75 + 0.12 * rod) * relaxed) {
+      if (idleOk(sp)) { f.st = 'reel'; f.t = 0; f.tension = 0.15; f.prog = 0.05; f.selfHooked = true; G.dry = 0; sfx('plop'); }   // small fish hook themselves
+      else { toast('It got away. Another bite will come soon'); f.st = 'wait'; f.t = 0; f.wait = (1.5 + Math.random() * 2.5) * Math.max(0.4, 1 - 0.15 * ++G.dry); }
+    }
   } else if (f.st === 'reel') {
     const S = FIGHT[sp.fight], stage = f.stage || 0;
     f.ph += dt * (1.5 + sp.diff() * 2.5);
     const assist = SET.reelAssist ? 0.7 : 1;
-    const surge = S(f.ph), pull = sp.diff() * (0.3 + surge * TUNE.surge * assist) * (1 + 0.1 * stage);
+    const big = sp.legend || sp.rod >= 3, hk = big ? harpoonLvl() : 0;   // the harpoon gun tires big fish faster
+    const surge = S(f.ph), pull = sp.diff() * (0.3 + surge * TUNE.surge * assist) * (1 + 0.1 * stage) * (1 - 0.12 * hk);
     if (SET.reelToggle && strike) { f.reeling = !f.reeling; sfx('move', 0.4); }
     const held = SET.reelToggle ? f.reeling : K(' '), reeling = held && !(SET.reelAssist && f.jump);   // assist lets go during jumps
     // telegraph: look a moment ahead so the warning shows before the surge lands
@@ -340,9 +358,10 @@ function updateFishing(dt) {
     f.reelOn = reeling;
     if (reeling) {
       f.tension += (0.36 + pull * TUNE.k - rod * 0.05) * dt * (SET.reelAssist ? 0.85 : 1);
-      f.prog += (0.4 - sp.diff() * 0.24 + rod * 0.025) * (1 + 0.12 * G.up.reel) * dt * (1 - Math.min(0.6, surge * 0.35));
+      f.prog += (0.4 - sp.diff() * 0.24 + rod * 0.025) * (1 + 0.12 * G.up.reel) * (1 + 0.25 * hk) * dt * (1 - Math.min(0.6, surge * 0.35));
       if ((f.reelT += dt) > 0.07) { f.reelT = 0; sfx('reel'); }
-    } else { f.tension += (pull * 0.2 - 0.75 - rod * 0.05) * dt; f.prog = Math.max(0, f.prog - 0.035 * dt); }
+    } else if (idleOk(sp)) { f.tension += (pull * 0.2 - 0.75 - rod * 0.05) * dt; f.prog += (0.06 + 0.05 * (1 - sp.diff())) * dt; f.idle = true; }   // small fish tire themselves out
+    else { f.tension += (pull * 0.2 - 0.75 - rod * 0.05) * dt; f.prog = Math.max(0, f.prog - 0.035 * dt); }
     f.tension = Math.max(0, f.tension);
     if (surge > 1) G.shake = Math.max(G.shake, 0.6);
     if (Math.random() < dt * (3 + surge * 10)) spawn({ kind: 'dot', x: f.tx + (Math.random() - 0.5) * 4, y: f.ty + (Math.random() - 0.5) * 3, vx: (Math.random() - 0.5) * 18, vy: (Math.random() - 0.5) * 18, life: 0.35 });
@@ -385,8 +404,9 @@ function landFish(netted = null, who = 'NETTED') {
   if (netted === null) {
     G.card = { fish, first, record, perfect: f.perfect, bonus, t: 0 };
     sfx(fish.trophy || first ? 'fanfare' : 'catch');
+    if (G.pet && Math.random() < 0.35) setTimeout(() => sfx('meow', 0.6), 900);   // the cat approves
     G.catchAnim = { sp: spIdx, t: 0, x: f.tx, y: f.ty };
-  } else { toast(`${who === 'DECKHAND' ? 'Your deckhand landed' : 'Netted'} ${sp.name}, ${fmtKg(fish.kg)}`); sfx('coin', 0.5, 0.8); }
+  } else { toast(`${who === 'DECKHAND' ? 'Your deckhand landed' : who === 'POTS' ? 'Your crab pots hauled' : 'Netted'} ${sp.name}, ${fmtKg(fish.kg)}`); sfx('coin', 0.5, 0.8); }
   if (G.hold.length >= cap()) toast('Hold full. Head to a port to sell', 'good');
   if (netted === null) { G.fish = null; bonusFromDeckhand(spIdx); }
   saveGame();
@@ -467,7 +487,7 @@ function useChum() {
   for (let i = 0; i < 14; i++) spawn({ kind: 'dot', x: s.x + (Math.random() - 0.5) * 20, y: s.y + (Math.random() - 0.5) * 14, vx: 0, vy: 0, life: 1.5, foam: true });
 }
 export function bonusFromDeckhand(spIdx) {
-  const chance = [0, 0.25, 0.4][G.up.deckhand];
+  const chance = [0, 0.25, 0.4][crewLvl()];
   if (!chance || Math.random() > chance || G.hold.length >= cap()) return;
   const small = SPECIES[spIdx].rod === 0 ? spIdx : SP.sardine;
   G.netSchool = { stock: 99, max: 99 }; landFish(small, 'DECKHAND');
@@ -516,9 +536,43 @@ function ferry(from, to) {
   addCoins(-cost); G.clock += Math.hypot(from.x - to.x, from.y - to.y) / 6; placeAtPort(to); G.menu.port = to; G.lastPort = to.id; G.menu.tab = 0; G.menu.sel = 1;
   sfx('dock'); toast(`Ferried to ${to.name}`); saveGame();
 }
+// ---------- restoring Alderhaven (the long goal) ----------
+// what the next project still needs, and which fish in the hold would be donated (cheapest first)
+export function needStatus(nd) {
+  const cheap = [...G.hold].sort((a, b) => fishValue(a) - fishValue(b));
+  if (nd.any) { const pick = cheap.slice(0, nd.any); return { have: pick.length, want: nd.any, label: `${nd.any} fish of any kind`, pick }; }
+  if (nd.kinds) { const by = new Map(); for (const f of cheap) if (!by.has(f.sp)) by.set(f.sp, f); const pick = [...by.values()].slice(0, nd.kinds); return { have: pick.length, want: nd.kinds, label: `${nd.kinds} different species`, pick }; }
+  if (nd.trophy) { const pick = cheap.filter(f => f.trophy).slice(0, nd.trophy); return { have: pick.length, want: nd.trophy, label: `${nd.trophy} trophy fish`, pick }; }
+  const i = SP[nd.sp], nm = SPECIES[i].name, pick = cheap.filter(f => f.sp === i).slice(0, nd.n);
+  return { have: pick.length, want: nd.n, label: nd.n === 1 && nm.startsWith('The ') ? nm : `${nd.n} ${nm}`, pick, sp: i };
+}
+export const nextProject = () => PROJECTS.find(pr => !projDone(pr.id)) || null;
+function fundProject(pr) {
+  const st = needStatus(pr.need);
+  if (st.have < st.want) { toast(`Bring ${st.label} for this project`, 'bad'); return sfx('deny'); }
+  if (G.coins < pr.cost) { toast(`You need $${pr.cost - G.coins} more`, 'bad'); return sfx('deny'); }
+  const gone = new Set(st.pick); G.hold = G.hold.filter(f => !gone.has(f)); addCoins(-pr.cost); G.projects.push(pr.id);
+  sfx('fanfare'); celebrate(); toast(`${pr.name}: done! ${pr.gives}`, 'good'); G.bought = { id: pr.id, t: G.t };
+  if (pr.id === 'lights') { const hp = homePort(); for (const q of poisNear(hp.x, hp.y, 1800)) if (q.type === 'light') G.found.add(q.id); }
+  if (pr.id === 'grand') { G.finale = true; G.mode = 'finale'; }
+  saveGame();
+}
+// ---------- the fleet office: spare boats fish on their own ----------
+const fleetRate = bd => bd.hold * 0.025 * (1 + 0.15 * BOATS.indexOf(bd));             // coins per second of play
+const fleetCap = bd => Math.round(fleetRate(bd) * 600);                                  // ten minutes of earnings at most
+export const fleetTotal = () => Object.values(G.fleet).reduce((a, f) => a + Math.floor(f.earned), 0);
+function updateFleet(dt) {
+  for (const [id, f] of Object.entries(G.fleet)) { const bd = BOATS.find(b => b.id === id); if (bd) f.earned = Math.min(fleetCap(bd), f.earned + fleetRate(bd) * dt); }
+}
+function collectFleet() { const n = fleetTotal(); if (!n) return sfx('deny'); for (const f of Object.values(G.fleet)) f.earned -= Math.floor(f.earned); addCoins(n); sfx('coin'); toast(`Your fleet brought in $${n}`, 'good'); saveGame(); }
+function toggleFleet(p, bd) {
+  if (G.fleet[bd.id]) { const n = Math.floor(G.fleet[bd.id].earned); if (n) addCoins(n); delete G.fleet[bd.id]; toast(`The ${bd.name} is back at the quay${n ? `, with $${n}` : ''}`); }
+  else { G.fleet[bd.id] = { port: p.id, portName: p.name, earned: 0 }; toast(`The ${bd.name} sets out to fish from ${p.name}`, 'good'); }
+  sfx('select'); saveGame();
+}
 // port menu: one row of tabs; each tab is a single list grouped under section headers.
 // Every item says what it costs, whether it can be bought, and if not, why.
-export function portTabs(p) { return ['MARKET', 'OUTFITTER', ...(p.shipyard ? ['SHIPYARD'] : []), 'FERRY']; }
+export function portTabs(p) { return ['MARKET', 'OUTFITTER', ...(p.shipyard ? ['SHIPYARD'] : []), ...(projDone('market') ? ['FLEET'] : []), 'FERRY', ...(p.id === homePort().id ? ['HARBOUR'] : [])]; }
 const cash = n => '$' + Math.round(n).toLocaleString('en-US');
 const short = cost => G.coins < cost ? `You need ${cash(cost - G.coins)} more` : '';
 export function portItems(p) {
@@ -540,6 +594,10 @@ export function portItems(p) {
         why: full ? `You can hold ${contractSlots()} contracts at once` : '', action: 'Take contract', act: () => take(p, c),
         what: `Catch ${c.n} ${SPECIES[c.sp].name} and bring them to ${c.toName}. You are holding ${G.active.length} of ${contractSlots()} contracts.` });
     }
+    head('INN');
+    { const c = dayFrac(), day = c > 0.04 && c < 0.58;
+      items.push({ kind: 'rest', icon: day ? 'lantern' : 'sun', label: day ? 'Rest until dusk' : 'Sleep until morning', sub: day ? 'Night fish come out after dark' : 'Day fish return at dawn', right: 'Free', ok: true, action: 'Rest', act: rest,
+        what: day ? 'Pass the afternoon by the stove. Some fish only bite at dusk or at night.' : 'Get a good night\'s sleep and set out at first light.' }); }
     head('SUPPLIES');
     const miss = hpMax() - G.boat.hp, rc = Math.ceil(miss * 0.3);
     items.push({ kind: 'repair', icon: 'repair', label: 'Repair hull', sub: `${G.boat.hp} of ${hpMax()} hull`, cost: rc, right: miss > 0 ? cash(rc) : 'Sound', ok: miss > 0 && G.coins > 0,
@@ -551,14 +609,18 @@ export function portItems(p) {
       for (const k of Object.keys(UPGRADES)) {
         const u = UPGRADES[k]; if (u.cat !== cat) continue;
         const lvl = G.up[k], max = u.costs.length, cost = u.costs[lvl];
-        items.push({ kind: 'upgrade', key: k, icon: k, label: u.name(boatDef()), cost: lvl < max ? cost : null, right: lvl >= max ? 'Max' : cash(cost), ok: lvl < max && G.coins >= cost,
-          why: lvl >= max ? 'Fully upgraded' : short(cost), action: 'Buy', act: () => buy(k), what: lvl >= max ? null : u.lv[lvl], now: lvl > 0 ? u.lv[lvl - 1] : 'Not fitted yet', pips: [lvl, max] });
+        const locked = u.req && !projDone(u.req);
+        items.push({ kind: 'upgrade', key: k, icon: k, label: u.name(boatDef()), cost: lvl < max && !locked ? cost : null, right: locked ? 'Dry dock' : lvl >= max ? 'Max' : cash(cost), ok: !locked && lvl < max && G.coins >= cost,
+          why: locked ? 'Build the dry dock in Alderhaven first' : lvl >= max ? 'Fully upgraded' : short(cost), action: 'Buy', act: () => buy(k), what: lvl >= max ? null : u.lv[lvl], now: lvl > 0 ? u.lv[lvl - 1] : 'Not fitted yet', pips: [lvl, max] });
       }
     }
   } else if (tab === 'SHIPYARD') {
     head('BOATS');
     for (const bd of BOATS) {
-      const own = G.owned.includes(bd.id), on = G.boatId === bd.id;
+      if (!BOAT_MODELS[bd.id]) continue;                                  // ships whose model isn't built yet
+      const own = G.owned.includes(bd.id), on = G.boatId === bd.id, locked = !own && bd.req && !projDone(bd.req);
+      if (locked) { const pr = PROJECTS.find(q => q.id === bd.req); items.push({ kind: 'boat', key: bd.id, boat: bd, label: bd.name, sub: bd.what, cost: null, right: 'Locked', ok: false, why: `Unlocked by "${pr.name}" in Alderhaven`, action: 'Buy', act: () => sfx('deny') }); continue; }
+      if (G.fleet[bd.id]) { items.push({ kind: 'boat', key: bd.id, boat: bd, label: bd.name, sub: `Fishing out of ${G.fleet[bd.id].portName}`, cost: null, right: 'At sea', ok: true, why: '', action: 'Recall and sail', act: () => { toggleFleet(p, bd); buyBoat(bd); } }); continue; }
       items.push({ kind: 'boat', key: bd.id, boat: bd, label: bd.name, sub: bd.what, cost: own ? null : bd.cost, right: on ? 'Sailing' : own ? 'Owned' : cash(bd.cost), ok: own ? !on : G.coins >= bd.cost,
         why: on ? 'You are sailing this boat' : own ? '' : short(bd.cost), action: own ? 'Sail this boat' : 'Buy', act: () => buyBoat(bd) });
     }
@@ -568,6 +630,27 @@ export function portItems(p) {
       items.push({ kind: 'paint', key: pt.id, pt, paint: pt.id, boat: boatDef(), label: pt.name, sub: own ? 'Owned' : '', cost: own ? null : pt.cost, right: on ? 'On' : own ? 'Owned' : cash(pt.cost), ok: own ? !on : G.coins >= pt.cost,
         why: on ? 'Your boat wears this paint' : own ? '' : short(pt.cost), action: own ? 'Apply' : 'Buy', act: () => buyPaint(pt) });
     }
+  } else if (tab === 'FLEET') {
+    head('EARNINGS');
+    const n = fleetTotal(), out = Object.keys(G.fleet).length;
+    items.push({ kind: 'collect', icon: 'coin', label: 'Collect fleet earnings', sub: out ? `${out} boat${out > 1 ? 's' : ''} fishing` : 'No boats out yet', right: n ? '+' + cash(n) : '', ok: n > 0, why: out ? 'Nothing to collect yet' : 'Send a spare boat out below', action: 'Collect', act: collectFleet,
+      what: 'Boats you own but are not sailing can fish on their own. Each one earns more the bigger its hold, up to ten minutes of catch, until you collect it at any port.' });
+    head('BOATS');
+    const spare = BOATS.filter(bd => G.owned.includes(bd.id) && bd.id !== G.boatId);
+    if (!spare.length) items.push({ kind: 'note', icon: 'hull', label: 'No spare boats', sub: 'Buy another boat at a shipyard, then send your old one out', ok: false, why: 'Every boat you own is in use', act: () => sfx('deny') });
+    for (const bd of spare) {
+      const f = G.fleet[bd.id], rate = Math.round(fleetRate(bd) * 60);
+      items.push({ kind: 'fleet', key: bd.id, boat: bd, label: bd.name, sub: f ? `Fishing out of ${f.portName}, $${Math.floor(f.earned)} aboard` : `Earns about $${rate} a minute`, right: f ? 'At sea' : 'In port', ok: true,
+        action: f ? 'Recall' : 'Send out', act: () => toggleFleet(p, bd), what: `About $${rate} a minute, holding up to $${fleetCap(bd)} until collected.` });
+    }
+  } else if (tab === 'HARBOUR') {
+    head('RESTORE ALDERHAVEN');
+    for (const pr of PROJECTS) {
+      const done = projDone(pr.id), cur = nextProject() === pr, st = needStatus(pr.need);
+      const why = done ? 'Finished' : !cur ? 'Finish the earlier projects first' : st.have < st.want ? `Bring ${st.label} (you have ${st.have})` : short(pr.cost);
+      items.push({ kind: 'project', key: pr.id, pr, st, icon: done ? 'star' : cur ? 'repair' : 'map', label: pr.name, sub: done ? pr.gives : `${cash(pr.cost)} and ${st.label}`, cost: done ? null : pr.cost,
+        right: done ? 'Done' : cur ? `${st.have}/${st.want}` : 'Later', ok: !done && cur && st.have >= st.want && G.coins >= pr.cost, why, action: 'Fund project', act: () => cur && !done ? fundProject(pr) : sfx('deny'), what: pr.what });
+    }
   } else {
     head('ROUTES');
     const ports = [...G.found].filter(id => id.startsWith('port:') && id !== p.id).map(portById).sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y)).slice(0, 8);
@@ -576,9 +659,40 @@ export function portItems(p) {
   }
   return items;
 }
+// a small welcome from the harbourmaster, once per port per day
+const GIFTS = [
+  [40, () => { G.bait.shrimp = (G.bait.shrimp || 0) + 3; return '3 shrimp bait'; }],
+  [25, () => { const n = 10 + Math.floor(Math.random() * 21); addCoins(n); return `$${n} for the trip`; }],
+  [15, () => { G.bait.glow = (G.bait.glow || 0) + 1; return 'a glow lure'; }],
+  [10, () => { G.bait.chum = (G.bait.chum || 0) + 1; return 'a bucket of chum'; }],
+  [10, () => { G.boat.hp = Math.min(hpMax(), G.boat.hp + 20); return 'a quick patch on your hull'; }],
+];
+const CAT_NAMES = ['Biscuit', 'Pickle', 'Barnacle', 'Mackerel', 'Pip', 'Sardine', 'Captain', 'Mittens'];
+function harbourGift(p) {
+  if (!G.pet && G.stats.caught >= 3) {
+    G.pet = { name: CAT_NAMES[Math.floor(Math.random() * CAT_NAMES.length)] };
+    toast(`A stray cat hops aboard. You name it ${G.pet.name}. Press P to pet`, 'good'); setTimeout(() => sfx('meow'), 300);
+  }
+  const day = dayNum(); if (G.gifts[p.id] === day) return; G.gifts[p.id] = day;
+  let r = Math.random() * 100; const g = GIFTS.find(([w]) => (r -= w) < 0) || GIFTS[0];
+  toast(`The harbourmaster gives you ${g[1]()}`, 'good');
+}
+export function petCat() {
+  if (G.petT > G.t) return; G.petT = G.t + 1.4;
+  sfx('purr'); const b = G.boat;
+  for (let i = 0; i < 6; i++) spawn({ kind: 'spark', x: b.x + (Math.random() - 0.5) * 6, y: b.y + (Math.random() - 0.5) * 4, vx: (Math.random() - 0.5) * 8, vy: -10 - Math.random() * 8, life: 1 });
+  if (Math.random() < 0.3) toast(`${G.pet.name} purrs`);
+}
+// the inn: skip ahead to dusk, or to morning
+export function rest() {
+  const c = dayFrac(), base = Math.floor(G.clock / DAYLEN) * DAYLEN, day = c > 0.04 && c < 0.58;
+  G.clock = day ? base + 0.6 * DAYLEN : base + (c >= 0.58 ? DAYLEN : 0) + 0.06 * DAYLEN;
+  sfx('select'); toast(day ? 'You rest at the inn until dusk' : 'You sleep at the inn until morning'); saveGame();
+}
 function dock(p) {
   G.mode = 'port'; G.menu = { tab: 0, sel: 1, port: p }; G.lastPort = p.id; G.fish = null;   // opens on Market with "Sell your catch" selected
   const b = G.boat; b.vx = b.vy = b.w = 0; sfx('dock');
+  harbourGift(p);
   if (G.active.some(c => c.to === p.id && have(c.sp) >= c.n)) toast('You can deliver a contract here', 'good');
   saveGame();
 }
@@ -590,6 +704,10 @@ function discover(p) {
   toast(`Charted ${p.name}${bounty ? `  +$${bounty}` : ''}`, 'good'); sfx('discover'); saveGame();
 }
 function salvage(p) {
+  if (G.salvaged.has(p.id)) {                      // the diving bell: one more dive per wreck per day
+    G.dives[p.id] = dayNum(); const loot = Math.round(p.loot * 0.6 * (G.up.bell >= 2 ? 2 : 1)); addCoins(loot);
+    toast(`The diving bell brings up $${loot} more`, 'good'); sfx('coin'); saveGame(); return;
+  }
   G.salvaged.add(p.id); addCoins(p.loot); G.stats.wrecks++;
   const extra = Math.random() < 0.5; if (extra) G.bait.glow += 2;
   toast(`Salvaged $${p.loot}${extra ? ' and 2 glow lures' : ''}`, 'good'); sfx('coin'); setTimeout(() => sfx('coin', 0.8, 1.2), 100);
@@ -615,14 +733,15 @@ export function update(dt) {
   if (G.catchAnim && (G.catchAnim.t += dt) > 0.7) G.catchAnim = null;
   if (G.card) { G.card.t += dt; if (G.card.t > 3.2 || (G.card.t > 0.4 && hit(' ', 'Enter'))) { G.card = null; G.pressed.delete(' '); } }
   if (G.mode !== 'title') checkGoals();
-  if (G.mode === 'sunk') { if ((G.sunkT += dt) > 3.4) { placeAtPort(portById(G.lastPort)); G.boat.hp = Math.round(hpMax() * 0.6); G.mode = 'play'; saveGame(); } return; }
+  if (G.mode === 'sunk') { if ((G.sunkT += dt) > 3.4) { placeAtPort(portById(G.lastPort)); G.boat.hp = Math.round(hpMax() * 0.75); G.mode = 'play'; saveGame(); } return; }
   { // soundscape follows the boat: speed wash, nearby surf, weather, engine, luffing sails
     const b0 = G.boat, bd0 = boatDef(), playing = G.mode === 'play';
     let shore = 0; for (let k = 0; k < 8; k++) { const a = k / 8 * 6.283; if (hAt(b0.x + Math.cos(a) * 40, b0.y + Math.sin(a) * 40) > -0.05) shore += 0.125; }
     soundscape({ speed: playing ? boatSpeed() : 0, shore, wind: WX.wind, rain: WX.rain, engine: playing && bd0.prop === 'ENGINE', throttle: G.throttle ? 1 : 0,
-      luff: playing && bd0.prop === 'SAIL' && G.throttle && sailEff(b0.a) < 0.6 ? 1 : 0, mute: G.mode === 'sunk' }, dt);
+      luff: playing && bd0.prop === 'SAIL' && G.throttle && sailEff(b0.a) < 0.6 ? 1 : 0, mute: G.mode === 'sunk', port: G.mode === 'port' }, dt);
   }
   music(dt, G.musicOn, isNight());
+  if (G.mode !== 'title') updateFleet(dt);
   if (G.mode !== 'play') { G.prompt = null; return; }
   G.clock += dt;
   updateWeather(dt, s => toast(s === 'storm' ? 'A storm rolls in. Big fish bite, but mind the wind' : s === 'rain' ? 'Rain. The fish are biting' : s === 'cloudy' ? 'Clouds gather' : 'The sky clears', s === 'storm' ? 'bad' : 'info'),
@@ -630,6 +749,9 @@ export function update(dt) {
   if (logged() >= 10 && !G.lairTold) { G.lairTold = true; toast('Sailors whisper of the Old One. Its lair is on your chart', 'bad'); }
   const b = G.boat, sp = boatSpeed(), bd = boatDef();
   updateFishing(dt); updateFrenzy(dt);
+  if (G.up.pots > 0 && G.hold.length < cap() && !G.fish && (G.potT += dt) > [0, 240, 150, 60][G.up.pots]) {   // crab pots haul on their own
+    G.potT = 0; G.netSchool = { stock: 99, max: 99 }; landFish(SP.crab, 'POTS');
+  }
   for (const s of schoolsNear(b.x, b.y, 260)) {
     if (s.stock <= 0 && G.t > s.respawn) s.stock = s.max;
     if (bd.prop === 'ENGINE' && sp > 22 && Math.hypot(s.x - b.x, s.y - b.y) < 60 && schoolActive(s) && !(G.frenzy?.s === s)) {
@@ -645,7 +767,7 @@ export function update(dt) {
     const d = Math.hypot(p.x - b.x, p.y - b.y);
     if (!G.found.has(p.id) && d < (p.type === 'light' ? 140 : p.type === 'port' ? 150 : 100) * [1, 1.5, 2][G.up.spyglass]) discover(p);
     if (p.type === 'port' && Math.hypot(p.end.x - b.x, p.end.y - b.y) < 30 + bd.L) G.nearPort = p;
-    if (p.type === 'wreck' && !G.salvaged.has(p.id) && d < 30 + bd.L * 0.5) G.nearWreck = p;
+    if (p.type === 'wreck' && (!G.salvaged.has(p.id) || (G.up.bell > 0 && G.dives[p.id] !== dayNum())) && d < 30 + bd.L * 0.5) G.nearWreck = p;
   }
   G.nearSchool = G.fish ? null : nearestSchool();
   G.nearTreasure = G.maps.find(m => Math.hypot(m.x - b.x, m.y - b.y) < 16 + bd.L * 0.6) || null;
@@ -659,7 +781,7 @@ export function update(dt) {
     }
   }
   const f = G.fish; let pr = null;
-  if (f) pr = f.st === 'reel' ? (f.jump || f.jumpWarn ? 'It is jumping. Let go!' : f.warn ? 'It is about to run. Ease off!' : (SET.reelToggle ? 'Press [SPACE] to start or stop reeling' : 'Hold [SPACE] to reel. Let go before the line snaps')) : f.st === 'bite' ? 'Strike now! [SPACE]' : f.st === 'wait' ? 'Wait for the bobber to dip' : null;
+  if (f) pr = f.st === 'reel' ? (f.jump || f.jumpWarn ? 'It is jumping. Let go!' : f.warn ? 'It is about to run. Ease off!' : (SET.reelToggle ? 'Press [SPACE] to start or stop reeling' : idleOk(SPECIES[f.s.sp]) && !f.reelOn ? 'It will tire itself out. Hold [SPACE] to reel faster' : 'Hold [SPACE] to reel. Let go before the line snaps')) : f.st === 'bite' ? 'Strike now! [SPACE]' : f.st === 'wait' ? 'Wait for the bobber to dip' : null;
   else if (G.nearPort) pr = sp < 14 ? `[E] Dock at ${G.nearPort.name}` : 'Slow down to dock';
   else if (G.nearTreasure) pr = sp < 12 ? '[E] Haul up the treasure chest' : 'Slow down over the X';
   else if (G.nearWreck) pr = sp < 12 ? `[E] Salvage the ${G.nearWreck.name.replace('Wreck of the ', '')}` : 'Slow down to salvage';
@@ -669,6 +791,8 @@ export function update(dt) {
   if (hit('u', 'U')) { G.musicOn = !G.musicOn; toast(G.musicOn ? 'Music on' : 'Music off'); }
   if (!f && !G.card && hit(' ') && G.nearSchool && sp < 10) tryCast();
   if (hit('c', 'C')) useChum();
+  if (G.pet && hit('p', 'P') && !f) petCat();
+  if (G.pet && (G.petCd -= dt) < -90 - Math.random() * 120) { G.petCd = 0; sfx('meow', 0.5); }
   if (hit('b', 'B')) { const order = ['none', 'shrimp', 'glow']; G.baitSel = order[(order.indexOf(G.baitSel) + 1) % 3]; sfx('move'); toast(G.baitSel === 'none' ? 'No bait' : `Using ${SUPPLIES[G.baitSel].name.toLowerCase()}, ${G.bait[G.baitSel]} left`); }
   const c = Math.cos(b.a), s = Math.sin(b.a);
   G.wakeAcc += sp * dt * (bd.prop === 'ENGINE' ? 1.1 : 0.6);
