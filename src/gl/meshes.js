@@ -52,15 +52,21 @@ export function drawInstances(mesh, inst, n) {
   gl.bindVertexArray(mesh.vao); gl.drawArraysInstanced(gl.TRIANGLES, 0, mesh.count, n); gl.bindVertexArray(null);
 }
 const cache = new Map();
-const cached = (key, build) => { let m = cache.get(key); if (!m) { m = upload(voxGeometry(build())); cache.set(key, m); } return m; };
+// dz lowers the geometry so a creature pivots (pitch/roll) about its spine instead of its belly
+const cached = (key, build, dz = 0) => {
+  let m = cache.get(key); if (m) return m;
+  const g = voxGeometry(build()); if (dz) for (let i = 2; i < g.length; i += 10) g[i] -= dz;
+  m = upload(g); cache.set(key, m); return m;
+};
 
 // ---------- boats (rebuilt when the fitted equipment changes) ----------
 const boatCache = new Map();
+// the player's boat plus the NPC ships sailing nearby (a handful of hull/paint combinations)
 export function boatMesh(id, eq) {
   const sig = eqSig(id, eq); let m = boatCache.get(sig);
   if (m) { boatCache.delete(sig); boatCache.set(sig, m); return m; }
   m = upload(voxGeometry(decorate(id, eq))); boatCache.set(sig, m);
-  while (boatCache.size > 4) { const [k, old] = boatCache.entries().next().value; gl.deleteBuffer(old.vbo); gl.deleteVertexArray(old.vao); boatCache.delete(k); }
+  while (boatCache.size > 12) { const [k, old] = boatCache.entries().next().value; gl.deleteBuffer(old.vbo); gl.deleteVertexArray(old.vao); boatCache.delete(k); }
   return m;
 }
 export const lighthouseMesh = () => cached('lighthouse', () => LIGHTHOUSE);
@@ -133,8 +139,127 @@ function ellipsoid(V, rx, ry, rz, m, belly) {
   for (let z = 0; z <= rz * 2; z++) for (let v = -Math.ceil(ry); v <= ry; v++) for (let u = -Math.ceil(rx); u <= rx; u++)
     if ((u / rx) ** 2 + (v / ry) ** 2 + ((z - rz) / rz) ** 2 <= 1) V.set(u, v, z, belly && z <= rz * 0.6 ? belly : m);
 }
-export const whaleMesh = () => cached('whale', () => { const V = new Vox(-13, 13, -5, 5, 8); ellipsoid(V, 11, 3.6, 2.4, LM.whale, LM.belly); V.box(-3, -2, 0, 0, 5, 6, LM.whale); return V.finalize(); });
-export const flukeMesh = () => cached('fluke', () => { const V = new Vox(-1, 1, -5, 5, 6); for (let v = -4; v <= 4; v++) { const z = 2 + Math.round(Math.abs(v) * 0.6); V.set(0, v, z, LM.whale); V.set(0, v, z + 1, LM.whale); } V.box(0, 0, 0, 0, 0, 2, LM.whale); return V.finalize(); });
+// Humpback, nose toward +u, spine on z = 0 (the renderer pitches/rolls it about the spine). The tail stock and
+// fluke are a separate mesh hinged at u = -10 so the tail can beat and lift clear of the water.
+const HM = { back: mat(['#18222a', '#25323c', '#384956']), flank: mat(['#3c4a54', '#56666f', '#74848c']),
+  pleat: mat(['#9aa4aa', '#c9d0d4', '#eef2f4']), groove: mat(['#545f68', '#6d7780', '#8a949c']), fin: mat(['#a9b3b8', '#d8dfe2', '#f6f8f9']),
+  knob: mat(['#10181e', '#1a242c', '#2c3a44']), barn: mat(['#7d8a92', '#a9b4ba', '#ccd4d8']) };
+const HUMP = [[-10, 1.0, 1.4], [-6, 1.9, 2.0], [-2, 2.8, 2.4], [3, 3.2, 2.6], [7, 2.9, 2.4], [10, 2.2, 1.9], [12, 1.6, 1.4], [14, 0.9, 0.9]];
+const profile = (P, u) => { for (let i = 1; i < P.length; i++) if (u <= P[i][0]) { const a = P[i - 1], b = P[i], t = (u - a[0]) / (b[0] - a[0]); return [a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; } return [0, 0]; };
+function humpback() {
+  const V = new Vox(-10, 14, -12, 12, 10), zc = 4, top = new Map();
+  for (let u = -10; u <= 14; u++) {
+    const [w, h] = profile(HUMP, u), throat = u > -2 && u < 14;
+    for (let z = 0; z < 9; z++) for (let v = -4; v <= 4; v++) {
+      const dz = z + 0.5 - zc, hz = dz > 0 ? h : h * (throat ? 1.25 : 1);
+      if ((v / w) ** 2 + (dz / hz) ** 2 > 1 || (u === 14 && dz > 0)) continue;   // the lower jaw juts past the snout
+      let m = HM.back;
+      if (dz < -hz * 0.35) m = throat ? (Math.abs(v) % 2 ? HM.groove : HM.pleat) : HM.flank;   // ventral pleats run nose to navel
+      else if (dz < 0 && hash01(u, v * 3 + z, 17) < 0.35) m = HM.flank;                     // mottled flanks
+      V.set(u, v, z, m); if (!top.has(u * 64 + v) || top.get(u * 64 + v) < z) top.set(u * 64 + v, z);
+    }
+  }
+  // knobbly head: tubercles along the snout and lower jaw, a few barnacles
+  for (let u = 8; u <= 13; u++) for (let v = -2; v <= 2; v++) { const z = top.get(u * 64 + v); if (z !== undefined && hash01(u, v, 23) < 0.42) V.set(u, v, z + 1, hash01(u, v, 29) < 0.5 ? HM.barn : HM.knob); }
+  for (let u = 9; u <= 13; u += 2) for (const s of [-1, 1]) V.set(u, s * Math.round(profile(HUMP, u)[0] + 0.3), 2, HM.barn);
+  // dorsal hump with its small hooked fin, two-thirds of the way back
+  for (let u = -6; u <= -2; u++) V.set(u, 0, top.get(u * 64) + 1, HM.back);
+  V.set(-4, 0, top.get(-4 * 64) + 2, HM.back); V.set(-5, 0, top.get(-5 * 64) + 2, HM.back);
+  // long white pectoral fins sweeping back from behind the head, scalloped on the leading edge
+  for (const s of [-1, 1]) for (let i = 0; i <= 9; i++) {
+    const u = Math.round(5 - i * 0.6), v = s * Math.round(2.6 + i * 0.95), z = Math.round(3.2 + i * 0.1), m = i < 2 ? HM.flank : HM.fin;
+    V.set(u, v, z, m); if (i < 7) V.set(u - 1, v, z, m); if (i % 2 === 0 && i > 1) V.set(u + 1, v, z, m);
+  }
+  return V;
+}
+function humpTail() {
+  const V = new Vox(-10, 0, -8, 8, 3);
+  for (let u = 0; u >= -3; u--) { const w = u > -2 ? 1 : 0; for (let v = -w; v <= w; v++) { V.set(u, v, 0, HM.flank); V.set(u, v, 1, HM.back); } V.set(u, 0, 2, HM.back); }   // the narrow tail stock
+  for (let a = 0; a <= 7; a++) {
+    const le = -3 - a * 0.55, te = (a === 0 ? -5 : -6 - a * 0.42) - (a % 2 ? 0.7 : 0);       // swept leading edge; notched, serrated trailing edge
+    for (const s of a ? [-1, 1] : [1]) for (let u = Math.round(le); u >= Math.round(te); u--) {
+      V.set(u, s * a, 0, hash01(u, s * a, 31) < 0.22 ? HM.knob : HM.fin);             // white underside, black-patterned
+      if (a < 7) V.set(u, s * a, 1, HM.back);
+    }
+  }
+  return V;
+}
+export const whaleMesh = () => cached('humpback', humpback, 4);
+export const flukeMesh = () => cached('humptail', humpTail, 1);
+export const WHALE = { len: 33, joint: -10 };       // mesh length (snout to fluke tips) and the tail hinge, in voxels
+
+// ---------- giants under the boat ----------
+const GM = { ray: mat(['#101418', '#1c2228', '#2e363e']), rayW: mat(['#9aa4aa', '#d0d6da', '#eef2f4']), shadow: mat(['#0a1218', '#111c24', '#1a2832']),
+  squid: mat(['#4a1626', '#7a2a40', '#a6445e']), squidE: mat(['#1a0a10', '#22101a', '#3a1a2a']), photo: mat(['#127a74', '#1fa89e', '#5ad8cc'], true),
+  eel: mat(['#18241e', '#26382e', '#3a5244']), eelB: mat(['#4a5a3a', '#66784e', '#88986a']), eelP: mat(['#1a5a9a', '#2a82c8', '#6ab8f0'], true), eye: mat(['#8a7a20', '#c8b040', '#f0d860'], true) };
+// manta: flat diamond with white shoulder patches, horn-like cephalic fins and a whip tail; f picks the wingbeat pose
+function manta(f) {
+  const V = new Vox(-10, 7, -12, 12, 9), zc = 4, flap = Math.sin(f / 4 * Math.PI * 2);
+  for (let v = -11; v <= 11; v++) {
+    const a = Math.abs(v), le = Math.round(4 - a * 0.42 - (a > 8 ? (a - 8) * 0.5 : 0)), te = Math.round(-3 + a * 0.3 - (a < 3 ? 1 : 0));
+    const lift = a > 2 ? Math.round(flap * 2.2 * ((a - 2) / 9) ** 1.5) : 0;
+    for (let u = te; u <= le; u++) {
+      const z = zc + lift, white = u >= -1 && u <= 1 && a >= 3 && a <= 5;
+      V.set(u, v, z, white ? HM.pleat : GM.ray);
+      if (a < 6) V.set(u, v, z - 1, GM.rayW);                // white belly under the body
+      if (a < 3 && u > -2 && u < 3) V.set(u, v, z + 1, GM.ray);
+    }
+  }
+  for (const s of [-1, 1]) { V.set(5, s * 2, zc, GM.ray); V.set(6, s * 2, zc, GM.ray); V.set(6, s * 2, zc - 1, GM.ray); }
+  for (let u = -4; u >= -10; u--) V.set(u, 0, zc, GM.ray);
+  return V;
+}
+export const mantaMesh = ph => { const f = ((Math.floor(ph * 4 / (Math.PI * 2)) % 4) + 4) % 4; return cached('manta' + f, () => manta(f), 4); };
+export const MANTA_LEN = 17;
+// the vast dark fish that sometimes slides under the boat: just a silhouette, it is always deep
+export const shadowFishMesh = () => cached('shadowfish', () => {
+  const V = new Vox(-20, 20, -8, 8, 7);
+  for (let u = -13; u <= 19; u++) { const t = (u + 13) / 32, w = 6 * Math.sin(Math.PI * Math.min(1, t * 1.15)) ** 0.7 + 0.6, h = w * 0.5;
+    for (let z = 0; z < 7; z++) for (let v = -7; v <= 7; v++) if ((v / w) ** 2 + ((z + 0.5 - 3) / h) ** 2 <= 1) V.set(u, v, z, GM.shadow); }
+  for (let u = -20; u <= -13; u++) { const k = -13 - u; for (let v = -k; v <= k; v++) if (Math.abs(v) > k - 3) V.set(u, v, 3, GM.shadow); }   // forked tail
+  for (const s of [-1, 1]) for (let i = 0; i < 6; i++) V.set(6 - i, s * (5 + i), 3, GM.shadow);                                            // pectoral fins
+  return V;
+}, 3);
+export const SHADOW_LEN = 40;
+// squid: mantle forward, fins at the tip, arms and two long tentacles trailing; photophores glow at night
+export const squidMesh = () => cached('squid', () => {
+  const V = new Vox(-13, 10, -4, 4, 7), zc = 3;
+  for (let u = -1; u <= 10; u++) { const r = u < 1 ? 1.6 : u < 5 ? 2.2 : 2.2 - (u - 4) * 0.28;
+    for (let z = 0; z < 7; z++) for (let v = -3; v <= 3; v++) { const d = Math.hypot(v, z + 0.5 - zc); if (d > r) continue;
+      V.set(u, v, z, d > r - 1 && u > 0 && hash01(u, v * 5 + z, 41) < 0.3 ? GM.photo : GM.squid); } }
+  for (let u = 6; u <= 10; u++) for (const s of [-1, 1]) for (let v = 2; v <= 2 + Math.min(u - 6, 10 - u); v++) V.set(u, s * v, zc, GM.squid);   // diamond fins at the tip
+  for (const s of [-1, 1]) V.set(0, s * 2, zc, GM.squidE);
+  for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; for (let u = -2; u >= -8; u--) { const r = 1.0 + (-2 - u) * 0.3; V.set(u, Math.round(Math.cos(a) * r), Math.round(zc + Math.sin(a) * r * 0.5), u < -6 ? GM.photo : GM.squid); } }
+  for (const s of [-1, 1]) { for (let u = -2; u >= -12; u--) V.set(u, s, zc, GM.squid); V.set(-13, s, zc, GM.photo); V.set(-12, s * 2, zc, GM.photo); }
+  return V;
+}, 3);
+export const SQUID_LEN = 23;
+// eels are drawn as a chain of segments so the body can undulate; each segment is 4 voxels long
+const eelPart = kind => () => {
+  const V = new Vox(-2, 3, -2, 2, 4), zc = 2;
+  for (let u = -2; u <= (kind === 'head' ? 3 : 1); u++) { const r = kind === 'tail' ? 1.4 - (1 - u) * 0.25 : kind === 'head' && u > 1 ? 1.0 : 1.4;
+    for (let z = 0; z < 4; z++) for (let v = -2; v <= 2; v++) { const dz = z + 0.5 - zc; if (v * v + dz * dz > r * r) continue;
+      V.set(u, v, z, dz < -0.5 ? GM.eelB : Math.abs(v) === 1 && Math.abs(dz) < 0.6 && u === 0 ? GM.eelP : GM.eel); } }
+  if (kind === 'head') for (const s of [-1, 1]) V.set(2, s, zc, GM.eye);
+  if (kind === 'tail') for (let u = -2; u <= 1; u++) V.set(u, 0, zc + 1 + (u < 0 ? 1 : 0), GM.eel);
+  return V;
+};
+export const eelMesh = kind => cached('eel' + kind, eelPart(kind), 2);
+
+// jellyfish: a glowing bell (open or squeezed) trailing tentacles; tinted per jelly
+const JM = { bell: mat(['#6a7a84', '#8a9ca6', '#b8c8d0'], true), core: mat(['#8a9cb0', '#b8cce0', '#e8f4ff'], true), tent: mat(['#3a4650', '#56646e', '#7a8892']) };
+function jelly(squeeze) {
+  const V = new Vox(-3, 3, -3, 3, 9), r = squeeze ? 1.9 : 2.7, hgt = squeeze ? 3 : 2.2, base = 5;
+  for (let z = base; z < base + 3; z++) for (let v = -3; v <= 3; v++) for (let u = -3; u <= 3; u++) {
+    const k = (z - base + 0.5) / hgt; if (k > 1) continue;
+    const rr = r * Math.sqrt(1 - k * k); if (Math.hypot(u, v) <= rr) V.set(u, v, z, z === base && Math.hypot(u, v) < 1.2 ? JM.core : JM.bell);
+  }
+  const tr = squeeze ? 1.2 : 2;                         // dotted, twisting tentacles under the rim
+  for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; for (let z = base - 1; z >= (squeeze ? 1 : 2); z -= 1 + (k & 1)) V.set(Math.round(Math.cos(a + (base - z) * 0.3) * tr), Math.round(Math.sin(a + (base - z) * 0.3) * tr), z, JM.tent); }
+  V.set(0, 0, base - 1, JM.core); V.set(0, 0, base - 2, JM.tent);
+  return V;
+}
+export const jellyMesh = squeeze => cached('jelly' + (squeeze ? 1 : 0), () => jelly(squeeze), 5);
 export const dolphinMesh = () => cached('dolphin', () => { const V = new Vox(-6, 6, -2, 2, 5); ellipsoid(V, 4.6, 1.3, 1.2, LM.dolphin, LM.belly); V.set(5, 0, 1, LM.dolphin); V.set(0, 0, 3, LM.dolphin); V.set(-1, 0, 4, LM.dolphin); V.box(-6, -6, -1, 1, 1, 1, LM.dolphin); return V.finalize(); });
 export const gullMesh = up => cached('gull' + up, () => { const V = new Vox(-3, 3, -5, 5, 4); V.box(-1, 1, 0, 0, 1, 1, LM.gull); V.set(2, 0, 1, LM.beak); for (let v = 1; v <= 4; v++) { const z = up ? 1 + Math.min(2, v - 1) : 1; V.set(0, v, z, v > 3 ? LM.wing : LM.gull); V.set(0, -v, z, v > 3 ? LM.wing : LM.gull); } return V.finalize(); });
 export const leviMesh = () => cached('levi', () => { const V = new Vox(-22, 22, -8, 8, 7); ellipsoid(V, 17, 6, 3, LM.levi); for (let u = -22; u <= -16; u++) for (let v = -Math.round((-16 - u) * 0.9); v <= Math.round((-16 - u) * 0.9); v++) V.set(u, v, 3, LM.levi); return V.finalize(); });
@@ -156,5 +281,10 @@ export function dynBox(a, b, w, rgb, em = 0) {
   const col = rgb.map(x => x / 255);
   for (const [i0, i1, i2, i3, n] of quads) for (const i of [i0, i1, i2, i0, i2, i3]) dynData.push(...c[i], ...n, ...col, em);
 }
-export function dynMesh() { const data = new Float32Array(dynData); if (!dyn) dyn = upload(data, true); else refill(dyn, data); return dyn; }
+// positions are stored relative to (ox, oy) and drawn as an instance there, so thin parts rasterise exactly like
+// the hull they hang off (absolute world coordinates lose precision and made oar edges flicker as the camera slid)
+export function dynMesh(ox = 0, oy = 0) {
+  const data = new Float32Array(dynData); for (let i = 0; i < data.length; i += 10) { data[i] -= ox; data[i + 1] -= oy; }
+  if (!dyn) dyn = upload(data, true); else refill(dyn, data); return dyn;
+}
 export { oarGeom, BOAT_MODELS };

@@ -20,6 +20,15 @@ float beams(vec2 p){ float b = 0.0;
     b += smoothstep(0.22, 0.0, abs(a))*smoothstep(B.w, B.w*0.15, d)*smoothstep(3.0, 14.0, d); }
   return b; }
 `;
+// Pixel styles share one stylised language: lighting, depth tints, foam, shadows and light pools step through a
+// few flat bands (hard edges, no dither, so flat areas stay calm). uOrg = world pixel index of the frame's top-left
+// pixel (x, y) and the frame height; uPx = render pixels per world unit (0 in 'smooth', where the helpers are no-ops).
+const STYLE = `
+uniform float uPx; uniform vec3 uOrg;
+vec2 worldPix(){ return vec2(uOrg.x + floor(gl_FragCoord.x), uOrg.y + uOrg.z - 1.0 - floor(gl_FragCoord.y)); }
+float st(float x, float n){ return uPx > 0.0 ? floor(x*n + 0.5)/n : x; }
+vec3 stL(vec3 c, float n){ if (uPx <= 0.0) return c; float l = max(max(c.r, c.g), c.b), q = floor(sqrt(l)*n + 0.3)/n; return l > 1e-4 ? c*(q*q/l) : c; }   // light pools: soft rings that never spread the faint tail
+`;
 export const QUAD_VS = `#version 300 es
 layout(location=0) in vec2 aP; out vec2 vUV;
 void main(){ vUV = aP*0.5 + 0.5; gl_Position = vec4(aP, 0.0, 1.0); }`;
@@ -31,7 +40,7 @@ uniform sampler2D uH, uFoam, uShadow;
 uniform vec4 uHR, uCam;
 uniform float uT, uWT, uWind, uRain, uNight, uCloud, uFlash;
 uniform vec2 uWD; uniform vec3 uSun, uSunC, uAmb, uSky;
-${NOISE}${LIGHTS}
+${NOISE}${LIGHTS}${STYLE}
 const float HS = 40.0;
 float H(vec2 w){ return texture(uH, (w - uHR.xy + 0.5)/uHR.zw).r; }
 vec2 TUV(vec2 w){ return (w - uHR.xy + 0.5)/uHR.zw; }
@@ -59,7 +68,17 @@ float sparkle(vec2 p, float pw){
   vec2 pt = vec2(hash(c + 3.7), hash(c + 8.1))*0.7 + 0.15;
   float tw = pow(max(0.0, sin(uT*(2.0 + r*3.0) + r2*40.0)), 14.0);
   float rad = max(0.44, pw*0.55), d = length(f - pt)*2.6;
-  return step(0.62, r)*smoothstep(rad, 0.0, d)*pow(0.44/rad, 1.2)*tw; }
+  return step(0.885, r)*smoothstep(rad, 0.0, d)*pow(0.44/rad, 1.2)*tw; }
+float glintPix(vec2 pc){                       // pc: world pixel index; twinkle strength if it is its cell's glint pixel
+  vec2 c = floor((pc + 0.5)/uPx/2.6); float r = hash(c), r2 = hash(c + 11.3);
+  vec2 gp = floor((c + vec2(hash(c + 3.7), hash(c + 8.1))*0.7 + 0.15)*2.6*uPx);
+  float tw = pow(max(0.0, sin(uT*(2.0 + r*3.0) + r2*40.0)), 14.0);
+  return all(equal(gp, pc)) ? step(0.885, r)*tw : 0.0; }
+float glints(vec2 p, float pw){
+  if (uPx <= 0.0) return sparkle(p, pw);
+  vec2 pc = worldPix(); float g = glintPix(pc);
+  float arm = max(max(glintPix(pc + vec2(1, 0)), glintPix(pc - vec2(1, 0))), max(glintPix(pc + vec2(0, 1)), glintPix(pc - vec2(0, 1))));
+  return (g + step(0.995, arm)*0.25)*0.8; }
 float terrainShadow(vec2 p, float h0){
   vec2 sd = normalize(uSun.xy + 1e-4); float tanE = uSun.z/max(length(uSun.xy), 1e-3), s = 0.0;
   for (int i = 1; i <= 10; i++){ float d = float(i)*3.0; if (H(p + sd*d)*HS > h0*HS + d*tanE + 0.4) s += 0.11; }
@@ -71,7 +90,9 @@ void main(){
   vec2 tu = TUV(p), tp = 1.0/vec2(textureSize(uShadow, 0));
   float objSh = (texture(uShadow, tu).r*2.0 + texture(uShadow, tu + vec2(tp.x*2.0, 0)).r + texture(uShadow, tu - vec2(tp.x*2.0, 0)).r
                + texture(uShadow, tu + vec2(0, tp.y*2.0)).r + texture(uShadow, tu - vec2(0, tp.y*2.0)).r)/6.0;
-  float cloud = smoothstep(0.42, 0.78, fbm(p*0.0032 + uWD*uT*0.004))*uCloud;
+  float glintSh = objSh;                                      // glints keep the soft value: a banded edge would make them pop
+  objSh = st(objSh, 2.0);                                     // crisp, dither-edged shadows like the voxel art
+  float cloud = st(smoothstep(0.42, 0.78, fbm(p*0.0032 + uWD*uT*0.004)), 3.0)*uCloud;
   float sunVis = (1.0 - objSh*0.6)*(1.0 - cloud*0.55);
   vec3 col;
   if (h > 0.0){
@@ -83,20 +104,21 @@ void main(){
     vec3 grass = mix(mix(vec3(.45,.61,.29), vec3(.50,.71,.29), wm), vec3(.47,.52,.40), cd);
     vec3 forest= mix(mix(vec3(.24,.38,.21), vec3(.16,.40,.21), wm), vec3(.21,.28,.23), cd);
     vec3 rock = vec3(.52,.55,.58), snow = vec3(.93,.95,.97), peak = mix(vec3(.68,.70,.72), snow, cd);
-    col = mix(wet, sand, smoothstep(0.02, 0.045, hh));
-    col = mix(col, grass*(0.85 + det2*0.3), smoothstep(0.09, 0.13, hh));
-    col = mix(col, forest*(0.8 + det2*0.35), smoothstep(0.33, 0.40, hh));
-    col = mix(col, rock*(0.85 + det*0.3), smoothstep(mix(0.72, 0.6, cd), mix(0.78, 0.66, cd), hh));
-    col = mix(col, peak, smoothstep(mix(0.88, 0.74, cd), mix(0.92, 0.78, cd), hh));
-    col = mix(col, snow, cd*smoothstep(0.42, 0.58, hh)*smoothstep(0.75, 0.95, n.z)*0.85);
+    float tex2 = st(det2, 3.0);                                   // grass/forest speckle on the pixel grid
+    col = mix(wet, sand, st(smoothstep(0.02, 0.045, hh), 2.0));
+    col = mix(col, grass*(0.85 + tex2*0.3), st(smoothstep(0.09, 0.13, hh), 2.0));
+    col = mix(col, forest*(0.8 + tex2*0.35), st(smoothstep(0.33, 0.40, hh), 2.0));
+    col = mix(col, rock*(0.85 + det*0.3), st(smoothstep(mix(0.72, 0.6, cd), mix(0.78, 0.66, cd), hh), 2.0));
+    col = mix(col, peak, st(smoothstep(mix(0.88, 0.74, cd), mix(0.92, 0.78, cd), hh), 2.0));
+    col = mix(col, snow, st(cd*smoothstep(0.42, 0.58, hh)*smoothstep(0.75, 0.95, n.z)*0.85, 2.0));
     float avg = (H(p + vec2(5, 0)) + H(p - vec2(5, 0)) + H(p + vec2(0, 5)) + H(p - vec2(0, 5)))*0.25;
-    float ao = clamp(1.0 - (avg - h)*6.0, 0.62, 1.0);
-    float diff = max(dot(n, uSun), 0.0), tsh = terrainShadow(p, h);
+    float ao = 0.62 + 0.38*st(clamp(1.0 - (avg - h)*6.0, 0.62, 1.0)*2.63 - 1.63, 3.0);
+    float diff = st(max(dot(n, uSun), 0.0), 4.0), tsh = st(terrainShadow(p, h)/0.8, 3.0)*0.8;   // stepped like the voxel faces
     vec3 light = uAmb*ao*(0.8 + 0.2*n.z) + uSunC*diff*sunVis*(1.0 - tsh);
-    light += pointLights(vec3(p, 0.0), n) + vec3(1.0, .84, .58)*beams(p)*(0.12 + uNight*0.9);
+    light += stL(pointLights(vec3(p, 0.0), n), 5.0) + vec3(1.0, .84, .58)*st(beams(p), 3.0)*(0.12 + uNight*0.9);
     col *= light;
     float wetk = smoothstep(0.035, 0.0, h);                     // wet sand glistens
-    col += uSunC*wetk*pow(max(dot(reflect(-uSun, n), normalize(vec3(0, .55, .85))), 0.0), 30.0)*0.3*sunVis;
+    col += uSunC*wetk*st(pow(max(dot(reflect(-uSun, n), normalize(vec3(0, .55, .85))), 0.0), 30.0), 2.0)*0.3*sunVis;
   } else {
     float depth = -h, e = 0.7;
     float wx = waveH(p + vec2(e, 0)) - waveH(p - vec2(e, 0)), wy = waveH(p + vec2(0, e)) - waveH(p - vec2(0, e));
@@ -114,48 +136,51 @@ void main(){
     vec3 shallowC = mix(mix(vec3(.34,.66,.70), vec3(.24,.80,.78), wm), vec3(.40,.56,.62), cd);
     vec3 midC     = mix(mix(vec3(.17,.43,.55), vec3(.07,.53,.62), wm), vec3(.22,.36,.46), cd);
     vec3 deepC    = mix(mix(vec3(.07,.22,.35), vec3(.03,.27,.42), wm), vec3(.10,.18,.27), cd);
-    vec3 wc = mix(midC, shallowC, smoothstep(0.2, 0.0, depth));
-    wc = mix(deepC, wc, smoothstep(0.55, 0.12, depth));
-    vec3 bed = mix(mix(vec3(.80,.73,.54), vec3(.94,.90,.75), wm), vec3(.6,.6,.56), cd)*(0.72 + 0.6*caustic(p + n.xy*4.0)*(1.0 - uNight)*(1.0 - cloud*0.5));
-    float clarity = exp(-depth*7.5)*mix(0.72, 0.9, wm);
+    // depth reads as a few flat bands of colour (dithered where they meet), like a hand-painted chart
+    vec3 wc = mix(midC, shallowC, st(smoothstep(0.2, 0.0, depth), 3.0));
+    wc = mix(deepC, wc, st(smoothstep(0.55, 0.12, depth), 3.0));
+    vec3 bed = mix(mix(vec3(.80,.73,.54), vec3(.94,.90,.75), wm), vec3(.6,.6,.56), cd)*(0.72 + 0.6*st(caustic(p + n.xy*4.0), 2.0)*(1.0 - uNight)*(1.0 - cloud*0.5));
+    float clarity = st(exp(-depth*7.5), 4.0)*mix(0.72, 0.9, wm);
     wc = mix(wc, bed*vec3(0.78, 0.96, 0.96), clarity);
-    wc *= 0.9 + 0.2*fbm(p*0.018 + vec2(uT*0.01, 0.0));                // broad blotches of lighter and darker water
+    wc *= 0.9 + 0.2*st(fbm(p*0.018 + vec2(uT*0.01, 0.0)), 3.0);        // broad blotches of lighter and darker water
     vec3 V = normalize(vec3(0.0, 0.55, 0.85));
     vec3 Rv = reflect(-V, n);
     float fres = 0.06 + 0.94*pow(1.0 - max(dot(n, V), 0.0), 5.0);
     vec3 skyR = uSky*(0.8 + 0.4*smoothstep(-0.1, 0.5, -Rv.y));
-    vec3 Lp = pointLights(vec3(p, 0.0), n);
-    vec3 light = uAmb + uSunC*(0.55 + 0.45*max(dot(n, uSun), 0.0))*sunVis + Lp*0.3 + vec3(1.0, .84, .58)*beams(p)*(0.12 + uNight*0.9);
-    float tsh = depth < 0.22 ? terrainShadow(p, 0.0)*0.8 : 0.0;
+    vec3 Lp = stL(pointLights(vec3(p, 0.0), n), 6.0);           // lamp pools step out in rings
+    vec3 light = uAmb + uSunC*(0.55 + 0.32*st(max(dot(nS, uSun), 0.0), 3.0) + 0.13*max(dot(n, uSun), 0.0))*sunVis + Lp*0.3 + vec3(1.0, .84, .58)*st(beams(p), 3.0)*(0.12 + uNight*0.9);
+    float tsh = depth < 0.22 ? st(terrainShadow(p, 0.0)/0.8, 3.0)*0.64 : 0.0;
     col = wc*light*(1.0 - tsh*0.7) + skyR*fres*0.7*(1.0 - cloud*0.35);
     col *= mix(vec3(1.0), vec3(1.0, 0.86, 0.62), clamp(Lp.r*0.7, 0.0, 1.0));   // lamplight outshines the cold night base
     col += Lp*(0.3 + 0.1*fres);                                         // and glows amber on the surface
     float sd = max(dot(reflect(-uSun, nS), V), 0.0);
-    col += uSunC*pow(sd, 36.0)*0.7*sunVis*(1.0 - tsh);
+    col += uSunC*st(pow(sd, 36.0), 2.0)*0.7*sunVis*(1.0 - tsh);
     float golden = smoothstep(0.62, 0.36, uSun.z)*(1.0 - uNight);             // low sun: warm sheen across the water
-    col += uSunC*golden*pow(sd, 30.0)*1.3*sunVis;
-    col += uSunC*sparkle(p, pw)*(0.35 + 0.65*smoothstep(0.55, 0.95, sd))*2.2*sunVis*(1.0 - tsh)*smoothstep(0.04, 0.2, depth)*(1.0 - cloud*0.6);
-    col += Lp*pow(max(dot(reflect(-normalize(vec3(0.0, -0.3, 1.0)), nS), V), 0.0), 12.0)*0.35;
+    col += uSunC*golden*st(pow(sd, 30.0), 3.0)*1.3*sunVis;
+    col += uSunC*glints(p, pw)*(0.35 + 0.65*smoothstep(0.55, 0.95, sd))*2.2*(1.0 - glintSh*0.6)*(1.0 - cloud*0.55)*(1.0 - tsh)*smoothstep(0.04, 0.2, depth)*(1.0 - cloud*0.6);
+    col += Lp*st(pow(max(dot(reflect(-normalize(vec3(0.0, -0.3, 1.0)), nS), V), 0.0), 12.0), 4.0)*0.35;   // warm glints in the lamp pool
     float edge = smoothstep(0.03, 0.0, depth);
     float roll = sin(depth*150.0 - uT*2.3 + fbm(p*0.05)*8.0);
     float breakers = smoothstep(0.55, 0.95, roll)*smoothstep(0.11, 0.015, depth);
     float caps = smoothstep(0.74, 0.84, fbm(p*0.09 + uWD*uT*0.6))*smoothstep(0.35, 0.9, uWind)*smoothstep(0.05, 0.2, depth);
     float foam = clamp(edge + breakers*0.75 + caps*0.9 + fo.r*1.2, 0.0, 1.0);
     foam *= 0.55 + 0.45*noise(p*0.9 + uT*0.3);
+    foam = uPx > 0.0 ? st(smoothstep(0.12, 0.7, foam), 2.0) : foam;   // crisp pixel foam: solid, half (dithered) or none
     vec3 foamC = vec3(0.95, 0.98, 0.98)*(uAmb*1.1 + uSunC*sunVis*0.85 + Lp);
     col = mix(col, foamC, foam);
   }
   col *= 1.0 - cloud*0.12;
   col += vec3(0.85, 0.9, 1.0)*uFlash*0.5;
-  outC = vec4(col, 1.0);
+  outC = vec4(col, 0.0);                                         // alpha 0: ground (meshes write 1, for outlines)
 }`;
 
 export const MESH_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNor; layout(location=2) in vec4 aCol;
 layout(location=3) in vec4 aI0; layout(location=4) in vec4 aI1; layout(location=5) in vec4 aIT;
 uniform vec4 uCam, uHR; uniform vec2 uShXY; uniform int uMode;
-out vec3 vW; out vec3 vN; out vec4 vC;
+out vec3 vW; out vec3 vN; out vec4 vC; out float vG; out float vK;
 void main(){
+  vG = aI1.w; vK = aIT.a;
   vec3 q = aPos*aI0.w, nn = aNor;
   float cp = cos(aI1.y), sp = sin(aI1.y), cr = cos(aI1.z), sr = sin(aI1.z);
   q = vec3(q.x, q.y*cr - q.z*sr, q.y*sr + q.z*cr); nn = vec3(nn.x, nn.y*cr - nn.z*sr, nn.y*sr + nn.z*cr);   // roll
@@ -168,49 +193,72 @@ void main(){
 }`;
 export const MESH_FS = `#version 300 es
 precision highp float; precision highp int;
-in vec3 vW; in vec3 vN; in vec4 vC; out vec4 o;
+in vec3 vW; in vec3 vN; in vec4 vC; in float vG; in float vK; out vec4 o;
 uniform int uMode; uniform vec3 uSun, uSunC, uAmb, uWater; uniform float uNight;
 uniform sampler2D uH; uniform vec4 uHR;
-${LIGHTS}
+${LIGHTS}${STYLE}
+// vC.a marks glowable voxels (lamps, photophores, jellies); vG is the instance's glow (1 for lamps, 0..1 for sea life);
+// vK is how fast the instance fades into the water below the waterline (1 for hulls, less for big pale sea life)
 void main(){
   if (uMode == 1){ o = vec4(1.0); return; }
   vec3 n = normalize(vN);
-  vec3 light = uAmb*(0.72 + 0.28*n.z) + uSunC*max(dot(n, uSun), 0.0) + pointLights(vW, n);
+  vec3 light = uAmb*(0.72 + 0.28*n.z) + uSunC*st(max(dot(n, uSun), 0.0), 3.0) + stL(pointLights(vW, n), 5.0);
   vec3 col = vC.rgb*light;
-  if (vC.a > 0.5) col = vC.rgb*(1.6 + uNight*2.2);
-  if (vW.z < 0.9){                                  // below the waterline: fade into the water colour
+  float glow = clamp(vC.a*vG, 0.0, 1.0), sub = 0.0;
+  col = mix(col, vC.rgb*(1.6 + uNight*2.2), glow);
+  if (vW.z < 0.9){                                  // below the waterline: fade into the water colour, darker with depth
     float h = texture(uH, (vW.xy - uHR.xy + 0.5)/uHR.zw).r;
-    if (h < 0.0) col = mix(col, uWater*(uAmb + uSunC*0.55), clamp((0.9 - vW.z)*0.32, 0.0, 0.88));
+    if (h < 0.0){
+      sub = st(clamp((0.9 - vW.z)*0.32*vK, 0.0, 0.88), 4.0);
+      vec3 wcol = uWater*mix(vec3(1.0), vec3(0.41, 0.51, 0.64), st(smoothstep(0.12, 0.55, -h), 3.0));   // the ground's mid/deep bands
+      col = mix(col, wcol*(uAmb + uSunC*0.7)*(1.0 - 0.3*clamp((-2.0 - vW.z)/6.0, 0.0, 1.0)), sub);
+      col += vC.rgb*glow*(1.4 + uNight*2.0)*exp(vW.z*0.12)*sub;       // glowing things shine up through the water
+    }
   }
-  o = vec4(col, 1.0);
+  o = vec4(col, 1.0 - sub);                          // alpha: how solid this pixel is, for the pixel outline
 }`;
 
 // soft discs/rings stamped into a world-aligned buffer: R = foam, G = ripple height
 export const FOAM_VS = `#version 300 es
-layout(location=0) in vec4 aP;   // x, y, size, alpha
-layout(location=1) in float aK;  // 0 disc, 1 ring
+layout(location=0) in vec4 aP;   // x, y, size (long axis), alpha
+layout(location=1) in vec4 aQ;   // kind (0 disc, 1 ring), heading, aspect (short/long), foam share
 uniform vec4 uHR; uniform float uPx;
-out float vA; out float vK;
-void main(){ vA = aP.w; vK = aK; gl_Position = vec4(((aP.xy - uHR.xy + 0.5)/uHR.zw)*2.0 - 1.0, 0.0, 1.0); gl_PointSize = aP.z*uPx; }`;
+out float vA; flat out vec4 vQ;
+void main(){ vA = aP.w; vQ = aQ; gl_Position = vec4(((aP.xy - uHR.xy + 0.5)/uHR.zw)*2.0 - 1.0, 0.0, 1.0); gl_PointSize = aP.z*uPx; }`;
 export const FOAM_FS = `#version 300 es
 precision mediump float; precision highp int;
-in float vA; in float vK; out vec4 o;
-void main(){ float d = length(gl_PointCoord*2.0 - 1.0); if (d > 1.0) discard;
-  float a = vK > 0.5 ? smoothstep(0.22, 0.0, abs(d - 0.75)) : smoothstep(1.0, 0.1, d);
-  o = vec4(a*vA, a*vA*(vK > 0.5 ? 0.9 : 0.4), 0.0, 1.0); }`;
+in float vA; flat in vec4 vQ; out vec4 o;
+void main(){
+  vec2 q = (gl_PointCoord*2.0 - 1.0)*vec2(1.0, -1.0);          // point sprites run top-down; the buffer is world-up
+  float c = cos(vQ.y), s = sin(vQ.y); q = vec2(q.x*c + q.y*s, -q.x*s + q.y*c);
+  float d = length(q/vec2(1.0, max(vQ.z, 0.05))); if (d > 1.0) discard;
+  float a = vQ.x > 0.5 ? smoothstep(0.16, 0.0, abs(d - 0.84)) : smoothstep(1.0, 0.1, d);
+  o = vec4(a*vA*vQ.w, a*vA*(vQ.x > 0.5 ? 0.9 : 0.4), 0.0, 1.0); }`;
 
 // coloured particles drawn in the scene (sparks, debris, spray)
 export const PART_VS = `#version 300 es
-layout(location=0) in vec4 aP; layout(location=1) in vec4 aC;   // x, y, z, size ; rgba
-uniform vec4 uCam; uniform float uPx; out vec4 vC;
+layout(location=0) in vec4 aP; layout(location=1) in vec4 aC; layout(location=2) in float aS;   // x, y, z, size ; rgba ; style
+uniform vec4 uCam; uniform float uPpu; out vec4 vC; flat out float vS;
 // points smaller than ~2.5 pixels pop on and off as they cross pixel centres; keep them at least that big and
 // dim them to keep the same total light
-void main(){ vC = aC; gl_Position = vec4((aP.x - uCam.x)/uCam.z*2.0 - 1.0, 1.0 - (aP.y - aP.z - uCam.y)/uCam.w*2.0, 0.0, 1.0);
-  float s = aP.w*uPx, sz = max(s, 2.5); vC.a *= min(1.0, (s*s)/(sz*sz)*1.6); gl_PointSize = sz; }`;
+void main(){ vC = aC; vS = aS; gl_Position = vec4((aP.x - uCam.x)/uCam.z*2.0 - 1.0, 1.0 - (aP.y - aP.z - uCam.y)/uCam.w*2.0, 0.0, 1.0);
+  float s = aP.w*uPpu, sz = max(s, 2.5); vC.a *= min(1.0, (s*s)/(sz*sz)*1.6); gl_PointSize = sz; }`;
 export const PART_FS = `#version 300 es
-precision mediump float; precision highp int;
-in vec4 vC; out vec4 o;
-void main(){ float d = length(gl_PointCoord*2.0 - 1.0); if (d > 1.0) discard; o = vec4(vC.rgb, vC.a*smoothstep(1.0, 0.4, d)); }`;
+precision highp float; precision highp int;
+in vec4 vC; flat in float vS; out vec4 o;
+uniform vec3 uSun, uSunC, uAmb;
+${STYLE}
+void main(){
+  vec2 q = gl_PointCoord*2.0 - 1.0; float d = length(q); if (d > 1.0) discard;
+  if (vS > 0.5 && vS < 1.5){                                    // smoke puff: a little lit ball, stepped like the voxels
+    vec3 n = normalize(vec3(q.x, q.y, sqrt(max(0.0, 1.0 - d*d)) + 0.3));
+    float lit = st(max(dot(n, normalize(uSun)), 0.0), 3.0);
+    vec3 c = vC.rgb*(uAmb*1.1 + uSunC*lit*0.85);
+    float a = vC.a*(uPx > 0.0 ? 1.0 : smoothstep(1.0, 0.75, d));
+    o = vec4(c, st(a, 3.0)); return; }
+  float a = vC.a*smoothstep(1.0, 0.4, d);
+  if (vS > 1.5) a = vC.a*(uPx > 0.0 ? st(smoothstep(1.0, 0.0, d), 2.0) : smoothstep(1.0, 0.0, d));   // glow: bright pixel core
+  o = vec4(vC.rgb, a); }`;
 
 // ---- post ----
 export const BRIGHT_FS = `#version 300 es
@@ -226,7 +274,8 @@ export const COMPOSITE_FS = `#version 300 es
 precision highp float; precision highp int; in vec2 vUV; out vec4 o;
 uniform sampler2D uScene, uBloom, uBlur;
 uniform float uT, uExp, uSat, uVig, uTilt, uGrain, uRain, uFlash, uBloomK, uSlant, uGrade, uDusk;
-uniform vec3 uTint; uniform vec2 uRes;
+uniform vec3 uTint; uniform vec2 uRes; uniform float uQ, uInk;
+${STYLE}
 float hash(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x*p.y); }
 vec3 aces(vec3 x){ return clamp((x*(2.51*x + 0.03))/(x*(2.43*x + 0.59) + 0.14), 0.0, 1.0); }
 // procedural film LUT on display-referred colour: soft S-curve, teal-navy lifted blacks, warm highlights,
@@ -244,9 +293,15 @@ vec3 grade(vec3 c, float k){
   return mix(c, clamp(g, 0.0, 1.0), k); }
 void main(){
   vec2 uv = vUV;
-  vec3 c = texture(uScene, uv).rgb;
+  vec4 s0 = texture(uScene, uv); vec3 c = s0.rgb;
   float tb = smoothstep(0.2, 0.5, abs(uv.y - 0.5))*uTilt;               // miniature tilt-shift
   c = mix(c, texture(uBlur, uv).rgb, tb);
+  if (uInk > 0.0){                                                      // a one-pixel ink edge where solid voxels meet the ground or water
+    vec2 tx = 1.0/vec2(textureSize(uScene, 0));
+    float nb = max(max(texture(uScene, uv + vec2(tx.x, 0)).a, texture(uScene, uv - vec2(tx.x, 0)).a), max(texture(uScene, uv + vec2(0, tx.y)).a, texture(uScene, uv - vec2(0, tx.y)).a));
+    float edge = step(0.5, nb)*step(s0.a, 0.35)*smoothstep(0.5, 1.0, nb);
+    c = mix(c, c*vec3(0.36, 0.42, 0.48), edge*uInk);
+  }
   c += texture(uBloom, uv).rgb*uBloomK;
   if (uRain > 0.01){
     vec2 q = vec2(uv.x*170.0 + uv.y*uSlant*40.0, uv.y*9.0 + uT*7.0); vec2 id = floor(q); float r = hash(id);
@@ -259,6 +314,7 @@ void main(){
   c = grade(aces(c), uGrade);
   c *= mix(1.0, smoothstep(1.3, 0.3, length((uv - 0.5)*vec2(1.3, 1.0))), uVig);
   c += (hash(uv*uRes + fract(uT)*91.0) - 0.5)*uGrain;
+  if (uQ > 0.0) c = floor(c*uQ + 0.5)/uQ;                               // gentle shared palette: uQ flat levels per channel, no dither
   c += uFlash*0.25;
   o = vec4(c, 1.0);
 }`;

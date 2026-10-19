@@ -6,11 +6,11 @@ import { W, H, clamp, lerp } from '../config.js';
 import { SET } from '../prefs.js';
 import { TS, TN, getTile, hasTile, poisNear, schoolsNear, cratesNear } from '../world.js';
 import { hash01 } from '../noise.js';
-import { SPECIES, warmth, coldness } from '../econ.js';
+import { SPECIES, BOATS, warmth, coldness } from '../econ.js';
 import { G, darkness, lightR, schoolActive, isNight, dayFrac, equipment, windAngle, boatDef } from '../game.js';
 import { WX } from '../weather.js';
 import { LIFE } from '../life.js';
-import { hasOars, NP, SHIPPED } from '../models.js';
+import { hasOars, NP, SHIPPED, PLAIN } from '../models.js';
 import { program, texture, target, msTarget, free } from './glutil.js';
 import * as SH from './shaders.js';
 import * as MS from './meshes.js';
@@ -33,9 +33,10 @@ export function initRender(canvas) {
   gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
   foamVao = gl.createVertexArray(); gl.bindVertexArray(foamVao); foamBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, foamBuf);
-  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 20, 0); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 20, 16);
-  partVao = gl.createVertexArray(); gl.bindVertexArray(partVao); partBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, partBuf);
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 32, 0); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 16);
+  partVao = gl.createVertexArray(); gl.bindVertexArray(partVao); partBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, partBuf);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 36, 0); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 36, 16);
+  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 36, 32);
   gl.bindVertexArray(null);
   instBuf = gl.createBuffer(); MS.init(gl, instBuf);
 }
@@ -67,6 +68,9 @@ function ensureTargets() {
 }
 
 // ---------- uniforms ----------
+// the pixel-style dither is anchored to world pixels: STY.org = world pixel of the frame's top-left, and frame height
+const STY = { px: 0, org: [0, 0, 1] };
+function styleUniforms(pg) { U(pg, 'uPx', STY.px); U(pg, 'uOrg', ...STY.org); }
 function U(pg, name, ...v) {
   const l = pg.u[name]; if (l === undefined || l === null) return;
   [, gl.uniform1f, gl.uniform2f, gl.uniform3f, gl.uniform4f][v.length].call(gl, l, ...v);
@@ -113,19 +117,61 @@ function tileTrees(t) {
 
 // ---------- instance pools ----------
 const POOLS = [new Map(), new Map()];      // [casts shadow, no shadow]
-function inst(mesh, x, y, yaw = 0, scale = 1, z = 0, pitch = 0, roll = 0, noShadow = false, tint = 1) {
+// tint: a brightness or an [r,g,b]; glow: how strongly the mesh's glowable voxels shine (lamps 1, sea life by night);
+// clear: how slowly it fades into the water below the waterline (1 for hulls; sea life shows through a little more)
+function inst(mesh, x, y, yaw = 0, scale = 1, z = 0, pitch = 0, roll = 0, noShadow = false, tint = 1, glow = 1, clear = 1) {
   const pool = POOLS[noShadow ? 1 : 0]; let e = pool.get(mesh);
   if (!e) { e = { mesh, arr: new Float32Array(12 * 32), n: 0 }; pool.set(mesh, e); }
   if ((e.n + 1) * 12 > e.arr.length) { const a = new Float32Array(e.arr.length * 2); a.set(e.arr); e.arr = a; }
-  e.arr.set([x, y, yaw, scale, z, pitch, roll, 0, tint, tint, tint, 1], e.n * 12); e.n++;
+  const [r, g, b] = typeof tint === 'number' ? [tint, tint, tint] : tint;
+  e.arr.set([x, y, yaw, scale, z, pitch, roll, glow, r, g, b, clear], e.n * 12); e.n++;
 }
-const IDENT = new Float32Array([0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1]);
+const DYN = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 1]);   // the oars/rod/line instance, placed at the boat
 export function boatRenderState(alpha) { const b = G.boat; return { x: lerp(b.px, b.x, alpha), y: lerp(b.py, b.y, alpha), a: lerp(b.pa, b.a, alpha) }; }
 const frac = x => x - Math.floor(x);
 
+// ---------- sea life poses (life.js data, tolerant of missing fields and of the older whale shape) ----------
+const WHALE_K = 26 / MS.WHALE.len;                 // a humpback is ~26 units long at size 1
+function whalePose(w) {
+  if (w.a !== undefined) return { x: w.x, y: w.y, a: w.a, z: w.z ?? -2, pitch: w.pitch || 0, roll: w.roll || 0, tail: w.tail || 0, size: w.size || 1, ph: w.t || 0 };
+  const t = w.t || 0, z = t < 1.2 ? lerp(-6, -1.7, t / 1.2) : t < 8 ? -1.7 + Math.sin(t * 1.3) * 0.25 : -1.7 - (t - 8) * 2.2;
+  return { x: w.x, y: w.y, a: w.dir > 0 ? 0 : Math.PI, z: z + 1.7, pitch: t > 8 ? -(t - 8) * 0.35 : 0, roll: 0, tail: t > 8 && t < 9.8 ? Math.sin((t - 8) / 1.8 * Math.PI) : 0, size: 1, ph: t };
+}
+function drawWhale(w) {
+  const q = whalePose(w), s = q.size * WHALE_K, ca = Math.cos(q.a), sa = Math.sin(q.a);
+  const zAxis = q.z - 1.6 * s, under = q.z < 2;         // contract z: 0 = the back just breaking the surface
+  inst(MS.whaleMesh(), q.x, q.y, q.a, s, zAxis, q.pitch, q.roll, under, 1, 0, 0.6);
+  // the tail stock hinges at the end of the body: it beats while swimming and lifts the fluke clear to dive or slap
+  const jx = MS.WHALE.joint * s * Math.cos(q.pitch), jz = MS.WHALE.joint * s * Math.sin(q.pitch);
+  const beat = Math.sin(G.t * 1.7 + q.ph) * 0.22 * (1 - q.tail);
+  inst(MS.flukeMesh(), q.x + ca * jx, q.y + sa * jx, q.a, s, zAxis + jz, q.pitch - q.tail * 1.35 + beat, q.roll, under, 1, 0, 0.6);
+}
+// eels undulate: a chain of segments, each swinging a little more than the one ahead
+function drawEel(g, glow) {
+  const N = 10, segL = (g.len || 30) / N, s = segL / 4, ph = g.ph || 0, z = g.z ?? -6;
+  let x = g.x, y = g.y;
+  for (let i = 0; i < N; i++) {
+    const yaw = (g.a || 0) + Math.sin(ph * 2 - i * 0.75) * 0.45 * (0.25 + i / N), c = Math.cos(yaw), sn = Math.sin(yaw);
+    inst(MS.eelMesh(i === 0 ? 'head' : i === N - 1 ? 'tail' : 'seg'), x - c * segL * 0.35, y - sn * segL * 0.35, yaw, s, z, 0, 0, true, 1, glow);
+    x -= c * segL; y -= sn * segL;
+  }
+}
+function drawGiant(g) {
+  const z = g.z ?? -6, len = g.len || 24, ph = g.ph || 0, glow = g.glow || 0, a = g.a || 0;
+  if (g.kind === 'ray') inst(MS.mantaMesh(ph), g.x, g.y, a, len / MS.MANTA_LEN, z, Math.sin(ph) * 0.05, Math.sin(ph * 0.5) * 0.12, true, 1, glow);
+  else if (g.kind === 'squid') inst(MS.squidMesh(), g.x, g.y, a + Math.sin(ph * 0.7) * 0.05, len / MS.SQUID_LEN * (1 + Math.sin(ph * 2) * 0.04), z, 0, Math.sin(ph) * 0.15, true, 1, glow);
+  else if (g.kind === 'eel') drawEel(g, glow);
+  else inst(MS.shadowFishMesh(), g.x, g.y, a + Math.sin(ph) * 0.07, len / MS.SHADOW_LEN, z, 0, 0, true, 1, 0);
+}
+const shipEq = new Map();                              // NPC fishing boats: plain fit-out in their paint, lamp lit
+const eqFor = paint => { let e = shipEq.get(paint); if (!e) { e = { ...PLAIN, paint: paint || 'classic', lantern: 1 }; shipEq.set(paint, e); } return e; };
+const shipDef = id => BOATS.find(b => b.id === id) || BOATS[0];
+const shipAng = sh => sh.a ?? Math.atan2(sh.vy || 0, sh.vx || 1);
+const near = (o, cx, cy, mx, my) => Math.abs(o.x - cx) < mx && Math.abs(o.y - cy) < my;
+
 function buildScene(bs, pois, camX, camY) {
   for (const p of POOLS) for (const e of p.values()) e.n = 0;
-  MS.dynBegin();
+  MS.dynBegin(); DYN[0] = bs.x; DYN[1] = bs.y;
   const cx = camX + W / 2, cy = camY + H / 2;
   // trees
   for (let ty = Math.floor((camY - 30) / TS); ty <= Math.floor((camY + H + 60) / TS); ty++) for (let tx = Math.floor((camX - 30) / TS); tx <= Math.floor((camX + W + 30) / TS); tx++) {
@@ -152,13 +198,20 @@ function buildScene(bs, pois, camX, camY) {
       inst(m, s.x + Math.cos(a) * r, s.y + Math.sin(a) * r * 0.75, a + Math.PI / 2, sc, -2.2, 0, Math.PI / 2, true, 0.85);
     }
   }
-  // whales and dolphins
-  for (const w of LIFE.whales) {
-    const z = w.t < 1.2 ? lerp(-6, -1.7, w.t / 1.2) : w.t < 8 ? -1.7 + Math.sin(w.t * 1.3) * 0.25 : -1.7 - (w.t - 8) * 2.2, yaw = w.dir > 0 ? 0 : Math.PI;
-    inst(MS.whaleMesh(), w.x, w.y, yaw, 1, z, w.t > 8 ? -(w.t - 8) * 0.35 : 0, 0, z < -2.5);
-    if (w.t > 8 && w.t < 9.8) inst(MS.flukeMesh(), w.x - w.dir * 11, w.y, 0, 1, -1 + Math.sin((w.t - 8) / 1.8 * Math.PI) * 3, 0, 0);
+  // whales, giants, jellies, NPC ships, dolphins
+  const mx = W / 2 + 60, my = H / 2 + 60;
+  for (const w of LIFE.whales || []) if (near(w, cx, cy, mx, my)) drawWhale(w);
+  for (const g of LIFE.giants || []) if (near(g, cx, cy, mx + (g.len || 24), my + (g.len || 24))) drawGiant(g);
+  for (const j of LIFE.jellies || []) if (near(j, cx, cy, mx, my)) {
+    const ph = j.ph || 0, pulse = Math.sin(ph), sz = 0.55 * (j.size || 1);
+    inst(MS.jellyMesh(pulse > 0.35), j.x, j.y, ph * 0.15, sz * (1 + pulse * 0.06), j.z ?? -1.5, 0, 0, true, j.col || [0.75, 0.85, 1], (j.glow || 0) * (0.8 + 0.2 * pulse), 0.6);
   }
-  for (const p of LIFE.pods) for (const m of p.m) {          // each dolphin has its own position and heading (life.js)
+  (LIFE.ships || []).forEach((sh, i) => {
+    if (!MS.BOAT_MODELS[sh.id] || !near(sh, cx, cy, mx + 30, my + 30)) return;
+    const ph = i * 1.7 + (sh.x + sh.y) * 0.002, sw = 1 + WX.wind * 1.6;
+    inst(MS.boatMesh(sh.id, eqFor(sh.paint)), sh.x, sh.y, shipAng(sh), 1, Math.sin(G.t * 1.4 + ph) * (0.2 + WX.wind * 0.4) - 0.4, Math.sin(G.t * 1.0 + ph) * 0.02 * sw, Math.sin(G.t * 1.2 + ph + 1) * 0.03 * sw);
+  });
+  for (const p of LIFE.pods || []) for (const m of p.m) {          // each dolphin has its own position and heading (life.js)
     const ph = frac(p.t * 0.9 + m.ph);
     if (ph < 0.38) { const k = ph / 0.38; inst(MS.dolphinMesh(), m.x, m.y, m.a, 1, Math.sin(Math.PI * k) * 7 - 1.2, (0.5 - k) * 1.4); }
     else inst(MS.dolphinMesh(), m.x, m.y, m.a, 1, -2.6, 0, 0, true);
@@ -224,30 +277,74 @@ function lightsFor(bs, pois, dk) {
     else if (p.type === 'light') { add(p.x, p.y, 54, 0.8 * dk, [1.0, 0.72, 0.38]); if (nb < 6) { B.set([p.x, p.y, G.t * 0.5 + p.beam, 150], nb * 4); nb++; } }
   }
   if (G.frenzy) add(G.frenzy.s.x, G.frenzy.s.y, 20, 0.25, [1.0, 0.9, 0.6]);
+  // sea life: glowing giants, jelly swarms (one light per cluster) and the lamps of passing boats
+  const cx = G.cam.x + W / 2, cy = G.cam.y + H / 2, mx = W / 2 + 60, my = H / 2 + 60;
+  for (const g of LIFE.giants || []) if ((g.glow || 0) > 0.05 && near(g, cx, cy, mx, my)) add(g.x, g.y, (g.len || 24) * 1.3, g.glow * 0.5, g.kind === 'eel' ? [0.35, 0.7, 1.0] : [0.3, 0.95, 0.95]);
+  const swarms = new Map();
+  for (const j of LIFE.jellies || []) if ((j.glow || 0) > 0.05 && near(j, cx, cy, mx, my)) {
+    const k = Math.floor(j.x / 48) * 4096 + Math.floor(j.y / 48), c = j.col || [0.75, 0.85, 1]; let e = swarms.get(k);
+    if (!e) swarms.set(k, e = { x: 0, y: 0, n: 0, g: 0, c: [0, 0, 0] });
+    e.x += j.x; e.y += j.y; e.n++; e.g += j.glow; for (let i = 0; i < 3; i++) e.c[i] += c[i] * j.glow;
+  }
+  [...swarms.values()].sort((a, b) => b.g - a.g).slice(0, 4).forEach(e => add(e.x / e.n, e.y / e.n, 22 + 7 * Math.sqrt(e.n), Math.min(0.55, 0.1 * e.g), e.c.map(v => v / e.g)));
+  for (const sh of LIFE.ships || []) if (near(sh, cx, cy, mx, my)) add(sh.x, sh.y, 34, 0.55 * dk, AMBER);
   return { L, LC, B, nl, nb };
 }
 
 // ---------- particles ----------
-let foamArr = new Float32Array(5 * 1024), partArr = new Float32Array(8 * 1024);
+let foamArr = new Float32Array(8 * 1024), partArr = new Float32Array(9 * 1024);
+let fN = 0;
+// x, y, size (long axis), alpha, kind (0 disc, 1 ring), heading, aspect (short/long), foam share (rest is ripple)
+function foam(x, y, s, a, kind = 0, ang = 0, asp = 1, fk = 1) {
+  if ((fN + 1) * 8 > foamArr.length) { const t = new Float32Array(foamArr.length * 2); t.set(foamArr); foamArr = t; }
+  foamArr.set([x, y, s, a, kind, ang, asp, fk], fN * 8); fN++;
+}
+// water around a hull: at rest, soft hull-shaped ripples swell out from the waterline and fade (mostly ripple, a
+// little foam); under way, a curling bow wave, wash along both sides and churned water at the stern
+function hullWash(x, y, a, L, B, sp, seed, amt = 1, vee = false) {
+  const c = Math.cos(a), s = Math.sin(a), at = (u, v) => [x + c * u - s * v, y + s * u + c * v], t = G.t + seed;
+  const idle = clamp(1 - sp / 10, 0, 1) * amt;
+  if (idle > 0.01) for (let i = 0; i < 3; i++) {
+    const ph = frac(t * 0.28 + i / 3);
+    foam(x, y, L * (1.3 + ph * 1.2), idle * 0.9 * Math.sin(Math.PI * Math.sqrt(ph)) * (1 - ph * 0.5), 1, a, Math.min(1, B / L * (1.5 + ph * 1.2)), 0.45);
+  }
+  const k = clamp(sp / 40, 0, 1) * amt;
+  if (sp < 2 || k < 0.01) return;
+  const fl = 1 + Math.sin(t * 9) * 0.08, hl = L / 2, hb = B / 2;
+  for (const sg of [-1, 1]) {
+    foam(...at(hl * 0.45, sg * (hb + L * 0.16)), L * 0.8 * fl, 1.2 * k, 0, a - sg * 0.38, 0.4);               // bow wave peels off the stem
+    for (let i = 0; i < 3; i++) foam(...at(hl * (0.05 - i * 0.6), sg * (hb + 1.6 + i * 1.5)), L * 0.5, 0.9 * k * (1 - i * 0.2), 0, a - sg * 0.2, 0.38);
+    if (vee) for (let i = 1; i <= 5; i++) foam(...at(-hl - i * L * 0.42, sg * (hb + i * L * 0.2) + Math.sin(t * 2 + i) * 0.6), 3.2 + i * 0.5, 0.9 * k * (1 - i / 6), 0, a + sg * 0.6, 0.45);
+  }
+  foam(...at(hl + 0.5, 0), B * 1.1 * fl, 0.9 * k, 0, a + Math.PI / 2, 0.55);                                      // cap of foam at the stem
+  foam(...at(-hl - hb * 0.6, 0), B * 1.6 * (1 + Math.sin(t * 7) * 0.1), 1.0 * k, 0, a, 0.75);                    // stern churn
+  for (let i = 1; i <= 3; i++) foam(...at(-hl - hb - i * L * 0.4, Math.sin(t * 3 + i * 1.7) * hb * 0.3), B * (1.4 + i * 0.3), 0.85 * k / i, 0, a, 0.6);
+}
 function foamPoints(bs) {
-  let n = 0; const push = (x, y, s, a, k) => { if ((n + 1) * 5 > foamArr.length) { const t = new Float32Array(foamArr.length * 2); t.set(foamArr); foamArr = t; } foamArr.set([x, y, s, a, k], n * 5); n++; };
+  fN = 0;
   for (const p of G.parts) {
     const k = p.life / p.max;
-    if (p.kind === 'ring') push(p.x, p.y, (p.r0 + (1 - k) * p.grow) * 2 + 1.5, k * 0.85, 1);
-    else if (p.kind === 'dot') push(p.x, p.y, p.foam ? 4 : 2.6, k * 0.8, 0);
+    if (p.kind === 'ring') foam(p.x, p.y, ((p.r0 + (1 - k) * p.grow) * 2 + 1.5) * 0.9, k * 0.85, 1);
+    else if (p.kind === 'dot') foam(p.x, p.y, p.foam ? 4 : 2.6, k * 0.8, 0);
   }
-  const b = G.boat, bd = boatDef(), sp = Math.hypot(b.vx, b.vy), c = Math.cos(bs.a), s = Math.sin(bs.a);
-  if (G.mode === 'play' && sp > 2) {
-    const k = Math.min(1, sp / 40);
-    push(bs.x + c * bd.L * 0.85, bs.y + s * bd.L * 0.85, bd.B * 1.8, 0.55 * k, 0);
-    for (const sg of [-1, 1]) for (let i = 0; i < 4; i++) { const u = bd.L * (0.6 - i * 0.45); push(bs.x + c * u - s * sg * bd.B, bs.y + s * u + c * sg * bd.B, 2.4, 0.35 * k, 0); }
+  const b = G.boat, bd = boatDef();
+  hullWash(bs.x, bs.y, bs.a, bd.L, bd.B, G.mode === 'play' ? Math.hypot(b.vx, b.vy) : 0, 0);
+  const cx = G.cam.x + W / 2, cy = G.cam.y + H / 2, mx = W / 2 + 60, my = H / 2 + 60;
+  (LIFE.ships || []).forEach((sh, i) => { if (near(sh, cx, cy, mx, my)) { const d = shipDef(sh.id); hullWash(sh.x, sh.y, shipAng(sh), d.L, d.B, Math.hypot(sh.vx || 0, sh.vy || 0), i * 2.3, 1, true); } });
+  for (const w of LIFE.whales || []) {                    // a surfacing whale pushes up a slick of ripples and foam
+    const q = whalePose(w), s = q.size * WHALE_K; if (!near(q, cx, cy, mx, my)) continue;
+    const up = clamp(1 - Math.abs(q.z - 0.5) / 3, 0, 1); if (up > 0) hullWash(q.x - Math.cos(q.a) * 3 * s, q.y - Math.sin(q.a) * 3 * s, q.a, 30 * s, 8 * s, 0, q.ph, up);
+    if (q.tail > 0.25) foam(q.x + Math.cos(q.a) * (MS.WHALE.joint - 5) * s, q.y + Math.sin(q.a) * (MS.WHALE.joint - 5) * s, 10 * s, q.tail * 0.5, 0, q.a + Math.PI / 2, 0.5);
   }
-  push(bs.x, bs.y, bd.L * 2.3, 0.12, 1);
-  for (const w of LIFE.whales) if (w.t > 1.2 && w.t < 8.5) push(w.x, w.y + 1, 18, 0.25, 0);
-  return n;
+  for (const g of LIFE.giants || []) {                     // something big just under the surface bulges the water
+    const z = g.z ?? -6, len = g.len || 24; if (z < -5 || !near(g, cx, cy, mx, my)) continue;
+    for (let i = 0; i < 2; i++) { const ph = frac(G.t * 0.25 + i / 2 + (g.ph || 0) * 0.1); foam(g.x, g.y, len * (1 + ph * 0.6), (1 + z / 5) * 0.45 * Math.sin(Math.PI * ph), 1, g.a || 0, g.kind === 'ray' ? 0.9 : 0.4, 0); }
+  }
+  return fN;
 }
+// coloured points drawn in the scene: [x, y, z, size, r, g, b, a, style]; style 0 soft dot, 1 lit smoke puff, 2 glow
 function partPoints() {
-  let n = 0; const push = (x, y, z, sz, r, g, b, a) => { if ((n + 1) * 8 > partArr.length) { const t = new Float32Array(partArr.length * 2); t.set(partArr); partArr = t; } partArr.set([x, y, z, sz, r, g, b, a], n * 8); n++; };
+  let n = 0; const push = (x, y, z, sz, r, g, b, a, st = 0) => { if ((n + 1) * 9 > partArr.length) { const t = new Float32Array(partArr.length * 2); t.set(partArr); partArr = t; } partArr.set([x, y, z, sz, r, g, b, a, st], n * 9); n++; };
   for (const p of G.parts) {
     const k = p.life / p.max;
     if (p.kind === 'debris') push(p.x, p.y, 0.5, 1.4, 0.62, 0.45, 0.27, Math.min(1, k * 2));
@@ -259,9 +356,18 @@ function partPoints() {
   }
   if (isNight()) for (const s of schoolsNear(G.boat.x, G.boat.y, lightR() * 2.2)) if (schoolActive(s) && SPECIES[s.sp].time === 'night' && Math.floor(G.t * 3 + s.ph) % 3 === 0)
     push(s.x + Math.sin(G.t + s.ph) * 4, s.y, 0.2, 1.3, ...(SPECIES[s.sp].shape === 'glow' ? [2.2, 1.8, 0.7] : [1.3, 1.4, 1.5]), 0.9);
-  return n;
+  // smoke drifts downwind as it rises, swelling to ~3x and thinning out; drawn after the rest so it sits on top
+  const wa = windAngle(), wx = Math.cos(wa), wy = Math.sin(wa);
+  for (const p of G.parts) if (p.kind === 'smoke') {
+    const k = clamp(p.life / p.max, 0, 1), age = 1 - k, lean = age * (2 + WX.wind * 8), g = lerp(0.82, 0.24, p.dark || 0);
+    push(p.x + wx * lean, p.y + wy * lean, p.z ?? 10, (p.size || 2) * (1 + 2 * age) * 1.5, g, g * 0.98, g * 0.95, Math.min(1, age * 8) * Math.pow(k, 0.6) * 0.9, 1);
+  }
+  const n0 = n;
+  for (const p of G.parts) if (p.kind === 'glow') {        // bioluminescent plankton, added on top
+    const k = clamp(p.life / p.max, 0, 1); push(p.x, p.y, p.z || 0, p.size || 1.2, 0.35, 1.5, 1.3, k, 2);
+  }
+  return [n0, n - n0];
 }
-
 // ---------- prefetch heights (and tree lists) so new terrain never hitches ----------
 export function prefetch(budgetMs = 4) {
   const t0 = performance.now(), cx = G.cam.x + W / 2, cy = G.cam.y + H / 2;
@@ -274,14 +380,14 @@ export function prefetch(budgetMs = 4) {
 // ---------- frame ----------
 function drawMeshes(mode, CAM, HR, E, Lt, shXY) {
   const pg = PG.mesh; gl.useProgram(pg.p);
-  U(pg, 'uCam', ...CAM); U(pg, 'uHR', ...HR); U(pg, 'uShXY', ...shXY); gl.uniform1i(pg.u.uMode, mode);
+  U(pg, 'uCam', ...CAM); U(pg, 'uHR', ...HR); U(pg, 'uShXY', ...shXY); gl.uniform1i(pg.u.uMode, mode); styleUniforms(pg);
   if (mode === 0) {
     U(pg, 'uSun', ...E.sun); U(pg, 'uSunC', ...E.sunC); U(pg, 'uAmb', ...E.amb); U(pg, 'uNight', E.dk); U(pg, 'uWater', ...E.water);
     bindTex(pg, 'uH', tex, 0); gl.uniform1i(pg.u.uNL, Lt.nl); gl.uniform4fv(pg.u.uL, Lt.L); gl.uniform3fv(pg.u.uLC, Lt.LC); if (pg.u.uNB) gl.uniform1i(pg.u.uNB, 0);
   }
   for (const e of POOLS[0].values()) MS.drawInstances(e.mesh, e.arr, e.n);
   if (mode === 0) for (const e of POOLS[1].values()) MS.drawInstances(e.mesh, e.arr, e.n);
-  MS.drawInstances(MS.dynMesh(), IDENT, 1);
+  MS.drawInstances(MS.dynMesh(DYN[0], DYN[1]), DYN, 1);
 }
 // dynamic resolution: keep frames under ~20ms by trading internal resolution
 let lastT = 0, acc = 0, frames = 0;
@@ -307,6 +413,7 @@ export function render(alpha) {
   const camX = px ? Math.floor(camX0 * px) / px : camX0, camY = px ? Math.floor(camY0 * px) / px : camY0;
   const x0 = Math.floor(camX) - PAD, y0 = Math.floor(camY) - PAD;
   uploadHeights(x0, y0);
+  STY.px = px; STY.org = [Math.round(camX * px), Math.round(camY * px), h];
   const HR = [x0, y0, HW, HH], CAM = px ? [camX, camY, w / px, h / px] : [camX, camY, W, H], E = environment();
   const pois = poisNear(camX + W / 2, camY + H / 2, 300), Lt = lightsFor(bs, pois, E.dk);
   const wm = warmth(camY + H / 2), cd = coldness(camY + H / 2);
@@ -322,7 +429,7 @@ export function render(alpha) {
   const nf = foamPoints(bs);
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
   gl.useProgram(PG.foam.p); U(PG.foam, 'uHR', ...HR); U(PG.foam, 'uPx', FR);
-  gl.bindVertexArray(foamVao); gl.bindBuffer(gl.ARRAY_BUFFER, foamBuf); gl.bufferData(gl.ARRAY_BUFFER, foamArr.subarray(0, nf * 5), gl.STREAM_DRAW); gl.drawArrays(gl.POINTS, 0, nf);
+  gl.bindVertexArray(foamVao); gl.bindBuffer(gl.ARRAY_BUFFER, foamBuf); gl.bufferData(gl.ARRAY_BUFFER, foamArr.subarray(0, nf * 8), gl.STREAM_DRAW); gl.drawArrays(gl.POINTS, 0, nf);
   gl.disable(gl.BLEND);
   // 3. scene: ground, meshes, particles
   into(RT.scene, w, h); gl.clearColor(0, 0, 0, 1); gl.clearDepth(1); gl.depthMask(true); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -330,15 +437,17 @@ export function render(alpha) {
   bindTex(pg, 'uH', tex, 0); bindTex(pg, 'uFoam', RT.foam.tex, 1); bindTex(pg, 'uShadow', RT.shadow.tex, 2);
   U(pg, 'uHR', ...HR); U(pg, 'uCam', ...CAM); U(pg, 'uT', G.t); U(pg, 'uWT', WX.waveT); U(pg, 'uWind', WX.wind); U(pg, 'uRain', WX.rain);
   U(pg, 'uNight', E.dk); U(pg, 'uCloud', E.cloud); U(pg, 'uFlash', WX.flash * (SET.calm ? 0.15 : 1)); U(pg, 'uWD', Math.cos(windAngle()), Math.sin(windAngle()));
-  U(pg, 'uSun', ...E.sun); U(pg, 'uSunC', ...E.sunC); U(pg, 'uAmb', ...E.amb); U(pg, 'uSky', ...E.sky);
+  U(pg, 'uSun', ...E.sun); U(pg, 'uSunC', ...E.sunC); U(pg, 'uAmb', ...E.amb); U(pg, 'uSky', ...E.sky); styleUniforms(pg);
   gl.uniform1i(pg.u.uNL, Lt.nl); gl.uniform4fv(pg.u.uL, Lt.L); gl.uniform3fv(pg.u.uLC, Lt.LC); gl.uniform1i(pg.u.uNB, Lt.nb); gl.uniform4fv(pg.u.uB, Lt.B);
   quad();
   gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
   drawMeshes(0, CAM, HR, E, Lt, shXY);
-  gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-  const np = partPoints();
-  gl.useProgram(PG.part.p); U(PG.part, 'uCam', ...CAM); U(PG.part, 'uPx', w / CAM[2]);
-  gl.bindVertexArray(partVao); gl.bindBuffer(gl.ARRAY_BUFFER, partBuf); gl.bufferData(gl.ARRAY_BUFFER, partArr.subarray(0, np * 8), gl.STREAM_DRAW); gl.drawArrays(gl.POINTS, 0, np);
+  // particles blend over the colour but leave alpha (the solid-voxel mask for the outline) alone; glow adds
+  gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
+  const [np, ng] = partPoints(), pp = PG.part;
+  gl.useProgram(pp.p); U(pp, 'uCam', ...CAM); U(pp, 'uPpu', w / CAM[2]); U(pp, 'uSun', ...E.sun); U(pp, 'uSunC', ...E.sunC); U(pp, 'uAmb', ...E.amb); styleUniforms(pp);
+  gl.bindVertexArray(partVao); gl.bindBuffer(gl.ARRAY_BUFFER, partBuf); gl.bufferData(gl.ARRAY_BUFFER, partArr.subarray(0, (np + ng) * 9), gl.STREAM_DRAW); gl.drawArrays(gl.POINTS, 0, np);
+  gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE, gl.ZERO, gl.ONE); gl.drawArrays(gl.POINTS, np, ng);
   gl.disable(gl.BLEND);
   gl.bindFramebuffer(gl.READ_FRAMEBUFFER, RT.scene.fb); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, RT.scene.resolve.fb);
   gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
@@ -357,7 +466,9 @@ export function render(alpha) {
   if (out) into(out); else into(null, cv.width, cv.height);
   const cp = PG.comp; gl.useProgram(cp.p);
   bindTex(cp, 'uScene', scene.tex, 0); bindTex(cp, 'uBloom', RT.qa.tex, 1); bindTex(cp, 'uBlur', RT.ta.tex, 2);
-  U(cp, 'uT', G.t); U(cp, 'uExp', E.exp); U(cp, 'uSat', E.sat); U(cp, 'uVig', 0.42); U(cp, 'uTilt', 0.7 * R.fx.tilt); U(cp, 'uGrain', SET.calm ? 0 : 0.01);
+  // pixel styles: ordered-dither palette steps and the ink edge replace film grain; tilt-shift is gentler
+  styleUniforms(cp); U(cp, 'uQ', 0); U(cp, 'uInk', px ? 0.75 * (R.fx.ink ?? 1) : 0);
+  U(cp, 'uT', G.t); U(cp, 'uExp', E.exp); U(cp, 'uSat', E.sat); U(cp, 'uVig', 0.42); U(cp, 'uTilt', (px ? 0.45 : 0.7) * R.fx.tilt); U(cp, 'uGrain', SET.calm || px ? 0 : 0.01);
   U(cp, 'uGrade', R.fx.grade ?? 1); U(cp, 'uDusk', E.dusk);
   U(cp, 'uRain', WX.rain); U(cp, 'uFlash', WX.flash * (SET.calm ? 0.15 : 1)); U(cp, 'uBloomK', (0.5 + E.dk * 0.5) * R.fx.bloom); U(cp, 'uSlant', 0.3 + WX.wind * 0.7);
   U(cp, 'uTint', ...E.tint); U(cp, 'uRes', out ? out.w : cv.width, out ? out.h : cv.height);
