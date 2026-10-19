@@ -173,16 +173,26 @@ function Hud() {
 // ---------- port ----------
 const GREET = ['The harbourmaster tips his cap.', 'Gulls squabble over the pilings.', 'The smell of tar and salt hangs in the air.', 'A fiddle plays somewhere on the quay.', 'Nets dry on every rail.', 'The fishwife sizes up your catch.'];
 const hashStr = s => { let h = 7; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) | 0; return Math.abs(h); };
-let hovering = false;
+// Which device moved the cursor last. Keyboard and pad moves scroll the selection into view; only a mouse that
+// actually moved selects by hovering, so a list scrolling under a resting cursor can't steal the selection.
+let pointer = false;
+addEventListener('keydown', () => { pointer = false; }, true);
+let mx = -1, my = -1;
+addEventListener('mousemove', e => { if (e.clientX !== mx || e.clientY !== my) { mx = e.clientX; my = e.clientY; pointer = true; } }, true);
+const byPointer = fn => () => { if (pointer && !G.pad) fn(); };
 // keeps the cursor row visible in scrolling lists when moved by keyboard or pad
 function useScrollTo(sel) {
   const ref = useRef();
-  useEffect(() => { if (sel && ref.current && !hovering) ref.current.scrollIntoView({ block: 'nearest' }); }, [sel]);
+  useEffect(() => { if (sel && ref.current && (!pointer || G.pad)) ref.current.scrollIntoView({ block: 'nearest' }); }, [sel]);
   return ref;
+}
+function Cell({ sel, cls, onClick, children }) {
+  const ref = useScrollTo(sel);
+  return html`<div ref=${ref} class=${cls + (sel ? ' sel' : '')} onClick=${onClick}>${children}</div>`;
 }
 function SetRow({ sel, onEnter, onClick, children, cls = 'item setrow' }) {
   const ref = useScrollTo(sel);
-  return html`<div ref=${ref} class=${cls + (sel ? ' sel' : '')} onMouseEnter=${() => { hovering = true; onEnter(); }} onMouseLeave=${() => { hovering = false; }} onClick=${onClick}>${children}</div>`;
+  return html`<div ref=${ref} class=${cls + (sel ? ' sel' : '')} onMouseMove=${byPointer(onEnter)} onClick=${onClick}>${children}</div>`;
 }
 function RowVisual({ it }) {
   if (it.fish !== undefined) return html`<${Fish} sp=${it.fish}/>`;
@@ -193,7 +203,7 @@ function RowVisual({ it }) {
 function Row({ it, i }) {
   const sel = G.menu.sel === i, ref = useScrollTo(sel);
   return html`<div ref=${ref} class=${'item' + (sel ? ' sel' : '') + (it.ok ? '' : ' off') + (flashing(it.key) ? ' flash' : '')}
-    onMouseEnter=${() => { hovering = true; }} onMouseLeave=${() => { hovering = false; }} onClick=${() => { if (G.menu.sel === i) it.act(); else G.menu.sel = i; }}>
+    onClick=${() => { if (G.menu.sel === i) it.act(); else G.menu.sel = i; }}>
     <${RowVisual} it=${it}/>
     <div class="grow"><div>${it.label}</div>${it.pips ? html`<${Pips} n=${it.pips[0]} of=${it.pips[1]}/>` : it.sub && html`<div class="sub">${it.sub}</div>`}</div>
     <span class=${'price' + (it.cost != null && G.coins < it.cost ? ' short' : '')}>${it.right}</span>
@@ -300,8 +310,8 @@ function Logbook() {
   return html`<div class="screen paper doc flush">
     <div class="journal">
       <div class="page"><header class="head"><h1>Logbook</h1><span class="muted">${logged()} of ${SPECIES.length} species</span></header>
-        <div class="lgrid">${SPECIES.map((sp, i) => html`<div class=${'lcell' + (i === sel ? ' sel' : '')} onClick=${() => { G.logSel = i; }}>
-          <${Fish} sp=${i} size="l" cls=${G.log[sp.id] ? '' : 'sil'}/>${G.log[sp.id]?.trophy && html`<${Icon} k="star" size="s" cls="corner"/>`}</div>`)}</div>
+        <div class="lgrid">${SPECIES.map((sp, i) => html`<${Cell} cls="lcell" sel=${i === sel} onClick=${() => { G.logSel = i; }}>
+          <${Fish} sp=${i} size="l" cls=${G.log[sp.id] ? '' : 'sil'}/>${G.log[sp.id]?.trophy && html`<${Icon} k="star" size="s" cls="corner"/>`}<//>`)}</div>
       </div>
       <div class="page">
         <div class="hero"><${Fish} sp=${sel} cls=${'huge' + (e ? '' : ' sil')}/></div>
@@ -340,8 +350,8 @@ function Ship() {
       </div>
       <div class="col">
         <div class="hold-grid">${Array.from({ length: cp }, (_, i) => { const f = G.hold[i]; if (!f) return html`<div class="fcard empty"/>`;
-          return html`<div class=${'fcard' + (i === G.shipSel ? ' sel' : '')} onClick=${() => { G.shipSel = i; }}><${Fish} sp=${f.sp} size="l"/><div><div>${fmtKg(f.kg)}</div><div class="gold">${money(fishValue(f))}</div></div>
-            <span class="badges">${f.trophy && html`<${Icon} k="star" size="s"/>`}${need.get(f.sp) && html`<${Icon} k="map" size="s"/>`}</span></div>`; })}</div>
+          return html`<${Cell} cls="fcard" sel=${i === G.shipSel} onClick=${() => { G.shipSel = i; }}><${Fish} sp=${f.sp} size="l"/><div><div>${fmtKg(f.kg)}</div><div class="gold">${money(fishValue(f))}</div></div>
+            <span class="badges">${f.trophy && html`<${Icon} k="star" size="s"/>`}${need.get(f.sp) && html`<${Icon} k="map" size="s"/>`}</span><//>`; })}</div>
         <div class="well pad row">${sel ? html`<${Fish} sp=${sel.sp} size="s"/><span class="gold">${SPECIES[sel.sp].name}</span><span>${fmtKg(sel.kg)}${sel.trophy ? ', trophy' : ''}${need.get(sel.sp) ? ', wanted for a contract' : ''}</span><span class="grow"/><button class="btn" onClick=${() => { G.pressed.add('x'); }}>Release<${Key} k="x"/></button>` : html`<span class="muted">Your hold is empty. Go fishing!</span>`}</div>
       </div>
       <div class="col side">
@@ -358,7 +368,7 @@ function Ship() {
 export const TITLE_ITEMS = () => [...(hasSave() ? ['CONTINUE'] : []), 'NEW VOYAGE', 'SETTINGS', 'CONTROLS'];
 export const PAUSE_ITEMS = ['RESUME', 'JOURNAL', 'SETTINGS', 'CONTROLS', 'SAVE & QUIT'];
 function Menu({ items, sel, onPick, setSel }) {
-  return html`<div class="menu">${items.map((s, i) => html`<button class=${'item' + (i === sel ? ' sel' : '')} onMouseEnter=${() => setSel(i)} onClick=${() => onPick(i)}>${s}</button>`)}</div>`;
+  return html`<div class="menu">${items.map((s, i) => html`<button class=${'item' + (i === sel ? ' sel' : '')} onMouseMove=${byPointer(() => setSel(i))} onClick=${() => onPick(i)}>${s}</button>`)}</div>`;
 }
 function Title() {
   return html`<div class="center">
