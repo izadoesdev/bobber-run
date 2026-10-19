@@ -54,6 +54,11 @@ const BUILD = {
   storm: () => { const V = BUILD.cloud(5); V.line([1, 0, 4], [-1, 0, 2], X.glowy); V.line([-1, 0, 2], [1, 0, 2], X.glowy); V.line([1, 0, 2], [-1, 0, 0], X.glowy); return V; },
   arrow: () => { const V = new Vox(-6, 6, -1, 1, 10); V.box(-5, 1, 0, 0, 4, 6, M.white); for (let k = 0; k <= 4; k++) V.box(2 + k, 2 + k, 0, 0, 1 + k, 9 - k, M.white); return V; },
   warn: () => { const V = new Vox(-6, 6, -1, 1, 12); for (let z = 0; z <= 10; z++) { const w = Math.round(z * 0.55); V.box(-5 + w, 5 - w, 0, 0, z, z, X.brass); } V.box(0, 0, 1, 1, 4, 7, M.iron); V.set(0, 1, 2, M.iron); return V; },
+  // dry dock upgrades
+  pots: () => { const V = new Vox(-6, 6, -4, 4, 10); for (let u = -4; u <= 4; u++) for (let v = -3; v <= 3; v++) for (let z = 0; z <= 5; z++) { const edge = Math.abs(u) === 4 || Math.abs(v) === 3 || z === 0 || z === 5; if (edge && ((u + v + z) % 2 === 0 || z === 0 || z === 5)) V.set(u, v, z, z === 5 || z === 0 ? M.post : M.net); } V.line([4, 0, 5], [6, 0, 8], M.net); V.box(5, 6, -1, 0, 8, 9, M.redp); return V; },
+  keel: () => { const V = new Vox(-6, 6, -3, 3, 10); for (let u = -6; u <= 6; u++) { const w = Math.max(0, 3 - Math.abs(u) * 0.4); V.box(u, u, -Math.round(w), Math.round(w), 6, 7, M.paint); } for (let u = -4; u <= 3; u++) { const d = Math.round(5 - Math.abs(u + 0.5) * 0.8); V.box(u, u, 0, 0, 6 - d, 5, M.iron); } V.box(-1, 1, -1, 1, 0, 1, M.copper); return V; },
+  harpoon: () => { const V = new Vox(-7, 7, -2, 2, 10); V.line([-6, 0, 2], [6, 0, 8], M.iron); V.line([4, 0, 7], [7, 0, 9], X.silver); V.set(5, 1, 8, X.silver); V.set(5, -1, 8, X.silver); V.box(-5, -3, -1, 1, 0, 3, M.post); V.box(-4, -4, -2, 2, 2, 2, X.brass); V.line([-6, 0, 2], [-3, 2, 0], M.net); return V; },
+  bell: () => { const V = new Vox(-5, 5, -5, 5, 12); for (let z = 0; z <= 9; z++) { const r = z < 7 ? 4.6 - z * 0.12 : 4.2 - (z - 6) * 1.1; for (let u = -5; u <= 5; u++) for (let v = -5; v <= 5; v++) { const d = Math.hypot(u, v); if (d <= r && d > r - 1.3 || (z === 9 && d <= r)) V.set(u, v, z, X.brass); } } for (const [u, v] of [[0, 4], [4, 0], [-4, 0]]) V.set(u, v, 4, X.blue); V.box(0, 0, 0, 0, 10, 11, M.iron); return V; },
   // story portraits: head and shoulders, facing the viewer
   maren: () => bust(M.navy, M.iron, M.iron),
   ida: () => bust(X.green, M.post, null),

@@ -345,8 +345,11 @@ function decorate(id, eq) {
   if (eq.lantern > 0) { const [u, v, z] = m.lamp; V.box(u, u, v, v, z, z + 3, M.iron); V.set(u, v, z + 4, M.lamp); if (eq.lantern >= 2) { V.set(u, v, z + 5, M.lamp); V.set(u, v, z + 6, M.iron); } if (eq.lantern >= 3) { V.set(u + 1, v, z + 4, M.lamp); V.set(u - 1, v, z + 4, M.lamp); } }
   if (eq.sonar > 0) { const [u, v, z] = m.sonar; V.box(u, u + 1, v, v + 1, z, z, M.iron); V.set(u + 1, v, z, M.window); if (eq.sonar >= 2) V.box(u, u + 1, v, v + 1, z + 1, z + 1, M.white); if (eq.sonar >= 3) V.line([u, v, z + 2], [u, v, z + 6], M.iron); }
   for (let k = 0; k < Math.min(3, eq.rod + 1); k++) {
-    const [[u0, v0, z0], [u1, v1, z1]] = m.rod, sg = k % 2 ? -1 : 1, du = -2 * Math.floor(k / 2);
-    V.line([u0 + du, sg * v0, z0], [u1 + du, sg * v1, z1], M.post); V.set(u0 + du, sg * v0, z0 + 1, M.flag);
+    // a light bamboo rod resting in a holder on the gunwale, leaning out over the water (not straight up,
+    // where a dark pole read as a smoke plume); white tip, iron reel at the butt
+    const [[u0, v0, z0]] = m.rod, sg = k % 2 ? -1 : 1, du = -2 * Math.floor(k / 2), B = [u0 + du, sg * v0, z0], T = [u0 + du - 3, sg * (v0 + 7), z0 + 4];
+    V.line(B, [B[0] + (T[0] - B[0]) * 0.75, B[1] + (T[1] - B[1]) * 0.75, B[2] + (T[2] - B[2]) * 0.75], M.seat);
+    V.line([B[0] + (T[0] - B[0]) * 0.8, B[1] + (T[1] - B[1]) * 0.8, B[2] + (T[2] - B[2]) * 0.8], T, M.white); V.set(B[0], B[1], B[2], M.iron);
   }
   if (eq.ice > 0) { const [u, v, z] = m.ice; V.box(u, u + 2, v, v + 2, z, z + 1, M.white); V.box(u, u + 2, v, v + 2, z + 1, z + 1, eq.ice >= 3 ? M.stripe : M.white); V.set(u + 1, v + 1, z + 1, M.stripe); }
   if (eq.tackle > 0) { const [u, v, z] = m.tackle; V.box(u, u + 1, v, v + 1, z, z, M.tackle); V.set(u, v, z, M.flag); }
@@ -361,6 +364,10 @@ function decorate(id, eq) {
   if (eq.quarter > 0) { const [u, v, z] = m.flag; V.line([u, v, z], [u, v, z + 6], M.iron); for (let k = 0; k < 4; k++) { put(u - 1 - k, v, z + 6, eq.quarter >= 2 ? M.flag : M.redp); if (k < 3) put(u - 1 - k, v, z + 5, eq.quarter >= 2 ? M.flag : M.redp); } }
   if (eq.bilge > 0) { const [u, v, z] = m.pump; put(u, v, z, M.redp); put(u, v, z + 1, M.redp); put(u, v + 1, z, M.iron); if (eq.bilge >= 2) put(u + 1, v, z, M.redp); }
   if (eq.reel > 0) { const [[u0, v0, z0]] = m.rod; put(u0 - 1, v0, z0 + 1, M.gilt); }
+  // dry dock gear: a stack of crab pots, a bow harpoon gun, a brass diving bell
+  if (eq.pots > 0) { const [u, v, z] = m.crates[Math.min(2, m.crates.length - 1)]; for (let k = 0; k < Math.min(3, eq.pots); k++) { const uu = u - k * 3; for (let a = 0; a < 2; a++) for (let c = 0; c < 2; c++) { put(uu + a, -v + c, z, M.net); put(uu + a, -v + c, z + 1, (a + c) % 2 ? M.net : M.post); } } }
+  if (eq.harpoon > 0) { const [u, v, z] = m.anchor; put(u - 3, 0, z + 1, M.iron); put(u - 3, 0, z + 2, M.iron); for (let k = 0; k < 4; k++) put(u - 3 + k, 0, z + 3, k === 3 ? M.white : M.iron); }
+  if (eq.bell > 0) { const [u, v, z] = m.ice; for (let a = -1; a <= 1; a++) for (let c = -1; c <= 1; c++) { put(u + a - 4, -v + c, z, M.copper); if (!a || !c) put(u + a - 4, -v + c, z + 1, M.copper); } put(u - 4, -v, z + 2, M.copper); put(u - 4, -v, z + 3, M.iron); }
   if (eq.pet) {                                     // the ship's cat curls up on the first free deck spot near the stern
     const L = Math.floor(V.u0 + V.nu * 0.3), top = (u, v) => { for (let z = V.nz - 1; z >= 0; z--) if (V.get(u, v, z)) return z; return -1; };
     // prefer a high, flat perch (a seat or cabin roof) so the cat shows above the gunwales
@@ -380,7 +387,7 @@ function decorate(id, eq) {
   if (id === 'launch' && eq.prop >= 3) for (const v of [-3, 3]) { V.box(-19, -17, v - 1, v, 3, 8, M.iron); V.box(-19, -17, v - 1, v, 9, 9, M.redp); }
   return V.finalize();
 }
-export const eqSig = (id, eq) => [id, eq.paint, eq.plate, eq.prop, eq.lantern, eq.sonar, Math.min(2, eq.rod), eq.ice, eq.tackle, eq.net, eq.radio, eq.anchor, Math.min(3, eq.hold), eq.pile, eq.deckhand | 0, eq.cook | 0, eq.quarter | 0, eq.pet | 0, eq.bilge | 0, eq.reel ? 1 : 0].join('|');
+export const eqSig = (id, eq) => [id, eq.paint, eq.plate, eq.prop, eq.lantern, eq.sonar, Math.min(2, eq.rod), eq.ice, eq.tackle, eq.net, eq.radio, eq.anchor, Math.min(3, eq.hold), eq.pile, eq.deckhand | 0, eq.cook | 0, eq.quarter | 0, eq.pet | 0, eq.pots | 0, eq.harpoon | 0, eq.bell | 0, eq.bilge | 0, eq.reel ? 1 : 0].join('|');
 const models = new Map();                         // signature -> { vox, frames }, most recent last
 function modelFor(id, eq) {
   const sig = eqSig(id, eq); let m = models.get(sig);

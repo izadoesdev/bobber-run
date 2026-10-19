@@ -233,7 +233,7 @@ function Detail({ p, it }) {
     <h2>${it.kind === 'take' ? `Contract: ${it.label}` : it.label}</h2>
     ${it.kind === 'sell' ? html`<${SellDetail} p=${p}/>` : html`<div class="d-body">
       ${it.kind === 'upgrade' && html`<div class="row"><${Pips} n=${it.pips[0]} of=${it.pips[1]}/><span class="muted">Level ${it.pips[0] + 1} of ${it.pips[1] + 1}</span></div>
-        <p><span class="caps">Now</span> ${it.now}</p>${it.what && html`<p><span class="caps">Next</span> <span class="good">${it.what}</span></p>`}<p class="muted small">Fitted gear shows on your boat.</p>`}
+        <p><span class="caps">Now</span> ${it.now}</p>${it.what && html`<p><span class="caps">Next</span> <span class="good">${it.what}</span></p>`}${it.key !== 'keel' && html`<p class="muted small">Fitted gear shows on your boat.</p>`}`}
       ${it.kind === 'boat' && html`${[['Speed', it.boat.speed / max.speed], ['Hold', it.boat.hold / max.hold, it.boat.hold + ' fish'], ['Hull', it.boat.hp / max.hp, it.boat.hp], ['Turning', it.boat.turn / 1.05]].map(([n, k, v]) => html`<div class="stat"><span class="caps">${n}</span><${Bar} k=${k} tone="gold"/><span class="num">${v || ''}</span></div>`)}<p>${it.boat.what}.</p>`}
       ${it.kind === 'repair' && html`<div class="stat"><span class="caps">Hull</span><${Bar} k=${G.boat.hp / hpMax()}/><span class="num">${G.boat.hp}/${hpMax()}</span></div><p>${it.what}</p>`}
       ${it.kind === 'rest' && html`<p>${it.what}</p>`}

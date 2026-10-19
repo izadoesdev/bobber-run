@@ -7,7 +7,7 @@ import { WX, updateWeather, biteMul, trophyBonus } from './weather.js';
 import { SPECIES, SP, BOATS, UPGRADES, UP_CATS, PAINTS, SUPPLIES, PROJECTS, activeAt, fmtKg, pickSpecies } from './econ.js';
 import { sfx, soundscape, music, setCaptionHook } from './audio.js';
 import { SET } from './prefs.js';
-import { bladeAt, OAR, BOAT_MODELS } from './models.js';
+import { bladeAt, OAR, BOAT_MODELS, FUNNEL } from './models.js';
 
 export const G = {
   mode: 'title', t: 0, clock: 0,
@@ -53,7 +53,7 @@ export const fishValue = f => Math.round(f.value * (1 + 0.05 * G.up.ice));
 export const env = () => { const c = dayFrac(); return { night: isNight(), twilight: (c > 0.56 && c < 0.7) || c > 0.88 || c < 0.03, weather: WX.state }; };
 // what the boat should visibly carry
 export function equipment() {
-  const u = G.up; return { paint: G.paint, plate: u.hull, prop: u.prop, lantern: u.lantern, sonar: sonarLvl(), rod: u.rod, ice: u.ice, tackle: u.tackle, net: u.net, radio: u.radio, anchor: u.anchor, hold: u.hold, pile: Math.min(3, Math.ceil(G.hold.length / 3)), deckhand: u.deckhand, cook: u.cook, quarter: u.quarter, bilge: u.bilge, reel: u.reel, pet: G.pet ? 1 : 0, deckhand: crewLvl() };
+  const u = G.up; return { paint: G.paint, plate: u.hull, prop: u.prop, lantern: u.lantern, sonar: sonarLvl(), rod: u.rod, ice: u.ice, tackle: u.tackle, net: u.net, radio: u.radio, anchor: u.anchor, hold: u.hold, pile: Math.min(3, Math.ceil(G.hold.length / 3)), deckhand: u.deckhand, cook: u.cook, quarter: u.quarter, bilge: u.bilge, reel: u.reel, pet: G.pet ? 1 : 0, deckhand: crewLvl(), pots: u.pots | 0, harpoon: harpoonLvl(), bell: u.bell | 0 };
 }
 export const logged = () => SPECIES.filter(s => G.log[s.id]).length;
 
@@ -722,7 +722,10 @@ export function update(dt) {
   for (let i = G.floaters.length - 1; i >= 0; i--) if ((G.floaters[i].t -= dt) <= 0) G.floaters.splice(i, 1);
   for (let i = G.parts.length - 1; i >= 0; i--) {
     const p = G.parts[i];
-    if (p.vx !== undefined) { p.x += p.vx * dt; p.y += p.vy * dt; const k = Math.exp(-3 * dt); p.vx *= k; p.vy *= k; if (p.kind === 'spout') p.vy += 40 * dt; }
+    if (p.kind === 'smoke') {                       // smoke keeps rising and drifts downwind
+      const wa = windAngle(), ws = 3 + WX.wind * 14, k = Math.exp(-1.2 * dt);
+      p.x += (p.vx + Math.cos(wa) * ws) * dt; p.y += (p.vy + Math.sin(wa) * ws) * dt; p.z += p.vz * dt; p.vx *= k; p.vy *= k; p.vz *= Math.exp(-0.6 * dt);
+    } else if (p.vx !== undefined) { p.x += p.vx * dt; p.y += p.vy * dt; const k = Math.exp(-3 * dt); p.vx *= k; p.vy *= k; if (p.kind === 'spout') p.vy += 40 * dt; if (p.vz) p.z += p.vz * dt; }
     if ((p.life -= dt) <= 0) G.parts.splice(i, 1);
   }
   const dc = G.coins - G.coinsShown; G.coinsShown += Math.abs(dc) < 1 ? dc : Math.sign(dc) * Math.max(1, Math.abs(dc) * 6 * dt);
@@ -800,6 +803,11 @@ export function update(dt) {
     G.wakeAcc -= 1;
     for (const sg of [-1, 1]) { const [x, y] = toWorld(bd.L * 0.75, sg * bd.B * 0.8); spawn({ kind: 'dot', x, y, vx: -s * sg * 7 - c * 3, vy: c * sg * 7 - s * 3, life: 1.6 + Math.random() * 0.6 }); }
     const [x, y] = toWorld(-bd.L - 1, (Math.random() - 0.5) * bd.B * 0.7); spawn({ kind: 'dot', x, y, vx: 0, vy: 0, life: bd.prop === 'ENGINE' ? 2.2 : 1.4, foam: bd.prop === 'ENGINE' });
+  }
+  const fn = FUNNEL[bd.id];                          // steam ships puff smoke, faster under way
+  if (fn && (G.smokeT = (G.smokeT || 0) - dt) <= 0) {
+    G.smokeT = G.throttle ? 0.09 : 0.28; const [x, y] = toWorld(fn[0], fn[1]);
+    spawn({ kind: 'smoke', x, y, z: fn[2] + 1, vx: b.vx * 0.3 + (Math.random() - 0.5) * 3, vy: b.vy * 0.3 + (Math.random() - 0.5) * 3, vz: 9 + Math.random() * 5, size: 2.2 + Math.random(), dark: bd.id === 'drifter' ? 0.55 : 0.15, life: 2.6 + Math.random() * 1.2 });
   }
   if ((G.idleRing -= dt) <= 0) { G.idleRing = 1.8 + Math.random(); if (sp < 4) spawn({ kind: 'ring', x: b.x, y: b.y, life: 1.6, r0: bd.L - 1, grow: 5 }); }
   if (G.up.bilge > 0 && b.hp < hpMax() && (G.bilgeT = (G.bilgeT || 0) + dt) > [0, 4, 1.4][G.up.bilge]) { G.bilgeT = 0; b.hp++; }
