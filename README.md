@@ -13,6 +13,16 @@ bun run preview   # serve the production build
 
 Needs a browser with WebGL2.
 
+### Online play (optional)
+
+Without configuration the game runs fully offline. To enable accounts, cloud saves, world records, bottles and other sailors, run a [Convex](https://convex.dev) backend from `convex/`:
+
+```sh
+bunx convex dev   # creates a dev deployment and writes VITE_CONVEX_URL to .env.local
+```
+
+Convex Auth also needs `JWT_PRIVATE_KEY`, `JWKS` and `SITE_URL` set on the deployment (see the Convex Auth setup guide). `.env.local` is gitignored.
+
 ## Controls
 
 | Key | Action |
@@ -36,6 +46,7 @@ Keys can be rebound under Controls. Gamepads work too. Settings > Pixel style sw
 - `src/gl/`: WebGL2 renderer, shaders, voxel meshes
 - `src/ui/`: Preact + htm interface, icons, sea chart
 - `src/audio.js`: synthesized sound effects, ambience and music
+- `src/net.ts`, `src/online.js`: optional online layer; `convex/`: backend functions and schema
 
 ## Credits
 
