@@ -11,6 +11,7 @@ import { initRender, render, R, prefetch, boatRenderState } from './gl/renderer.
 import { initUI, drawUI, TITLE_ITEMS, PAUSE_ITEMS } from './ui/index.js';
 import { SET, ROWS, ACTIONS, applySettings, remap, bind, resetBinds, toggleFullscreen } from './settings.js';
 import { runCheat } from './cheats.js';
+import { updateStory, talkNext } from './story.js';
 import { unlockAudio, sfx, renderOffline, SFX_NAMES } from './audio.js';
 import { homePort, schoolsNear, poisNear, hAt, LAIR, BOSS } from './world.js';
 import { updateLife, LIFE } from './life.js';
@@ -98,6 +99,7 @@ function modeInput2(dt) {
       const pick = PAUSE_ITEMS[G.pauseSel || 0]; sfx('select');
       if (pick === 'RESUME') G.mode = 'play';
       else if (pick === 'SAVE & QUIT') { saveGame(); G.mode = 'title'; G.titleSel = 0; }
+      else if (pick === 'JOURNAL') { G.journalBack = 'pause'; G.mode = 'journal'; }
       else { G.back = 'pause'; G.setSel = 1; G.ctlSel = 0; G.mode = pick === 'SETTINGS' ? 'settings' : 'controls'; }
     }
     return;
@@ -122,6 +124,8 @@ function modeInput2(dt) {
     if (hit('Escape', 'Backspace')) { G.mode = G.back || 'title'; sfx('move'); }
     return;
   }
+  if (G.mode === 'talk') { if (hit(' ', 'Enter', 'e')) talkNext(); else if (hit('Escape')) talkNext(true); return; }
+  if (G.mode === 'journal') { if (hit('j', 'Escape', 'Enter', ' ')) { G.mode = G.journalBack || 'play'; sfx('move'); } return; }
   if (G.mode === 'finale') { if (hit(' ', 'Enter', 'Escape')) { G.mode = 'play'; sfx('select'); } return; }
   if (G.mode === 'port') return portMenuInput(dt);
   if (G.mode === 'map') {
@@ -139,6 +143,7 @@ function modeInput2(dt) {
   if (G.mode === 'play') {
     if (hit('m', 'M')) { G.mode = 'map'; G.map.x = G.map.y = 0; sfx('move'); }
     else if (hit('l', 'L')) { G.mode = 'log'; sfx('move'); }
+    else if (hit('j')) { G.journalBack = 'play'; G.mode = 'journal'; sfx('move'); }
     else if (hit('Tab', 'i', 'I')) { G.mode = 'ship'; G.shipSel = 0; sfx('move'); }
     else if (hit('Escape') && !G.fish) { G.mode = 'pause'; G.pauseSel = 0; sfx('move'); }
   }
@@ -160,6 +165,7 @@ export function tick(dt) {
   } else { acc = 0; const b = G.boat; b.px = b.x; b.py = b.y; b.pa = b.a; }
   if (G.mode === 'map') { const s = 220 * dt * G.map.zoom; if (G.keys.ArrowLeft || G.keys.a) G.map.x -= s; if (G.keys.ArrowRight || G.keys.d) G.map.x += s; if (G.keys.ArrowUp || G.keys.w) G.map.y -= s; if (G.keys.ArrowDown || G.keys.s) G.map.y += s; }
   update(dt);
+  updateStory();
   updateLife(dt);
   const bs = boatRenderState(alpha);
   if (G.mode === 'play' || G.mode === 'sunk' || G.mode === 'title') updateCamera(dt, bs.x, bs.y);   // menus freeze the view behind them

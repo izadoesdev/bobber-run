@@ -260,3 +260,13 @@ h2, .title { font-size: var(--fs-xl); }
 .caret { display: inline-block; width: 0.55em; height: 1em; background: var(--gold); vertical-align: -0.1em; margin-left: 0.1em; animation: blink 1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 .cheats .code { font-family: ui-monospace, monospace; text-transform: none; letter-spacing: 0; color: var(--gold); cursor: pointer; pointer-events: auto; }
+
+/* story: conversations, quest chip, journal */
+.talk-wrap { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 1.4em; background: linear-gradient(transparent 55%, rgba(10,16,22,0.55)); pointer-events: auto; cursor: pointer; }
+.talk { width: 44em; max-width: 92%; display: flex; gap: 1em; align-items: center; padding: 0.9em 1.2em; animation: drop 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); position: relative; }
+.talk .portrait { flex: none; width: 6.5em; height: 6.5em; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 50% 40%, #4a7a94, #2b4566); border-radius: var(--r); box-shadow: inset 0 0 0 0.12em #140d08; }
+.talk .line { font-size: 1.1em; line-height: 1.45; margin-top: 0.3em; }
+.talk-foot { position: absolute; right: 1em; bottom: 0.5em; display: flex; align-items: center; gap: 0.6em; font-size: 0.8em; }
+.talk .grow { padding-bottom: 1.2em; }
+.chip.quest { font-size: 0.9em; border-color: rgba(240,207,106,0.6); }
+.journal-list .item.sel { cursor: default; }

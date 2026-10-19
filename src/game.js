@@ -128,7 +128,7 @@ export function saveGame() {
     const b = G.boat;
     localStorage.setItem(KEY, JSON.stringify({ coins: G.coins, earned: G.earned, up: G.up, hp: b.hp, hold: G.hold, log: G.log, boatId: G.boatId, owned: G.owned,
       bait: G.bait, baitSel: G.baitSel, paint: G.paint, paints: G.paints, found: [...G.found], salvaged: [...G.salvaged], lastPort: G.lastPort, x: b.x, y: b.y, a: b.a,
-      stats: G.stats, gifts: G.gifts, pet: G.pet, projects: G.projects, fleet: G.fleet, dives: G.dives, finale: G.finale, goalIdx: G.goalIdx, goalsDone: G.goalsDone, maps: G.maps, musicOn: G.musicOn, offers: G.offers, active: G.active, pity: G.pity, clock: G.clock }));
+      stats: G.stats, story: G.story, gifts: G.gifts, pet: G.pet, projects: G.projects, fleet: G.fleet, dives: G.dives, finale: G.finale, goalIdx: G.goalIdx, goalsDone: G.goalsDone, maps: G.maps, musicOn: G.musicOn, offers: G.offers, active: G.active, pity: G.pity, clock: G.clock }));
   } catch (_) { }
 }
 export const hasSave = () => { try { return !!(localStorage.getItem(KEY) || localStorage.getItem(OLD)); } catch (_) { return false; } };
@@ -144,7 +144,7 @@ export function newGame() {
   Object.assign(G, { coins: 15, coinsShown: 15, earned: 0, paint: 'classic', paints: ['classic'], up: Object.fromEntries(Object.keys(UPGRADES).map(k => [k, 0])), bait: { shrimp: 3, glow: 0, chum: 1 }, baitSel: 'shrimp',
     hold: [], log: {}, found: new Set(), salvaged: new Set(), sat: {}, fish: null, parts: [], toasts: [], floaters: [], boatId: 'row', owned: ['row'],
     stats: { caught: 0, sold: 0, upgrades: 0, lights: 0, contracts: 0, wrecks: 0, trophies: 0, night: 0, frenzy: 0, treasures: 0, storm: 0 }, goalIdx: 0, goalsDone: [], maps: [], offers: {}, active: [], pity: 0,
-    clock: DAYLEN * 0.08, frenzy: null, nextFrenzy: 45, card: null, projects: [], fleet: {}, dives: {}, finale: false, gifts: {}, pet: null, dry: 0 });
+    clock: DAYLEN * 0.08, frenzy: null, nextFrenzy: 45, card: null, projects: [], fleet: {}, dives: {}, finale: false, gifts: {}, pet: null, dry: 0, story: null, talk: null });
   const home = homePort(); G.lastPort = home.id; G.found.add(home.id); G.boat.hp = hpMax();
   placeAtPort(home);
 }
@@ -160,7 +160,7 @@ export function loadGame() {
     Object.assign(G, { coins: d.coins | 0, coinsShown: d.coins | 0, earned: d.earned | 0, up: { ...G.up, ...d.up }, hold: (d.hold || []).filter(f => f && typeof f === 'object'),
       log: d.log || {}, boatId: d.boatId || 'row', owned: d.owned || ['row'], bait: { ...G.bait, ...d.bait }, baitSel: d.baitSel || 'shrimp', paint: d.paint || 'classic', paints: d.paints || ['classic'],
       found: new Set(d.found || []), salvaged: new Set(d.salvaged || []), lastPort: d.lastPort || G.lastPort, stats: { ...G.stats, ...d.stats },
-      gifts: d.gifts || {}, pet: d.pet || null, projects: d.projects || [], fleet: d.fleet || {}, dives: d.dives || {}, finale: !!d.finale, goalIdx: d.goalIdx | 0, goalsDone: d.goalsDone || [], maps: d.maps || [], musicOn: d.musicOn ?? true, offers: d.offers || {}, active: d.active || [], pity: d.pity | 0, clock: d.clock ?? G.clock });
+      story: d.story || null, gifts: d.gifts || {}, pet: d.pet || null, projects: d.projects || [], fleet: d.fleet || {}, dives: d.dives || {}, finale: !!d.finale, goalIdx: d.goalIdx | 0, goalsDone: d.goalsDone || [], maps: d.maps || [], musicOn: d.musicOn ?? true, offers: d.offers || {}, active: d.active || [], pity: d.pity | 0, clock: d.clock ?? G.clock });
     G.boat.hp = clamp(d.hp ?? hpMax(), 1, hpMax());
     for (const c of [...G.active, ...Object.values(G.offers).flat()]) if (c && c.to) c.toName = portById(c.to).name;   // older saves stored names in capitals
     if (Number.isFinite(d.x) && hAt(d.x, d.y) < -0.05) { Object.assign(G.boat, { x: d.x, y: d.y, a: d.a || 0, px: d.x, py: d.y, pa: d.a || 0 }); G.cam.x = d.x - W / 2; G.cam.y = d.y - H / 2; }
@@ -554,7 +554,7 @@ function fundProject(pr) {
   const gone = new Set(st.pick); G.hold = G.hold.filter(f => !gone.has(f)); addCoins(-pr.cost); G.projects.push(pr.id);
   sfx('fanfare'); celebrate(); toast(`${pr.name}: done! ${pr.gives}`, 'good'); G.bought = { id: pr.id, t: G.t };
   if (pr.id === 'lights') { const hp = homePort(); for (const q of poisNear(hp.x, hp.y, 1800)) if (q.type === 'light') G.found.add(q.id); }
-  if (pr.id === 'grand') { G.finale = true; G.mode = 'finale'; }
+  if (pr.id === 'grand') { G.finale = true; if (G.story?.i !== 15) G.mode = 'finale'; }   // with the story running, Nell's homecoming plays first
   saveGame();
 }
 // ---------- the fleet office: spare boats fish on their own ----------

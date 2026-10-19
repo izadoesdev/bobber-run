@@ -12,6 +12,15 @@ const X = {
 };
 const disc = (V, cx, cy, z0, z1, r, m) => { for (let z = z0; z <= z1; z++) for (let v = -6; v <= 6; v++) for (let u = -6; u <= 6; u++) if (Math.hypot(u - cx, v - cy) <= r) V.set(u, v, z, m); };
 const person = (V, coat, hat, tall = 0) => { V.box(-1, 0, -1, 0, 0, 2, M.pants); V.box(-1, 0, -1, 0, 3, 5, coat); V.box(-2, 1, -1, 0, 4, 5, coat); V.box(-1, 0, -1, 0, 6, 7, M.skin); V.box(-1, 0, -1, 0, 8, 8 + tall, hat); };
+// a head-and-shoulders figure for the story portraits: coat, hair (or hat brim) and an optional hat crown
+const bust = (coat, hair, hat, souwester = false) => {
+  const V = new Vox(-5, 5, -4, 4, 14);
+  for (let u = -4; u <= 4; u++) for (let v = -2; v <= 2; v++) for (let z = 0; z <= 4; z++) if (Math.abs(u) <= 4 - Math.max(0, z - 3)) V.set(u, v, z, coat);
+  V.box(-2, 2, -2, 2, 5, 9, M.skin); V.box(-2, 2, -2, 2, 10, 10, hair); V.box(-2, 2, -2, -2, 7, 9, hair); V.box(-2, -2, -2, 1, 8, 9, hair); V.box(2, 2, -2, 1, 8, 9, hair);
+  V.set(-1, 2, 8, M.iron); V.set(1, 2, 8, M.iron); V.set(0, 2, 6, M.redp);   // eyes and a smile face the viewer (south)
+  if (hat) { V.box(-3, 3, -3, 3, 11, 11, hat); V.box(-2, 2, -2, 2, 12, 12 + (souwester ? 0 : 1), hat); if (souwester) V.box(-3, 3, -3, -3, 8, 10, hat); }
+  return V;
+};
 const BUILD = {
   prop: () => { const V = new Vox(-6, 6, -6, 6, 6); V.box(-1, 1, -1, 1, 2, 3, M.iron); for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) V.box(a > 0 ? 2 : a < 0 ? -5 : -1, a > 0 ? 5 : a < 0 ? -2 : 1, b > 0 ? 2 : b < 0 ? -5 : -1, b > 0 ? 5 : b < 0 ? -2 : 1, 2 + (a + b > 0 ? 1 : 0), 2 + (a + b > 0 ? 1 : 0), X.brass); return V; },
   hull: () => { const V = new Vox(-5, 5, -2, 2, 10); for (let z = 0; z < 9; z++) { const w = z < 3 ? z + 2 : 5; V.box(-w, w, 0, 0, z, z, M.steel); } for (const [u, z] of [[-3, 6], [3, 6], [-3, 2], [3, 2], [0, 8]]) V.set(u, 1, z, M.gilt); return V; },
@@ -45,9 +54,15 @@ const BUILD = {
   storm: () => { const V = BUILD.cloud(5); V.line([1, 0, 4], [-1, 0, 2], X.glowy); V.line([-1, 0, 2], [1, 0, 2], X.glowy); V.line([1, 0, 2], [-1, 0, 0], X.glowy); return V; },
   arrow: () => { const V = new Vox(-6, 6, -1, 1, 10); V.box(-5, 1, 0, 0, 4, 6, M.white); for (let k = 0; k <= 4; k++) V.box(2 + k, 2 + k, 0, 0, 1 + k, 9 - k, M.white); return V; },
   warn: () => { const V = new Vox(-6, 6, -1, 1, 12); for (let z = 0; z <= 10; z++) { const w = Math.round(z * 0.55); V.box(-5 + w, 5 - w, 0, 0, z, z, X.brass); } V.box(0, 0, 1, 1, 4, 7, M.iron); V.set(0, 1, 2, M.iron); return V; },
+  // story portraits: head and shoulders, facing the viewer
+  maren: () => bust(M.navy, M.iron, M.iron),
+  ida: () => bust(X.green, M.post, null),
+  tobias: () => bust(M.coat, M.coat, M.coat, true),
+  wren: () => bust(M.gun, M.white, M.white),
+  nell: () => bust(M.stone, M.white, null),
   map: () => { const V = new Vox(-6, 6, -4, 4, 4); V.box(-5, 5, -3, 3, 0, 0, X.paper); for (const u of [-6, 6]) V.box(u, u, -3, 3, 0, 1, M.plank); V.set(1, 0, 1, M.redp); V.set(2, 1, 1, M.redp); V.set(0, 1, 1, M.redp); V.set(2, -1, 1, M.redp); V.set(0, -1, 1, M.redp); V.line([-4, 2, 1], [0, 0, 1], M.iron); return V; },
 };
-const cache = new Map();
+const cache = new Map(), PORTRAIT = new Set(['maren', 'ida', 'tobias', 'wren', 'nell']);
 // render, then crop to the drawn pixels so icons fill their boxes
 function toURL(V, angle = -0.55) {
   V.finalize(); const f = renderVox(V, angle, { outlineZ: 2, shadow: false }), c = f.img, d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
@@ -60,7 +75,7 @@ function toURL(V, angle = -0.55) {
 }
 export function icon(key) {
   if (cache.has(key)) return cache.get(key);
-  const b = BUILD[key]; const url = b ? toURL(b()) : ''; cache.set(key, url); return url;
+  const b = BUILD[key]; const url = b ? toURL(b(), PORTRAIT.has(key) ? 0 : -0.55) : ''; cache.set(key, url); return url;
 }
 // fish: the species sprite extruded into a voxel slab, seen side-on
 const matCache = new Map();

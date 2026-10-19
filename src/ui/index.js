@@ -15,6 +15,7 @@ import { icon, fishIcon } from './icons.js';
 import { drawChart, compassRose, nearestUncharted } from './chart.js';
 import { ROWS, ACTIONS, SET, boundKey } from '../settings.js';
 import { CHEATS } from '../cheats.js';
+import { QUESTS, CHAPTERS, PEOPLE, currentQuest, questProgress, story } from '../story.js';
 
 const html = htm.bind(h);
 let root;
@@ -135,6 +136,11 @@ function CatchCard() {
     </div></div>`;
 }
 // the long goal, always in view: the next Alderhaven project and how close you are
+// the story quest in progress, with its objective
+function QuestChip() {
+  const q = currentQuest(), pr = questProgress(q);
+  return html`<div class="chip quest"><${Icon} k=${q.by} size="s"/><span class="gold">${q.title}</span><span>${q.goal}</span>${pr.want > 1 ? html`<span class="muted">${pr.have}/${pr.want}</span>` : ''}<${Key} k="j"/></div>`;
+}
 function HarbourChip() {
   const pr = nextProject(); if (!pr || G.stats.caught < 1) return null;
   const st = needStatus(pr.need), done = PROJECTS.indexOf(pr);
@@ -149,8 +155,8 @@ function Hud() {
   return html`<div>
     ${labels}
     <div class="hud-left"><${Status}/>
-      <div class="goal chip"><${Icon} k="star" size="s"/><span>${gl.text}${gl.prog ? html` <span class="muted">${gl.prog[0]}/${gl.prog[1]}</span>` : ''}</span>${gl.reward ? html`<span class="gold">${money(gl.reward)}</span>` : ''}</div>
-      <${HarbourChip}/>
+      ${!currentQuest() && html`<div class="goal chip"><${Icon} k="star" size="s"/><span>${gl.text}${gl.prog ? html` <span class="muted">${gl.prog[0]}/${gl.prog[1]}</span>` : ''}</span>${gl.reward ? html`<span class="gold">${money(gl.reward)}</span>` : ''}</div>`}
+      ${currentQuest() ? html`<${QuestChip}/>` : html`<${HarbourChip}/>`}
       ${G.active.map(c => { const n = G.hold.filter(f => f.sp === c.sp).length; return html`<div class="chip"><${Fish} sp=${c.sp} size="s"/>${c.n} ${SPECIES[c.sp].name}<span class="muted">to ${c.toName}</span><span class=${n >= c.n ? 'good' : ''}>${Math.min(n, c.n)}/${c.n}</span></div>`; })}
     </div>
     <${Minimap}/>
@@ -350,7 +356,7 @@ function Ship() {
 
 // ---------- menus ----------
 export const TITLE_ITEMS = () => [...(hasSave() ? ['CONTINUE'] : []), 'NEW VOYAGE', 'SETTINGS', 'CONTROLS'];
-export const PAUSE_ITEMS = ['RESUME', 'SETTINGS', 'CONTROLS', 'SAVE & QUIT'];
+export const PAUSE_ITEMS = ['RESUME', 'JOURNAL', 'SETTINGS', 'CONTROLS', 'SAVE & QUIT'];
 function Menu({ items, sel, onPick, setSel }) {
   return html`<div class="menu">${items.map((s, i) => html`<button class=${'item' + (i === sel ? ' sel' : '')} onMouseEnter=${() => setSel(i)} onClick=${() => onPick(i)}>${s}</button>`)}</div>`;
 }
@@ -397,6 +403,35 @@ function Controls() {
       <footer class="foot"><span class="hints-inline"><${Hint} k="ArrowUp" k2="ArrowDown">Choose<//><${Hint} k="Enter">Change key<//></span><${Hint} k="Escape" pad="B">Back<//></footer>
     </div></div>`;
 }
+// a conversation: portrait, name, one line at a time
+function Talk() {
+  const t = G.talk, [who, text] = t.lines[t.i], person = PEOPLE[who];
+  return html`<div class="talk-wrap" onClick=${() => G.pressed.add(' ')}>
+    <div class="talk panel rivets">
+      <div class="portrait"><${Icon} k=${who} size="xl"/></div>
+      <div class="grow"><div class="row"><span class="title gold">${person.name}</span><span class="muted small">${person.role}</span></div>
+        <p class="line">${text}</p></div>
+      <div class="talk-foot"><span class="muted small">${t.i + 1}/${t.lines.length}</span><${Hint} k=" " pad="A">Next<//><${Hint} k="Escape" pad="B">Skip<//></div>
+    </div></div>`;
+}
+// the story so far
+function Journal() {
+  const st = story(), cur = currentQuest(), pr = cur && questProgress(cur);
+  return html`<div class="screen paper doc">
+    <header class="head"><h1>Journal</h1><span class="muted">${Math.min(st.i, QUESTS.length)} of ${QUESTS.length} quests</span></header>
+    <div class="body"><div class="col journal-list">
+      ${CHAPTERS.map((c, ci) => { const qs = QUESTS.map((q, i) => [q, i]).filter(([q]) => q.ch === ci); if (qs[0][1] > st.i) return null;
+        return html`<div><div class="list-head caps">Chapter ${ci + 1}: ${c}</div>
+          ${qs.filter(([, i]) => i <= st.i).map(([q, i]) => html`<div class=${'item static' + (i === st.i ? ' sel' : '')}><${Icon} k=${q.by}/><div class="grow"><div>${q.title}</div><div class="sub">${i < st.i ? 'Done' : q.goal}</div></div>${i === st.i && pr ? html`<span class="num">${pr.have}/${pr.want}</span>` : html`<${Icon} k="star" size="s"/>`}</div>`)}</div>`; })}
+      ${!cur && html`<p class="gold">The story is complete. Nell is home.</p>`}
+    </div>
+    ${cur && html`<aside class="detail paper"><div class="d-icon"><${Icon} k=${cur.by} size="xl"/></div><h2>${cur.title}</h2>
+      <p class="muted">${PEOPLE[cur.by].name}, ${PEOPLE[cur.by].role}</p>${cur.intro.map(([, line]) => html`<p>${line}</p>`)}
+      <p><span class="caps">Goal</span> ${cur.goal}${pr.want > 1 ? ` (${pr.have}/${pr.want})` : ''}</p></aside>`}
+    </div>
+    <footer class="foot"><span/><${Hint} k="j" pad="B">Close<//></footer>
+  </div>`;
+}
 function Cheats() {
   return html`<div class="center dim-bg"><div class="panel rivets dialog cheats">
     <h1>Cheats</h1>
@@ -410,6 +445,7 @@ function Finale() {
   return html`<div class="center dim-bg"><div class="panel rivets dialog finale">
     <div class="logo still">The Grand Harbour</div>
     <p>Lanterns hang over every quay. The Old One watches from the harbour gate, and boats come from all along the coast to sell their catch in Alderhaven.</p>
+    ${!currentQuest() && html`<p>At the end of the quay, Nell sits with her feet over the water, telling anyone who will listen about her grandchild.</p>`}
     <p class="gold">You are Harbourmaster now.</p>
     <dl class="facts"><dt>Days at sea</dt><dd>${dayNum()}</dd><dt>Fish caught</dt><dd>${G.stats.caught}</dd><dt>Species logged</dt><dd>${logged()} of ${SPECIES.length}</dd><dt>Coins earned</dt><dd>${money(G.earned)}</dd><dt>Ships owned</dt><dd>${G.owned.length}</dd></dl>
     <p class="muted">The sea goes on. Keep fishing, fill the logbook, and grow your fleet.</p>
@@ -434,6 +470,8 @@ function App() {
     ${m === 'sunk' && G.sunkT > 1 && html`<${Sunk}/>`}
     ${m === 'finale' && html`<${Finale}/>`}
     ${m === 'cheat' && html`<${Cheats}/>`}
+    ${m === 'talk' && G.talk && html`<${Talk}/>`}
+    ${m === 'journal' && html`<${Journal}/>`}
     ${m !== 'title' && html`<${Toasts} low=${m !== 'play' && m !== 'sunk'}/>`}
   </div>`;
 }
