@@ -10,6 +10,7 @@ import { TUNE, G, physicsStep, update, updateCamera, refreshSolids, hit, portMen
 import { initRender, render, R, prefetch, boatRenderState } from './gl/renderer.js';
 import { initUI, drawUI, TITLE_ITEMS, PAUSE_ITEMS } from './ui/index.js';
 import { SET, ROWS, ACTIONS, applySettings, remap, bind, resetBinds, toggleFullscreen } from './settings.js';
+import { runCheat } from './cheats.js';
 import { unlockAudio, sfx, renderOffline, SFX_NAMES } from './audio.js';
 import { homePort, schoolsNear, poisNear, hAt, LAIR, BOSS } from './world.js';
 import { updateLife, LIFE } from './life.js';
@@ -37,6 +38,16 @@ let fitLater = null;
 addEventListener('keydown', e => {
   unlockAudio(); G.pad = false;
   if (BLOCK.has(e.key)) e.preventDefault();
+  // cheat console: ` opens it while sailing; it takes all typing until Enter or Esc
+  if (G.mode === 'cheat') {
+    e.preventDefault();
+    if (e.key === 'Escape' || e.key === '`') { G.mode = G.cheatBack || 'play'; sfx('move'); }
+    else if (e.key === 'Enter') { const back = G.cheatBack || 'play'; G.mode = back; if (!runCheat(G.cheatBuf || '')) { G.mode = 'cheat'; G.cheatErr = true; } else G.cheatBuf = ''; }
+    else if (e.key === 'Backspace') G.cheatBuf = (G.cheatBuf || '').slice(0, -1);
+    else if (e.key.length === 1 && G.cheatBuf.length < 24) { G.cheatBuf += e.key.toLowerCase(); G.cheatErr = false; }
+    return;
+  }
+  if ((e.key === '`' || e.key === '~') && (G.mode === 'play' || G.mode === 'port')) { G.cheatBack = G.mode; G.mode = 'cheat'; G.cheatBuf = ''; G.cheatErr = false; sfx('select'); return; }
   if (G.rebinding) {                                   // waiting for a new key on the controls screen
     if (!e.repeat) { if (e.key !== 'Escape') bind(G.rebinding, e.key); G.rebinding = null; sfx('select'); }
     return;
@@ -108,6 +119,7 @@ function modeInput2(dt) {
     if (hit('Escape', 'Backspace')) { G.mode = G.back || 'title'; sfx('move'); }
     return;
   }
+  if (G.mode === 'finale') { if (hit(' ', 'Enter', 'Escape')) { G.mode = 'play'; sfx('select'); } return; }
   if (G.mode === 'port') return portMenuInput(dt);
   if (G.mode === 'map') {
     if (hit('m', 'M', 'Escape')) { G.mode = 'play'; sfx('move'); }
@@ -147,7 +159,7 @@ export function tick(dt) {
   update(dt);
   updateLife(dt);
   const bs = boatRenderState(alpha);
-  updateCamera(dt, bs.x, bs.y);
+  if (G.mode === 'play' || G.mode === 'sunk' || G.mode === 'title') updateCamera(dt, bs.x, bs.y);   // menus freeze the view behind them
   G.pressed.clear();
   if (noRender) return;
   if (!SET.shake) { G.shakeX = 0; G.shakeY = 0; }
@@ -161,5 +173,5 @@ function frame(ts) {
   requestAnimationFrame(frame);
 }
 addEventListener('beforeunload', () => { if (G.mode !== 'title') saveGame(); });
-window.BR = { SET, apply: () => { applySettings(); fit(); }, AUDIO: { renderOffline, SFX_NAMES }, WX, setWeather, LIFE, LAIR, BOSS, MODELS, GAME, TUNE, G, tick, sim: (dt) => { noRender = true; tick(dt); noRender = false; }, homePort, schoolsNear, poisNear, hAt, SPECIES, R };
+window.BR = { render, SET, apply: () => { applySettings(); fit(); }, AUDIO: { renderOffline, SFX_NAMES }, WX, setWeather, LIFE, LAIR, BOSS, MODELS, GAME, TUNE, G, tick, sim: (dt) => { noRender = true; tick(dt); noRender = false; }, homePort, schoolsNear, poisNear, hAt, SPECIES, R };
 requestAnimationFrame(frame);
