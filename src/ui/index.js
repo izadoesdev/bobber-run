@@ -5,15 +5,16 @@ import { h, render } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
 import htm from 'htm';
 import { W, H, clamp } from '../config.js';
-import { G, logged, portItems, portTabs, setTab, selectable, leavePort, saleValue, hasSave, currentGoal, cap, hpMax, boatDef, sonarLvl, isNight, dayNum, dayFrac, windAngle, sailEfficiency,
-  schoolActive, equipment, freshness, fishValue, speedMul, priceAt, lineMax, contractSlots } from '../game.js';
-import { SPECIES, BOATS, UPGRADES, PAINTS, SUPPLIES, fmtKg } from '../econ.js';
+import { G, logged, portItems, portTabs, nextProject, needStatus, projDone, fleetTotal, setTab, selectable, leavePort, saleValue, hasSave, currentGoal, cap, hpMax, boatDef, sonarLvl, isNight, dayNum, dayFrac, windAngle, sailEfficiency,
+  schoolActive, equipment, fishValue, speedMul, priceAt, lineMax, contractSlots } from '../game.js';
+import { SPECIES, BOATS, UPGRADES, PAINTS, SUPPLIES, PROJECTS, fmtKg } from '../econ.js';
 import { schoolsNear, cellPois, homePort } from '../world.js';
 import { WX } from '../weather.js';
 import { boatFrame, SHIPPED, NA, PLAIN } from '../models.js';
 import { icon, fishIcon } from './icons.js';
 import { drawChart, compassRose, nearestUncharted } from './chart.js';
 import { ROWS, ACTIONS, SET, boundKey } from '../settings.js';
+import { CHEATS } from '../cheats.js';
 
 const html = htm.bind(h);
 let root;
@@ -81,7 +82,8 @@ function Status() {
   return html`<div class="hud-status panel">
     <div class="row"><${Icon} k="coin"/><span class="coins">${money(G.coinsShown)}</span>${G.floaters.map((f, i) => html`<span key=${i} class=${'floater ' + f.kind}>${f.s}</span>`)}</div>
     <div class="row gap-t"><${Icon} k="hold" size="s"/><span class="caps">Hold</span><span class=${'num' + (G.hold.length >= cp ? ' bad' : '')}>${G.hold.length}/${cp}</span></div>
-    <div class="slots">${Array.from({ length: cp }, (_, i) => html`<div class="slot">${G.hold[i] && html`<img src=${fishIcon(G.hold[i].sp)} alt=""/>`}</div>`)}</div>
+    ${cp <= 18 ? html`<div class="slots">${Array.from({ length: cp }, (_, i) => html`<div class="slot">${G.hold[i] && html`<img src=${fishIcon(G.hold[i].sp)} alt=""/>`}</div>`)}</div>`
+      : html`<div class="gap-t"><${Bar} k=${G.hold.length / cp} tone="gold"/></div>`}
     <div class="row gap-t"><${Icon} k="hull" size="s"/><span class="caps">Hull</span><div class="grow"><${Bar} k=${k} tone=${k > 0.5 ? '' : k > 0.25 ? 'warn' : 'bad'}/></div><span class="num">${Math.ceil(b.hp)}</span></div>
     <div class="row gap-t small">
       <${Icon} k=${bait === 'none' ? 'rod' : bait} size="s"/><span>${bait === 'none' ? 'No bait' : `${SUPPLIES[bait].name} ×${G.bait[bait] || 0}`}</span><${Key} k="b" pad="RB"/>
@@ -132,6 +134,12 @@ function CatchCard() {
       ${c.bonus && html`<div class="small gold">${c.bonus}</div>`}
     </div></div>`;
 }
+// the long goal, always in view: the next Alderhaven project and how close you are
+function HarbourChip() {
+  const pr = nextProject(); if (!pr || G.stats.caught < 1) return null;
+  const st = needStatus(pr.need), done = PROJECTS.indexOf(pr);
+  return html`<div class="chip harbour"><${Icon} k="anchor" size="s"/><span class="muted">Alderhaven ${done}/${PROJECTS.length}</span>${pr.name}<span class=${st.have >= st.want ? 'good' : ''}>${st.have}/${st.want}</span><span class=${G.coins >= pr.cost ? 'good' : 'gold'}>${money(pr.cost)}</span></div>`;
+}
 function Hud() {
   const gl = currentGoal(), labels = [];
   if (G.up.spyglass >= 2) for (const s of schoolsNear(G.boat.x, G.boat.y, 120)) if (schoolActive(s) && !s.boss) {
@@ -142,6 +150,7 @@ function Hud() {
     ${labels}
     <div class="hud-left"><${Status}/>
       <div class="goal chip"><${Icon} k="star" size="s"/><span>${gl.text}${gl.prog ? html` <span class="muted">${gl.prog[0]}/${gl.prog[1]}</span>` : ''}</span>${gl.reward ? html`<span class="gold">${money(gl.reward)}</span>` : ''}</div>
+      <${HarbourChip}/>
       ${G.active.map(c => { const n = G.hold.filter(f => f.sp === c.sp).length; return html`<div class="chip"><${Fish} sp=${c.sp} size="s"/>${c.n} ${SPECIES[c.sp].name}<span class="muted">to ${c.toName}</span><span class=${n >= c.n ? 'good' : ''}>${Math.min(n, c.n)}/${c.n}</span></div>`; })}
     </div>
     <${Minimap}/>
@@ -149,9 +158,9 @@ function Hud() {
     <div class="bottom-stack">
       <${Captions}/>
       ${G.fish?.st === 'reel' && html`<${Reel}/>`}
-      ${G.prompt && html`<div class=${'prompt panel' + (G.fish?.st === 'bite' || G.fish?.warn ? ' hot' : '')}>${keyed(G.prompt)}</div>`}
+      ${G.prompt && G.mode === 'play' && html`<div class=${'prompt panel' + (G.fish?.st === 'bite' || G.fish?.warn ? ' hot' : '')}>${keyed(G.prompt)}</div>`}
     </div>
-    <div class="hints"><${Hint} k="Tab" pad="View">Ship<//><${Hint} k="m" pad="Y">Chart<//><${Hint} k="l" pad="LB">Log<//><${Hint} k="Escape" pad="Start">Menu<//></div>
+    <div class="hints"><${Hint} k="Tab" pad="View">Ship<//><${Hint} k="m" pad="Y">Chart<//><${Hint} k="l" pad="LB">Log<//><${Hint} k="Escape" pad="Start">Menu<//>${G.pet && html`<${Hint} k="p">Pet ${G.pet.name}<//>`}</div>
   </div>`;
 }
 
@@ -171,7 +180,7 @@ function SetRow({ sel, onEnter, onClick, children, cls = 'item setrow' }) {
 }
 function RowVisual({ it }) {
   if (it.fish !== undefined) return html`<${Fish} sp=${it.fish}/>`;
-  if (it.kind === 'boat') return html`<${Icon} src=${boatThumb(it.boat.id)}/>`;
+  if (it.kind === 'boat' || it.kind === 'fleet') return html`<${Icon} src=${boatThumb(it.boat.id)}/>`;
   if (it.kind === 'paint') return html`<span class="swatch" style=${{ background: SWATCH[it.paint] }}/>`;
   return html`<${Icon} k=${it.icon}/>`;
 }
@@ -195,10 +204,20 @@ function SellDetail({ p }) {
     ${best.length > 0 && html`<p class="muted">This port pays well for ${best.map(o => o.s.name).join(', ')}.</p>`}
   </div>`;
 }
+function ProjectDetail({ it }) {
+  const { pr, st } = it, done = projDone(pr.id);
+  return html`<p>${pr.what}</p>
+    ${!done && html`<div class="checklist">
+      <div class=${'row' + (G.coins >= pr.cost ? ' good' : '')}><${Icon} k="coin" size="s"/>${money(pr.cost)}<span class="grow"/><span class="num">${G.coins >= pr.cost ? 'Ready' : `${money(G.coins)} now`}</span></div>
+      <div class=${'row' + (st.have >= st.want ? ' good' : '')}>${st.sp !== undefined ? html`<${Fish} sp=${st.sp} size="s"/>` : html`<${Icon} k="hold" size="s"/>`}${st.label}<span class="grow"/><span class="num">${st.have}/${st.want}</span></div>
+      ${st.pick.length > 0 && html`<div class="row wrap muted small">Donates: ${st.pick.map(f => html`<${Fish} sp=${f.sp} size="s"/>`)}</div>`}
+    </div>`}
+    <p><span class="caps">Unlocks</span> <span class="good">${pr.gives}</span></p>`;
+}
 function Detail({ p, it }) {
   if (!it) return html`<aside class="detail paper"/>`;
   const visual = it.kind === 'upgrade' ? html`<${Canvas} cls="preview" draw=${boatPreview(G.boatId, equipment())}/>`
-    : it.kind === 'boat' ? html`<${Canvas} cls="preview" draw=${boatPreview(it.boat.id, { ...equipment(), paint: G.paint })}/>`
+    : it.kind === 'boat' || it.kind === 'fleet' ? html`<${Canvas} cls="preview" draw=${boatPreview(it.boat.id, { ...equipment(), paint: G.paint })}/>`
     : it.kind === 'paint' ? html`<${Canvas} cls="preview" draw=${boatPreview(G.boatId, { ...equipment(), paint: it.paint })}/>`
     : it.kind === 'ferry' ? html`<${Canvas} cls="preview chart" draw=${(ctx, w, hh, dpr) => drawChart(ctx, w, hh, (p.x + it.q.x) / 2, (p.y + it.q.y) / 2, Math.max(2, Math.hypot(it.q.x - p.x, it.q.y - p.y) * 1.4 / w), { dpr, labels: true })}/>`
     : it.fish !== undefined ? html`<div class="d-icon"><${Fish} sp=${it.fish} size="xl"/></div>` : html`<div class="d-icon"><${Icon} k=${it.icon} size="xl"/></div>`;
@@ -211,6 +230,9 @@ function Detail({ p, it }) {
         <p><span class="caps">Now</span> ${it.now}</p>${it.what && html`<p><span class="caps">Next</span> <span class="good">${it.what}</span></p>`}<p class="muted small">Fitted gear shows on your boat.</p>`}
       ${it.kind === 'boat' && html`${[['Speed', it.boat.speed / max.speed], ['Hold', it.boat.hold / max.hold, it.boat.hold + ' fish'], ['Hull', it.boat.hp / max.hp, it.boat.hp], ['Turning', it.boat.turn / 1.05]].map(([n, k, v]) => html`<div class="stat"><span class="caps">${n}</span><${Bar} k=${k} tone="gold"/><span class="num">${v || ''}</span></div>`)}<p>${it.boat.what}.</p>`}
       ${it.kind === 'repair' && html`<div class="stat"><span class="caps">Hull</span><${Bar} k=${G.boat.hp / hpMax()}/><span class="num">${G.boat.hp}/${hpMax()}</span></div><p>${it.what}</p>`}
+      ${it.kind === 'rest' && html`<p>${it.what}</p>`}
+      ${(it.kind === 'fleet' || it.kind === 'collect') && html`<p>${it.what}</p>`}
+      ${it.kind === 'project' && html`<${ProjectDetail} it=${it}/>`}
       ${(it.kind === 'supply' || it.kind === 'ferry') && html`<p>${it.what}.</p><p class="muted">${it.sub}.</p>${it.repeat && html`<p class="muted small">Hold the button down to keep buying.</p>`}`}
       ${it.kind === 'take' && html`<p>${it.what}</p>`}
       ${it.kind === 'deliver' && html`<p>${it.sub}.</p>`}
@@ -218,16 +240,24 @@ function Detail({ p, it }) {
     </div>`}
     <div class="d-foot">
       ${it.cost != null && html`<span class=${'price big' + (G.coins < it.cost ? ' short' : '')}>${money(it.cost)}</span>`}
-      ${it.kind !== 'note' && html`<button class="btn primary" disabled=${!it.ok} onClick=${() => it.act()}>${!it.ok && it.why && it.why.startsWith('Fully') ? 'Maxed' : it.action}${it.ok && html`<${Key} k=" " pad="A"/>`}</button>`}
+      ${it.kind !== 'note' && !(it.kind === 'project' && projDone(it.pr.id)) && html`<button class="btn primary" disabled=${!it.ok} onClick=${() => it.act()}>${!it.ok && it.why && it.why.startsWith('Fully') ? 'Maxed' : it.action}${it.ok && html`<${Key} k=" " pad="A"/>`}</button>`}
     </div>
-    ${!it.ok && it.why && html`<p class="why">${it.why}</p>`}
+    ${!it.ok && it.why && !(it.kind === 'project' && projDone(it.pr.id)) && html`<p class="why">${it.why}</p>`}
   </aside>`;
+}
+const WX_ICON = { clear: 'sun', cloudy: 'cloud', rain: 'rain', storm: 'storm' };
+const cap1 = s => s[0].toUpperCase() + s.slice(1);
+// every port posts the weather, so you can plan the next trip from the quay
+function Forecast() {
+  const m = Math.floor(WX.next / 60), s = String(Math.floor(WX.next % 60)).padStart(2, '0'), storm = WX.upcoming === 'storm';
+  const same = WX.upcoming === WX.state;
+  return html`<div class=${'chip forecast' + (storm ? ' warn' : '')} title="Harbour forecast"><span class="caps">Forecast</span><${Icon} k=${WX_ICON[WX.upcoming] || 'sun'} size="s"/>${same ? `${cap1(WX.state)} for now` : `${cap1(WX.upcoming)} in ${m}:${s}`}</div>`;
 }
 function Port() {
   const p = G.menu.port, tabs = portTabs(p), items = portItems(p), it = selectable(items[G.menu.sel] || {}) ? items[G.menu.sel] : null;
   return html`<div class="screen panel rivets">
     <header class="head"><div><h1>${p.name}</h1><div class="sub">${GREET[hashStr(p.id) % GREET.length]}</div></div>
-      <div class="row"><${Icon} k="coin" size="l"/><span class="coins big">${money(G.coinsShown)}</span></div></header>
+      <div class="row"><${Forecast}/><${Icon} k="coin" size="l"/><span class="coins big">${money(G.coinsShown)}</span></div></header>
     <nav class="tabs"><${Key} k="q" pad="LB"/>${tabs.map((t, i) => html`<button class=${'tab' + (i === G.menu.tab ? ' on' : '')} onClick=${() => setTab(i)}><span class="tnum">${i + 1}</span>${t}</button>`)}<${Key} k="e" pad="RB"/></nav>
     <div class="body">
       <div class="list well">${items.map((x, i) => x.kind === 'header' ? html`<div class="list-head caps">${x.label}</div>` : html`<${Row} it=${x} i=${i}/>`)}</div>
@@ -300,13 +330,13 @@ function Ship() {
         <div class="stat"><span class="caps">Hull</span><${Bar} k=${G.boat.hp / hpMax()}/><span class="num">${Math.ceil(G.boat.hp)}/${hpMax()}</span></div>
         <div class="stat"><span class="caps">Hold</span><${Bar} k=${G.hold.length / cp} tone="gold"/><span class="num">${G.hold.length}/${cp}</span></div>
         <div class="row wrap">${['shrimp', 'glow', 'chum'].map(k => html`<span class="row" title=${SUPPLIES[k].name}><${Icon} k=${k} size="s"/>${G.bait[k] || 0}</span>`)}<span class="row" title="Treasure maps"><${Icon} k="map" size="s"/>${G.maps.length}</span></div>
+        ${G.pet && html`<div class="well pad row"><span class="cat-dot"/>Ship's cat: <span class="gold">${G.pet.name}</span><span class="grow"/><${Hint} k="p">Pet<//></div>`}
       </div>
       <div class="col">
-        <div class="hold-grid">${Array.from({ length: cp }, (_, i) => { const f = G.hold[i]; if (!f) return html`<div class="fcard empty"/>`; const fr = freshness(f);
+        <div class="hold-grid">${Array.from({ length: cp }, (_, i) => { const f = G.hold[i]; if (!f) return html`<div class="fcard empty"/>`;
           return html`<div class=${'fcard' + (i === G.shipSel ? ' sel' : '')} onClick=${() => { G.shipSel = i; }}><${Fish} sp=${f.sp} size="l"/><div><div>${fmtKg(f.kg)}</div><div class="gold">${money(fishValue(f))}</div></div>
-            <span class="badges">${f.trophy && html`<${Icon} k="star" size="s"/>`}${need.get(f.sp) && html`<${Icon} k="map" size="s"/>`}</span>
-            <div class=${'fresh ' + (fr > 0.95 ? 'good' : fr > 0.8 ? 'warn' : 'bad')} style=${{ width: `calc(${fr * 100}% - 0.7em)` }}/></div>`; })}</div>
-        <div class="well pad row">${sel ? html`<${Fish} sp=${sel.sp} size="s"/><span class="gold">${SPECIES[sel.sp].name}</span><span>${fmtKg(sel.kg)}, ${Math.round(freshness(sel) * 100)}% fresh${sel.trophy ? ', trophy' : ''}${need.get(sel.sp) ? ', wanted for a contract' : ''}</span><span class="grow"/><button class="btn" onClick=${() => { G.pressed.add('x'); }}>Release<${Key} k="x"/></button>` : html`<span class="muted">Your hold is empty. Go fishing!</span>`}</div>
+            <span class="badges">${f.trophy && html`<${Icon} k="star" size="s"/>`}${need.get(f.sp) && html`<${Icon} k="map" size="s"/>`}</span></div>`; })}</div>
+        <div class="well pad row">${sel ? html`<${Fish} sp=${sel.sp} size="s"/><span class="gold">${SPECIES[sel.sp].name}</span><span>${fmtKg(sel.kg)}${sel.trophy ? ', trophy' : ''}${need.get(sel.sp) ? ', wanted for a contract' : ''}</span><span class="grow"/><button class="btn" onClick=${() => { G.pressed.add('x'); }}>Release<${Key} k="x"/></button>` : html`<span class="muted">Your hold is empty. Go fishing!</span>`}</div>
       </div>
       <div class="col side">
         <div class="list-head caps">Fitted gear</div>
@@ -363,12 +393,31 @@ function Controls() {
         <${SetRow} cls="item center-t" sel=${sel === ACTIONS.length} onEnter=${() => { G.ctlSel = ACTIONS.length; }} onClick=${() => { G.ctlSel = ACTIONS.length; G.pressed.add('Enter'); }}>Reset to defaults<//>
         <${SetRow} cls="item center-t" sel=${sel === ACTIONS.length + 1} onEnter=${() => { G.ctlSel = ACTIONS.length + 1; }} onClick=${() => { G.ctlSel = ACTIONS.length + 1; G.pressed.add('Enter'); }}>Back<//>
       </div>
-      <p class="help">${G.rebinding ? 'Press the new key, or Esc to cancel.' : 'Choose an action and press Enter to change its key. WASD always steers too. Gamepad: stick steers, A casts, X docks, Y opens the chart, B goes back.'}</p>
+      <p class="help">${G.rebinding ? 'Press the new key, or Esc to cancel.' : 'Choose an action and press Enter to change its key. WASD always steers too. Press ` while sailing for the cheat console. Gamepad: stick steers, A casts, X docks, Y opens the chart, B goes back.'}</p>
       <footer class="foot"><span class="hints-inline"><${Hint} k="ArrowUp" k2="ArrowDown">Choose<//><${Hint} k="Enter">Change key<//></span><${Hint} k="Escape" pad="B">Back<//></footer>
     </div></div>`;
 }
+function Cheats() {
+  return html`<div class="center dim-bg"><div class="panel rivets dialog cheats">
+    <h1>Cheats</h1>
+    <div class=${'cheat-input' + (G.cheatErr ? ' err' : '')}>${G.cheatBuf || ''}<span class="caret"/></div>
+    <p class="help">${G.cheatErr ? 'That is not a code. Try one of these:' : 'Type a code and press Enter.'}</p>
+    <div class="scroll"><dl class="facts">${CHEATS.map(c => html`<dt class="code" onClick=${() => { G.cheatBuf = c.code; }}>${c.code}</dt><dd>${c.what}</dd>`)}</dl></div>
+    <footer class="foot"><${Hint} k="Enter">Use code<//><${Hint} k="Escape">Close<//></footer>
+  </div></div>`;
+}
+function Finale() {
+  return html`<div class="center dim-bg"><div class="panel rivets dialog finale">
+    <div class="logo still">The Grand Harbour</div>
+    <p>Lanterns hang over every quay. The Old One watches from the harbour gate, and boats come from all along the coast to sell their catch in Alderhaven.</p>
+    <p class="gold">You are Harbourmaster now.</p>
+    <dl class="facts"><dt>Days at sea</dt><dd>${dayNum()}</dd><dt>Fish caught</dt><dd>${G.stats.caught}</dd><dt>Species logged</dt><dd>${logged()} of ${SPECIES.length}</dd><dt>Coins earned</dt><dd>${money(G.earned)}</dd><dt>Ships owned</dt><dd>${G.owned.length}</dd></dl>
+    <p class="muted">The sea goes on. Keep fishing, fill the logbook, and grow your fleet.</p>
+    <footer class="foot"><span/><button class="btn primary" onClick=${() => { G.mode = 'play'; }}>Keep sailing<${Key} k="Enter" pad="A"/></button></footer>
+  </div></div>`;
+}
 function Sunk() {
-  return html`<div class="sunk"><div class="logo still bad">Your boat sank</div><p>${G.sunkMsg}.</p><p class="muted">Towed back to port...</p></div>`;
+  return html`<div class="sunk"><div class="panel rivets sunk-card"><h1>Towed home</h1><p>${G.sunkMsg}.</p><p class="muted">Your boat is patched up at the quay.</p></div></div>`;
 }
 function App() {
   const m = G.mode;
@@ -383,6 +432,8 @@ function App() {
     ${m === 'settings' && html`<${Settings}/>`}
     ${m === 'controls' && html`<${Controls}/>`}
     ${m === 'sunk' && G.sunkT > 1 && html`<${Sunk}/>`}
+    ${m === 'finale' && html`<${Finale}/>`}
+    ${m === 'cheat' && html`<${Cheats}/>`}
     ${m !== 'title' && html`<${Toasts} low=${m !== 'play' && m !== 'sunk'}/>`}
   </div>`;
 }
