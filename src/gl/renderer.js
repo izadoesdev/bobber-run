@@ -18,7 +18,7 @@ import * as MS from './meshes.js';
 export const R = { S: 1, scale: 1, quality: 'auto', fx: { bloom: 1, tilt: 1 } };
 let gl, cv, hdr = false, quadVao, instBuf, foamVao, foamBuf, partVao, partBuf;
 const PG = {}, RT = {}; let tex, rtSize = [0, 0];
-const PAD = 40, FR = 2, HW = W + PAD * 2 + 2, HH = H + PAD * 2 + 2, hdata = new Float32Array(HW * HH);
+const PAD = 40, FR = 2; let HW = 0, HH = 0, hdata;
 
 export function initRender(canvas) {
   cv = canvas;
@@ -38,18 +38,32 @@ export function initRender(canvas) {
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 32, 0); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 16);
   gl.bindVertexArray(null);
   instBuf = gl.createBuffer(); MS.init(gl, instBuf);
+}
+// heightfield, foam and shadow buffers cover the view plus a margin, so they follow the view size
+function ensureField() {
+  const hw = W + PAD * 2 + 2, hh = H + PAD * 2 + 2;
+  if (hw === HW && hh === HH) return;
+  HW = hw; HH = hh; hdata = new Float32Array(HW * HH);
+  if (tex) gl.deleteTexture(tex); free(gl, RT.foam); free(gl, RT.shadow);
   tex = texture(gl, HW, HH, gl.R16F, gl.RED, gl.FLOAT, gl.LINEAR);
   RT.foam = target(gl, HW * FR, HH * FR, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
   RT.shadow = target(gl, HW * FR, HH * FR, gl.R8, gl.RED, gl.UNSIGNED_BYTE);
 }
+// pixel styles draw the scene at a fixed number of pixels per world unit, without MSAA,
+// then upscale to the canvas with hard edges; 'smooth' draws at canvas resolution
+export const PIXEL = { chunky: 1, crisp: 2 };
 function ensureTargets() {
-  const sc = Math.min(1, 1920 / cv.width) * R.scale, w = Math.max(64, Math.round(cv.width * sc)), h = Math.max(40, Math.round(cv.height * sc));
-  if (w === rtSize[0] && h === rtSize[1]) return;
-  for (const k of ['scene', 'half', 'qa', 'qb', 'ta', 'tb']) free(gl, RT[k]);
+  const px = PIXEL[SET.pixel] || 0;
+  let w, h;
+  if (px) { w = W * px; h = H * px; }
+  else { const sc = Math.min(1, 1920 / cv.width) * R.scale; w = Math.max(64, Math.round(cv.width * sc)); h = Math.max(40, Math.round(cv.height * sc)); }
+  if (w === rtSize[0] && h === rtSize[1] && px === rtSize[2]) return;
+  for (const k of ['scene', 'half', 'qa', 'qb', 'ta', 'tb', 'out']) { free(gl, RT[k]); RT[k] = null; }
   const IF = hdr ? gl.RGBA16F : gl.RGBA8, TY = hdr ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE, mk = (a, b) => target(gl, Math.max(1, a), Math.max(1, b), IF, gl.RGBA, TY);
-  RT.scene = msTarget(gl, w, h, IF, gl.RGBA, TY, Math.min(4, gl.getParameter(gl.MAX_SAMPLES)));
+  RT.scene = msTarget(gl, w, h, IF, gl.RGBA, TY, px ? 0 : Math.min(4, gl.getParameter(gl.MAX_SAMPLES)));
   RT.half = mk(w >> 1, h >> 1); RT.qa = mk(w >> 2, h >> 2); RT.qb = mk(w >> 2, h >> 2); RT.ta = mk(w >> 2, h >> 2); RT.tb = mk(w >> 2, h >> 2);
-  rtSize = [w, h];
+  if (px) RT.out = target(gl, w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
+  rtSize = [w, h, px];
 }
 
 // ---------- uniforms ----------
@@ -272,6 +286,7 @@ function drawMeshes(mode, CAM, HR, E, Lt, shXY) {
 // dynamic resolution: keep frames under ~20ms by trading internal resolution
 let lastT = 0, acc = 0, frames = 0;
 function adaptScale() {
+  if (PIXEL[SET.pixel]) return;                   // pixel styles are already cheap; their size is fixed
   if (R.quality !== 'auto') { R.scale = { high: 1, medium: 0.75, low: 0.5 }[R.quality] || 1; return; }
   const now = performance.now(), dt = now - lastT; lastT = now;
   if (dt <= 0 || dt > 250) return;
@@ -283,7 +298,7 @@ function adaptScale() {
 }
 export function render(alpha) {
   adaptScale();
-  ensureTargets();
+  ensureField(); ensureTargets();
   const [w, h] = rtSize, bs = boatRenderState(alpha);
   const camX = G.cam.x + G.shakeX, camY = G.cam.y + G.shakeY, x0 = Math.floor(camX) - PAD, y0 = Math.floor(camY) - PAD;
   uploadHeights(x0, y0);
@@ -333,12 +348,17 @@ export function render(alpha) {
   pass(PG.copy, RT.ta, scene);
   pass(PG.blur, RT.tb, RT.ta, p => U(p, 'uDir', 1.5 / RT.ta.w, 0));
   pass(PG.blur, RT.ta, RT.tb, p => U(p, 'uDir', 0, 1.5 / RT.ta.h));
-  into(null, cv.width, cv.height);
+  const out = RT.out;
+  if (out) into(out); else into(null, cv.width, cv.height);
   const cp = PG.comp; gl.useProgram(cp.p);
   bindTex(cp, 'uScene', scene.tex, 0); bindTex(cp, 'uBloom', RT.qa.tex, 1); bindTex(cp, 'uBlur', RT.ta.tex, 2);
   U(cp, 'uT', G.t); U(cp, 'uExp', E.exp); U(cp, 'uSat', E.sat); U(cp, 'uVig', 0.55); U(cp, 'uTilt', 0.7 * R.fx.tilt); U(cp, 'uGrain', 0.03);
   U(cp, 'uRain', WX.rain); U(cp, 'uFlash', WX.flash * (SET.calm ? 0.15 : 1)); U(cp, 'uBloomK', (0.5 + E.dk * 0.5) * R.fx.bloom); U(cp, 'uSlant', 0.3 + WX.wind * 0.7);
-  U(cp, 'uTint', ...E.tint); U(cp, 'uRes', cv.width, cv.height);
+  U(cp, 'uTint', ...E.tint); U(cp, 'uRes', out ? out.w : cv.width, out ? out.h : cv.height);
   quad();
+  if (out) {
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, out.fb); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+    gl.blitFramebuffer(0, 0, out.w, out.h, 0, 0, cv.width, cv.height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+  }
   gl.bindVertexArray(null);
 }

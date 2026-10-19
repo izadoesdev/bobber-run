@@ -1,7 +1,7 @@
 // Player preferences (no imports, so any module can read them). Persisted apart from the save game.
 const KEY = 'bobber-run-settings';
 export const SET = {
-  music: 6, sfx: 8, amb: 8, quality: 'auto', tilt: true, bloom: true, shake: true,
+  music: 6, sfx: 8, amb: 8, quality: 'auto', pixel: 'chunky', tilt: true, bloom: true, shake: true,
   ui: 1, font: 'pixel', contrast: false, calm: false, captions: false,
   strike: 'normal', reelAssist: false, reelToggle: false, binds: {},
 };

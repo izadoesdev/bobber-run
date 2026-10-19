@@ -1,5 +1,5 @@
 // Entry: canvases, input, fixed-step loop with interpolation.
-import { W, H, STEP } from './config.js';
+import { W, H, STEP, setView } from './config.js';
 import * as GAME from './game.js';
 import * as MODELS from './models.js';
 import { SPECIES } from './econ.js';
@@ -7,7 +7,7 @@ import { TUNE, G, physicsStep, update, updateCamera, refreshSolids, hit, portMen
 
 import { initRender, render, R, prefetch, boatRenderState } from './gl/renderer.js';
 import { initUI, drawUI, TITLE_ITEMS, PAUSE_ITEMS } from './ui/index.js';
-import { SET, ROWS, ACTIONS, applySettings, remap, bind, resetBinds } from './settings.js';
+import { SET, ROWS, ACTIONS, applySettings, remap, bind, resetBinds, toggleFullscreen } from './settings.js';
 import { unlockAudio, sfx, renderOffline, SFX_NAMES } from './audio.js';
 import { homePort, schoolsNear, poisNear, hAt, LAIR, BOSS } from './world.js';
 import { updateLife, LIFE } from './life.js';
@@ -17,13 +17,16 @@ import { WX, setWeather } from './weather.js';
 const screen = document.getElementById('screen'), uiRoot = document.getElementById('ui');
 initRender(screen); initUI(uiRoot); applySettings();
 
+// Fill the window: an integer screen scale S keeps about 320x200 world units in view, and the view
+// grows to the window's shape so W*S x H*S just covers it (the stage crops the last few pixels).
 function fit() {
-  const dpr = window.devicePixelRatio || 1;
-  const S = Math.max(1, Math.floor(Math.min(innerWidth * dpr / W, innerHeight * dpr / H)));
+  const dpr = window.devicePixelRatio || 1, iw = innerWidth * dpr, ih = innerHeight * dpr;
+  const S = Math.max(1, Math.round(Math.min(iw / 320, ih / 200)));
+  setView(Math.ceil(iw / S), Math.ceil(ih / S));
   R.S = S; screen.width = W * S; screen.height = H * S;
   const cw = W * S / dpr, ch = H * S / dpr;
   screen.style.width = cw + 'px'; screen.style.height = ch + 'px';
-  uiRoot.style.width = cw + 'px'; uiRoot.style.height = ch + 'px'; uiRoot.style.fontSize = (cw / 64 * SET.ui).toFixed(2) + 'px';
+  uiRoot.style.width = cw + 'px'; uiRoot.style.height = ch + 'px'; uiRoot.style.fontSize = (Math.min(cw / 64, ch / 40) * SET.ui).toFixed(2) + 'px';
 }
 addEventListener('resize', fit); fit();
 
@@ -36,6 +39,7 @@ addEventListener('keydown', e => {
     if (!e.repeat) { if (e.key !== 'Escape') bind(G.rebinding, e.key); G.rebinding = null; sfx('select'); }
     return;
   }
+  if ((e.key === 'f' || e.key === 'F') && remap(e.key) === e.key) { if (!e.repeat) toggleFullscreen(); return; }   // unless f is rebound to an action
   const k = remap(e.key);
   G.keys[k] = true;
   if (!e.repeat) G.pressed.add(k);
@@ -155,5 +159,5 @@ function frame(ts) {
   requestAnimationFrame(frame);
 }
 addEventListener('beforeunload', () => { if (G.mode !== 'title') saveGame(); });
-window.BR = { SET, AUDIO: { renderOffline, SFX_NAMES }, WX, setWeather, LIFE, LAIR, BOSS, MODELS, GAME, TUNE, G, tick, sim: (dt) => { noRender = true; tick(dt); noRender = false; }, homePort, schoolsNear, poisNear, hAt, SPECIES, R };
+window.BR = { SET, apply: () => { applySettings(); fit(); }, AUDIO: { renderOffline, SFX_NAMES }, WX, setWeather, LIFE, LAIR, BOSS, MODELS, GAME, TUNE, G, tick, sim: (dt) => { noRender = true; tick(dt); noRender = false; }, homePort, schoolsNear, poisNear, hAt, SPECIES, R };
 requestAnimationFrame(frame);

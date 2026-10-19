@@ -1,6 +1,7 @@
-// Shared constants: logical resolution, palette, dithering.
-export const W = 320, H = 200;
-export const BW = W + 2, BH = H + 2;            // world buffer is 1-2px larger for sub-pixel scrolling
+// Shared constants: logical view size, palette, dithering.
+// W x H is the view in world units (one world unit = one art pixel). main.js resizes it to fill the window.
+export let W = 320, H = 200;
+export function setView(w, h) { W = w; H = h; }
 
 export const P = {
   bg: '#f4f1ea', ink: '#1b2a33', ink2: '#26394a',

@@ -13,6 +13,10 @@ export function applySettings() {
   if (ui) { ui.classList.toggle('hc', SET.contrast); ui.classList.toggle('calm', SET.calm); ui.classList.toggle('plain', SET.font === 'plain'); }
   savePrefs();
 }
+export function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen?.();
+  else document.documentElement.requestFullscreen?.().catch(() => { });
+}
 const cycle = (list, v, d) => list[(list.indexOf(v) + d + list.length) % list.length];
 const slider = k => ({ type: 'slider', get: () => SET[k], change: d => { SET[k] = Math.max(0, Math.min(10, SET[k] + d)); } });
 const toggle = (k, on = 'On', off = 'Off') => ({ get: () => SET[k] ? on : off, change: () => { SET[k] = !SET[k]; } });
@@ -25,7 +29,9 @@ export const ROWS = [
   { label: 'Ambience', ...slider('amb') },
   { label: 'Sound captions', ...toggle('captions'), help: 'Shows a short caption for sounds that carry information, like a bite or thunder.' },
   { head: 'Display' },
-  { label: 'Graphics', ...pick('quality', QUALITIES, ['Auto', 'High', 'Medium', 'Low']), help: 'Auto lowers the resolution when frames run slow.' },
+  { label: 'Fullscreen', get: () => document.fullscreenElement ? 'On' : 'Off', change: toggleFullscreen, help: 'Press F at any time to switch.' },
+  { label: 'Pixel style', ...pick('pixel', ['chunky', 'crisp', 'smooth'], ['Chunky', 'Crisp', 'Smooth']), help: 'Chunky draws one pixel per art pixel, Crisp two, Smooth uses the full screen resolution.' },
+  { label: 'Graphics', ...pick('quality', QUALITIES, ['Auto', 'High', 'Medium', 'Low']), help: 'Only affects Smooth. Auto lowers the resolution when frames run slow.' },
   { label: 'Tilt-shift blur', ...toggle('tilt') },
   { label: 'Bloom', ...toggle('bloom') },
   { label: 'Screen shake', ...toggle('shake') },
