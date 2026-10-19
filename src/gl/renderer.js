@@ -15,7 +15,7 @@ import { program, texture, target, msTarget, free } from './glutil.js';
 import * as SH from './shaders.js';
 import * as MS from './meshes.js';
 
-export const R = { S: 1, scale: 1, quality: 'auto', fx: { bloom: 1, tilt: 1 } };
+export const R = { S: 1, scale: 1, quality: 'auto', fx: { bloom: 1, tilt: 1, grade: 1 } };
 let gl, cv, hdr = false, quadVao, instBuf, foamVao, foamBuf, partVao, partBuf;
 const PG = {}, RT = {}; let tex, rtSize = [0, 0];
 const PAD = 40, FR = 2; let HW = 0, HH = 0, hdata;
@@ -55,7 +55,7 @@ export const PIXEL = { chunky: 1, crisp: 2 };
 function ensureTargets() {
   const px = PIXEL[SET.pixel] || 0;
   let w, h;
-  if (px) { w = W * px; h = H * px; }
+  if (px) { w = Math.ceil(W * px) + 1; h = Math.ceil(H * px) + 1; }   // one spare pixel so the snapped frame can slide
   else { const sc = Math.min(1, 1920 / cv.width) * R.scale; w = Math.max(64, Math.round(cv.width * sc)); h = Math.max(40, Math.round(cv.height * sc)); }
   if (w === rtSize[0] && h === rtSize[1] && px === rtSize[2]) return;
   for (const k of ['scene', 'half', 'qa', 'qb', 'ta', 'tb', 'out']) { free(gl, RT[k]); RT[k] = null; }
@@ -158,12 +158,10 @@ function buildScene(bs, pois, camX, camY) {
     inst(MS.whaleMesh(), w.x, w.y, yaw, 1, z, w.t > 8 ? -(w.t - 8) * 0.35 : 0, 0, z < -2.5);
     if (w.t > 8 && w.t < 9.8) inst(MS.flukeMesh(), w.x - w.dir * 11, w.y, 0, 1, -1 + Math.sin((w.t - 8) / 1.8 * Math.PI) * 3, 0, 0);
   }
-  const b = G.boat, c = Math.cos(b.a), s = Math.sin(b.a);
-  for (const p of LIFE.pods) for (const m of p.m) {
-    const fade = Math.min(1, p.t, 11 - p.t), lead = m.lead + Math.sin(p.t * 0.7 + m.ph) * 4, off = m.side * m.off * fade * 1.4;
-    const x = b.x + c * lead - s * off, y = b.y + s * lead + c * off, ph = frac(p.t * 0.9 + m.ph);
-    if (ph < 0.38) { const k = ph / 0.38; inst(MS.dolphinMesh(), x, y, b.a, 1, Math.sin(Math.PI * k) * 7 - 1.2, (0.5 - k) * 1.4); }
-    else inst(MS.dolphinMesh(), x, y, b.a, 1, -2.6, 0, 0, true);
+  for (const p of LIFE.pods) for (const m of p.m) {          // each dolphin has its own position and heading (life.js)
+    const ph = frac(p.t * 0.9 + m.ph);
+    if (ph < 0.38) { const k = ph / 0.38; inst(MS.dolphinMesh(), m.x, m.y, m.a, 1, Math.sin(Math.PI * k) * 7 - 1.2, (0.5 - k) * 1.4); }
+    else inst(MS.dolphinMesh(), m.x, m.y, m.a, 1, -2.6, 0, 0, true);
   }
   if (G.frenzy) for (let k = 0; k < 8; k++) {
     const a = G.t * (0.8 + k * 0.11) * (k % 2 ? 1 : -1) + k * 1.3, r = 10 + (k % 4) * 6;
@@ -177,7 +175,7 @@ function buildScene(bs, pois, camX, camY) {
   inst(MS.boatMesh(G.boatId, eq), bs.x, bs.y, bs.a, 1, bz, pitch, roll);
   const ca = Math.cos(bs.a), sa = Math.sin(bs.a), W3 = q => [bs.x + q[0] * ca - q[1] * sa, bs.y + q[0] * sa + q[1] * ca, q[2] + bz];
   if (hasOars(G.boatId)) {
-    const pose = G.fish || G.mode !== 'play' ? SHIPPED : Math.floor(frac(G.boat.phase) * NP) % NP, g = MS.oarGeom(pose, eq.prop);
+    const stow = G.fish || G.mode !== 'play', pz = k => stow ? SHIPPED : Math.floor(frac(G.boat[k] ?? 0.5) * NP) % NP, g = MS.oarGeom(pz('phaseL'), eq.prop, pz('phaseR'));
     for (const l of g.lines) MS.dynBox(W3(l.a), W3(l.b), l.wide ? 0.95 : 0.6, l.col);
     for (const pt of g.points) { const q = W3(pt.p); MS.dynBox([q[0] - 0.4, q[1], q[2]], [q[0] + 0.4, q[1], q[2]], 0.8, pt.col); }
   }
@@ -206,22 +204,24 @@ function environment() {
   let sun = [Math.cos(a), Math.sin(a), 0.3 + 0.6 * up], moon = [Math.cos(Math.PI * 1.6), Math.sin(Math.PI * 1.6), 0.7];
   sun = mix3(sun, moon, dk); const sl = Math.hypot(...sun); sun = sun.map(v => v / sl);
   const oc = clamp(WX.dark / 0.36, 0, 1), storm = WX.state === 'storm' ? 1 : 0;
-  let sunC = mix3(mix3([1.0, 0.95, 0.86], [1.3, 0.66, 0.32], dusk), [0.3, 0.38, 0.6], dk);
+  let sunC = mix3(mix3([1.0, 0.95, 0.86], [1.3, 0.66, 0.32], dusk), [0.26, 0.35, 0.52], dk);
   sunC = mul3(sunC, (1 - dk * 0.62) * (1 - oc * 0.6));
-  let amb = mix3(mix3([0.5, 0.58, 0.68], [0.42, 0.36, 0.56], dusk), [0.1, 0.13, 0.25], dk);
+  let amb = mix3(mix3([0.5, 0.58, 0.68], [0.42, 0.36, 0.56], dusk), [0.1, 0.155, 0.25], dk);
   amb = mix3(amb, [0.42, 0.46, 0.5].map(v => v * (1 - dk * 0.75)), oc * 0.5);
-  let sky = mix3(mix3([0.72, 0.84, 0.96], [1.15, 0.62, 0.42], dusk), [0.07, 0.09, 0.18], dk);
+  let sky = mix3(mix3([0.72, 0.84, 0.96], [1.15, 0.62, 0.42], dusk), [0.07, 0.12, 0.19], dk);
   sky = mix3(sky, [0.55, 0.6, 0.64].map(v => v * (1 - dk * 0.8)), oc * 0.7);
-  const tint = mix3(mix3([1.02, 1.0, 0.97], [1.14, 0.95, 0.86], dusk), [0.86, 0.93, 1.12], dk);
-  return { sun, sunC, amb, sky, tint, dk, cloud: 0.45 + oc * 0.5, sat: 1.12 - storm * 0.25 - oc * 0.1, exp: 1.06 + dk * 0.25 };
+  const tint = mix3(mix3([1.02, 1.0, 0.97], [1.14, 0.95, 0.86], dusk), [0.93, 1.01, 1.0], dk);
+  return { sun, sunC, amb, sky, tint, dk, dusk, cloud: 0.45 + oc * 0.5, sat: 1.12 - storm * 0.25 - oc * 0.1, exp: 1.06 + dk * 0.25 };
 }
+const AMBER = [1.0, 0.62, 0.26];
 function lightsFor(bs, pois, dk) {
   const L = new Float32Array(64), LC = new Float32Array(48), B = new Float32Array(24); let nl = 0, nb = 0;
   const add = (x, y, r, k, c) => { if (nl >= 16 || k <= 0.01) return; L.set([x, y, r, k], nl * 4); LC.set(c, nl * 3); nl++; };
-  add(bs.x, bs.y, lightR() * 1.3, 1.3 * dk, [1.0, 0.78, 0.5]);
+  // warm amber (#ffb860) pools; the shader's falloff is soft, so radii run large
+  add(bs.x, bs.y, lightR() * 1.6, 0.8 * dk, AMBER);
   for (const p of pois) {
-    if (p.type === 'port') { add(p.end.x, p.end.y, 46, 1.2 * dk, [1.0, 0.8, 0.5]); add(p.x, p.y, 30, 0.9 * dk, [1.0, 0.72, 0.42]); }
-    else if (p.type === 'light') { add(p.x, p.y, 40, 1.0 * dk, [1.0, 0.86, 0.6]); if (nb < 6) { B.set([p.x, p.y, G.t * 0.5 + p.beam, 150], nb * 4); nb++; } }
+    if (p.type === 'port') { add(p.end.x, p.end.y, 58, 0.7 * dk, AMBER); add(p.x, p.y, 40, 0.6 * dk, [1.0, 0.58, 0.24]); }
+    else if (p.type === 'light') { add(p.x, p.y, 54, 0.8 * dk, [1.0, 0.72, 0.38]); if (nb < 6) { B.set([p.x, p.y, G.t * 0.5 + p.beam, 150], nb * 4); nb++; } }
   }
   if (G.frenzy) add(G.frenzy.s.x, G.frenzy.s.y, 20, 0.25, [1.0, 0.9, 0.6]);
   return { L, LC, B, nl, nb };
@@ -300,9 +300,14 @@ export function render(alpha) {
   adaptScale();
   ensureField(); ensureTargets();
   const [w, h] = rtSize, bs = boatRenderState(alpha);
-  const camX = G.cam.x + G.shakeX, camY = G.cam.y + G.shakeY, x0 = Math.floor(camX) - PAD, y0 = Math.floor(camY) - PAD;
+  // Pixel styles draw the world with the camera snapped to whole pixels, so static things (lighthouses, glints,
+  // ripples) sit still on the pixel grid instead of shimmering as the camera glides. The leftover fraction is
+  // applied when the frame is scaled up to the screen, which keeps scrolling smooth.
+  const px = rtSize[2], camX0 = G.cam.x + G.shakeX, camY0 = G.cam.y + G.shakeY;
+  const camX = px ? Math.floor(camX0 * px) / px : camX0, camY = px ? Math.floor(camY0 * px) / px : camY0;
+  const x0 = Math.floor(camX) - PAD, y0 = Math.floor(camY) - PAD;
   uploadHeights(x0, y0);
-  const HR = [x0, y0, HW, HH], CAM = [camX, camY, W, H], E = environment();
+  const HR = [x0, y0, HW, HH], CAM = px ? [camX, camY, w / px, h / px] : [camX, camY, W, H], E = environment();
   const pois = poisNear(camX + W / 2, camY + H / 2, 300), Lt = lightsFor(bs, pois, E.dk);
   const wm = warmth(camY + H / 2), cd = coldness(camY + H / 2);
   E.water = mix3(mix3([0.17, 0.43, 0.55], [0.07, 0.53, 0.62], wm), [0.22, 0.36, 0.46], cd);
@@ -332,7 +337,7 @@ export function render(alpha) {
   drawMeshes(0, CAM, HR, E, Lt, shXY);
   gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   const np = partPoints();
-  gl.useProgram(PG.part.p); U(PG.part, 'uCam', ...CAM); U(PG.part, 'uPx', w / W);
+  gl.useProgram(PG.part.p); U(PG.part, 'uCam', ...CAM); U(PG.part, 'uPx', w / CAM[2]);
   gl.bindVertexArray(partVao); gl.bindBuffer(gl.ARRAY_BUFFER, partBuf); gl.bufferData(gl.ARRAY_BUFFER, partArr.subarray(0, np * 8), gl.STREAM_DRAW); gl.drawArrays(gl.POINTS, 0, np);
   gl.disable(gl.BLEND);
   gl.bindFramebuffer(gl.READ_FRAMEBUFFER, RT.scene.fb); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, RT.scene.resolve.fb);
@@ -352,13 +357,17 @@ export function render(alpha) {
   if (out) into(out); else into(null, cv.width, cv.height);
   const cp = PG.comp; gl.useProgram(cp.p);
   bindTex(cp, 'uScene', scene.tex, 0); bindTex(cp, 'uBloom', RT.qa.tex, 1); bindTex(cp, 'uBlur', RT.ta.tex, 2);
-  U(cp, 'uT', G.t); U(cp, 'uExp', E.exp); U(cp, 'uSat', E.sat); U(cp, 'uVig', 0.55); U(cp, 'uTilt', 0.7 * R.fx.tilt); U(cp, 'uGrain', 0.03);
+  U(cp, 'uT', G.t); U(cp, 'uExp', E.exp); U(cp, 'uSat', E.sat); U(cp, 'uVig', 0.42); U(cp, 'uTilt', 0.7 * R.fx.tilt); U(cp, 'uGrain', SET.calm ? 0 : 0.01);
+  U(cp, 'uGrade', R.fx.grade ?? 1); U(cp, 'uDusk', E.dusk);
   U(cp, 'uRain', WX.rain); U(cp, 'uFlash', WX.flash * (SET.calm ? 0.15 : 1)); U(cp, 'uBloomK', (0.5 + E.dk * 0.5) * R.fx.bloom); U(cp, 'uSlant', 0.3 + WX.wind * 0.7);
   U(cp, 'uTint', ...E.tint); U(cp, 'uRes', out ? out.w : cv.width, out ? out.h : cv.height);
   quad();
   if (out) {
+    // k device pixels per render pixel; slide by the sub-pixel camera remainder (y is up in GL)
+    const k = cv.width / (W * px), ox = Math.round((camX0 - camX) * px * k), oy = Math.round((camY0 - camY) * px * k);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, out.fb); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
-    gl.blitFramebuffer(0, 0, out.w, out.h, 0, 0, cv.width, cv.height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.blitFramebuffer(0, 0, out.w, out.h, -ox, cv.height + oy - Math.round(out.h * k), -ox + Math.round(out.w * k), cv.height + oy, gl.COLOR_BUFFER_BIT, gl.NEAREST);
   }
   gl.bindVertexArray(null);
 }

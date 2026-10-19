@@ -11,7 +11,8 @@ uniform int uNL; uniform vec4 uL[16]; uniform vec3 uLC[16];
 uniform int uNB; uniform vec4 uB[6];
 vec3 pointLights(vec3 p, vec3 n){ vec3 acc = vec3(0.0);
   for (int i = 0; i < 16; i++){ if (i >= uNL) break; vec4 L = uL[i]; vec3 lp = vec3(L.xy, 7.0); vec3 d = lp - p; float r = length(d.xy);
-    float k = clamp(1.0 - r/L.z, 0.0, 1.0); acc += uLC[i]*L.w*k*k*(0.35 + 0.65*max(dot(n, normalize(d)), 0.0)); }
+    float k = clamp(1.0 - r/L.z, 0.0, 1.0); k = k*k*(3.0 - 2.0*k)*(0.55 + 0.45*k);   // broad soft pool, no rim
+    acc += uLC[i]*L.w*k*(0.45 + 0.55*max(dot(n, normalize(d)), 0.0)); }
   return acc; }
 float beams(vec2 p){ float b = 0.0;
   for (int i = 0; i < 6; i++){ if (i >= uNB) break; vec4 B = uB[i]; vec2 dv = p - B.xy; float d = length(dv);
@@ -50,18 +51,22 @@ vec2 ripples(vec2 p){ vec2 g = p/4.5, c = floor(g), f = fract(g) - 0.5; float r 
   float ring = sin((d - ph*0.55)*45.0)*smoothstep(0.12, 0.0, abs(d - ph*0.55))*(1.0 - ph);
   return dv/max(d, 0.001)*ring; }
 // sun glitter: a random point per small cell that briefly twinkles
-float sparkle(vec2 p){
+// sun glints, one per lucky 2.6-unit cell. pw is the size of a screen pixel in world units: a glint is never
+// smaller than about a pixel, so as the camera slides by fractions of a pixel it fades between pixels instead of popping
+float sparkle(vec2 p, float pw){
   vec2 g = p/2.6, c = floor(g), f = fract(g);
   float r = hash(c), r2 = hash(c + 11.3);
   vec2 pt = vec2(hash(c + 3.7), hash(c + 8.1))*0.7 + 0.15;
   float tw = pow(max(0.0, sin(uT*(2.0 + r*3.0) + r2*40.0)), 14.0);
-  return step(0.62, r)*smoothstep(0.17, 0.0, length(f - pt))*tw; }
+  float rad = max(0.44, pw*0.55), d = length(f - pt)*2.6;
+  return step(0.62, r)*smoothstep(rad, 0.0, d)*pow(0.44/rad, 1.2)*tw; }
 float terrainShadow(vec2 p, float h0){
   vec2 sd = normalize(uSun.xy + 1e-4); float tanE = uSun.z/max(length(uSun.xy), 1e-3), s = 0.0;
   for (int i = 1; i <= 10; i++){ float d = float(i)*3.0; if (H(p + sd*d)*HS > h0*HS + d*tanE + 0.4) s += 0.11; }
   return min(s, 0.8); }
 void main(){
   vec2 p = uCam.xy + vec2(vUV.x, 1.0 - vUV.y)*uCam.zw;
+  float pw = max(fwidth(p).x, fwidth(p).y);                 // world units per screen pixel (taken here, in uniform control flow)
   float h = H(p), wm = warm(p.y), cd = cold(p.y);
   vec2 tu = TUV(p), tp = 1.0/vec2(textureSize(uShadow, 0));
   float objSh = (texture(uShadow, tu).r*2.0 + texture(uShadow, tu + vec2(tp.x*2.0, 0)).r + texture(uShadow, tu - vec2(tp.x*2.0, 0)).r
@@ -88,7 +93,7 @@ void main(){
     float ao = clamp(1.0 - (avg - h)*6.0, 0.62, 1.0);
     float diff = max(dot(n, uSun), 0.0), tsh = terrainShadow(p, h);
     vec3 light = uAmb*ao*(0.8 + 0.2*n.z) + uSunC*diff*sunVis*(1.0 - tsh);
-    light += pointLights(vec3(p, 0.0), n) + vec3(1.0, .92, .7)*beams(p)*(0.12 + uNight*0.9);
+    light += pointLights(vec3(p, 0.0), n) + vec3(1.0, .84, .58)*beams(p)*(0.12 + uNight*0.9);
     col *= light;
     float wetk = smoothstep(0.035, 0.0, h);                     // wet sand glistens
     col += uSunC*wetk*pow(max(dot(reflect(-uSun, n), normalize(vec3(0, .55, .85))), 0.0), 30.0)*0.3*sunVis;
@@ -97,7 +102,8 @@ void main(){
     float wx = waveH(p + vec2(e, 0)) - waveH(p - vec2(e, 0)), wy = waveH(p + vec2(0, e)) - waveH(p - vec2(0, e));
     vec3 n = normalize(vec3(-wx*0.5, -wy*0.5, 1.0)), nS = n;
     // fine wind ripples on top of the swell (used for shading, not for the sharp highlight)
-    vec2 rq = p*0.42 + uWD*uT*0.9; float r0 = noise(rq), rx = noise(rq + vec2(0.3, 0.0)), ry = noise(rq + vec2(0.0, 0.3));
+    // never finer than ~3 screen pixels, or the crests crawl as the camera moves
+    vec2 rq = p*0.42*min(1.0, 0.75/pw) + uWD*uT*0.9; float r0 = noise(rq), rx = noise(rq + vec2(0.3, 0.0)), ry = noise(rq + vec2(0.0, 0.3));
     n = normalize(n + vec3(-(rx - r0), -(ry - r0), 0.0)*(0.9 + uWind*0.9));
     vec2 fp = 1.0/vec2(textureSize(uFoam, 0));
     vec4 fo = texture(uFoam, tu);
@@ -119,14 +125,16 @@ void main(){
     float fres = 0.06 + 0.94*pow(1.0 - max(dot(n, V), 0.0), 5.0);
     vec3 skyR = uSky*(0.8 + 0.4*smoothstep(-0.1, 0.5, -Rv.y));
     vec3 Lp = pointLights(vec3(p, 0.0), n);
-    vec3 light = uAmb + uSunC*(0.55 + 0.45*max(dot(n, uSun), 0.0))*sunVis + Lp + vec3(1.0, .92, .7)*beams(p)*(0.12 + uNight*0.9);
+    vec3 light = uAmb + uSunC*(0.55 + 0.45*max(dot(n, uSun), 0.0))*sunVis + Lp*0.3 + vec3(1.0, .84, .58)*beams(p)*(0.12 + uNight*0.9);
     float tsh = depth < 0.22 ? terrainShadow(p, 0.0)*0.8 : 0.0;
     col = wc*light*(1.0 - tsh*0.7) + skyR*fres*0.7*(1.0 - cloud*0.35);
+    col *= mix(vec3(1.0), vec3(1.0, 0.86, 0.62), clamp(Lp.r*0.7, 0.0, 1.0));   // lamplight outshines the cold night base
+    col += Lp*(0.3 + 0.1*fres);                                         // and glows amber on the surface
     float sd = max(dot(reflect(-uSun, nS), V), 0.0);
     col += uSunC*pow(sd, 36.0)*0.7*sunVis*(1.0 - tsh);
     float golden = smoothstep(0.62, 0.36, uSun.z)*(1.0 - uNight);             // low sun: warm sheen across the water
     col += uSunC*golden*pow(sd, 30.0)*1.3*sunVis;
-    col += uSunC*sparkle(p)*(0.35 + 0.65*smoothstep(0.55, 0.95, sd))*2.2*sunVis*(1.0 - tsh)*smoothstep(0.04, 0.2, depth)*(1.0 - cloud*0.6);
+    col += uSunC*sparkle(p, pw)*(0.35 + 0.65*smoothstep(0.55, 0.95, sd))*2.2*sunVis*(1.0 - tsh)*smoothstep(0.04, 0.2, depth)*(1.0 - cloud*0.6);
     col += Lp*pow(max(dot(reflect(-normalize(vec3(0.0, -0.3, 1.0)), nS), V), 0.0), 12.0)*0.35;
     float edge = smoothstep(0.03, 0.0, depth);
     float roll = sin(depth*150.0 - uT*2.3 + fbm(p*0.05)*8.0);
@@ -195,7 +203,10 @@ void main(){ float d = length(gl_PointCoord*2.0 - 1.0); if (d > 1.0) discard;
 export const PART_VS = `#version 300 es
 layout(location=0) in vec4 aP; layout(location=1) in vec4 aC;   // x, y, z, size ; rgba
 uniform vec4 uCam; uniform float uPx; out vec4 vC;
-void main(){ vC = aC; gl_Position = vec4((aP.x - uCam.x)/uCam.z*2.0 - 1.0, 1.0 - (aP.y - aP.z - uCam.y)/uCam.w*2.0, 0.0, 1.0); gl_PointSize = aP.w*uPx; }`;
+// points smaller than ~2.5 pixels pop on and off as they cross pixel centres; keep them at least that big and
+// dim them to keep the same total light
+void main(){ vC = aC; gl_Position = vec4((aP.x - uCam.x)/uCam.z*2.0 - 1.0, 1.0 - (aP.y - aP.z - uCam.y)/uCam.w*2.0, 0.0, 1.0);
+  float s = aP.w*uPx, sz = max(s, 2.5); vC.a *= min(1.0, (s*s)/(sz*sz)*1.6); gl_PointSize = sz; }`;
 export const PART_FS = `#version 300 es
 precision mediump float; precision highp int;
 in vec4 vC; out vec4 o;
@@ -214,14 +225,26 @@ void main(){ vec3 c = texture(uT, vUV).rgb*0.227;
 export const COMPOSITE_FS = `#version 300 es
 precision highp float; precision highp int; in vec2 vUV; out vec4 o;
 uniform sampler2D uScene, uBloom, uBlur;
-uniform float uT, uExp, uSat, uVig, uTilt, uGrain, uRain, uFlash, uBloomK, uSlant;
+uniform float uT, uExp, uSat, uVig, uTilt, uGrain, uRain, uFlash, uBloomK, uSlant, uGrade, uDusk;
 uniform vec3 uTint; uniform vec2 uRes;
 float hash(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x*p.y); }
 vec3 aces(vec3 x){ return clamp((x*(2.51*x + 0.03))/(x*(2.43*x + 0.59) + 0.14), 0.0, 1.0); }
+// procedural film LUT on display-referred colour: soft S-curve, teal-navy lifted blacks, warm highlights,
+// gentle saturation roll-off at the extremes, warmer at dusk
+vec3 grade(vec3 c, float k){
+  vec3 g = mix(c, c*c*(3.0 - 2.0*c), 0.22);
+  float l = dot(g, vec3(0.2126, 0.7152, 0.0722));
+  float sh = (1.0 - l)*(1.0 - l), hi = smoothstep(0.45, 1.0, l);
+  g += vec3(0.010, 0.030, 0.045)*sh;
+  g *= mix(vec3(1.0), vec3(1.05, 1.01, 0.93), hi*0.55);
+  g *= mix(vec3(1.0), vec3(1.08, 1.0, 0.89), uDusk*0.7);
+  float ch = max(max(g.r, g.g), g.b) - min(min(g.r, g.g), g.b);
+  float roll = 0.22*smoothstep(0.45, 0.9, ch) + 0.18*smoothstep(0.75, 1.0, l);
+  l = dot(g, vec3(0.2126, 0.7152, 0.0722)); g = mix(g, vec3(l), roll);
+  return mix(c, clamp(g, 0.0, 1.0), k); }
 void main(){
   vec2 uv = vUV;
-  vec2 ca = (uv - 0.5)*0.0018;                                          // faint lens fringing at the edges
-  vec3 c = vec3(texture(uScene, uv + ca).r, texture(uScene, uv).g, texture(uScene, uv - ca).b);
+  vec3 c = texture(uScene, uv).rgb;
   float tb = smoothstep(0.2, 0.5, abs(uv.y - 0.5))*uTilt;               // miniature tilt-shift
   c = mix(c, texture(uBlur, uv).rgb, tb);
   c += texture(uBloom, uv).rgb*uBloomK;
@@ -233,8 +256,8 @@ void main(){
   }
   c *= uExp*uTint;
   float l = dot(c, vec3(0.299, 0.587, 0.114)); c = mix(vec3(l), c, uSat);
-  c = aces(c);
-  c *= mix(1.0, smoothstep(1.15, 0.35, length((uv - 0.5)*vec2(1.3, 1.0))), uVig);
+  c = grade(aces(c), uGrade);
+  c *= mix(1.0, smoothstep(1.3, 0.3, length((uv - 0.5)*vec2(1.3, 1.0))), uVig);
   c += (hash(uv*uRes + fract(uT)*91.0) - 0.5)*uGrain;
   c += uFlash*0.25;
   o = vec4(c, 1.0);
