@@ -134,7 +134,8 @@ export function fishMesh(spIdx) {
 
 // ---------- sea life and props ----------
 const LM = { whale: mat(['#26343e', '#34464f', '#4a5c66']), belly: mat(['#6d7780', '#8a949c', '#a9b1b7']), dolphin: mat(['#4a5862', '#66747e', '#86949c']),
-  gull: mat(['#c8ccd0', '#eef0f2', '#ffffff']), wing: mat(['#6d7780', '#8a949c', '#b3bbc0']), beak: mat(['#a8822c', '#e2b94a', '#f0cf6a']), levi: mat(['#121c24', '#1c2a34', '#2a3a46']) };
+  gull: mat(['#c8ccd0', '#eef0f2', '#ffffff']), wing: mat(['#6d7780', '#8a949c', '#b3bbc0']), beak: mat(['#a8822c', '#e2b94a', '#f0cf6a']), levi: mat(['#121c24', '#1c2a34', '#2a3a46']),
+  glass: mat(['#2e6a4a', '#4f9a6e', '#8fd0a8']), paper: mat(['#c8b48a', '#e8dcc0', '#fff6e0']), cork: mat(['#6a4a2a', '#8f6a3c', '#b08a5a']) };
 function ellipsoid(V, rx, ry, rz, m, belly) {
   for (let z = 0; z <= rz * 2; z++) for (let v = -Math.ceil(ry); v <= ry; v++) for (let u = -Math.ceil(rx); u <= rx; u++)
     if ((u / rx) ** 2 + (v / ry) ** 2 + ((z - rz) / rz) ** 2 <= 1) V.set(u, v, z, belly && z <= rz * 0.6 ? belly : m);
@@ -264,6 +265,8 @@ export const dolphinMesh = () => cached('dolphin', () => { const V = new Vox(-6,
 export const gullMesh = up => cached('gull' + up, () => { const V = new Vox(-3, 3, -5, 5, 4); V.box(-1, 1, 0, 0, 1, 1, LM.gull); V.set(2, 0, 1, LM.beak); for (let v = 1; v <= 4; v++) { const z = up ? 1 + Math.min(2, v - 1) : 1; V.set(0, v, z, v > 3 ? LM.wing : LM.gull); V.set(0, -v, z, v > 3 ? LM.wing : LM.gull); } return V.finalize(); });
 export const leviMesh = () => cached('levi', () => { const V = new Vox(-22, 22, -8, 8, 7); ellipsoid(V, 17, 6, 3, LM.levi); for (let u = -22; u <= -16; u++) for (let v = -Math.round((-16 - u) * 0.9); v <= Math.round((-16 - u) * 0.9); v++) V.set(u, v, 3, LM.levi); return V.finalize(); });
 export const bobberMesh = () => cached('bobber', () => { const V = new Vox(-1, 1, -1, 1, 4); V.box(-1, 1, -1, 1, 0, 0, M.white); V.box(-1, 1, -1, 1, 1, 1, M.redp); V.set(0, 0, 2, M.redp); V.set(0, 0, 3, M.iron); return V.finalize(); });
+// a message in a bottle: green glass, a cork and a curl of paper inside
+export const bottleMesh = () => cached('bottle', () => { const V = new Vox(-4, 4, -2, 2, 4); for (let u = -3; u <= 1; u++) for (let v = -1; v <= 1; v++) for (let z = 0; z <= 2; z++) if (Math.abs(v) + Math.abs(z - 1) <= 1 + (u > -1 ? 0 : 0.5)) V.set(u, v, z, LM.glass); V.set(-1, 0, 1, LM.paper); V.box(2, 3, 0, 0, 1, 1, LM.glass); V.set(4, 0, 1, LM.cork); return V.finalize(); });
 export const buoyMesh = () => cached('buoy', () => { const V = new Vox(-2, 3, -2, 2, 10); V.box(-1, 1, -1, 1, 0, 1, M.redp); V.box(-1, 1, -1, 1, 2, 2, M.white); V.box(0, 0, 0, 0, 3, 8, M.iron); V.box(1, 2, 0, 0, 7, 8, M.redp); V.set(0, 0, 9, M.lamp); return V.finalize(); });
 
 // ---------- dynamic thin parts, built in world space every frame ----------

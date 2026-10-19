@@ -10,6 +10,7 @@ export const PEOPLE = {
   tobias: { name: 'Tobias', role: 'Lighthouse keeper' },
   wren: { name: 'Wren', role: 'Naturalist' },
   nell: { name: 'Nell', role: 'Your grandmother' },
+  bottle: { name: 'A message in a bottle', role: 'From another sailor' },
 };
 const S = G => G.stats, ports = () => [...G.found].filter(id => id.startsWith('port:')).length;
 // obj(G, base) -> [have, want]; `base` is a snapshot of the stats when the quest began

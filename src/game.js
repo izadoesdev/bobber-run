@@ -7,6 +7,9 @@ import { WX, updateWeather, biteMul, trophyBonus } from './weather.js';
 import { SPECIES, SP, BOATS, UPGRADES, UP_CATS, PAINTS, SUPPLIES, PROJECTS, activeAt, fmtKg, pickSpecies } from './econ.js';
 import { sfx, soundscape, music, setCaptionHook } from './audio.js';
 import { SET } from './prefs.js';
+import { NET, netSaved, netCatch, netGive, readBottle, BOTTLE_MSGS } from './net';
+import { ONLINE } from './online.js';
+import { talk } from './story.js';
 import { bladeAt, OAR, BOAT_MODELS, FUNNEL } from './models.js';
 
 export const G = {
@@ -126,9 +129,10 @@ const KEY = 'bobber-run-save-v3', OLD = 'bobber-run-save-v2';
 export function saveGame() {
   try {
     const b = G.boat;
-    localStorage.setItem(KEY, JSON.stringify({ coins: G.coins, earned: G.earned, up: G.up, hp: b.hp, hold: G.hold, log: G.log, boatId: G.boatId, owned: G.owned,
+    localStorage.setItem(KEY, JSON.stringify({ savedAt: Date.now(), coins: G.coins, earned: G.earned, up: G.up, hp: b.hp, hold: G.hold, log: G.log, boatId: G.boatId, owned: G.owned,
       bait: G.bait, baitSel: G.baitSel, paint: G.paint, paints: G.paints, found: [...G.found], salvaged: [...G.salvaged], lastPort: G.lastPort, x: b.x, y: b.y, a: b.a,
       stats: G.stats, story: G.story, gifts: G.gifts, pet: G.pet, projects: G.projects, fleet: G.fleet, dives: G.dives, finale: G.finale, goalIdx: G.goalIdx, goalsDone: G.goalsDone, maps: G.maps, musicOn: G.musicOn, offers: G.offers, active: G.active, pity: G.pity, clock: G.clock }));
+    netSaved();
   } catch (_) { }
 }
 export const hasSave = () => { try { return !!(localStorage.getItem(KEY) || localStorage.getItem(OLD)); } catch (_) { return false; } };
@@ -140,13 +144,24 @@ export function placeAtPort(p) {
   const b = G.boat; b.x = p.dock.x; b.y = p.dock.y; b.a = p.ang; b.vx = b.vy = b.w = 0; b.px = b.x; b.py = b.y; b.pa = b.a;
   G.cam.x = b.x - W / 2; G.cam.y = b.y - H / 2; G.look.x = G.look.y = 0;
 }
+// New voyages start at a random spot of open water within sight of the harbour, so players arriving
+// together don't all pile up on the same dock. Falls back to the dock if no clear water is found.
+function scatterSpawn(port) {
+  const clear = (x, y) => { for (let a = 0; a < 6.28; a += 0.8) if (hAt(x + Math.cos(a) * 22, y + Math.sin(a) * 22) > -0.12) return false; return hAt(x, y) < -0.2; };
+  for (let tries = 0; tries < 40; tries++) {
+    const a = Math.random() * Math.PI * 2, d = 50 + Math.random() * 110, x = port.dock.x + Math.cos(a) * d, y = port.dock.y + Math.sin(a) * d;
+    if (!clear(x, y)) continue;
+    const b = G.boat; b.x = b.px = x; b.y = b.py = y; b.a = b.pa = Math.atan2(y - port.y, x - port.x) + (Math.random() - 0.5) * 0.8;
+    G.cam.x = x - W / 2; G.cam.y = y - H / 2; return;
+  }
+}
 export function newGame() {
   Object.assign(G, { coins: 15, coinsShown: 15, earned: 0, paint: 'classic', paints: ['classic'], up: Object.fromEntries(Object.keys(UPGRADES).map(k => [k, 0])), bait: { shrimp: 3, glow: 0, chum: 1 }, baitSel: 'shrimp',
     hold: [], log: {}, found: new Set(), salvaged: new Set(), sat: {}, fish: null, parts: [], toasts: [], floaters: [], boatId: 'row', owned: ['row'],
     stats: { caught: 0, sold: 0, upgrades: 0, lights: 0, contracts: 0, wrecks: 0, trophies: 0, night: 0, frenzy: 0, treasures: 0, storm: 0 }, goalIdx: 0, goalsDone: [], maps: [], offers: {}, active: [], pity: 0,
     clock: DAYLEN * 0.08, frenzy: null, nextFrenzy: 45, card: null, projects: [], fleet: {}, dives: {}, finale: false, gifts: {}, pet: null, dry: 0, story: null, talk: null });
   const home = homePort(); G.lastPort = home.id; G.found.add(home.id); G.boat.hp = hpMax();
-  placeAtPort(home);
+  placeAtPort(home); scatterSpawn(home);
 }
 export function loadGame() {
   try {
@@ -392,6 +407,7 @@ function landFish(netted = null, who = 'NETTED') {
   const prev = G.log[sp.id], first = !prev, record = prev && fish.kg > prev.best;
   const firstTrophy = fish.trophy && !prev?.trophy;
   G.log[sp.id] = { n: (prev?.n || 0) + 1, best: Math.max(prev?.best || 0, fish.kg), trophy: !!(prev?.trophy || fish.trophy) };
+  if (!prev || fish.kg > prev.best) netCatch(sp.id, fish.kg);          // a personal best goes on the world record board
   if (firstTrophy && netted !== null) toast(`First ${sp.name} trophy!`, 'good');
   G.stats.caught++; if (fish.trophy) G.stats.trophies++; if (isNight()) G.stats.night++; if (f?.frenzy) G.stats.frenzy++;
   let bonus = null;
@@ -651,6 +667,14 @@ export function portItems(p) {
       items.push({ kind: 'project', key: pr.id, pr, st, icon: done ? 'star' : cur ? 'repair' : 'map', label: pr.name, sub: done ? pr.gives : `${cash(pr.cost)} and ${st.label}`, cost: done ? null : pr.cost,
         right: done ? 'Done' : cur ? `${st.have}/${st.want}` : 'Later', ok: !done && cur && st.have >= st.want && G.coins >= pr.cost, why, action: 'Fund project', act: () => cur && !done ? fundProject(pr) : sfx('deny'), what: pr.what });
     }
+    if (NET.on) {
+      head('COASTWIDE FUND');
+      const f = NET.fund;
+      for (const amt of [100, 1000, 10000]) items.push({ kind: 'fund', key: 'fund' + amt, icon: 'coin', label: `Give ${cash(amt)} to the coastwide fund`, sub: f ? `${cash(f.total)} of ${cash(f.goal)} from ${f.givers} sailor${f.givers === 1 ? '' : 's'}` : NET.authed ? 'Loading' : 'Connecting to the coast',
+        cost: amt, right: cash(amt), ok: NET.authed && G.coins >= amt, why: !NET.authed ? 'You are offline' : short(amt), action: 'Give',
+        act: async () => { if (G.coins < amt || !NET.authed) return sfx('deny'); addCoins(-amt); sfx('coin'); const r = await netGive(amt); if (r.ok) toast(`You gave ${cash(amt)} to the coastwide fund. Thank you!`, 'good'); else { addCoins(amt); toast(`${r.why}. Your coins are back`, 'bad'); } saveGame(); },
+        what: 'Every sailor on every server shares this fund. When it fills, the whole coast celebrates. You have given ' + cash(f?.mine || 0) + ' so far.' });
+    }
   } else {
     head('ROUTES');
     const ports = [...G.found].filter(id => id.startsWith('port:') && id !== p.id).map(portById).sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y)).slice(0, 8);
@@ -773,6 +797,7 @@ export function update(dt) {
     if (p.type === 'wreck' && (!G.salvaged.has(p.id) || (G.up.bell > 0 && G.dives[p.id] !== dayNum())) && d < 30 + bd.L * 0.5) G.nearWreck = p;
   }
   G.nearSchool = G.fish ? null : nearestSchool();
+  G.nearBottle = ONLINE.bottles.find(o => !G.readBottles?.has(o.id) && o.userId !== NET.profile?.userId && Math.hypot(o.x - b.x, o.y - b.y) < 12 + bd.B) || null;
   G.nearTreasure = G.maps.find(m => Math.hypot(m.x - b.x, m.y - b.y) < 16 + bd.L * 0.6) || null;
   for (const c of cratesNear(b.x, b.y, 120)) {
     if (c.taken) { if (G.t > c.respawn) c.taken = false; continue; }
@@ -785,11 +810,16 @@ export function update(dt) {
   }
   const f = G.fish; let pr = null;
   if (f) pr = f.st === 'reel' ? (f.jump || f.jumpWarn ? 'It is jumping. Let go!' : f.warn ? 'It is about to run. Ease off!' : (SET.reelToggle ? 'Press [SPACE] to start or stop reeling' : idleOk(SPECIES[f.s.sp]) && !f.reelOn ? 'It will tire itself out. Hold [SPACE] to reel faster' : 'Hold [SPACE] to reel. Let go before the line snaps')) : f.st === 'bite' ? 'Strike now! [SPACE]' : f.st === 'wait' ? 'Wait for the bobber to dip' : null;
+  else if (G.nearBottle) pr = sp < 14 ? '[E] Read the message in a bottle' : 'Slow down to fish out the bottle';
   else if (G.nearPort) pr = sp < 14 ? `[E] Dock at ${G.nearPort.name}` : 'Slow down to dock';
   else if (G.nearTreasure) pr = sp < 12 ? '[E] Haul up the treasure chest' : 'Slow down over the X';
   else if (G.nearWreck) pr = sp < 12 ? `[E] Salvage the ${G.nearWreck.name.replace('Wreck of the ', '')}` : 'Slow down to salvage';
   else if (G.nearSchool) { const s = SPECIES[G.nearSchool.sp]; pr = sp < 10 ? `[SPACE] Cast for ${s.name}${s.rod > G.up.rod ? `, needs a level ${s.rod + 1} rod` : ''}` : 'Stop to fish'; }
   G.prompt = pr;
+  if (G.nearBottle && sp < 14 && hit('e', 'E', 'Enter')) {           // read a message another sailor left
+    const o = G.nearBottle; (G.readBottles ||= new Set()).add(o.id); readBottle(o.id); sfx('splash', 0.5);
+    talk([['bottle', `"${BOTTLE_MSGS[o.msg] || '...'}" Signed, ${o.name}.`]]); G.pressed.clear();
+  }
   if (hit('e', 'E', 'Enter')) { if (G.nearPort && sp < 14) dock(G.nearPort); else if (G.nearTreasure && sp < 12) haul(G.nearTreasure); else if (G.nearWreck && sp < 12) salvage(G.nearWreck); }
   if (hit('u', 'U')) { G.musicOn = !G.musicOn; toast(G.musicOn ? 'Music on' : 'Music off'); }
   if (!f && !G.card && hit(' ') && G.nearSchool && sp < 10) tryCast();

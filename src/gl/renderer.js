@@ -3,6 +3,7 @@
 // wakes/splashes are stamped into a foam buffer the water shader reads; then HDR post (bloom, tilt-shift,
 // filmic grading, vignette, grain, rain).
 import { W, H, clamp, lerp } from '../config.js';
+import { ONLINE, shipsAndSailors } from '../online.js';
 import { SET } from '../prefs.js';
 import { TS, TN, getTile, hasTile, poisNear, schoolsNear, cratesNear } from '../world.js';
 import { hash01 } from '../noise.js';
@@ -206,7 +207,9 @@ function buildScene(bs, pois, camX, camY) {
     const ph = j.ph || 0, pulse = Math.sin(ph), sz = 0.55 * (j.size || 1);
     inst(MS.jellyMesh(pulse > 0.35), j.x, j.y, ph * 0.15, sz * (1 + pulse * 0.06), j.z ?? -1.5, 0, 0, true, j.col || [0.75, 0.85, 1], (j.glow || 0) * (0.8 + 0.2 * pulse), 0.6);
   }
-  (LIFE.ships || []).forEach((sh, i) => {
+  // messages in bottles left by other players, bobbing where they were thrown
+  for (const bo of ONLINE.bottles) if (Math.abs(bo.x - cx) < W && Math.abs(bo.y - cy) < H) inst(MS.bottleMesh(), bo.x, bo.y, bo.x * 0.37, 1, -0.6 + Math.sin(G.t * 2.1 + bo.x) * 0.3, Math.sin(G.t * 1.6 + bo.y) * 0.25, 0.4);
+  shipsAndSailors(LIFE.ships).forEach((sh, i) => {
     if (!MS.BOAT_MODELS[sh.id] || !near(sh, cx, cy, mx + 30, my + 30)) return;
     const ph = i * 1.7 + (sh.x + sh.y) * 0.002, sw = 1 + WX.wind * 1.6;
     inst(MS.boatMesh(sh.id, eqFor(sh.paint)), sh.x, sh.y, shipAng(sh), 1, Math.sin(G.t * 1.4 + ph) * (0.2 + WX.wind * 0.4) - 0.4, Math.sin(G.t * 1.0 + ph) * 0.02 * sw, Math.sin(G.t * 1.2 + ph + 1) * 0.03 * sw);
@@ -287,7 +290,7 @@ function lightsFor(bs, pois, dk) {
     e.x += j.x; e.y += j.y; e.n++; e.g += j.glow; for (let i = 0; i < 3; i++) e.c[i] += c[i] * j.glow;
   }
   [...swarms.values()].sort((a, b) => b.g - a.g).slice(0, 4).forEach(e => add(e.x / e.n, e.y / e.n, 22 + 7 * Math.sqrt(e.n), Math.min(0.55, 0.1 * e.g), e.c.map(v => v / e.g)));
-  for (const sh of LIFE.ships || []) if (near(sh, cx, cy, mx, my)) add(sh.x, sh.y, 34, 0.55 * dk, AMBER);
+  for (const sh of shipsAndSailors(LIFE.ships)) if (near(sh, cx, cy, mx, my)) add(sh.x, sh.y, 34, 0.55 * dk, AMBER);
   return { L, LC, B, nl, nb };
 }
 
@@ -330,7 +333,7 @@ function foamPoints(bs) {
   const b = G.boat, bd = boatDef();
   hullWash(bs.x, bs.y, bs.a, bd.L, bd.B, G.mode === 'play' ? Math.hypot(b.vx, b.vy) : 0, 0);
   const cx = G.cam.x + W / 2, cy = G.cam.y + H / 2, mx = W / 2 + 60, my = H / 2 + 60;
-  (LIFE.ships || []).forEach((sh, i) => { if (near(sh, cx, cy, mx, my)) { const d = shipDef(sh.id); hullWash(sh.x, sh.y, shipAng(sh), d.L, d.B, Math.hypot(sh.vx || 0, sh.vy || 0), i * 2.3, 1, true); } });
+  shipsAndSailors(LIFE.ships).forEach((sh, i) => { if (near(sh, cx, cy, mx, my)) { const d = shipDef(sh.id); hullWash(sh.x, sh.y, shipAng(sh), d.L, d.B, Math.hypot(sh.vx || 0, sh.vy || 0), i * 2.3, 1, true); } });
   for (const w of LIFE.whales || []) {                    // a surfacing whale pushes up a slick of ripples and foam
     const q = whalePose(w), s = q.size * WHALE_K; if (!near(q, cx, cy, mx, my)) continue;
     const up = clamp(1 - Math.abs(q.z - 0.5) / 3, 0, 1); if (up > 0) hullWash(q.x - Math.cos(q.a) * 3 * s, q.y - Math.sin(q.a) * 3 * s, q.a, 30 * s, 8 * s, 0, q.ph, up);

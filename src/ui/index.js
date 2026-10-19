@@ -15,6 +15,8 @@ import { icon, fishIcon } from './icons.js';
 import { drawChart, compassRose, nearestUncharted } from './chart.js';
 import { ROWS, ACTIONS, SET, boundKey } from '../settings.js';
 import { CHEATS } from '../cheats.js';
+import { NET, BOTTLE_MSGS, EMOTES, account, signOut, setName } from '../net';
+import { ONLINE } from '../online.js';
 import { QUESTS, CHAPTERS, PEOPLE, currentQuest, questProgress, story } from '../story.js';
 
 const html = htm.bind(h);
@@ -152,6 +154,15 @@ function Hud() {
     const x = (s.x - G.cam.x) / W * 100, y = (s.y - G.cam.y - 6) / H * 100;
     if (x > 4 && x < 96 && y > 30 && y < 92) labels.push(html`<div class=${'label-world chip' + (SPECIES[s.sp].legend ? ' gold' : '')} style=${{ left: x + '%', top: y + '%' }}>${SPECIES[s.sp].name}</div>`);
   }
+  // other sailors: a name tag, plus a speech bubble for a few seconds after they greet
+  const fresh = at => Date.now() - at < 4500;
+  for (const s of ONLINE.sailors) {
+    const x = (s.x - G.cam.x) / W * 100, y = (s.y - G.cam.y - 22) / H * 100;
+    if (x < 2 || x > 98 || y < 6 || y > 96) continue;
+    labels.push(html`<div class="label-world chip sailor" key=${'n' + s.uid} style=${{ left: x + '%', top: y + '%' }}>${s.name}</div>`);
+    if (s.emote != null && fresh(s.emoteAt)) labels.push(html`<div class="bubble" key=${'b' + s.uid} style=${{ left: x + '%', top: y - 5 + '%' }}>${EMOTES[s.emote]}</div>`);
+  }
+  if (G.myEmote && G.t - G.myEmote.t < 4.5) labels.push(html`<div class="bubble mine" key="me" style=${{ left: (G.boat.x - G.cam.x) / W * 100 + '%', top: (G.boat.y - G.cam.y - 24) / H * 100 + '%' }}>${EMOTES[G.myEmote.i]}</div>`);
   return html`<div>
     ${labels}
     <div class="hud-left"><${Status}/>
@@ -160,6 +171,7 @@ function Hud() {
       ${G.active.map(c => { const n = G.hold.filter(f => f.sp === c.sp).length; return html`<div class="chip"><${Fish} sp=${c.sp} size="s"/>${c.n} ${SPECIES[c.sp].name}<span class="muted">to ${c.toName}</span><span class=${n >= c.n ? 'good' : ''}>${Math.min(n, c.n)}/${c.n}</span></div>`; })}
     </div>
     <${Minimap}/>
+    ${NET.on && html`<div class="net-chip chip"><span class=${'dot ' + NET.status}/>${NET.status === 'online' ? `${ONLINE.sailors.length ? ONLINE.sailors.length + ' sailor' + (ONLINE.sailors.length > 1 ? 's' : '') + ' nearby' : 'Online'}` : NET.status === 'connecting' ? 'Connecting' : 'Offline'}</div>`}
     ${G.card && html`<${CatchCard}/>`}
     <div class="bottom-stack">
       <${Captions}/>
@@ -247,7 +259,7 @@ function Detail({ p, it }) {
       ${it.kind === 'boat' && html`${[['Speed', it.boat.speed / max.speed], ['Hold', it.boat.hold / max.hold, it.boat.hold + ' fish'], ['Hull', it.boat.hp / max.hp, it.boat.hp], ['Turning', it.boat.turn / 1.05]].map(([n, k, v]) => html`<div class="stat"><span class="caps">${n}</span><${Bar} k=${k} tone="gold"/><span class="num">${v || ''}</span></div>`)}<p>${it.boat.what}.</p>`}
       ${it.kind === 'repair' && html`<div class="stat"><span class="caps">Hull</span><${Bar} k=${G.boat.hp / hpMax()}/><span class="num">${G.boat.hp}/${hpMax()}</span></div><p>${it.what}</p>`}
       ${it.kind === 'rest' && html`<p>${it.what}</p>`}
-      ${(it.kind === 'fleet' || it.kind === 'collect') && html`<p>${it.what}</p>`}
+      ${(it.kind === 'fleet' || it.kind === 'collect' || it.kind === 'fund') && html`<p>${it.what}</p>`}
       ${it.kind === 'project' && html`<${ProjectDetail} it=${it}/>`}
       ${(it.kind === 'supply' || it.kind === 'ferry') && html`<p>${it.what}.</p><p class="muted">${it.sub}.</p>${it.repeat && html`<p class="muted small">Hold the button down to keep buying.</p>`}`}
       ${it.kind === 'take' && html`<p>${it.what}</p>`}
@@ -324,6 +336,7 @@ function Logbook() {
           <dt>Worth</dt><dd class="gold">About ${money(s.base)}</dd>
           <dt>Fights</dt><dd>${FIGHTS[s.fight]}</dd>
           ${e && html`<dt>Caught</dt><dd>${e.n}</dd><dt>Record</dt><dd>${fmtKg(e.best)}</dd>`}
+          ${NET.records[s.id] && html`<dt>World</dt><dd class="gold">${fmtKg(NET.records[s.id].kg)} by ${NET.records[s.id].name}</dd>`}
         </dl>
       </div>
     </div>
@@ -365,10 +378,63 @@ function Ship() {
 }
 
 // ---------- menus ----------
-export const TITLE_ITEMS = () => [...(hasSave() ? ['CONTINUE'] : []), 'NEW VOYAGE', 'SETTINGS', 'CONTROLS'];
-export const PAUSE_ITEMS = ['RESUME', 'JOURNAL', 'SETTINGS', 'CONTROLS', 'SAVE & QUIT'];
+export const TITLE_ITEMS = () => [...(hasSave() ? ['CONTINUE'] : []), 'NEW VOYAGE', 'SETTINGS', 'CONTROLS', ...(NET.on ? ['ONLINE'] : [])];
+export const PAUSE_ITEMS = ['RESUME', 'JOURNAL', 'SETTINGS', 'CONTROLS', ...(NET.on ? ['ONLINE'] : []), 'SAVE & QUIT'];
 function Menu({ items, sel, onPick, setSel }) {
   return html`<div class="menu">${items.map((s, i) => html`<button class=${'item' + (i === sel ? ' sel' : '')} onMouseMove=${byPointer(() => setSel(i))} onClick=${() => onPick(i)}>${s}</button>`)}</div>`;
+}
+// online status, captain name and accounts. Form fields keep their text in G.netForm, so the
+// per-frame redraw never wipes what you are typing.
+function Online() {
+  const p = NET.profile, f = (G.netForm ||= { name: null, email: '', pass: '', show: false, mode: 'signUp' });
+  const say = (msg, bad = false) => { G.netMsg = { msg, bad }; };
+  const saveName = async () => { const r = await setName(f.name ?? p?.name ?? ''); if (r.ok) { f.name = null; say(`Your captain name is now ${r.name}`); } else say(r.why, true); };
+  const submit = async () => { say(f.mode === 'signUp' ? 'Making your account...' : 'Signing in...'); const r = await account(f.mode, f.email.trim(), f.pass); if (r.ok) { f.pass = ''; say(r.msg); if (r.reload) setTimeout(() => location.reload(), 900); } else say(r.why, true); };
+  const onKey = fn => e => { if (e.key === 'Enter') { e.preventDefault(); fn(); } };
+  const status = NET.status !== 'online' ? (NET.status === 'connecting' ? 'Connecting to the coast...' : 'Offline. The game still works, just without online features.')
+    : p?.guest ? 'You are sailing as a guest. Make an account to keep your save on any device.' : `Signed in as ${p?.email || 'a sailor'}. Your save follows you to any device.`;
+  return html`<div class="center dim-bg"><div class="panel rivets dialog online">
+    <h1>Online</h1>
+    <p class="row"><span class=${'dot ' + NET.status}/>${status}</p>
+    ${NET.authed && html`<div class="form-row">
+      <label class="caps" for="net-name">Captain</label>
+      <input id="net-name" maxlength="18" autocomplete="off" value=${f.name ?? p?.name ?? ''} onInput=${e => { f.name = e.currentTarget.value; }} onKeyDown=${onKey(saveName)}/>
+      <button class="btn" disabled=${f.name === null || f.name === p?.name} onClick=${saveName}>Save name</button></div>`}
+    ${NET.authed && p?.guest && html`<div class="account-box">
+      <div class="seg"><button class=${'seg-btn' + (f.mode === 'signUp' ? ' on' : '')} onClick=${() => { f.mode = 'signUp'; G.netMsg = null; }}>Make an account</button>
+        <button class=${'seg-btn' + (f.mode === 'signIn' ? ' on' : '')} onClick=${() => { f.mode = 'signIn'; G.netMsg = null; }}>I have an account</button></div>
+      <div class="form-grid">
+        <label class="caps" for="net-email">Email</label>
+        <input id="net-email" type="email" autocomplete="email" value=${f.email} onInput=${e => { f.email = e.currentTarget.value; }} onKeyDown=${onKey(submit)}/>
+        <label class="caps" for="net-pass">Password</label>
+        <span class="row"><input id="net-pass" type=${f.show ? 'text' : 'password'} autocomplete=${f.mode === 'signUp' ? 'new-password' : 'current-password'} value=${f.pass} onInput=${e => { f.pass = e.currentTarget.value; }} onKeyDown=${onKey(submit)}/>
+          <button class="btn small-btn" onClick=${() => { f.show = !f.show; }} aria-label=${f.show ? 'Hide password' : 'Show password'}>${f.show ? 'Hide' : 'Show'}</button></span>
+        <span/><span class="muted small">${f.mode === 'signUp' ? 'At least 8 characters. Your current progress moves to the new account.' : 'Signing in loads the save stored on that account.'}</span>
+        <span/><button class="btn primary" disabled=${NET.busy || !f.email || f.pass.length < 8} onClick=${submit}>${NET.busy ? 'Working...' : f.mode === 'signUp' ? 'Make account' : 'Sign in'}</button>
+      </div></div>`}
+    ${NET.authed && !p?.guest && html`<p><button class="btn" disabled=${NET.busy} onClick=${async () => { await signOut(); say('Signed out. You are sailing as a guest again'); }}>Sign out</button></p>`}
+    ${G.netMsg && html`<p class=${G.netMsg.bad ? 'why left' : 'good'}>${G.netMsg.msg}</p>`}
+    <p class="help">Online you share a sea with up to 30 sailors. Greet them (G), toss and read bottles (T), compare world records in the logbook, and give to the coastwide fund in Alderhaven's Harbour tab.</p>
+    <footer class="foot"><span/><button class="btn" onClick=${() => { G.mode = G.accountBack || 'play'; }}>Back<${Key} k="Escape" pad="B"/></button></footer>
+  </div></div>`;
+}
+// pick a greeting
+function EmotePick() {
+  const sel = G.emoteSel || 0;
+  return html`<div class="emote-pick panel">
+    <div class="caps">Greet nearby sailors</div>
+    ${EMOTES.map((m, i) => html`<${SetRow} sel=${i === sel} onEnter=${() => { G.emoteSel = i; }} onClick=${() => { G.emoteSel = i; G.pressed.add('Enter'); }}><span class="key">${i + 1}</span><span>${m}</span><//>`)}
+  </div>`;
+}
+// pick a phrase for a message in a bottle
+function BottlePick() {
+  const sel = G.bottleSel || 0;
+  return html`<div class="center dim-bg"><div class="panel rivets dialog">
+    <h1>Message in a bottle</h1>
+    <p class="muted">Pick a line. Other sailors who pass by can fish it out and read it.</p>
+    <div class="scroll">${BOTTLE_MSGS.map((m, i) => html`<${SetRow} sel=${i === sel} onEnter=${() => { G.bottleSel = i; }} onClick=${() => { G.bottleSel = i; G.pressed.add('Enter'); }}><span>${m}</span><//>`)}</div>
+    <footer class="foot"><span class="hints-inline"><${Hint} k="ArrowUp" k2="ArrowDown">Choose<//><${Hint} k="Enter">Throw<//></span><${Hint} k="Escape">Cancel<//></footer>
+  </div></div>`;
 }
 function Title() {
   return html`<div class="center">
@@ -480,6 +546,9 @@ function App() {
     ${m === 'sunk' && G.sunkT > 1 && html`<${Sunk}/>`}
     ${m === 'finale' && html`<${Finale}/>`}
     ${m === 'cheat' && html`<${Cheats}/>`}
+    ${m === 'account' && html`<${Online}/>`}
+    ${m === 'bottle' && html`<${BottlePick}/>`}
+    ${m === 'emote' && html`<${Hud}/><${EmotePick}/>`}
     ${m === 'talk' && G.talk && html`<${Talk}/>`}
     ${m === 'journal' && html`<${Journal}/>`}
     ${m !== 'title' && html`<${Toasts} low=${m !== 'play' && m !== 'sunk'}/>`}

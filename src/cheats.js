@@ -1,5 +1,5 @@
 // Cheat console: press ` while sailing, type a code, press Enter.
-import { G, toast, placeAtPort, saveGame, DAYLEN, schoolActive } from './game.js';
+import { G, toast, placeAtPort, saveGame, DAYLEN, schoolActive, cap } from './game.js';
 import { SPECIES, BOATS, UPGRADES, PROJECTS } from './econ.js';
 import { homePort, LAIR, schoolsNear } from './world.js';
 import { setWeather } from './weather.js';
@@ -13,7 +13,7 @@ export const CHEATS = [
   { code: 'shipwright', what: 'Own every ship', run: () => { for (const p of ['pier', 'market', 'drydock', 'lights']) if (!G.projects.includes(p)) G.projects.push(p); G.owned = BOATS.map(b => b.id); } },
   { code: 'harbour', what: 'Finish every Alderhaven project but the last', run: () => { G.projects = PROJECTS.filter(p => p.id !== 'grand').map(p => p.id); } },
   { code: 'grandfinale', what: 'Finish Alderhaven and see the ending', run: () => { G.projects = PROJECTS.map(p => p.id); G.finale = true; return 'finale'; } },
-  { code: 'fullhold', what: 'Fill the hold with fish', run: () => { const cap = 99; for (let i = 0; G.hold.length < cap && i < 60; i++) { const sp = Math.floor(Math.random() * (SPECIES.length - 1)); G.hold.push({ sp, kg: SPECIES[sp].kg[1] * 0.6, value: SPECIES[sp].base, trophy: Math.random() < 0.2, t: G.clock }); } } },
+  { code: 'fullhold', what: 'Fill the hold with fish', run: () => { for (let i = 0; G.hold.length < cap() && i < 99; i++) { const sp = Math.floor(Math.random() * (SPECIES.length - 1)); G.hold.push({ sp, kg: SPECIES[sp].kg[1] * 0.6, value: SPECIES[sp].base, trophy: Math.random() < 0.2, t: G.clock }); } } },
   { code: 'allfish', what: 'Log every species, with trophies', run: () => { for (const s of SPECIES) G.log[s.id] = { n: Math.max(1, G.log[s.id]?.n || 0), best: s.kg[1], trophy: true }; } },
   { code: 'frenzy', what: 'Start a feeding frenzy nearby', run: () => { const s = schoolsNear(G.boat.x, G.boat.y, 300).find(schoolActive); if (!s) return 'No school nearby'; s.stock = Math.max(s.stock, 8); G.frenzy = { s, until: G.t + 70 }; } },
   { code: 'nightfall', what: 'Skip to nightfall', run: () => atClock(0.72) },

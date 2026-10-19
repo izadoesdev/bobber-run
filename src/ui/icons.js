@@ -59,6 +59,7 @@ const BUILD = {
   keel: () => { const V = new Vox(-6, 6, -3, 3, 10); for (let u = -6; u <= 6; u++) { const w = Math.max(0, 3 - Math.abs(u) * 0.4); V.box(u, u, -Math.round(w), Math.round(w), 6, 7, M.paint); } for (let u = -4; u <= 3; u++) { const d = Math.round(5 - Math.abs(u + 0.5) * 0.8); V.box(u, u, 0, 0, 6 - d, 5, M.iron); } V.box(-1, 1, -1, 1, 0, 1, M.copper); return V; },
   harpoon: () => { const V = new Vox(-7, 7, -2, 2, 10); V.line([-6, 0, 2], [6, 0, 8], M.iron); V.line([4, 0, 7], [7, 0, 9], X.silver); V.set(5, 1, 8, X.silver); V.set(5, -1, 8, X.silver); V.box(-5, -3, -1, 1, 0, 3, M.post); V.box(-4, -4, -2, 2, 2, 2, X.brass); V.line([-6, 0, 2], [-3, 2, 0], M.net); return V; },
   bell: () => { const V = new Vox(-5, 5, -5, 5, 12); for (let z = 0; z <= 9; z++) { const r = z < 7 ? 4.6 - z * 0.12 : 4.2 - (z - 6) * 1.1; for (let u = -5; u <= 5; u++) for (let v = -5; v <= 5; v++) { const d = Math.hypot(u, v); if (d <= r && d > r - 1.3 || (z === 9 && d <= r)) V.set(u, v, z, X.brass); } } for (const [u, v] of [[0, 4], [4, 0], [-4, 0]]) V.set(u, v, 4, X.blue); V.box(0, 0, 0, 0, 10, 11, M.iron); return V; },
+  bottle: () => { const V = new Vox(-6, 6, -2, 2, 6); for (let u = -4; u <= 2; u++) for (let v = -2; v <= 2; v++) for (let z = 0; z <= 4; z++) if (Math.hypot(v, z - 2) <= 2.2) V.set(u, v, z, X.green); V.box(-2, 0, 0, 0, 2, 3, X.paper); V.box(3, 4, -1, 1, 1, 3, X.green); V.box(5, 5, -1, 1, 1, 3, M.post); return V; },
   // story portraits: head and shoulders, facing the viewer
   maren: () => bust(M.navy, M.iron, M.iron),
   ida: () => bust(X.green, M.post, null),
@@ -67,7 +68,7 @@ const BUILD = {
   nell: () => bust(M.stone, M.white, null),
   map: () => { const V = new Vox(-6, 6, -4, 4, 4); V.box(-5, 5, -3, 3, 0, 0, X.paper); for (const u of [-6, 6]) V.box(u, u, -3, 3, 0, 1, M.plank); V.set(1, 0, 1, M.redp); V.set(2, 1, 1, M.redp); V.set(0, 1, 1, M.redp); V.set(2, -1, 1, M.redp); V.set(0, -1, 1, M.redp); V.line([-4, 2, 1], [0, 0, 1], M.iron); return V; },
 };
-const cache = new Map(), PORTRAIT = new Set(['maren', 'ida', 'tobias', 'wren', 'nell']);
+const cache = new Map(), PORTRAIT = new Set(['maren', 'ida', 'tobias', 'wren', 'nell', 'bottle']);
 // render, then crop to the drawn pixels so icons fill their boxes
 function toURL(V, angle = -0.55) {
   V.finalize(); const f = renderVox(V, angle, { outlineZ: 2, shadow: false }), c = f.img, d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;

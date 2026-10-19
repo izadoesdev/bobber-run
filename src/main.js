@@ -5,13 +5,16 @@ import { W, H, STEP, setView } from './config.js';
 import * as GAME from './game.js';
 import * as MODELS from './models.js';
 import { SPECIES } from './econ.js';
-import { TUNE, G, physicsStep, update, updateCamera, refreshSolids, hit, portMenuInput, shipInput, newGame, loadGame, hasSave, wipeSave, saveGame } from './game.js';
+import { TUNE, G, physicsStep, update, updateCamera, refreshSolids, hit, portMenuInput, shipInput, newGame, loadGame, hasSave, wipeSave, saveGame, toast } from './game.js';
 
 import { initRender, render, R, prefetch, boatRenderState } from './gl/renderer.js';
 import { initUI, drawUI, TITLE_ITEMS, PAUSE_ITEMS } from './ui/index.js';
 import { SET, ROWS, ACTIONS, applySettings, remap, bind, resetBinds, toggleFullscreen } from './settings.js';
 import { runCheat } from './cheats.js';
 import { updateStory, talkNext } from './story.js';
+import { initNet, netTick, NET, throwBottle, sendEmote, BOTTLE_MSGS, EMOTES } from './net';
+import * as NETAPI from './net';
+import { ONLINE } from './online.js';
 import { unlockAudio, sfx, renderOffline, SFX_NAMES } from './audio.js';
 import { homePort, schoolsNear, poisNear, hAt, LAIR, BOSS } from './world.js';
 import { updateLife, LIFE } from './life.js';
@@ -20,6 +23,7 @@ import { WX, setWeather } from './weather.js';
 
 const screen = document.getElementById('screen'), uiRoot = document.getElementById('ui');
 initRender(screen); initUI(uiRoot); applySettings();
+initNet(G, SPECIES.map(s => s.id), toast);
 
 // Fill the window: an integer screen scale S keeps about 320x200 world units in view, and the view
 // grows to the window's shape so W*S x H*S just covers it (the stage crops the last few pixels).
@@ -37,6 +41,7 @@ addEventListener('resize', fit); fit();
 const BLOCK = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Tab']);
 let fitLater = null;
 addEventListener('keydown', e => {
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) { if (e.key === 'Escape') e.target.blur(); return; }   // typing in a form
   unlockAudio(); G.pad = false;
   if (BLOCK.has(e.key)) e.preventDefault();
   // cheat console: ` or F2 opens it while sailing; it takes all typing until Enter or Esc.
@@ -89,6 +94,7 @@ function modeInput2(dt) {
     if (hit(' ', 'Enter')) {
       const pick = items[Math.min(G.titleSel || 0, items.length - 1)]; sfx('select');
       if (pick === 'CONTINUE') { loadGame(); G.mode = 'play'; }
+      else if (pick === 'ONLINE') { G.accountBack = 'title'; G.mode = 'account'; }
       else if (pick === 'NEW VOYAGE') { wipeSave(); newGame(); G.mode = 'play'; }
       else { G.back = 'title'; G.setSel = 1; G.ctlSel = 0; G.mode = pick === 'SETTINGS' ? 'settings' : 'controls'; }
     }
@@ -102,6 +108,7 @@ function modeInput2(dt) {
       if (pick === 'RESUME') G.mode = 'play';
       else if (pick === 'SAVE & QUIT') { saveGame(); G.mode = 'title'; G.titleSel = 0; }
       else if (pick === 'JOURNAL') { G.journalBack = 'pause'; G.mode = 'journal'; }
+      else if (pick === 'ONLINE') { G.accountBack = 'pause'; G.mode = 'account'; }
       else { G.back = 'pause'; G.setSel = 1; G.ctlSel = 0; G.mode = pick === 'SETTINGS' ? 'settings' : 'controls'; }
     }
     return;
@@ -127,6 +134,20 @@ function modeInput2(dt) {
     return;
   }
   if (G.mode === 'talk') { if (hit(' ', 'Enter', 'e')) talkNext(); else if (hit('Escape')) talkNext(true); return; }
+  if (G.mode === 'bottle') {                           // choose a phrase to toss overboard
+    const n = BOTTLE_MSGS.length; if (hit('ArrowUp', 'w')) { G.bottleSel = ((G.bottleSel || 0) + n - 1) % n; sfx('move'); } if (hit('ArrowDown', 's')) { G.bottleSel = ((G.bottleSel || 0) + 1) % n; sfx('move'); }
+    if (hit(' ', 'Enter')) { G.mode = 'play'; throwBottle(G.boat.x, G.boat.y, G.bottleSel || 0).then(r => { if (r.ok) { sfx('splash'); toast('You toss a bottle into the sea. Someone may find it'); } else { sfx('deny'); toast(r.why, 'bad'); } }); }
+    else if (hit('Escape', 't')) { G.mode = 'play'; sfx('move'); }
+    return;
+  }
+  if (G.mode === 'emote') {                            // a preset greeting other sailors see over your boat
+    const n = EMOTES.length; if (hit('ArrowUp', 'w')) { G.emoteSel = ((G.emoteSel || 0) + n - 1) % n; sfx('move'); } if (hit('ArrowDown', 's')) { G.emoteSel = ((G.emoteSel || 0) + 1) % n; sfx('move'); }
+    for (let i = 0; i < Math.min(9, n); i++) if (hit(String(i + 1))) G.emoteSel = i;
+    if (hit(' ', 'Enter') || [...Array(Math.min(9, n)).keys()].some(i => hit(String(i + 1)))) { sendEmote(G.emoteSel || 0); G.myEmote = { i: G.emoteSel || 0, t: G.t }; G.mode = 'play'; sfx('select'); }
+    else if (hit('Escape', 'g')) { G.mode = 'play'; sfx('move'); }
+    return;
+  }
+  if (G.mode === 'account') { if (hit('Escape')) { G.mode = G.accountBack || 'play'; sfx('move'); } return; }
   if (G.mode === 'journal') { if (hit('j', 'Escape', 'Enter', ' ')) { G.mode = G.journalBack || 'play'; sfx('move'); } return; }
   if (G.mode === 'finale') { if (hit(' ', 'Enter', 'Escape')) { G.mode = 'play'; sfx('select'); } return; }
   if (G.mode === 'port') return portMenuInput(dt);
@@ -146,6 +167,8 @@ function modeInput2(dt) {
     if (hit('m', 'M')) { G.mode = 'map'; G.map.x = G.map.y = 0; sfx('move'); }
     else if (hit('l', 'L')) { G.mode = 'log'; sfx('move'); }
     else if (hit('j')) { G.journalBack = 'play'; G.mode = 'journal'; sfx('move'); }
+    else if (hit('g') && NET.authed) { G.mode = 'emote'; sfx('select'); }
+    else if (hit('t') && !G.fish) { if (NET.authed) { G.mode = 'bottle'; sfx('select'); } else { toast('Bottles need a connection to the coast'); sfx('deny'); } }
     else if (hit('Tab', 'i', 'I')) { G.mode = 'ship'; G.shipSel = 0; sfx('move'); }
     else if (hit('Escape') && !G.fish) { G.mode = 'pause'; G.pauseSel = 0; sfx('move'); }
   }
@@ -168,6 +191,7 @@ export function tick(dt) {
   if (G.mode === 'map') { const s = 220 * dt * G.map.zoom; if (G.keys.ArrowLeft || G.keys.a) G.map.x -= s; if (G.keys.ArrowRight || G.keys.d) G.map.x += s; if (G.keys.ArrowUp || G.keys.w) G.map.y -= s; if (G.keys.ArrowDown || G.keys.s) G.map.y += s; }
   update(dt);
   updateStory();
+  netTick(dt);
   updateLife(dt);
   const bs = boatRenderState(alpha);
   if (G.mode === 'play' || G.mode === 'sunk' || G.mode === 'title') updateCamera(dt, bs.x, bs.y);   // menus freeze the view behind them
@@ -183,6 +207,6 @@ function frame(ts) {
   tick(dt);
   requestAnimationFrame(frame);
 }
-addEventListener('beforeunload', () => { if (G.mode !== 'title') saveGame(); });
-window.BR = { render, SET, apply: () => { applySettings(); fit(); }, AUDIO: { renderOffline, SFX_NAMES }, WX, setWeather, LIFE, LAIR, BOSS, MODELS, GAME, TUNE, G, tick, sim: (dt) => { noRender = true; tick(dt); noRender = false; }, homePort, schoolsNear, poisNear, hAt, SPECIES, R };
+addEventListener('beforeunload', () => { if (G.mode !== 'title' && !NET.skipUnloadSave) saveGame(); });
+window.BR = { NET, NETAPI, ONLINE, render, SET, apply: () => { applySettings(); fit(); }, AUDIO: { renderOffline, SFX_NAMES }, WX, setWeather, LIFE, LAIR, BOSS, MODELS, GAME, TUNE, G, tick, sim: (dt) => { noRender = true; tick(dt); noRender = false; }, homePort, schoolsNear, poisNear, hAt, SPECIES, R };
 requestAnimationFrame(frame);
