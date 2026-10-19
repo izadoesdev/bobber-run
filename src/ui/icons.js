@@ -44,7 +44,7 @@ const BUILD = {
   rain: () => { const V = BUILD.cloud(4); for (const u of [-4, -1, 2, 5]) V.line([u, 0, 3], [u - 1, 0, 0], X.blue); return V; },
   storm: () => { const V = BUILD.cloud(5); V.line([1, 0, 4], [-1, 0, 2], X.glowy); V.line([-1, 0, 2], [1, 0, 2], X.glowy); V.line([1, 0, 2], [-1, 0, 0], X.glowy); return V; },
   arrow: () => { const V = new Vox(-6, 6, -1, 1, 10); V.box(-5, 1, 0, 0, 4, 6, M.white); for (let k = 0; k <= 4; k++) V.box(2 + k, 2 + k, 0, 0, 1 + k, 9 - k, M.white); return V; },
-  warn: () => { const V = new Vox(-6, 6, -1, 1, 12); for (let z = 0; z <= 10; z++) { const w = Math.round(z * 0.55); V.box(-5 + w, 5 - w, 0, 0, z, z, M.redp); } V.box(0, 0, 1, 1, 4, 7, M.white); V.set(0, 1, 2, M.white); return V; },
+  warn: () => { const V = new Vox(-6, 6, -1, 1, 12); for (let z = 0; z <= 10; z++) { const w = Math.round(z * 0.55); V.box(-5 + w, 5 - w, 0, 0, z, z, X.brass); } V.box(0, 0, 1, 1, 4, 7, M.iron); V.set(0, 1, 2, M.iron); return V; },
   map: () => { const V = new Vox(-6, 6, -4, 4, 4); V.box(-5, 5, -3, 3, 0, 0, X.paper); for (const u of [-6, 6]) V.box(u, u, -3, 3, 0, 1, M.plank); V.set(1, 0, 1, M.redp); V.set(2, 1, 1, M.redp); V.set(0, 1, 1, M.redp); V.set(2, -1, 1, M.redp); V.set(0, -1, 1, M.redp); V.line([-4, 2, 1], [0, 0, 1], M.iron); return V; },
 };
 const cache = new Map();
