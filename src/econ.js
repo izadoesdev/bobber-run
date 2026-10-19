@@ -88,8 +88,8 @@ export const BOATS = [
   { id: 'trawler', name: 'Trawler',      cost: 6000, speed: 2.15, accel: 0.8, turn: 0.75, hold: 18, hp: 360, L: 23,   B: 9,   prop: 'ENGINE', sonar: 1, net: 3, what: 'Big nets + sonar built in', req: 'pier' },
   // the big ships: unlocked by restoring Alderhaven's harbour, not by money alone
   { id: 'schooner', name: 'Schooner',     cost: 14000, speed: 2.4, accel: 0.85, turn: 0.62, hold: 26, hp: 520, L: 32, B: 10, prop: 'SAIL', sonar: 1, net: 0, crew: 1, what: 'Two masts, very fast across the wind, sails with a deckhand', req: 'drydock' },
-  { id: 'drifter',  name: 'Steam Drifter', cost: 28000, speed: 2.3, accel: 0.7, turn: 0.55, hold: 34, hp: 700, L: 36, B: 11, prop: 'ENGINE', sonar: 2, net: 3, keel: 1, what: 'Steam power and huge nets. Rides out storms', req: 'drydock' },
-  { id: 'flagship', name: 'Flagship',      cost: 60000, speed: 2.6, accel: 0.75, turn: 0.5, hold: 50, hp: 1000, L: 46, B: 14, prop: 'ENGINE', sonar: 3, net: 3, keel: 2, crew: 2, harpoon: 1, what: 'The finest ship afloat: harpoon, sonar dome and a crew of three', req: 'lights' },
+  { id: 'drifter',  name: 'Steam Drifter', cost: 28000, speed: 2.3, accel: 0.7, turn: 0.62, hold: 34, hp: 700, L: 36, B: 11, prop: 'ENGINE', sonar: 2, net: 3, keel: 1, what: 'Steam power and huge nets. Rides out storms', req: 'drydock' },
+  { id: 'flagship', name: 'Flagship',      cost: 60000, speed: 2.6, accel: 0.75, turn: 0.62, hold: 50, hp: 1000, L: 46, B: 14, prop: 'ENGINE', sonar: 3, net: 3, keel: 2, crew: 2, harpoon: 1, what: 'The finest ship afloat: harpoon, sonar dome and a crew of three', req: 'lights' },
 ];
 // Restoring Alderhaven: the long goal. Each project takes coins and donated fish, unlocks something, and the last one ends the story.
 // need: { any: n } fish of any kind; { kinds: n } different species; { trophy: n } trophy fish; { sp: id, n } a particular species

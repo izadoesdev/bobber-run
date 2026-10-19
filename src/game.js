@@ -233,7 +233,7 @@ function onImpact(I, at) {
 }
 export function physicsStep(dt) {
   const b = G.boat, bd = boatDef(); b.px = b.x; b.py = b.y; b.pa = b.a;
-  const thr = inp.up() ? 1 : 0, rev = inp.down() ? 1 : 0, steer = G.fish ? 0 : (inp.right() ? 1 : 0) - (inp.left() ? 1 : 0);
+  const thr = inp.up() ? 1 : 0, rev = inp.down() ? 1 : 0, steer = ((inp.right() ? 1 : 0) - (inp.left() ? 1 : 0)) * (G.fish ? 0.6 : 1);   // you can still turn with a line out
   if (G.fish && (thr || rev)) cancelFishing('Reeled in');
   let c = Math.cos(b.a), s = Math.sin(b.a);
   let vf = b.vx * c + b.vy * s, vs = -b.vx * s + b.vy * c;
@@ -242,7 +242,7 @@ export function physicsStep(dt) {
   let push = 20 * speedMul() * bd.accel;
   if (bd.prop === 'SAIL') push *= sailEff(b.a) * (1 + 0.3 * WX.wind);
   if (!G.fish) vf += (thr * push - rev * push * 0.45) * dt;
-  const turnT = steer * 1.25 * bd.turn * (0.45 + 0.55 * Math.min(1, Math.abs(vf) / 22));
+  const turnT = steer * 1.25 * bd.turn * (0.6 + 0.4 * Math.min(1, Math.abs(vf) / 22));
   b.w += (turnT - b.w) * (1 - Math.exp(-4 * dt));
   b.a += b.w * dt;
   c = Math.cos(b.a); s = Math.sin(b.a);

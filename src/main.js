@@ -53,11 +53,14 @@ addEventListener('keydown', e => {
     return;
   }
   if ((e.key === 'f' || e.key === 'F') && remap(e.key) === e.key) { if (!e.repeat) toggleFullscreen(); return; }   // unless f is rebound to an action
-  const k = remap(e.key);
+  const k = remap(norm(e.key));
   G.keys[k] = true;
   if (!e.repeat) G.pressed.add(k);
 });
-addEventListener('keyup', e => { G.keys[remap(e.key)] = false; G.keys[e.key] = false; });
+// letters are tracked in lower case, so Shift or Caps Lock between press and release can't leave a key held down
+const norm = k => k.length === 1 ? k.toLowerCase() : k;
+addEventListener('keyup', e => { const k = norm(e.key); G.keys[remap(k)] = false; G.keys[k] = false; });
+document.addEventListener('visibilitychange', () => { if (document.hidden) for (const k in G.keys) G.keys[k] = false; });
 addEventListener('blur', () => { for (const k in G.keys) G.keys[k] = false; });
 
 // gamepad: stick/dpad steer, A cast/confirm, B back, X dock, Y chart, LB log, RB bait, triggers row
