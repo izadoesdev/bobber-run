@@ -1,4 +1,6 @@
 // Entry: canvases, input, fixed-step loop with interpolation.
+import '../styles/base.css';
+import '../styles/ui.css';
 import { W, H, STEP, setView } from './config.js';
 import * as GAME from './game.js';
 import * as MODELS from './models.js';

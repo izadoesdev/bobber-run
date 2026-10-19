@@ -1,0 +1,6 @@
+/* Page and stage: the canvas fills the window; #ui sits exactly over it. */
+html, body { margin: 0; height: 100%; background: #1b2a33; overflow: hidden; }
+body { display: flex; align-items: center; justify-content: center; }
+#stage { position: relative; flex: none; }
+canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+#ui { position: absolute; left: 0; top: 0; }
