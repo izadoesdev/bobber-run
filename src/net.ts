@@ -299,7 +299,6 @@ const cellsAround = (sea: number, x: number, y: number) => {
 };
 type Raw = { id: string; x: number; y: number; a: number; vx: number; vy: number; w: number; boat: string; paint: string; name: string; at: number; emote: number | null; emoteAt: number };
 let lastSent: { x: number; y: number; a: number } | null = null, sendT = 0, inFlight = false, raw: Raw[] = [];
-const seenSailors = new Set<string>();   // by captain name, so a reconnect isn't announced again
 /**
  * Other boats are drawn a little in the past, between two real reports, so they move smoothly however unevenly
  * reports arrive. Each report carries the boat's velocity and turn rate, so the path between reports curves the way
@@ -377,7 +376,6 @@ export function netTick(dt: number) {
     else { s.x += (at.x - s.x) * k; s.y += (at.y - s.y) * k; s.a += turn(s.a, at.a) * k; }
     s.vx = at.vx; s.vy = at.vy;
     Object.assign(s, { id: r.boat, paint: r.paint, name: r.name, emote: r.emote, emoteAt: r.emoteAt });   // id = boat model, as the renderer expects
-    if (!seenSailors.has(r.name)) { seenSailors.add(r.name); if (seenSailors.size > 1 || G!.mode === 'play') toast(`${r.name} sailed into view`); }
     return s;
   });
   for (const id of snaps.keys()) if (!raw.some(r => r.id === id)) snaps.delete(id);
