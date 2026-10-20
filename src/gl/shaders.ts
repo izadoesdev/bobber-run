@@ -44,6 +44,8 @@ uniform vec2 uWD; uniform vec3 uSun, uSunC, uAmb, uSky;
 ${NOISE}${LIGHTS}${STYLE}
 const float HS = 40.0;
 float H(vec2 w){ return texture(uH, (w - uHT.xy)/uHT.zw).r; }
+// the biome weights stored with the heights: reef, kelp, volcanic
+vec3 BIO(vec2 w){ return texture(uH, (w - uHT.xy)/uHT.zw).gba; }
 vec2 TUV(vec2 w){ return (w - uHR.xy)/uHR.zw; }
 float warm(float y){ return clamp((y - 1500.0)/1000.0, 0.0, 1.0); }
 float cold(float y){ return clamp((-y - 1300.0)/1000.0, 0.0, 1.0); }
@@ -84,22 +86,27 @@ float glints(vec2 p, float pw){
 // sways with the swell, and clumps of coral in warm water. Alpha: how much more it shows through the water than sand
 // (coral and weed reach up toward the light).
 const vec3 CORAL[5] = vec3[5](vec3(.96,.46,.56), vec3(.98,.62,.32), vec3(.66,.44,.84), vec3(.96,.86,.38), vec3(.32,.82,.74));
-vec4 seabed(vec2 p, float depth, float wm, float cd){
+vec4 seabed(vec2 p, float depth, float wm, float cd, vec3 bm){
   vec2 q = floor(p) + 0.5;
   vec3 sand = mix(mix(vec3(.80,.73,.54), vec3(.94,.90,.75), wm), vec3(.6,.6,.56), cd);
+  sand = mix(mix(mix(sand, vec3(.95,.92,.80), bm.x), vec3(.40,.38,.30), bm.y), vec3(.20,.19,.21), bm.z);   // coral sand, kelp silt, black sand
   float rip = sin(dot(q, vec2(0.55, 0.83))*1.3 + noise(q*0.06)*5.0);
   vec3 c = sand*(0.93 + 0.12*st(rip*0.5 + 0.5, 2.0)); float up = 0.0;
   float rk = noise(q*0.11 + 7.0)*0.65 + noise(q*0.37)*0.35;
-  if (rk > 0.7) c = mix(vec3(.40,.42,.40), vec3(.58,.57,.52), st(noise(q*0.45 + 3.0), 2.0))*(rk > 0.74 ? 1.0 : 0.82);
+  if (rk > 0.7 - 0.12*bm.z - 0.05*bm.y) c = mix(vec3(.40,.42,.40), vec3(.58,.57,.52), st(noise(q*0.45 + 3.0), 2.0))*(rk > 0.74 ? 1.0 : 0.82)*mix(1.0, 0.5, bm.z);
   float patchv = noise(q*0.045 + 19.0);
-  if (patchv > 0.6 && depth > 0.04){                                   // seagrass, kelp where it's cold
+  if (patchv > 0.6 - 0.22*bm.y && depth > 0.04){                       // seagrass, kelp where it's cold or on kelp coasts
     float sway = sin(uT*1.3 + q.y*0.35 + q.x*0.1);
     if (hash(floor(vec2(q.x + sway*0.8, q.y*0.5))) > 0.42){
-      c = mix(mix(vec3(.30,.54,.30), vec3(.42,.60,.27), wm), vec3(.36,.36,.20), cd)*(0.75 + 0.35*hash(q + 3.0)); up = 0.12; }
-  } else if (wm > 0.1 && patchv < 0.42 && depth > 0.03 && depth < 0.32){  // coral
+      c = mix(mix(mix(vec3(.30,.54,.30), vec3(.42,.60,.27), wm), vec3(.36,.36,.20), cd), vec3(.30,.30,.12), bm.y)*(0.75 + 0.35*hash(q + 3.0)); up = 0.12 + 0.1*bm.y; }
+  } else if (max(wm, bm.x) > 0.1 && patchv < 0.42 && depth > 0.03 && depth < 0.32){  // coral, in warm water and on reefs
     vec2 cc = floor(q/4.0), f = fract(q/4.0) - 0.5 - (vec2(hash(cc + 2.0), hash(cc + 4.0)) - 0.5)*0.3;
-    if (hash(cc + 11.0) < wm*0.6*smoothstep(0.42, 0.25, patchv) + 0.05 && length(f) < 0.3 + 0.2*hash(cc + 6.0))
+    if (hash(cc + 11.0) < max(wm*0.6, bm.x*0.85)*smoothstep(0.42, 0.25, patchv) + 0.05 && length(f) < 0.3 + 0.2*hash(cc + 6.0))
       { c = CORAL[int(hash(cc + 8.0)*4.99)]*(0.82 + 0.3*step(0.55, hash(q))); up = 0.35; }
+  }
+  if (bm.z > 0.4 && depth > 0.05){                                     // warm vents glowing among the black rocks
+    vec2 vcell = floor(q/28.0); float d = length(q - (vcell + 0.25 + 0.5*vec2(hash(vcell + 71.0), hash(vcell + 73.0)))*28.0);
+    if (hash(vcell + 77.0) > 0.86 && d < 2.6){ c = mix(vec3(1.0,.42,.16), vec3(1.0,.78,.36), step(d, 1.2))*(0.85 + 0.25*sin(uT*2.2 + hash(vcell)*6.0)); up = 0.55; }
   }
   return vec4(c, up); }
 // Seabed shape the heightfield is too coarse for: deep basins and gullies in open water, and now and then
@@ -125,6 +132,7 @@ void main(){
   vec2 p = uCam.xy + vec2(vUV.x, 1.0 - vUV.y)*uCam.zw;
   float pw = max(fwidth(p).x, fwidth(p).y);                 // world units per screen pixel (taken here, in uniform control flow)
   float h = H(p), wm = warm(p.y), cd = cold(p.y);
+  vec3 bm = BIO(p);                                           // biome weights: reef, kelp, volcanic
   vec2 tu = TUV(p), tp = 1.0/vec2(textureSize(uShadow, 0));
   float objSh = (texture(uShadow, tu).r*2.0 + texture(uShadow, tu + vec2(tp.x*2.0, 0)).r + texture(uShadow, tu - vec2(tp.x*2.0, 0)).r
                + texture(uShadow, tu + vec2(0, tp.y*2.0)).r + texture(uShadow, tu - vec2(0, tp.y*2.0)).r)/6.0;
@@ -144,6 +152,16 @@ void main(){
     vec3 rock = vec3(.52,.55,.58), snow = vec3(.93,.95,.97), peak = mix(vec3(.68,.70,.72), snow, cd);
     float tex2 = st(det2, 3.0);                                   // grass/forest speckle on the pixel grid
     vec2 q = floor(p) + 0.5;
+    // biomes: white coral sand and lush green; grey shingle and moss on kelp coasts; black sand and basalt on the ember isles
+    wet = mix(mix(mix(wet, vec3(.80,.76,.60), bm.x), vec3(.40,.41,.40), bm.y), vec3(.13,.12,.13), bm.z);
+    sand = mix(sand, vec3(.98,.95,.84), bm.x);
+    sand = mix(sand, mix(vec3(.52,.53,.51), vec3(.68,.68,.64), step(0.5, hash(q))), bm.y);
+    sand = mix(sand, mix(vec3(.19,.18,.19), vec3(.30,.28,.28), step(0.6, hash(q + 2.0))), bm.z);
+    // the ember isles: ash and scorched scrub, with a few hardy olive patches
+    vec3 ash = mix(vec3(.34,.31,.27), vec3(.44,.43,.28), st(smoothstep(0.55, 0.7, noise(p*0.05 + 3.0)), 2.0));
+    grass = mix(mix(mix(grass, vec3(.38,.70,.30), bm.x), vec3(.32,.46,.30), bm.y), ash, bm.z);
+    forest = mix(mix(mix(forest, vec3(.12,.42,.22), bm.x), vec3(.13,.26,.19), bm.y), vec3(.22,.21,.17), bm.z);
+    rock = mix(mix(rock, vec3(.42,.45,.47), bm.y), vec3(.24,.23,.25), bm.z); peak = mix(peak, vec3(.30,.28,.29), bm.z);
     float region = noise(p*0.016 + 40.0);                         // shores and meadows change character along the coast
     float pebbles = st(smoothstep(0.66, 0.76, region), 2.0);      // stony beaches
     sand = mix(sand, mix(vec3(.58,.54,.48), vec3(.76,.72,.64), step(0.45, hash(q))), pebbles);
@@ -152,14 +170,15 @@ void main(){
     float beach = 0.07 + 0.07*region;                             // wide beaches here, narrow there
     col = mix(wet, sand, st(smoothstep(0.02, 0.045, hh), 2.0));
     col = mix(col, grass*(0.85 + tex2*0.3), st(smoothstep(beach, beach + 0.04, hh), 2.0));
-    float flower = step(0.985, hash(q + 17.0))*step(beach + 0.05, hh)*step(hh, 0.34);   // meadow flowers
+    float flower = step(0.985, hash(q + 17.0))*step(beach + 0.05, hh)*step(hh, 0.34)*(1.0 - bm.z);   // meadow flowers
     col = mix(col, mix(mix(vec3(.96,.92,.80), vec3(.98,.82,.30), step(0.5, hash(q + 5.0))), vec3(.92,.52,.66), step(0.8, hash(q + 9.0))), flower);
     col = mix(col, forest*(0.8 + tex2*0.35), st(smoothstep(0.33, 0.40, hh), 2.0));
-    col = mix(col, rock*(0.85 + det*0.3), st(smoothstep(mix(0.72, 0.6, cd), mix(0.78, 0.66, cd), hh), 2.0));
+    float rockAt = mix(mix(0.72, 0.6, cd), 0.42, bm.z);
+    col = mix(col, rock*(0.85 + det*0.3), st(smoothstep(rockAt, rockAt + 0.06, hh), 2.0));
     col = mix(col, peak, st(smoothstep(mix(0.88, 0.74, cd), mix(0.92, 0.78, cd), hh), 2.0));
     col = mix(col, snow, st(cd*smoothstep(0.42, 0.58, hh)*smoothstep(0.75, 0.95, n.z)*0.85, 2.0));
     float cliff = st(smoothstep(0.8, 0.66, n.z)*smoothstep(0.05, 0.1, hh), 2.0);    // steep faces show bare, banded rock
-    col = mix(col, mix(vec3(.50,.47,.43), vec3(.62,.58,.52), st(fract(hh*28.0 + det*0.6), 2.0))*(0.9 + 0.2*hash(q)), cliff);
+    col = mix(col, mix(vec3(.50,.47,.43), vec3(.62,.58,.52), st(fract(hh*28.0 + det*0.6), 2.0))*(0.9 + 0.2*hash(q))*mix(1.0, 0.5, bm.z), cliff);
     float avg = (H(p + vec2(5, 0)) + H(p - vec2(5, 0)) + H(p + vec2(0, 5)) + H(p - vec2(0, 5)))*0.25;
     float ao = 0.62 + 0.38*st(clamp(1.0 - (avg - h)*6.0, 0.62, 1.0)*2.63 - 1.63, 3.0);
     float diff = st(max(dot(n, uSun), 0.0), 4.0), tsh = st(terrainShadow(p, h)/0.8, 3.0)*0.8;   // stepped like the voxel faces
@@ -185,14 +204,19 @@ void main(){
     vec3 shallowC = mix(mix(vec3(.34,.66,.70), vec3(.24,.80,.78), wm), vec3(.40,.56,.62), cd);
     vec3 midC     = mix(mix(vec3(.17,.43,.55), vec3(.07,.53,.62), wm), vec3(.22,.36,.46), cd);
     vec3 deepC    = mix(mix(vec3(.07,.22,.35), vec3(.03,.27,.42), wm), vec3(.10,.18,.27), cd);
+    // biomes: turquoise lagoons over reefs, dark green-teal over kelp, inky blue around the ember isles
+    shallowC = mix(mix(mix(shallowC, vec3(.30,.86,.82), bm.x), vec3(.22,.44,.40), bm.y), vec3(.24,.46,.56), bm.z);
+    midC = mix(mix(mix(midC, vec3(.09,.60,.68), bm.x), vec3(.11,.34,.37), bm.y), vec3(.09,.28,.40), bm.z);
+    deepC = mix(mix(mix(deepC, vec3(.04,.30,.46), bm.x*0.6), vec3(.06,.18,.23), bm.y*0.7), vec3(.05,.15,.26), bm.z*0.7);
     // depth reads as a few flat bands of colour, like a hand-painted chart; trenches and holes go darker still
     float vd = seaDepth(p, depth);
     vec3 wc = mix(midC, shallowC, st(smoothstep(0.2, 0.0, vd), 3.0));
     wc = mix(deepC, wc, st(smoothstep(0.55, 0.12, vd), 3.0));
     wc *= mix(1.0, 0.6, st(smoothstep(0.6, 1.15, vd), 3.0));
-    float clarity = st(exp(-vd*mix(7.5, 5.5, wm)), 4.0)*mix(0.72, 0.9, wm);   // tropical water is clearer
+    float clr = max(wm, bm.x);
+    float clarity = st(exp(-vd*mix(mix(7.5, 5.5, wm), 4.6, bm.x)), 4.0)*mix(0.72, 0.9, clr)*mix(1.0, 0.72, bm.y);   // tropical water and reefs are clearer
     if (clarity > 0.0){
-      vec4 bed = seabed(p, depth, wm, cd);
+      vec4 bed = seabed(p, depth, wm, cd, bm);
       wc = mix(wc, bed.rgb*(0.72 + 0.6*st(caustic(p + n.xy*4.0), 2.0)*(1.0 - uNight)*(1.0 - cloud*0.5))*vec3(0.78, 0.96, 0.96), min(0.92, clarity + bed.a));
     }
     wc *= 0.9 + 0.2*st(fbm(p*0.018 + vec2(uT*0.01, 0.0)), 3.0);        // broad blotches of lighter and darker water

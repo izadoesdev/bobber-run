@@ -175,11 +175,123 @@ function boulders(): Vox {
   V.each((u, v, z) => { if (!V.get(u, v, z + 1) && z >= 3 && hash01(u, v * 3, 17) < 0.5) V.set(u, v, z, TM.moss); });
   return V.finalize();
 }
+// biome trees: a birch for the kelp coasts, a burnt snag and an ashy shrub for the ember isles, a fern for both coasts
+const BM = {
+  bark: mat(['#9a9488', '#d6d0c2', '#f2eee4']), char: mat(['#1c1a1a', '#2e2a28', '#463e38']), ash: mat(['#5a5a3e', '#7a7650', '#9a9466']),
+};
+function birch(): Vox {
+  const V = new Vox(-4, 4, -4, 4, 15);
+  V.box(0, 0, 0, 0, 0, 9, BM.bark);
+  for (let z = 2; z <= 8; z += 3) V.set(0, 0, z, TM.trunk);                   // the dark bands on the bark
+  sphere(V, 0, 0, 10, 2.8, TM.leaf2, TM.palm, 21); sphere(V, 1, 0, 7.5, 1.8, TM.palm, TM.leaf2, 22);
+  return V.finalize();
+}
+function deadtree(): Vox {
+  const V = new Vox(-4, 4, -4, 4, 12);
+  V.box(0, 0, 0, 0, 0, 8, BM.char);
+  V.line([0, 0, 5], [-3, 1, 8], BM.char); V.line([0, 0, 7], [2, -2, 10], BM.char); V.line([0, 0, 3], [2, 1, 5], BM.char);
+  return V.finalize();
+}
+function ashbush(): Vox { const V = new Vox(-3, 3, -3, 3, 4); sphere(V, 0, 0, 1.2, 2.0, BM.ash, TM.moss, 23); return V.finalize(); }
+// a low fan of fronds
+function fern(): Vox {
+  const V = new Vox(-4, 4, -4, 4, 5);
+  for (let k = 0; k < 7; k++) { const a = k / 7 * 6.283 + 0.4; V.line([0, 0, 0], [Math.round(Math.cos(a) * 3.6), Math.round(Math.sin(a) * 3.6), 2 + (k % 2)], k % 2 ? TM.palm : TM.leaf2); }
+  V.set(0, 0, 1, TM.leaf);
+  return V.finalize();
+}
 // (append new kinds: tiles cache trees by index into this list)
-export const TREE_KINDS = ['pine', 'pineB', 'round', 'roundB', 'palm', 'snowpine', 'snowpineB', 'rock', 'bush', 'berrybush', 'boulders'] as const;
+export const TREE_KINDS = ['pine', 'pineB', 'round', 'roundB', 'palm', 'snowpine', 'snowpineB', 'rock', 'bush', 'berrybush', 'boulders',
+  'birch', 'deadtree', 'ashbush', 'fern'] as const;
 export type TreeKind = typeof TREE_KINDS[number];
 const TREE_BUILD: Record<TreeKind, () => Vox> = { pine: () => pine(false, false), pineB: () => pine(true, false), round: () => round(false), roundB: () => round(true), palm, snowpine: () => pine(false, true), snowpineB: () => pine(true, true), rock,
-  bush: () => bush(TM.bloom), berrybush: () => bush(TM.berry), boulders };
+  bush: () => bush(TM.bloom), berrybush: () => bush(TM.berry), boulders, birch, deadtree, ashbush, fern };
+
+// ---------- the sea floor: coral, kelp, urchins and stones, drawn under the water by the seabed pass ----------
+const SB = {
+  pink: mat(['#a8364e', '#e8607a', '#ff9aac']), orange: mat(['#b0501e', '#ee8034', '#ffb46a']), purple: mat(['#5a3a8a', '#8a62c4', '#b898ea']),
+  yellow: mat(['#a88a1e', '#e8c446', '#fff08a']), teal: mat(['#1e7a6c', '#3cb4a0', '#7ae8d4']),
+  kelp: mat(['#3a3a14', '#5e5a20', '#868232']), urchin: mat(['#24142e', '#3e2650', '#5e3e74']), basalt: mat(['#1e1e22', '#323238', '#4a4a52']),
+  shell: mat(['#a89a80', '#e2d6bc', '#fff6e2']), vent: mat(['#a8401a', '#ff8a3a', '#ffd08a'], true),
+};
+function coralBranch(m: number, seed: number): Vox {
+  const V = new Vox(-4, 4, -4, 4, 8);
+  for (let k = 0; k < 4; k++) {
+    const a = k * 1.7 + seed, tx = Math.round(Math.cos(a) * 2.6), ty = Math.round(Math.sin(a) * 2.6), top = 4 + ((k + seed) % 3);
+    V.line([0, 0, 0], [tx, ty, top], m); V.line([tx, ty, top], [tx + Math.sign(tx), ty, top + 2], m);
+  }
+  return V.finalize();
+}
+function coralDome(m: number): Vox { const V = new Vox(-3, 3, -3, 3, 4); sphere(V, 0, 0, 0.6, 2.6, m, SB.yellow, 31); return V.finalize(); }
+function coralTubes(m: number): Vox {
+  const V = new Vox(-3, 3, -3, 3, 7);
+  for (let k = 0; k < 5; k++) { const u = Math.round(Math.cos(k * 2.4) * 1.6), v = Math.round(Math.sin(k * 2.4) * 1.6); V.box(u, u, v, v, 0, 2 + (k * 3) % 5, m); }
+  return V.finalize();
+}
+// a sea fan: a lacy sheet one voxel thick
+function seaFan(m: number): Vox {
+  const V = new Vox(-4, 4, 0, 0, 9);
+  for (let z = 0; z <= 8; z++) for (let u = -4; u <= 4; u++) if (Math.hypot(u, (z - 4) * 0.9) < 4.4 && (z === 0 ? u === 0 : hash01(u + 9, z, 33) < 0.62)) V.set(u, 0, z, m);
+  V.box(0, 0, 0, 0, 0, 3, m);
+  return V.finalize();
+}
+function anemone(): Vox {
+  const V = new Vox(-2, 2, -2, 2, 4);
+  V.box(-1, 1, -1, 1, 0, 1, SB.teal);
+  for (let u = -2; u <= 2; u++) for (let v = -2; v <= 2; v++) if ((u + v) % 2 === 0 && Math.hypot(u, v) < 2.6) V.set(u, v, 2 + ((u * v) & 1), SB.pink);
+  return V.finalize();
+}
+function starfish(m: number): Vox {
+  const V = new Vox(-3, 3, -3, 3, 1);
+  for (let k = 0; k < 5; k++) { const a = k / 5 * 6.283; V.line([0, 0, 0], [Math.round(Math.cos(a) * 2.6), Math.round(Math.sin(a) * 2.6), 0], m); }
+  return V.finalize();
+}
+function clam(): Vox { const V = new Vox(-2, 2, -2, 2, 2); sphere(V, 0, 0, 0, 1.9, SB.shell, SB.purple, 35); return V.finalize(); }
+function kelpStrand(tall: number): Vox {
+  const V = new Vox(-3, 3, -3, 3, tall + 1);
+  for (let z = 0; z <= tall; z++) {
+    const u = Math.round(Math.sin(z * 0.45) * 1.2);
+    V.set(u, 0, z, SB.kelp);
+    if (z > 2 && z % 3 === 0) { V.set(u + 1, 0, z, TM.moss); V.set(u - 1, 0, z + 1, TM.moss); }
+  }
+  return V.finalize();
+}
+function urchin(): Vox {
+  const V = new Vox(-2, 2, -2, 2, 3);
+  sphere(V, 0, 0, 1, 1.3, SB.urchin, SB.urchin, 37);
+  for (const [u, v, z] of [[2, 0, 1], [-2, 0, 1], [0, 2, 1], [0, -2, 1], [0, 0, 3], [1, 1, 2], [-1, -1, 2]]) V.set(u, v, z, SB.urchin);
+  return V.finalize();
+}
+function seagrass(): Vox {
+  const V = new Vox(-2, 2, -2, 2, 5);
+  for (let k = 0; k < 6; k++) { const u = (k % 3) - 1, v = Math.floor(k / 3) * 2 - 1; V.box(u, u, v, v, 0, 2 + (k * 7) % 3, k % 2 ? TM.leaf2 : TM.palm); }
+  return V.finalize();
+}
+function basalt(): Vox {
+  const V = new Vox(-3, 3, -3, 3, 7);
+  for (let u = -2; u <= 2; u += 2) for (let v = -2; v <= 2; v += 2) if (hash01(u + 5, v + 5, 39) < 0.75) V.box(u, u + 1, v, v + 1, 0, 1 + Math.floor(hash01(u, v, 40) * 6), SB.basalt);
+  return V.finalize();
+}
+function vent(): Vox {
+  const V = new Vox(-3, 3, -3, 3, 4);
+  sphere(V, 0, 0, 0, 2.6, SB.basalt, M.stone, 41);
+  V.box(0, 0, 0, 0, 0, 3, SB.vent); V.set(1, 0, 2, SB.vent);
+  return V.finalize();
+}
+function pebble(): Vox { const V = new Vox(-2, 2, -2, 2, 2); sphere(V, 0, 0, 0.4, 1.6, M.stone, M.ironp, 43); return V.finalize(); }
+function shell(): Vox { const V = new Vox(-1, 1, -1, 1, 1); V.box(-1, 1, 0, 0, 0, 0, SB.shell); V.set(0, 1, 0, SB.shell); V.set(0, 0, 1, SB.shell); return V.finalize(); }
+// (append new kinds: tiles cache props by index into this list)
+export const BED_KINDS = ['coralPink', 'coralOrange', 'coralPurple', 'domeYellow', 'domePink', 'tubesTeal', 'tubesOrange', 'fanPurple', 'fanPink',
+  'anemone', 'starOrange', 'starPink', 'clam', 'kelp', 'kelpTall', 'urchin', 'seagrass', 'basalt', 'vent', 'pebble', 'shell'] as const;
+export type BedKind = typeof BED_KINDS[number];
+const BED_BUILD: Record<BedKind, () => Vox> = {
+  coralPink: () => coralBranch(SB.pink, 1), coralOrange: () => coralBranch(SB.orange, 2), coralPurple: () => coralBranch(SB.purple, 3),
+  domeYellow: () => coralDome(SB.yellow), domePink: () => coralDome(SB.pink), tubesTeal: () => coralTubes(SB.teal), tubesOrange: () => coralTubes(SB.orange),
+  fanPurple: () => seaFan(SB.purple), fanPink: () => seaFan(SB.pink), anemone, starOrange: () => starfish(SB.orange), starPink: () => starfish(SB.pink),
+  clam, kelp: () => kelpStrand(9), kelpTall: () => kelpStrand(14), urchin, seagrass, basalt, vent, pebble, shell,
+};
+const bedMeshes: Partial<Record<BedKind, Mesh>> = {};
+export const bedMesh = (k: BedKind): Mesh => bedMeshes[k] ??= cached('bed:' + k, BED_BUILD[k], 0, true);
 const treeMeshes: Partial<Record<TreeKind, Mesh>> = {};
 export const treeMesh = (k: TreeKind): Mesh => treeMeshes[k] ??= cached('tree:' + k, TREE_BUILD[k], 0, true);   // trees only turn about the vertical
 
@@ -369,7 +481,7 @@ export const buoyMesh = lazy('buoy', () => { const V = new Vox(-2, 3, -2, 2, 10)
 /** After a lost WebGL context is restored: forget every mesh (their buffers died with the context); each rebuilds on next use. */
 export function reset(): void {
   gen++; cache.clear(); boatCache.clear(); dyn = null; dynReady = false;
-  for (const memo of [treeMeshes, eelMeshes] as Record<string, Mesh>[]) for (const k in memo) delete memo[k];
+  for (const memo of [treeMeshes, bedMeshes, eelMeshes] as Record<string, Mesh>[]) for (const k in memo) delete memo[k];
   for (const memo of [fishMeshes, goldMeshes, mantaMeshes, jellyMeshes, gullMeshes]) memo.length = 0;
 }
 

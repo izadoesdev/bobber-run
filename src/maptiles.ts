@@ -1,7 +1,7 @@
 // CPU-drawn chart tiles (1/4 scale) for the minimap and the sea chart.
 import { hex, bayer } from './config';
 import { heightAt } from './world';
-import { warmth, coldness } from './econ';
+import { biomeMix, warmth, coldness } from './biome';
 
 type RGB = [number, number, number];
 // colour per height band, from deep water to peaks: deep, mid, shallow, sand, grass, forest, rock
@@ -9,6 +9,10 @@ const ramp = (a: string[]): RGB[] => a.map(hex);
 const MAPC = ramp(['#4f7389', '#5f879b', '#86b0bf', '#e6d6a6', '#86a65c', '#5e8046', '#8a949c']);
 const MAPC_W = ramp(['#2f7f8f', '#3f97a3', '#7fcac6', '#f2e8c8', '#96bf5c', '#3f7f44', '#8a949c']);
 const MAPC_C = ramp(['#465f73', '#556f82', '#8aa2b1', '#c2bba8', '#7f8f6a', '#344a3c', '#e2eaec']);
+// biomes: aqua lagoons and white sand on reefs, dark teal and grey shingle on kelp coasts, black sand on the ember isles
+const MAPC_R = ramp(['#2f7f93', '#2fa3ad', '#7fe0d6', '#f6efd8', '#7ec25a', '#2f7a40', '#8a949c']);
+const MAPC_K = ramp(['#3c5f6a', '#3f6e72', '#6f9a94', '#a8a89e', '#6f8f5c', '#2f4a36', '#7a8288']);
+const MAPC_V = ramp(['#3a5670', '#44657c', '#6f8ea0', '#4a4648', '#7a7a50', '#4a5236', '#4a4a52']);
 
 /** world units per tile, and pixels per tile side */
 export const MT = 128;
@@ -41,8 +45,9 @@ export function mapTile(tx: number, ty: number, build = true): HTMLCanvasElement
   const g = c.getContext('2d')!, im = g.createImageData(MTP, MTP), d = im.data;
   for (let j = 0; j < MTP; j++) for (let i = 0; i < MTP; i++) {
     const wy = ty * MT + j * 4 + 2, h = heightAt(tx * MT + i * 4 + 2, wy), th = bayer(i, j);
-    // warm/cold palettes blend in with an ordered dither
-    const pal = warmth(wy) > th ? MAPC_W : coldness(wy) > th ? MAPC_C : MAPC;
+    // biome, warm and cold palettes blend in with an ordered dither
+    const bm = biomeMix(tx * MT + i * 4 + 2, wy);
+    const pal = bm.reef > th ? MAPC_R : bm.kelp > th ? MAPC_K : bm.volcanic > th ? MAPC_V : warmth(wy) > th ? MAPC_W : coldness(wy) > th ? MAPC_C : MAPC;
     const col = pal[band(h)], o = (j * MTP + i) * 4;
     d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = 255;
   }

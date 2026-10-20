@@ -24,7 +24,7 @@ export class Vox {
   readonly u0: number; readonly v0: number;
   readonly nu: number; readonly nv: number; readonly nz: number;
   /** material id per voxel (0 = empty) */
-  readonly d: Uint8Array;
+  readonly d: Uint16Array;
   /** per-voxel unit normals (3 floats each); filled by finalize() */
   n = new Float32Array(0);
   /** horizontal radius of the model; set by finalize() */
@@ -32,7 +32,7 @@ export class Vox {
   constructor(u0: number, u1: number, v0: number, v1: number, nz: number) {
     this.u0 = u0; this.v0 = v0;
     this.nu = u1 - u0 + 1; this.nv = v1 - v0 + 1; this.nz = nz;
-    this.d = new Uint8Array(this.nu * this.nv * nz);
+    this.d = new Uint16Array(this.nu * this.nv * nz);
   }
   idx(u: number, v: number, z: number): number { return (z * this.nv + (v - this.v0)) * this.nu + (u - this.u0); }
   inb(u: number, v: number, z: number): boolean {
