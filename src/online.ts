@@ -1,5 +1,5 @@
 // Online state shared with the renderer and the game, with no Convex imports (net.ts fills it in).
-/** Another player's boat, interpolated; shaped like an NPC ship so the renderer can draw both. */
+/** Another player's boat, interpolated for drawing. */
 export interface Sailor {
   uid: string; id: string; name: string; paint: string;
   x: number; y: number; a: number; vx: number; vy: number;

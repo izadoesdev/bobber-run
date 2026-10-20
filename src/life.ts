@@ -1,16 +1,15 @@
 // Ambient sea life (simulation only; gl/renderer.ts draws it from the LIFE shapes below):
 // whales that dive, surface, spout, breach and tail-slap; dolphin pods that race fast boats; rare giants
-// passing under the boat; jellyfish swarms that glow at night; bioluminescent plankton in wakes; and NPC
-// fishing boats sailing between nearby ports.
+// passing under the boat; jellyfish swarms that glow at night; and bioluminescent plankton in wakes.
+// The only boats on the water are real players' (see online.ts).
 import { G, spawn, toWorld, darkness, windAngle } from './game';
-import { hAt, heightAt, hasTile, TS, poisNear } from './world';
+import { hAt, heightAt, hasTile, TS } from './world';
 import { W, H } from './config';
 import { WX } from './weather';
-import { BOATS, PAINTS } from './econ';
+import { BOATS } from './econ';
 import { hash, mulberry } from './noise';
 import { OAR } from './models';
 import { sfx } from './audio';
-import type { BoatId, Point, Port } from './types';
 
 // ---------------------------------------------------------------- shapes
 export type WhalePhase = 'swim' | 'surface' | 'breach' | 'dive' | 'slap';
@@ -80,42 +79,6 @@ export interface Jelly {
   px: number; py: number;
 }
 interface Swarm { cx: number; cy: number; m: Jelly[] }
-/** an NPC fishing boat sailing between ports (or out to a fishing ground) */
-export interface Ship {
-  id: BoatId;
-  x: number; y: number; a: number; vx: number; vy: number;
-  /** PAINTS id */
-  paint: string;
-  // ---- simulation state
-  /** hull half-length */
-  L: number;
-  cruise: number; turnR: number; sp: number;
-  /** which way it prefers to swerve */
-  side: number;
-  steerT: number; want: number;
-  /** waypoints, current first */
-  wp: Point[];
-  /** port it is heading for (null: open water), and the one it left */
-  dest: Port | null; from: Port | null;
-  /** time left tied up */
-  dwell: number;
-  /** closest approach to the current waypoint, and time since it improved */
-  best: number; bestT: number;
-  blocked: boolean;
-  /** 0..1 how hard it is giving way to the player */
-  yield: number;
-  /** touched the shallows this step */
-  hit: boolean;
-  /** route to `pathFor` (the waypoint it was planned for) and the node being steered at (-1 before the first route) */
-  path: Point[] | null; pi: number; pathFor: Point | null;
-  noRoute: boolean;
-  /** ports it found no way to reach */
-  unreach: Port[];
-  /** path node at the last sign of progress (-1 before the first route, so a new route counts as progress) */
-  lastPi: number;
-  // counters for debugging/tests
-  hits: number; reroutes: number; docks: number; stalls: number;
-}
 /** a dolphin in a bow-riding pod; each has its own position, velocity and heading */
 export interface Dolphin {
   /** which side of the bow it rides, how far out and how far ahead */
@@ -126,11 +89,11 @@ export interface Dolphin {
   wv: number;
 }
 export interface Pod { t: number; m: Dolphin[] }
-export interface LifeStats { breaches: number; slaps: number; spouts: number; giants: number; calls: number; plans: number; planExp: number }
+export interface LifeStats { breaches: number; slaps: number; spouts: number; giants: number; calls: number }
 export interface Life {
-  whales: Whale[]; pods: Pod[]; giants: Giant[]; jellies: Jelly[]; ships: Ship[];
+  whales: Whale[]; pods: Pod[]; giants: Giant[]; jellies: Jelly[];
   /** countdowns to the next spawn attempt */
-  nextWhale: number; nextPod: number; nextGiant: number; nextShip: number;
+  nextWhale: number; nextPod: number; nextGiant: number;
   t: number;
   /** jelly swarms by cell key */
   swarms: Map<string, Swarm>;
@@ -141,16 +104,16 @@ export interface Life {
 }
 
 export const LIFE: Life = {
-  whales: [], pods: [], giants: [], jellies: [], ships: [],
-  nextWhale: 20, nextPod: 12, nextGiant: 50, nextShip: 1, t: 0,
-  swarms: new Map(), callCd: 0, stats: { breaches: 0, slaps: 0, spouts: 0, giants: 0, calls: 0, plans: 0, planExp: 0 },
+  whales: [], pods: [], giants: [], jellies: [],
+  nextWhale: 20, nextPod: 12, nextGiant: 50, t: 0,
+  swarms: new Map(), callCd: 0, stats: { breaches: 0, slaps: 0, spouts: 0, giants: 0, calls: 0 },
 };
 
 const TAU = Math.PI * 2, rnd = () => Math.random() - 0.5;
 const wrap = (d: number) => Math.atan2(Math.sin(d), Math.cos(d));
 const clamp01 = (v: number) => v < 0 ? 0 : v > 1 ? 1 : v;
 const ease = (v: number, target: number, rate: number, dt: number) => v + (target - v) * (1 - Math.exp(-rate * dt));
-// height without forcing a 128x128 tile build far from the camera (ships and whales roam off-screen)
+// height without forcing a 128x128 tile build far from the camera (whales roam off-screen)
 const depth = (x: number, y: number) => hasTile(Math.floor(x / TS), Math.floor(y / TS)) ? hAt(x, y) : heightAt(x, y);
 const viewR = () => 0.6 * Math.hypot(W, H) + 20;
 // distance-based [volume, pan] for ambient sounds; null when too far to hear
@@ -504,272 +467,6 @@ function jellies(dt: number): void {
   }
 }
 
-// ---------------------------------------------------------------- NPC fishing boats
-const SHIP_W: [BoatId, number][] = [['row', 0.5], ['skiff', 3], ['launch', 3], ['trawler', 2.2], ['schooner', 0.5], ['drifter', 0.5], ['flagship', 0.15]];
-const SHIP_PAINTS = PAINTS.filter(p => p.id !== 'gold').map(p => p.id);
-function pickWeighted<T>(L: [T, number][]): T {
-  let v = Math.random() * L.reduce((s, e) => s + e[1], 0);
-  for (const e of L) if ((v -= e[1]) <= 0) return e[0];
-  return L[0][0];
-}
-const portsNear = (r: number) => poisNear(G.boat.x, G.boat.y, r).filter((p): p is Port => p.type === 'port');
-const water = (x: number, y: number, t = -0.12) => depth(x, y) < t;
-// tie up alongside the outer end of a port's pier
-function berth(p: Port, sh: Ship): Point {
-  const c = Math.cos(p.ang), s = Math.sin(p.ang), side = Math.random() < 0.5 ? 1 : -1, off = 5 + sh.L * 0.12 + 3;
-  return { x: p.end.x - c * 6 - s * side * off, y: p.end.y - s * 6 + c * side * off };
-}
-// a destination: another port's pier end, or (with only one port about) a fishing ground offshore
-function pickDest(sh: Ship, from: Port | null): void {
-  const L = portsNear(750).filter(p => p !== from && !sh.unreach.includes(p) && (!from || Math.hypot(p.end.x - from.end.x, p.end.y - from.end.y) > 120));
-  if (L.length && Math.random() < 0.85) {
-    const p = L[Math.floor(Math.random() * L.length)];
-    sh.dest = p; sh.wp = [p.dock, berth(p, sh)];
-    return;
-  }
-  const o: Point = from ? from.end : sh;
-  for (let k = 0; k < 12; k++) {
-    const a = Math.random() * TAU, d = 180 + Math.random() * 260, x = o.x + Math.cos(a) * d, y = o.y + Math.sin(a) * d;
-    if (depth(x, y) < -0.3) { sh.dest = null; sh.wp = [{ x, y }]; return; }
-  }
-  sh.dest = null; sh.wp = [{ x: sh.x + Math.cos(sh.a) * 200, y: sh.y + Math.sin(sh.a) * 200 }];
-}
-const crowded = (x: number, y: number) => LIFE.ships.some(o => Math.hypot(o.x - x, o.y - y) < 60);
-function newShip(): Ship | null {
-  const b = G.boat, vr = viewR(), ports = portsNear(650);
-  const id = pickWeighted(SHIP_W), bd = BOATS.find(q => q.id === id)!;
-  const sh: Ship = {
-    id, x: 0, y: 0, a: 0, vx: 0, vy: 0, paint: SHIP_PAINTS[Math.floor(Math.random() * SHIP_PAINTS.length)],
-    L: bd.L, cruise: (id === 'row' ? 9 : 11 + Math.random() * 6) + (bd.L > 30 ? 3 : 0), turnR: bd.L > 30 ? 0.42 : 0.85,
-    sp: 0, side: Math.random() < 0.5 ? 1 : -1, steerT: 0, want: 0, wp: [], dest: null, from: null, dwell: 0, best: 1e9, bestT: 0, blocked: false,
-    yield: 0, hit: false, path: null, pi: -1, pathFor: null, noRoute: false, unreach: [], lastPi: -1,
-    hits: 0, reroutes: 0, docks: 0, stalls: 0,
-  };
-  // leave from a port out of sight, or else appear over the horizon already under way
-  for (const p of ports.sort(() => Math.random() - 0.5)) {
-    if (Math.hypot(p.dock.x - b.x, p.dock.y - b.y) < vr || !water(p.dock.x, p.dock.y, -0.15) || crowded(p.dock.x, p.dock.y)) continue;
-    sh.x = p.dock.x; sh.y = p.dock.y; sh.a = p.ang; sh.from = p; pickDest(sh, p);
-    return sh;
-  }
-  for (let k = 0; k < 16; k++) {
-    const a = Math.random() * TAU, d = vr + 60 + Math.random() * 180, x = b.x + Math.cos(a) * d, y = b.y + Math.sin(a) * d;
-    if (crowded(x, y) || !water(x, y, -0.2) || !water(x + 15, y) || !water(x - 15, y) || !water(x, y + 15) || !water(x, y - 15)) continue;
-    sh.x = x; sh.y = y; pickDest(sh, null); sh.a = Math.atan2(sh.wp[0].y - y, sh.wp[0].x - x);
-    return sh;
-  }
-  return null;
-}
-// whiskers: water along heading a out to `look`, at the centreline and both sides
-function clearAhead(sh: Ship, a: number, look: number): boolean {
-  const c = Math.cos(a), s = Math.sin(a), half = 4;
-  for (const f of [0.3, 0.6, 1]) {
-    const x = sh.x + c * look * f, y = sh.y + s * look * f;
-    if (!water(x, y) || !water(x - s * half, y + c * half) || !water(x + s * half, y - c * half)) return false;
-  }
-  return true;
-}
-// Route planning: a coarse A* over water cells, run incrementally (one job at a time, a fixed number of
-// node expansions per frame) so a long route never costs a frame hitch. Ships follow the path, skipping
-// ahead to any node they can see in a straight line, and use the whiskers above for the last few metres.
-const PC = 14, PMAX = 48000, PBUDGET = 900, PEVALS = 220;   // cell size, max cells; per frame: node expansions, terrain samples
-const UNKNOWN = 0, WATER = 1, LAND = 2, CLOSED = 3;          // PCELL states
-const PG = new Float32Array(PMAX), PFROM = new Int32Array(PMAX), PCELL = new Int8Array(PMAX);
-// binary min-heap of cell indices keyed by f
-const heapI: number[] = [], heapF: number[] = [];
-interface PlanJob { sh: Ship; t: Point; x0: number; y0: number; nx: number; ny: number; si: number; gi: number; exp: number }
-let job: PlanJob | null = null;
-function hpush(i: number, f: number): void {
-  let k = heapI.length;
-  heapI.push(i); heapF.push(f);
-  while (k > 0) {
-    const p = (k - 1) >> 1;
-    if (heapF[p] <= f) break;
-    heapI[k] = heapI[p]; heapF[k] = heapF[p]; k = p;
-  }
-  heapI[k] = i; heapF[k] = f;
-}
-function hpop(): number {
-  const top = heapI[0], li = heapI.pop()!, lf = heapF.pop()!, n = heapI.length;
-  if (n) {
-    let k = 0;
-    for (;;) {
-      let c = 2 * k + 1;
-      if (c >= n) break;
-      if (c + 1 < n && heapF[c + 1] < heapF[c]) c++;
-      if (heapF[c] >= lf) break;
-      heapI[k] = heapI[c]; heapF[k] = heapF[c]; k = c;
-    }
-    heapI[k] = li; heapF[k] = lf;
-  }
-  return top;
-}
-function sightLine(x0: number, y0: number, x1: number, y1: number): boolean {
-  const d = Math.hypot(x1 - x0, y1 - y0), n = Math.ceil(d / 5);
-  for (let i = 1; i <= n; i++) { const f = i / n; if (!water(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f, -0.1)) return false; }
-  return true;
-}
-// a grid covering both ends plus a margin; false if that would be too big
-function startPlan(sh: Ship, t: Point): boolean {
-  const m = 150, x0 = Math.floor((Math.min(sh.x, t.x) - m) / PC) * PC, y0 = Math.floor((Math.min(sh.y, t.y) - m) / PC) * PC;
-  const nx = Math.ceil((Math.max(sh.x, t.x) + m - x0) / PC) + 1, ny = Math.ceil((Math.max(sh.y, t.y) + m - y0) / PC) + 1, N = nx * ny;
-  if (N > PMAX) return false;
-  PG.fill(Infinity, 0, N); PFROM.fill(-1, 0, N); PCELL.fill(UNKNOWN, 0, N); heapI.length = heapF.length = 0;
-  const cid = (x: number, y: number) => Math.floor((y - y0) / PC) * nx + Math.floor((x - x0) / PC);
-  job = { sh, t, x0, y0, nx, ny, si: cid(sh.x, sh.y), gi: cid(t.x, t.y), exp: 0 };
-  LIFE.stats.plans++;
-  PG[job.si] = 0; hpush(job.si, 0);
-  return true;
-}
-function stepPlan(J: PlanJob): void {
-  const { nx, ny, x0, y0, gi } = J, gx = gi % nx, gy = (gi / nx) | 0;
-  if (!LIFE.ships.includes(J.sh) || J.sh.wp[0] !== J.t) { job = null; return; }   // the ship left or changed its mind
-  let evals = 0;
-  // the start and goal always pass (a berth can sit in a land cell); other cells are sampled once, lazily
-  const pass = (j: number) => {
-    if (j === gi || j === J.si) return true;
-    let c = PCELL[j];
-    if (c === UNKNOWN) { evals++; c = PCELL[j] = water(x0 + (j % nx + 0.5) * PC, y0 + ((j / nx | 0) + 0.5) * PC, -0.13) ? WATER : LAND; }
-    return c === WATER;
-  };
-  for (let budget = PBUDGET; budget > 0 && evals < PEVALS; budget--) {
-    if (!heapI.length || J.exp > 12000) { job = null; J.sh.noRoute = true; J.sh.pathFor = J.t; J.sh.path = null; return; }
-    const i = hpop();
-    if (PCELL[i] === CLOSED) continue;
-    if (i === gi) {                                           // done: walk back to the start
-      const path: Point[] = [];
-      for (let k = gi; k !== -1 && k !== J.si; k = PFROM[k]) path.push({ x: x0 + (k % nx + 0.5) * PC, y: y0 + ((k / nx | 0) + 0.5) * PC });
-      path.reverse();
-      if (path.length) path[path.length - 1] = J.t; else path.push(J.t);   // end exactly on the waypoint
-      J.sh.path = path; J.sh.pi = 0; J.sh.pathFor = J.t; job = null;
-      return;
-    }
-    if (PCELL[i] !== LAND) PCELL[i] = CLOSED;
-    J.exp++; LIFE.stats.planExp++;
-    const ix = i % nx, iy = (i / nx) | 0;
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      if (!dx && !dy) continue;
-      const jx = ix + dx, jy = iy + dy;
-      if (jx < 0 || jy < 0 || jx >= nx || jy >= ny) continue;
-      const j = jy * nx + jx;
-      if (PCELL[j] === CLOSED || !pass(j)) continue;
-      if (dx && dy && (!pass(iy * nx + jx) || !pass(jy * nx + ix))) continue;   // no cutting corners past a headland
-      const g = PG[i] + (dx && dy ? 1.4142 : 1);
-      if (g < PG[j]) {
-        PG[j] = g; PFROM[j] = i;
-        const hx = Math.abs(jx - gx), hy = Math.abs(jy - gy);
-        hpush(j, g + Math.max(hx, hy) + 0.4142 * Math.min(hx, hy));   // octile distance
-      }
-    }
-  }
-}
-// where to head right now: the farthest path node in plain sight, else the waypoint itself
-function aimPoint(sh: Ship): Point {
-  const t = sh.wp[0];
-  if (sh.pathFor === t) {
-    if (sh.path) {
-      for (let k = 0; k < 3 && sh.pi < sh.path.length - 1; k++) {
-        const n = sh.path[sh.pi + 1];
-        if (Math.hypot(n.x - sh.x, n.y - sh.y) > 260 || !sightLine(sh.x, sh.y, n.x, n.y)) break;
-        sh.pi++;
-      }
-      if (Math.hypot(sh.path[sh.pi].x - sh.x, sh.path[sh.pi].y - sh.y) < 8 && sh.pi < sh.path.length - 1) sh.pi++;
-      return sh.path[sh.pi];
-    }
-    if (sh.noRoute) {                                         // no way through: remember, and go somewhere else
-      sh.noRoute = false; sh.reroutes++;
-      if (sh.dest) sh.unreach.push(sh.dest);
-      pickDest(sh, null);
-    }
-    return t;
-  }
-  // a new waypoint: straight there if it is in plain sight, else queue a route plan (one at a time)
-  sh.path = null; sh.noRoute = false;
-  if (Math.hypot(t.x - sh.x, t.y - sh.y) < 260 && sightLine(sh.x, sh.y, t.x, t.y)) { sh.path = [t]; sh.pi = 0; sh.pathFor = t; }
-  else if (!job && !startPlan(sh, t)) { sh.noRoute = true; sh.pathFor = t; }
-  return t;
-}
-function steerShip(sh: Ship): void {
-  const b = G.boat, tgt = aimPoint(sh), dx = tgt.x - sh.x, dy = tgt.y - sh.y, dist = Math.hypot(dx, dy);
-  let want = Math.atan2(dy, dx);
-  // give the player a wide berth: pass to one side early, turn away and slow right down if close
-  const bx = b.x - sh.x, by = b.y - sh.y, db = Math.hypot(bx, by), keep = 30 + sh.L * 0.6, warn = keep + 30 + sh.sp * 2;
-  sh.yield = db < keep ? 1 - db / keep : 0;
-  if (db < warn && db > 0) {
-    const rel = wrap(Math.atan2(by, bx) - want);
-    if (Math.abs(rel) < 1.2) { const k = (1 - db / warn) * 1.5; want -= Math.sign(rel || 1) * k * (1.2 - Math.abs(rel)) / 1.2 * 1.3; }
-    if (sh.yield > 0) {
-      const away = Math.atan2(-by, -bx), k = Math.min(1, sh.yield * 1.8);
-      want = Math.atan2(Math.sin(want) * (1 - k) + Math.sin(away) * k, Math.cos(want) * (1 - k) + Math.cos(away) * k);
-    }
-  }
-  // and each other
-  for (const o of LIFE.ships) if (o !== sh) {
-    const ox = sh.x - o.x, oy = sh.y - o.y, d = Math.hypot(ox, oy);
-    if (d < 30 && d > 0) want += wrap(Math.atan2(oy, ox) - want) * 0.3 * (1 - d / 30);
-  }
-  const look = Math.min(14 + sh.L * 0.9 + sh.sp * 1.2, Math.max(10, dist - 2));
-  sh.blocked = false;
-  if (clearAhead(sh, want, look)) { sh.want = want; return; }
-  for (let o = 0.3; o <= 2.7; o += 0.3) for (const sg of [sh.side, -sh.side]) if (clearAhead(sh, want + o * sg, look)) { sh.want = want + o * sg; sh.side = sg; return; }
-  sh.blocked = true; sh.want = sh.a + sh.side * 1.2;           // nothing clear: slow and swing round
-}
-function moveShip(sh: Ship, dt: number, gk: number): void {
-  const b = G.boat;
-  if (sh.dwell > 0) {                                         // tied up at a pier (or waiting for the player to clear it)
-    sh.dwell -= dt; sh.vx = sh.vy = 0; sh.sp = 0;
-    if (sh.dwell <= 0) {
-      const p = sh.dest;
-      pickDest(sh, p);
-      if (p) sh.wp.unshift({ x: p.dock.x, y: p.dock.y });     // back out along the pier first
-      sh.from = p; sh.best = 1e9; sh.bestT = 0;
-    }
-    return;
-  }
-  if ((sh.steerT -= dt) <= 0) { sh.steerT = 0.12; steerShip(sh); }
-  const tgt = sh.wp[0], dist = Math.hypot(tgt.x - sh.x, tgt.y - sh.y), last = sh.wp.length === 1;
-  const d = wrap(sh.want - sh.a), tr = sh.turnR * (0.4 + 0.6 * Math.min(1, sh.sp / 8));
-  sh.a = wrap(sh.a + Math.max(-tr * dt, Math.min(tr * dt, d)));
-  let v = sh.cruise * (1 - 0.5 * Math.min(1, Math.abs(d))) * (sh.blocked ? 0.25 : 1) * (1 - sh.yield) ** 2;
-  if (last && sh.dest) v *= Math.max(0.12, Math.min(1, dist / 45));   // ease in to the berth
-  // the player is sitting on our berth: hold off and wait
-  const taken = Math.hypot(tgt.x - b.x, tgt.y - b.y) < 30 + sh.L * 0.5, berthTaken = taken && last && sh.dest;
-  if (berthTaken && dist < 60) v = 0;
-  sh.sp = ease(sh.sp, berthTaken && dist < 60 ? 0 : Math.max(sh.yield > 0.5 ? 0.5 : 2, v), 0.8, dt);
-  const nx = sh.x + Math.cos(sh.a) * sh.sp * dt, ny = sh.y + Math.sin(sh.a) * sh.sp * dt;
-  if (water(nx, ny, -0.08)) { sh.hit = false; sh.vx = (nx - sh.x) / dt; sh.vy = (ny - sh.y) / dt; sh.x = nx; sh.y = ny; }
-  else {                                                      // touched the shallows: back off and turn
-    sh.vx = sh.vy = 0; sh.sp = 0; sh.hit = true; sh.hits++;
-    sh.a = wrap(sh.a + sh.side * 0.6); sh.want = sh.a; sh.steerT = 0.3;
-  }
-  // arrived (a berth in shallow water counts once we are as close as the bottom allows)
-  const reach = last ? (sh.dest ? 5 : taken ? 50 : 20) : taken ? 50 : 14;
-  if (dist < reach || (last && sh.dest && dist < 30 && (sh.hit || sh.blocked))) {
-    sh.hit = false;
-    sh.wp.shift(); sh.best = 1e9; sh.bestT = 0;
-    if (!sh.wp.length) {
-      if (sh.dest) { sh.dwell = 8 + Math.random() * 14; sh.docks++; }
-      else { sh.dwell = 0; pickDest(sh, null); }
-    }
-  }
-  // no progress for a long while (or the player won't leave our berth): pick somewhere else
-  if (dist < sh.best - 5 || (sh.path && sh.pi !== sh.lastPi)) { sh.best = Math.min(sh.best, dist); sh.bestT = 0; sh.lastPi = sh.pi; }
-  else if ((sh.bestT += dt) > (berthTaken ? 20 : 40)) { sh.reroutes++; sh.stalls++; sh.best = 1e9; sh.bestT = 0; sh.side = -sh.side; pickDest(sh, null); }
-  if (gk > 0 && sh.sp > 4 && Math.random() < dt * 12 * gk && Math.hypot(sh.x - b.x, sh.y - b.y) < 260) {
-    glow(sh.x - Math.cos(sh.a) * sh.L * 0.5 + rnd() * 5, sh.y - Math.sin(sh.a) * sh.L * 0.5 + rnd() * 5, 6, 1.5);
-  }
-}
-function ships(dt: number): void {
-  const b = G.boat, gk = glowK();
-  if ((LIFE.nextShip -= dt) <= 0) {
-    LIFE.nextShip = 3;
-    const target = Math.min(3, Math.max(1, portsNear(700).length));   // more traffic around busy coasts
-    if (LIFE.ships.length < target) { const sh = newShip(); if (sh) LIFE.ships.push(sh); }
-  }
-  if (job) stepPlan(job);
-  for (const sh of LIFE.ships) moveShip(sh, dt, gk);
-  if (LIFE.ships.length) LIFE.ships = LIFE.ships.filter(sh => Math.hypot(sh.x - b.x, sh.y - b.y) < 600 && Number.isFinite(sh.x + sh.y + sh.a));
-}
-
 // ---------------------------------------------------------------- plankton in the player's wake
 let oarL = 0, oarR = 0;                                         // last oar phases, to catch each new stroke
 function oarGlow(sgn: number, gk: number): void {
@@ -844,7 +541,6 @@ export function updateLife(dt: number): void {
   whales(dt);
   giants(dt);
   jellies(dt);
-  ships(dt);
   plankton(dt);
   if ((LIFE.nextPod -= dt) <= 0 && sp > 20 && hAt(b.x, b.y) < -0.3) {
     LIFE.nextPod = 45 + Math.random() * 60;

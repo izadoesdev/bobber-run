@@ -115,19 +115,39 @@ function Minimap({ step }: { step: Step }) {
       <div class="ring"><Canvas draw={draw} /><span class="n">N</span></div>
       <div class="chips">
         {port && <div class="chip"><Icon k="anchor" size="s" />{port.p.name}<span class="gold">{Math.round(port.d / 10)} m</span></div>}
-        <div class="chip"><Icon k={wxIcon} size="s" />Day {dayNum()}{part}{WX.state !== 'clear' ? `, ${WX.state}` : ''}</div>
-        {sail && (
-          <div class="chip">
-            <Icon k="arrow" size="s" style={{ transform: `rotate(${windAngle()}rad)` }} />
-            Sail power <span class={eff > 0.9 ? 'good' : eff > 0.6 ? '' : 'bad'}>{Math.round(eff * 100)}%</span>
-          </div>
-        )}
+        {/* conditions in one chip: the wind vane, then the day and weather over the wind */}
+        <div class={'chip wind' + (sail ? '' : ' quiet')}>
+          <WindVane sail={sail} eff={eff} />
+          <span class="stack">
+            <span><Icon k={wxIcon} size="s" />Day {dayNum()}{part}{WX.state !== 'clear' ? `, ${WX.state}` : ''}</span>
+            <span class="muted">{windWord()}{sail && <> <span class={eff > 0.9 ? 'good' : eff > 0.6 ? '' : 'bad'}>{Math.round(eff * 100)}%</span></>}</span>
+          </span>
+        </div>
         {G.up.radio >= 2 && (
           <div class="chip muted"><Icon k="radio" size="s" />{WX.upcoming[0].toUpperCase() + WX.upcoming.slice(1)} in {clockText(WX.next)}</div>
         )}
         {un && <div class="chip"><Icon k="sextant" size="s" />Uncharted <span class="gold">{Math.round(un.d / 10)} m</span></div>}
       </div>
     </div>
+  );
+}
+
+// the wind relative to your boat (bow up), Valheim-style: an arrow blowing across the dial, longer and with more
+// streaks the stronger it blows. For sails the rim shows how well you're using it; oars and engines get a quiet version.
+const windWord = (): string => WX.wind < 0.1 ? 'Light breeze' : WX.wind < 0.35 ? 'Breeze' : WX.wind < 0.7 ? 'Fresh wind' : 'Gale';
+function WindVane({ sail, eff }: { sail: boolean; eff: number }) {
+  const rel = windAngle() - G.boat.a, k = 0.35 + 0.65 * WX.wind, len = 7 + 6 * k;
+  const rim = !sail ? '#8a949c' : eff > 0.9 ? '#9ad98f' : eff > 0.6 ? '#f2d36b' : '#ef8a72';
+  return (
+    <svg class="vane" viewBox="-20 -20 40 40" aria-label={`Wind ${windWord().toLowerCase()}${sail ? `, sails at ${Math.round(eff * 100)}%` : ''}`}>
+      <circle r="17" fill="#1b2a33" fill-opacity="0.55" stroke={rim} stroke-width={sail ? 2.6 : 1.4} />
+      <path d="M0 -8 L3 -3 L3 6 L0 8 L-3 6 L-3 -3 Z" fill="#d6c38c" stroke="#2a1f17" stroke-width="0.8" />
+      <g transform={`rotate(${rel * 180 / Math.PI})`}>
+        {[-5, 5].slice(0, WX.wind > 0.35 ? 2 : 0).map(o => <line x1={o} y1={len - 2} x2={o} y2={-len + 6} stroke="#e6efec" stroke-opacity="0.45" stroke-width="1" />)}
+        <line x1="0" y1={len} x2="0" y2={-len + 2} stroke="#f6eedc" stroke-width="1.8" stroke-linecap="round" />
+        <path d={`M0 ${-len - 2} L4 ${-len + 4} L-4 ${-len + 4} Z`} fill="#f6eedc" />
+      </g>
+    </svg>
   );
 }
 
@@ -438,8 +458,8 @@ export function Hud() {
         )}
       </div>
       <div class="hints">
-        <Hint k="Tab" pad="View">Ship</Hint><Hint k="m" pad="Y">Chart</Hint><Hint k="l" pad="LB">Logbook</Hint>
-        <Hint k="Escape" pad="Start">Menu</Hint><Hint k="h">Hide</Hint>{G.pet && <Hint k="p">Pet {G.pet.name}</Hint>}
+        <Hint k="Tab" pad="View">Ship</Hint><Hint k="m" pad="Y">Chart</Hint><Hint k="l" pad="LB">Log</Hint>
+        <Hint k="Escape" pad="Start">Menu</Hint>{G.pet && <Hint k="p">Pet</Hint>}
       </div>
     </div>
   );

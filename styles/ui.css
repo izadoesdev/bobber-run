@@ -111,6 +111,9 @@ h2, .title { font-size: var(--fs-xl); }
 .mini { position: absolute; right: 0.9em; top: 0.8em; width: 9.6em; }
 .mini .ring { width: 9.6em; height: 9.6em; border-radius: 50%; padding: 0.35em; background: radial-gradient(circle at 35% 30%, #f6dc8a, #a87a2a 55%, #5a3a10); box-shadow: 0 0.25em 0 rgba(0,0,0,0.35), 0 0.5em 1em rgba(0,0,0,0.3); position: relative; }
 .mini canvas { width: 100%; height: 100%; border-radius: 50%; display: block; }
+.chip.wind .vane { width: 3.4em; height: 3.4em; flex: none; margin: -0.25em 0 -0.25em -0.3em; }
+.chip.wind.quiet .vane { width: 2.6em; height: 2.6em; opacity: 0.8; }
+.chip.wind .stack { display: flex; flex-direction: column; line-height: 1.25; } .chip.wind .stack .icon { vertical-align: -0.2em; margin-right: 0.3em; }
 .mini .n { position: absolute; top: -0.15em; left: 50%; transform: translateX(-50%); font-family: var(--font-head); color: #2a1f17; background: #f0d27a; border-radius: 0.3em; padding: 0 0.3em; }
 .chips { margin-top: 0.4em; display: flex; flex-direction: column; align-items: flex-end; gap: 0.25em; font-size: 0.85em; white-space: nowrap; }
 .bottom-stack { position: absolute; left: 50%; bottom: 1.2em; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 0.5em; }
@@ -222,7 +225,7 @@ h2, .title { font-size: var(--fs-xl); }
 .menu-box { padding: 0.8em 1.2em; }
 .menu { display: flex; flex-direction: column; gap: 0.3em; min-width: 14em; }
 .menu .item { font-size: 1.15em; justify-content: center; text-transform: uppercase; letter-spacing: 0.08em; }
-.dialog { padding: 1em 1.4em; width: 34em; max-height: 92%; display: flex; flex-direction: column; }
+.dialog { padding: 1em 1.4em; width: 34em; max-width: 96vw; max-height: 92%; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; }
 .dialog h1 { margin-bottom: 0.3em; }
 .scroll { overflow-y: auto; min-height: 0; flex: 1; scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
 .setrow { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 1em; }

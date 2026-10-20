@@ -12,7 +12,7 @@ import { schoolLook } from '../species';
 import { DIVE_S, SCATTER_S, schoolDrawR } from '../game/schools';
 import { G, darkness, lightR, schoolActive, isNight, dayFrac, equipment, windAngle, boatDef, env } from '../game';
 import { WX } from '../weather';
-import { LIFE, type Whale, type Giant, type Ship } from '../life';
+import { LIFE, type Whale, type Giant } from '../life';
 import { hasOars, oarGeom, BOAT_MODELS, NP, SHIPPED, PLAIN, type Fit } from '../models';
 import { program, texture, target, msTarget, free, type Program, type Target, type MsTarget } from './glutil';
 import * as SH from './shaders';
@@ -322,7 +322,7 @@ function drawGiant(g: Giant): void {
   else if (g.kind === 'eel') drawEel(g);
   else inst(MS.shadowFishMesh(), g.x, g.y, a + Math.sin(ph) * 0.07, len / MS.SHADOW_LEN, z, 0, 0, true, 1, 0);
 }
-// NPC ships and other players' boats: a plain fit-out in their paint, lamp lit
+// other players' boats: a plain fit-out in their paint, lamp lit
 const shipEq = new Map<string, Fit>();
 function eqFor(paint: string): Fit {
   let e = shipEq.get(paint);
@@ -459,7 +459,7 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
     if (vis > 0.01) drawSchool(s, night, lit, vis);
     else shownCount.delete(s);
   }
-  // whales, giants, jellies, NPC ships, dolphins
+  // whales, giants, jellies, other players' boats, dolphins
   const mx = W / 2 + 60, my = H / 2 + 60;
   for (const w of LIFE.whales) if (near(w, cx, cy, mx, my)) drawWhale(w);
   for (const g of LIFE.giants) if (near(g, cx, cy, mx + g.len, my + g.len)) drawGiant(g);
@@ -801,11 +801,10 @@ export function prefetch(budgetMs = 4): void {
 // per-frame rectangles in world units, reused: the camera CAM, the foam/shadow buffers HR and the heights texture HT (x, y, w, h)
 const CAM = [0, 0, 0, 0], HR = [0, 0, 0, 0], HT = [0, 0, 0, 0], SHXY = [0, 0];
 const viewPois: Poi[] = [];
-// NPC ships then other players' boats, gathered once per frame
-const fleet: (Ship | Sailor)[] = [];
+// other players' boats, gathered once per frame
+const fleet: Sailor[] = [];
 function gatherFleet(): void {
   fleet.length = 0;
-  for (const s of LIFE.ships) fleet.push(s);
   for (const s of ONLINE.sailors) fleet.push(s);
 }
 const drawPool = (e: Pool) => MS.drawInstances(e.mesh, e.arr, e.n);

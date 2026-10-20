@@ -99,7 +99,7 @@ function cached(key: string, build: () => Vox, dz = 0, noBottom = false): Mesh {
 
 // ---------- boats (rebuilt when the fitted equipment changes) ----------
 const boatCache = new Map<string, Mesh>();      // signature -> mesh, most recently used last
-// the player's boat plus the NPC ships sailing nearby (a handful of hull/paint combinations)
+// the player's boat plus other players' boats nearby (a handful of hull/paint combinations)
 export function boatMesh(id: BoatId, eq: Fit): Mesh {
   const sig = eqSig(id, eq);
   let m = boatCache.get(sig);
