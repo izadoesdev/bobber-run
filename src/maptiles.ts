@@ -50,8 +50,7 @@ export function mapTile(tx: number, ty: number, build = true, lod: 0 | 1 = 0): H
   const c = document.createElement('canvas');
   c.width = P; c.height = P;
   const g = c.getContext('2d')!, im = g.createImageData(P, P), d = im.data;
-  // the biomes vary slowly, so they're sampled on a 9 x 9 grid and blended in between (sampling every pixel made a
-  // tile slow enough that a wide chart drew in visibly)
+  // biomes vary slowly: sampled on a 9 x 9 grid and blended in between (per pixel, a wide chart drew in visibly)
   const G9 = 9, step = MT / (G9 - 1), grid: BiomeMix[] = [];
   for (let gj = 0; gj < G9; gj++) for (let gi = 0; gi < G9; gi++) grid.push(biomeMix(tx * MT + gi * step, ty * MT + gj * step));
   const mixAt = (lx: number, ly: number, k: keyof BiomeMix): number => {
@@ -64,12 +63,11 @@ export function mapTile(tx: number, ty: number, build = true, lod: 0 | 1 = 0): H
     const lx = i * px + px / 2, ly = j * px + px / 2, wx = tx * MT + lx, wy = ty * MT + ly, h = heightAt(wx, wy), b = band(h);
     // palettes blend by weight (no dither: it read as cross-hatching over whole regions)
     const reef = mixAt(lx, ly, 'reef'), kelp = mixAt(lx, ly, 'kelp'), volc = mixAt(lx, ly, 'volcanic'), mang = mixAt(lx, ly, 'mangrove');
-    const rest = Math.max(0, 1 - reef - kelp - volc - mang), wm = warmth(wy) * rest, cd = coldness(wy) * rest, plain = Math.max(0, rest - wm - cd);
+    const cold = coldness(wy), rest = Math.max(0, 1 - reef - kelp - volc - mang), wm = warmth(wy) * rest, cd = cold * rest, plain = Math.max(0, rest - wm - cd);
     for (let n = 0; n < 3; n++) {
       col[n] = MAPC[b][n] * plain + MAPC_W[b][n] * wm + MAPC_C[b][n] * cd + MAPC_R[b][n] * reef + MAPC_K[b][n] * kelp + MAPC_V[b][n] * volc + MAPC_M[b][n] * mang;
     }
     // ice floes: small ragged patches in the open northern water, not single specks
-    const cold = coldness(wy);
     if (b <= 1 && cold > 0.3) {
       const F = 44, gx = Math.floor(wx / F), gy = Math.floor(wy / F), cell = hash01(gx, gy, 91), edge = hash01(Math.floor(wx / 4), Math.floor(wy / 4), 92);
       const cx = (gx + 0.3 + 0.4 * hash01(gx, gy, 93)) * F, cy = (gy + 0.3 + 0.4 * hash01(gx, gy, 94)) * F, r = Math.hypot(wx - cx, wy - cy) / (F * 0.3);

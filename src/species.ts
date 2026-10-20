@@ -165,7 +165,6 @@ export function activeAt(sp: number, env: Env): boolean {
 }
 export const fmtKg = (kg: number): string => kg < 10 ? kg.toFixed(1) + ' kg' : Math.round(kg) + ' kg';
 
-
 // ---------- how a school looks and behaves in the water ----------
 /** The bait a species takes most readily: night, glowing and eel-like fish go for glow lures, the rest for shrimp. */
 export const favBait = (s: Species): 'shrimp' | 'glow' =>

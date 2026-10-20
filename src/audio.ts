@@ -3,10 +3,10 @@
 // (a sine whose pitch rises as it decays), mixed through a gentle compressor with a shared reverb send.
 // Pitched sounds are voiced on the chord the music is playing, so nothing ever clashes with it.
 
-export type Bus = 'sfx' | 'music' | 'amb';
+type Bus = 'sfx' | 'music' | 'amb';
 type NoiseColor = 'white' | 'pink' | 'brown';
 /** Semitones from C4 of a triad, e.g. [9, 12, 16] for A minor. */
-export type Chord = readonly number[];
+type Chord = readonly number[];
 
 /** The shared mix graph. Rebuilt into an OfflineAudioContext by renderOffline(). */
 interface Graph {
@@ -446,7 +446,7 @@ const SFX = {
   },
 } satisfies Record<string, Recipe>;
 
-export type SfxName = keyof typeof SFX;
+type SfxName = keyof typeof SFX;
 
 // one breath of a purr: pink noise and a low sawtooth, both gated by narrow ~25 Hz pulses
 function purrBreath(c: BaseAudioContext, t0: number, len: number, vol: number, hz: number, fc: number, p: number): void {
@@ -660,7 +660,7 @@ function deepEvents(c: AudioContext, dt: number, calm: boolean): void {
 }
 
 /** The world around the boat, sampled every frame. Levels are 0..1 unless noted. */
-export interface SoundscapeState {
+interface SoundscapeState {
   /** boat speed, world units per second */
   speed: number;
   shore: number;

@@ -6,7 +6,7 @@ const roll = (): WeatherState => {
   return r < 0.45 ? 'clear' : r < 0.65 ? 'cloudy' : r < 0.88 ? 'rain' : 'storm';
 };
 
-export interface Weather {
+interface Weather {
   state: WeatherState;
   /** the state the next change switches to, and seconds until then */
   upcoming: WeatherState;

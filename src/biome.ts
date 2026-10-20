@@ -1,8 +1,6 @@
-// Biomes: regions of the sea that look and live differently, laid over the islands without moving them (island
-// shapes, ports and claim keys never depend on this). A slow noise field picks coral shallows, kelp coasts, volcanic
-// isles and mangroves (south of home); latitude still sets warm and cold water, so reefs lean south, kelp leans
-// north, and the far north is ice floes (that one is just coldness, which the shader already knows). Home waters
-// stay plain so a new captain starts somewhere familiar, and the first regions begin a couple of cells out.
+// Biomes: regions that look and live differently. A slow noise field picks coral shallows, kelp coasts, ember isles
+// and (south of home) mangroves; latitude sets warm and cold water, and the far north is the ice floes. Home waters
+// stay plain, and the regions start a couple of cells out.
 import { createNoise2D } from 'simplex-noise';
 import Alea from 'alea';
 import { clamp, smooth01 } from './config';
@@ -19,9 +17,8 @@ const nBio = createNoise2D(Alea('bobber-run', 'biome'));
 const F = 1 / 1500;                                         // features a few cells across
 const HOME = { x: 280, y: 280 };
 
-// Each island belongs to one region: on and around an island the region is read at its centre, fading back to the
-// open-sea field between islands, so no island is half coral and half ash. The world registers how to find the
-// island near a point (biome.ts can't import world.ts, which imports it).
+// Each island belongs to one region: around an island the field is read at its centre, so no island is half coral
+// and half ash. world.ts registers how to find that island (it imports this file, so this one can't import it).
 type Anchor = (x: number, y: number) => { x: number; y: number; w: number } | null;
 let anchor: Anchor = () => null;
 export function setBiomeAnchor(f: Anchor): void { anchor = f; }

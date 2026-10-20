@@ -1,7 +1,5 @@
-// How much of the sea is in view. Bigger ships see further by default, and the player can zoom in or out on top
-// of that. The window keeps one whole-number screen scale (device pixels per world unit at the ship's default
-// view), so the canvas and render targets stay put; zooming changes how many world units the view covers, and
-// the view glides there smoothly.
+// How much of the sea is in view: bigger ships see further, and the player zooms on top of that. The screen keeps
+// one whole-number scale, so the canvas and render targets stay put; zooming changes the world units in view.
 import { SET, savePrefs } from './prefs';
 import { boatDef } from './game';
 

@@ -1,7 +1,5 @@
-// Ambient sea life (simulation only; gl/renderer.ts draws it from the LIFE shapes below):
-// whales that dive, surface, spout, breach and tail-slap; dolphin pods that race fast boats; rare giants
-// passing under the boat; jellyfish swarms that glow at night; and bioluminescent plankton in wakes.
-// The only boats on the water are real players' (see online.ts).
+// Ambient sea life, simulated here and drawn by gl/renderer.ts: whales that dive, spout, breach and tail-slap,
+// dolphins racing fast boats, giants passing under the boat, jellyfish swarms and glowing plankton in wakes.
 import { G, spawn, toWorld, darkness, windAngle } from './game';
 import { hAt, heightAt, hasTile, TS } from './world';
 import { W, H, clamp, wrapAngle } from './config';
@@ -13,7 +11,7 @@ import { sfx } from './audio';
 import { biomeAt, type BiomeId } from './biome';
 
 // ---------------------------------------------------------------- shapes
-export type WhalePhase = 'swim' | 'surface' | 'breach' | 'dive' | 'slap';
+type WhalePhase = 'swim' | 'surface' | 'breach' | 'dive' | 'slap';
 /** a whale circling a still boat out of curiosity: approach ('go'), then one lap ('circle') */
 interface Curiosity { st: 'go' | 'circle'; acc: number; last: number; dir: number }
 export interface Whale {
@@ -47,7 +45,7 @@ export interface Whale {
   /** breach apex height, and splash progress (0 none, 1 on the way up, 2 crashed down) */
   peak: number; splashed: number;
 }
-export type GiantKind = 'shadow' | 'ray' | 'squid' | 'eel';
+type GiantKind = 'shadow' | 'ray' | 'squid' | 'eel';
 /** something huge passing under the boat */
 export interface Giant {
   x: number; y: number; a: number;
@@ -65,7 +63,7 @@ export interface Giant {
   zt: number;
   seed: number;
 }
-export interface Jelly {
+interface Jelly {
   x: number; y: number; z: number;
   ph: number;
   /** tint, 0..1 per channel */
@@ -81,7 +79,7 @@ export interface Jelly {
 }
 interface Swarm { cx: number; cy: number; m: Jelly[] }
 /** a dolphin in a bow-riding pod; each has its own position, velocity and heading */
-export interface Dolphin {
+interface Dolphin {
   /** which side of the bow it rides, how far out and how far ahead */
   side: number; off: number; lead: number;
   ph: number;
@@ -89,8 +87,8 @@ export interface Dolphin {
   /** weave phase */
   wv: number;
 }
-export interface Pod { t: number; m: Dolphin[] }
-export interface Life {
+interface Pod { t: number; m: Dolphin[] }
+interface Life {
   whales: Whale[]; pods: Pod[]; giants: Giant[]; jellies: Jelly[];
   /** countdowns to the next spawn attempt */
   nextWhale: number; nextPod: number; nextGiant: number;

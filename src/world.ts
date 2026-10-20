@@ -7,6 +7,7 @@ import type { Point, Poi, Port, Wreck, School, Crate } from './types';
 import { createNoise2D } from 'simplex-noise';
 import Alea from 'alea';
 import { biomeMix, coldness, setBiomeAnchor } from './biome';
+import { smooth01 } from './config';
 
 /**
  * The world layout. Bump it whenever islands, ports or wrecks move, and re-record tests/fixtures/landmarks.json (it
@@ -23,7 +24,7 @@ const key = (i: number, j: number) => (i + 50000) * 100000 + (j + 50000);
 // properties added later (in differing orders) made those reads several times slower.
 interface Island {
   x: number; y: number; R: number; peak: number; islet: boolean;
-  /** the cell it belongs to (main islands), for its landmarks */
+  /** the cell it belongs to (main islands; 0, 0 is Alderhaven) */
   ci: number; cj: number;
   /** relief, worked out on first use (mtn < 0 until then): how mountainous it is, and whether it is a volcano */
   mtn: number; volc: number;
@@ -76,12 +77,10 @@ setBiomeAnchor((x, y) => {
   }
   return best;
 });
-const smooth01 = (t: number): number => { const c = t < 0 ? 0 : t > 1 ? 1 : t; return c * c * (3 - 2 * c); };
 
 // ---------- relief ----------
-// Mountains are added only where the ground is already well above the sea, so they shape the interior (ridges,
-// valleys, peaks) without moving a single coastline. Some islands are rugged and some gentle; the far north is
-// rugged, and big islands in the ember isles grow a volcano with a crater.
+// Mountains rise only well above the sea, so they shape the interior without moving a coastline. Some islands are
+// rugged and some gentle, the north more rugged; big ember-isle islands become a volcano with a crater.
 const nRidge = createNoise2D(Alea('bobber-run', 'ridge'));
 const ridged = (x: number, y: number): number => {
   let s = 0, a = 0.6, f = 0.012;
@@ -90,9 +89,9 @@ const ridged = (x: number, y: number): number => {
 };
 function relief(is: Island): void {
   if (is.mtn >= 0) return;
-  const big = smoothstepN((is.R - 50) / 120);
+  const big = smooth01((is.R - 50) / 120);
   is.mtn = is.islet ? 0 : big * (0.35 + 0.65 * hash01(Math.round(is.x), Math.round(is.y), 41)) * (0.7 + 0.6 * coldness(is.y));
-  is.volc = !is.islet && is.R > 80 ? smoothstepN((biomeMix(is.x, is.y).volcanic - 0.4) / 0.3) : 0;
+  is.volc = !is.islet && is.R > 80 ? smooth01((biomeMix(is.x, is.y).volcanic - 0.4) / 0.3) : 0;
 }
 // The coastline of a main island: coves bitten in (sheltered water, where a port likes to sit) and headlands
 // reaching out (peninsulas, so big islands become ragged landmasses). Alderhaven keeps its shape.
@@ -144,7 +143,6 @@ function shoreAt(S: number[], a: number): number {
   }
   return k;
 }
-const smoothstepN = (t: number): number => { const c = t < 0 ? 0 : t > 1 ? 1 : t; return c * c * (3 - 2 * c); };
 const LIFT = 0.14;                             // relief starts this far above the sea, so beaches stay low and sandy
 
 /** Terrain height: < 0 is water (deeper = more negative), > 0 is land. */
@@ -156,12 +154,11 @@ export function heightAt(x: number, y: number): number {
   let shape: number | null = null, best = -9, top: Island | null = null, topD = 0;
   for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
     for (const is of cellIslands(ci + di, cj + dj)) {
-      const T = is.islet ? null : coastTable(is), R = is.R;
-      const dx = wx - is.x, dy = wy - is.y, d2 = (dx * dx + dy * dy) / (R * R);
+      const T = is.islet ? null : coastTable(is);
+      const dx = wx - is.x, dy = wy - is.y, d2 = (dx * dx + dy * dy) / (is.R * is.R);
       if (d2 > (T ? is.reach2 : 2.3)) continue;                       // headlands reach further than a round coast
-      // coves and headlands scale the distance by heading; an island only counts within 2.3 of its own, shaped
-      // radius in that direction, as a round island always did
-      const k = T && d2 > 0.16 ? 1 + (coastAt(T, dx, dy) - 1) * smoothstepN((d2 - 0.16) / 0.5) : 1;
+      // coves and headlands scale the distance by heading; an island counts within 2.3 of its shaped radius
+      const k = T && d2 > 0.16 ? 1 + (coastAt(T, dx, dy) - 1) * smooth01((d2 - 0.16) / 0.5) : 1;
       if (d2 * k * k > 2.3) continue;
       if (shape === null) shape = fbm(nA, x * 0.009, y * 0.009, 3);
       const d = Math.sqrt(d2) * (1 + 0.3 * shape) * k;
@@ -174,12 +171,12 @@ export function heightAt(x: number, y: number): number {
     if (e > -0.25) { const k = Math.min(1, (e + 0.25) / 0.5); e += 0.15 * k * fbm(nC, x * 0.022, y * 0.022, 3); }
     if (e > LIFT && top) {
       relief(top);
-      const up = smoothstepN((e - LIFT) / 0.35);              // 0 at the foothills, 1 well inland
+      const up = smooth01((e - LIFT) / 0.35);              // 0 at the foothills, 1 well inland
       const rugged = up * top.mtn * (1 - 0.8 * top.volc);              // a volcano is a smooth cone, not a ridge
       if (rugged > 0.01) e += rugged * 0.75 * ridged(x, y);
       if (top.volc > 0) {                                     // a cone, and a crater at its top
         const cone = Math.max(0, 1 - topD / 0.55);
-        e += top.volc * up * (0.9 * cone * cone - 0.55 * smoothstepN((0.12 - topD) / 0.07));
+        e += top.volc * up * (0.9 * cone * cone - 0.55 * smooth01((0.12 - topD) / 0.07));
       }
     }
     if (e > h) h = e;
@@ -266,8 +263,8 @@ const idSalt = (id: string): number => { let h = 2166136261; for (let i = 0; i <
 function makePort(i: number, j: number, home: boolean, r: Rng, s: Point, di: number, a: number): Port {
   const c = Math.cos(a), sn = Math.sin(a);
   const ax = s.x - c * 3, ay = s.y - sn * 3;
-  // the first species' prices and the shipyard come off one sequence, as they always have; species added since then
-  // get their price from their own hash, so appending a species never reshuffles a port
+  // the first 43 species' prices and the shipyard come off one sequence; later species get their price from their
+  // own hash, so appending a species never reshuffles a port
   const pr = mulberry(hash(i, j, 5));
   const mult: Record<number, number> = {};
   for (let k = 0; k < LEGACY_SPECIES; k++) mult[k] = 0.75 + pr() * 0.7;
@@ -441,7 +438,7 @@ function genFishCell(i: number, j: number): FishCell {
   const r = mulberry(hash(i, j, 31)), schools: School[] = [], crates: Crate[] = [];
   const n = 3 + Math.floor(r() * 3), x0 = (i + FC_EDGE) * FC, y0 = (j + FC_EDGE) * FC, span = (1 - 2 * FC_EDGE) * FC;
   const box = [x0, y0, x0 + span, y0 + span];
-  const landmarks = [BOSS, ...poisNear(x0 + span / 2, y0 + span / 2, FC).flatMap(p => p.school ? [p.school] : [])];
+  const fixed = [BOSS, ...poisNear(x0 + span / 2, y0 + span / 2, FC).flatMap(p => p.school ? [p.school] : [])];
   for (let q = 0; q < n; q++) {
     // every other school tries to hug a coastline (if this cell has one) so shallow-water species get a home
     for (let tries = q % 2 ? 3 : 24; tries > 0; tries--) {
@@ -449,7 +446,7 @@ function genFishCell(i: number, j: number): FishCell {
       if (h > -0.07 || (!(q % 2) && tries > 4 && h < -0.28)) continue;
       const sp = pickSpecies(h, Math.hypot(cx - HOME_ISLAND.x, cy - HOME_ISLAND.y), r, cx, cy);
       const home = settle(cx, cy, schoolReach(sp), box);
-      if (!home || crowded(home.x, home.y, sp, schools) || crowded(home.x, home.y, sp, landmarks)) continue;
+      if (!home || crowded(home.x, home.y, sp, schools) || crowded(home.x, home.y, sp, fixed)) continue;
       const s = makeSchool(`s:${i},${j},${q}`, home.x, home.y, sp, r);
       s.max = s.stock;
       s.gold = !SPECIES[s.sp].legend && hash01(i * 7 + q, j, 53) < GOLD_SCHOOLS;
@@ -524,8 +521,7 @@ export function claimableNear(x: number, y: number, rad: number): Claimable[] {
   const out: Claimable[] = [], i0 = Math.floor((x - rad) / CELL), i1 = Math.floor((x + rad) / CELL), j0 = Math.floor((y - rad) / CELL), j1 = Math.floor((y + rad) / CELL);
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const m = cellIslands(i, j)[0];
-    const R = m && !m.islet ? m.R : 0;
-    if (m && !m.islet && Math.hypot(m.x - x, m.y - y) < rad + R) out.push({ key: `${i},${j}`, i, j, x: m.x, y: m.y, R });
+    if (m && !m.islet && Math.hypot(m.x - x, m.y - y) < rad + m.R) out.push({ key: `${i},${j}`, i, j, x: m.x, y: m.y, R: m.R });
   }
   return out;
 }
