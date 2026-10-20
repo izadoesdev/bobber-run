@@ -201,6 +201,26 @@ export async function deleteAccount(): Promise<Result> {
   finally { NET.busy = false; switching = false; }
 }
 export async function signOut() { if (!actions) return; NET.busy = true; try { await actions.signOut(); NET.profile = null; track('signed_out', {}); } finally { NET.busy = false; } }
+// ---------- leaderboards and the online count ----------
+export type LeaderBy = 'species' | 'records' | 'heaviest' | 'caught' | 'earned';
+export interface Leaders { rows: { name: string; value: number; label?: string; admin?: boolean }[]; me: { rank: number; value: number } | null }
+/** One fetch (not a subscription); null when offline or the query isn't deployed yet. */
+export async function leaders(by: LeaderBy): Promise<Leaders | null> {
+  if (!client) return null;
+  try { return await client.query(api.leaderboard.top, { by }); } catch { return null; }
+}
+/** Sailors online coastwide, for the title screen (no sign-in needed); null if unknown. */
+export async function onlineCount(): Promise<number | null> {
+  if (!client) return null;
+  try { return (await client.query(api.leaderboard.online, {})).total; } catch { return null; }
+}
+let statsAt = 0;
+/** Report lifetime totals for the leaderboards, at most once a minute; nothing for cheated saves or when offline. */
+export function reportStats(caught: number, earned: number, cheated = false): void {
+  if (!NET.authed || cheated || Date.now() - statsAt < 60_000) return;
+  statsAt = Date.now();
+  call(api.stats.report, { caught, earned }).catch(() => { statsAt = 0; });
+}
 /** Test hook: ask the server who we are right now (no tokens exposed). */
 export const whoami = () => client?.query(api.profiles.me, {}) ?? null;
 

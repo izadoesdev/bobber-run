@@ -2,21 +2,18 @@ import { v } from 'convex/values';
 import { query, mutation, internalMutation } from './_generated/server';
 import { getAuthUserId } from '@convex-dev/auth/server';
 import { requireUser, profileOf, cellOf, finite } from './lib';
-import { SEA_CAP, SEAS, MOVE_MIN_MS, EMOTE_MIN_MS } from './limits';
+import { NEAR_MAX, SEAS, MOVE_MIN_MS, EMOTE_MIN_MS } from './limits';
 
 const ACTIVE_MS = 60_000;
-// Players are spread across seas of at most SEA_CAP sailors. You stay in your sea while it has room,
+// Everyone sails one shared sea (sea 0). The sea field stays on rows so the world could be split again later.
 // otherwise you are moved to the first sea with space. Seas only see their own boats.
 export const join = mutation({
   args: {},
   handler: async ctx => {
-    const userId = await requireUser(ctx), p = await profileOf(ctx, userId), since = Date.now() - ACTIVE_MS;
-    const crowd = async (sea: number) => (await ctx.db.query('positions').withIndex('by_sea_at', q => q.eq('sea', sea).gt('at', since)).take(SEA_CAP + 1))
-      .filter(r => r.userId !== userId).length;
-    if (p?.sea !== undefined && await crowd(p.sea) < SEA_CAP) return p.sea;
-    let sea = 0; while (sea < SEAS - 1 && await crowd(sea) >= SEA_CAP) sea++;
-    if (p) await ctx.db.patch(p._id, { sea }); else await ctx.db.insert('profiles', { userId, name: 'Sailor', sea });
-    return sea;
+    const userId = await requireUser(ctx), p = await profileOf(ctx, userId);
+    if (p?.sea === 0) return 0;
+    if (p) await ctx.db.patch(p._id, { sea: 0 }); else await ctx.db.insert('profiles', { userId, name: 'Sailor', sea: 0 });
+    return 0;
   },
 });
 export const move = mutation({
@@ -59,7 +56,7 @@ export const near = query({
     const prefix = `${(await profileOf(ctx, userId))?.sea ?? 0}|`;
     for (const cell of cells.slice(0, 9)) {
       if (!cell.startsWith(prefix)) continue;
-      for (const p of await ctx.db.query('positions').withIndex('by_cell', q => q.eq('cell', cell)).take(SEA_CAP))
+      for (const p of await ctx.db.query('positions').withIndex('by_cell', q => q.eq('cell', cell)).take(NEAR_MAX))
         if (p.userId !== userId) out.push({ id: p._id, x: p.x, y: p.y, a: p.a, vx: p.vx ?? 0, vy: p.vy ?? 0, w: p.w ?? 0, boat: p.boat, paint: p.paint, name: p.name, at: p.at, emote: p.emote ?? null, emoteAt: p.emoteAt ?? 0 });
     }
     return out;

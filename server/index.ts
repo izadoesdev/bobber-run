@@ -34,7 +34,7 @@ async function player(token: string): Promise<{ userId: string; name: string; se
     const convex = new ConvexHttpClient(CONVEX_URL); convex.setAuth(token);
     const p = await convex.query(me, {});
     if (!p || String(payload.sub).split('|')[0] !== p.userId) return null;
-    return { userId: p.userId, name: p.name, sea: p.sea ?? 0, admin: !!p.admin };
+    return { userId: p.userId, name: p.name, sea: 0, admin: !!p.admin };   // everyone shares one sea
   } catch (e) {
     console.log(JSON.stringify({ msg: 'sign-in refused', why: e instanceof Error ? `${e.name}: ${e.message}`.slice(0, 160) : 'unknown' }));
     return null;
@@ -108,7 +108,11 @@ async function onMessage(ws: Sock, text: string): Promise<void> {
   }
 }
 
-let rosterAt = 0;
+// Each boat hears the boats within RANGE ten times a second; about once a second it also gets everyone else's
+// position for the map (the nearest FAR_MAX), and every few seconds the roster and how many sailors are online.
+const FAR_MAX = 300;
+let rosterAt = 0, farAt = 0;
+const online = () => { let n = 0; for (const socks of seas.values()) for (const s of socks) if (s.data) n++; return n; };
 /** Store a chat line in Convex for good (convex/chat.ts); a failed write is logged and retried once. */
 async function keep(line: Record<string, unknown>, retry = true): Promise<void> {
   if (!RELAY_SECRET) return;
@@ -121,8 +125,10 @@ async function keep(line: Record<string, unknown>, retry = true): Promise<void> 
   }
 }
 function broadcast(): void {
-  const now = Date.now(), withRoster = now - rosterAt > 3000;
+  const now = Date.now(), withRoster = now - rosterAt > 3000, withFar = now - farAt > 1000;
   if (withRoster) rosterAt = now;
+  if (withFar) farAt = now;
+  const total = withRoster ? online() : 0;
   for (const [sea, socks] of seas) {
     const names = withRoster ? roster(sea) : null;
     const boats: { ws: Sock; p: Peer; b: Boat }[] = [];
@@ -131,11 +137,19 @@ function broadcast(): void {
       const me = ws.data; if (!me) continue;
       const list = boats.filter(o => o.ws !== ws && (!me.boat || Math.hypot(o.b.x - me.boat.x, o.b.y - me.boat.y) < RANGE))
         .map(({ p, b }) => ({ id: p.id, name: p.name, emote: p.emote, emoteAt: p.emoteAt, ...b }));
-      ws.send(JSON.stringify(names ? { t: 'boats', now, list, roster: names } : { t: 'boats', now, list }));
+      const at = me.boat, far = withFar && at ? boats.filter(o => o.ws !== ws).map(({ p, b }) => ({ uid: p.id, name: p.name, x: Math.round(b.x), y: Math.round(b.y), d: Math.hypot(b.x - at.x, b.y - at.y) }))
+        .sort((a, b) => a.d - b.d).slice(0, FAR_MAX).map(({ uid, name, x, y }) => ({ uid, name, x, y })) : undefined;
+      ws.send(JSON.stringify({ t: 'boats', now, list, ...(names ? { roster: names, total } : {}), ...(far ? { far } : {}) }));
     }
   }
 }
 setInterval(broadcast, TICK_MS);
+// tell Convex how many sailors are online, so the title screen can show it before anyone signs in
+setInterval(() => {
+  if (!RELAY_SECRET) return;
+  fetch(`${SITE}/relay/stats`, { method: 'POST', headers: { Authorization: `Bearer ${RELAY_SECRET}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ online: online() }), signal: AbortSignal.timeout(5000) })
+    .catch(() => { /* the next report will try again */ });
+}, 15_000);
 
 Bun.serve<Peer | null>({
   port: PORT,

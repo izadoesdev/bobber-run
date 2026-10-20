@@ -1,6 +1,7 @@
 import { v } from 'convex/values';
 import { query, mutation } from './_generated/server';
 import { requireUser, nameOf, profileOf, trusted } from './lib';
+import { statsOf } from './stats';
 import { MAX_KG, LEGENDS, SPECIES_NAMES, CATCH_MIN_MS, GUEST_TRUST_MS, NEWS_MIN_MS } from './limits';
 
 const valid = (species: string, kg: number) => kg > 0 && kg <= (MAX_KG[species] ?? 0);
@@ -20,6 +21,8 @@ export const submit = mutation({
     const top = await ctx.db.query('records').withIndex('by_species_kg', q => q.eq('species', species)).order('desc').first();
     const name = await nameOf(ctx, userId), at = Date.now();
     if (mine) await ctx.db.patch(mine._id, { kg, name, at }); else await ctx.db.insert('records', { species, userId, name, kg, at });
+    const st = await statsOf(ctx, userId);                                       // leaderboard totals: species logged, heaviest fish
+    await ctx.db.patch(st._id, { species: st.species + (mine ? 0 : 1), ...(kg > st.heaviest ? { heaviest: kg, heaviestSp: species } : {}) });
     const last = await ctx.db.query('events').withIndex('by_at').order('desc').first();
     if (last && at - last.at < NEWS_MIN_MS) return;                              // the coast hears at most one item at a time
     if (LEGENDS[species] && !mine) await ctx.db.insert('events', { kind: 'legend', name, text: `caught ${LEGENDS[species]}!`, at });

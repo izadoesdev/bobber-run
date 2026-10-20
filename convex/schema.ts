@@ -24,6 +24,11 @@ export default defineSchema({
   // every chat line, kept permanently (written only by the relay): typed text, what others saw, and who said it
   chats: defineTable({ userId: v.string(), name: v.string(), sea: v.number(), text: v.string(), shown: v.string(), filtered: v.boolean(), whole: v.boolean(), source: v.string(), at: v.number() })
     .index('by_at', ['at']).index('by_user', ['userId', 'at']),
+  // leaderboard totals per player (species and heaviest from records.submit; caught and earned reported, capped)
+  stats: defineTable({ userId: v.id('users'), caught: v.number(), earned: v.number(), species: v.number(), heaviest: v.number(), heaviestSp: v.string(), at: v.number() })
+    .index('by_user', ['userId']).index('by_species', ['species']).index('by_heaviest', ['heaviest']).index('by_caught', ['caught']).index('by_earned', ['earned']),
+  // small server-wide values (the relay's online count)
+  meta: defineTable({ key: v.string(), value: v.number(), at: v.number() }).index('by_key', ['key']),
   // shared rate-limit windows (guest sign-ups, coastwide fund per day)
   counters: defineTable({ key: v.string(), start: v.number(), used: v.number() }).index('by_key', ['key']),
 });
