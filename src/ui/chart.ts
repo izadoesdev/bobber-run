@@ -19,8 +19,6 @@ export interface ChartOptions {
   dpr?: number;
   grid?: boolean;
   labels?: boolean;
-  /** sonar level: 1 shows schools, 2 colours them by species, 3 stars legends */
-  sonar?: number;
   /** sextant level: 2 marks uncharted landmarks */
   sextant?: number;
   /** the guide's objective: a flag on it, or an arrow at the edge pointing to it ('round' for the minimap's circle) */
@@ -47,7 +45,7 @@ export function drawChart(ctx: Ctx, w: number, h: number, cx: number, cy: number
   if (opt.grid) drawGrid(ctx, w, h, wx0, wy0, wpp, S, u);
 
   const pois = poisNear(cx, cy, Math.max(w, h) * wpp * 0.6);
-  const son = opt.sonar ?? sonarLvl();
+  const son = sonarLvl();                  // 1 shows schools, 2 colours them by species, 3 stars legends
   const showUncharted = (opt.sextant ?? 0) >= 2;
   if (son >= 1) drawSchools(ctx, cx, cy, Math.min(260, Math.max(w, h) * wpp * 0.6), S, u, son);
   drawPois(ctx, pois, S, u, showUncharted);
@@ -71,7 +69,6 @@ export function drawChart(ctx: Ctx, w: number, h: number, cx: number, cy: number
   drawBoat(ctx, S, u);
 }
 
-const GOLD = '#f0cf6a';
 /** The objective: a gold ring and pennant on the spot, or a gold arrow on the rim (circle or box) pointing at it. */
 function drawTarget(ctx: Ctx, w: number, h: number, [x, y]: [number, number], u: number, round: boolean): void {
   const cx = w / 2, cy = h / 2, dx = x - cx, dy = y - cy, pad = 7 * u;
@@ -81,12 +78,12 @@ function drawTarget(ctx: Ctx, w: number, h: number, [x, y]: [number, number], u:
   if (inside) {
     ctx.beginPath(); ctx.arc(x, y, 5 * u, 0, 7);
     ctx.lineWidth = 3.4 * u; ctx.strokeStyle = COL.ink; ctx.stroke();
-    ctx.lineWidth = 1.8 * u; ctx.strokeStyle = GOLD; ctx.stroke();
+    ctx.lineWidth = 1.8 * u; ctx.strokeStyle = COL.port; ctx.stroke();
     // a pennant on a pole above the ring, flying left so it clears the place labels on the right
     ctx.fillStyle = COL.ink;
     ctx.fillRect(x - 0.8 * u, y - 15 * u, 1.6 * u, 10 * u);
     ctx.beginPath(); ctx.moveTo(x - u, y - 15.5 * u); ctx.lineTo(x - 9 * u, y - 12.25 * u); ctx.lineTo(x - u, y - 9 * u); ctx.closePath();
-    ctx.lineWidth = 1.2 * u; ctx.strokeStyle = COL.ink; ctx.stroke(); ctx.fillStyle = GOLD; ctx.fill();
+    ctx.lineWidth = 1.2 * u; ctx.strokeStyle = COL.ink; ctx.stroke(); ctx.fillStyle = COL.port; ctx.fill();
     return;
   }
   const a = Math.atan2(dy, dx);
@@ -98,7 +95,7 @@ function drawTarget(ctx: Ctx, w: number, h: number, [x, y]: [number, number], u:
   ctx.save();
   ctx.translate(ex, ey); ctx.rotate(a);
   ctx.beginPath(); ctx.moveTo(6 * u, 0); ctx.lineTo(-4.5 * u, -5 * u); ctx.lineTo(-2 * u, 0); ctx.lineTo(-4.5 * u, 5 * u); ctx.closePath();
-  ctx.lineWidth = 1.4 * u; ctx.strokeStyle = COL.ink; ctx.fillStyle = GOLD; ctx.fill(); ctx.stroke();
+  ctx.lineWidth = 1.4 * u; ctx.strokeStyle = COL.ink; ctx.fillStyle = COL.port; ctx.fill(); ctx.stroke();
   ctx.restore();
 }
 
@@ -354,7 +351,8 @@ function star(ctx: Ctx, x: number, y: number, r: number, col: string): void {
   ctx.fill();
 }
 
-export function compassRose(ctx: Ctx, x: number, y: number, r: number, ink = 'rgba(58,42,28,0.75)'): void {
+export function compassRose(ctx: Ctx, x: number, y: number, r: number): void {
+  const ink = 'rgba(58,42,28,0.75)';
   ctx.save();
   ctx.translate(x, y);
   ctx.strokeStyle = ink;

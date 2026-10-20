@@ -1,6 +1,7 @@
 // Fish species: the catalogue, where and when each one bites, and how hard it fights.
 import type { Env, FightStyle, FishShape, Landmark, Region, Species, TimeOfDay, WeatherNeed } from './types';
 import { FISH_T } from './fishart';
+import { clamp } from './config';
 
 type Zone = Species['zone'];
 type Extra = { region?: Region; weather?: WeatherNeed; special?: Landmark | null; legend?: boolean; deck?: number };
@@ -74,9 +75,8 @@ export const SPECIES: Species[] = [
 export const SP: Record<string, number> = Object.fromEntries(SPECIES.map((s, i) => [s.id, i]));
 
 // regions by latitude: home waters are temperate, the far north is cold, the far south warm
-const clamp01 = (v: number): number => v < 0 ? 0 : v > 1 ? 1 : v;
-export const warmth = (y: number): number => clamp01((y - 1500) / 1000);
-export const coldness = (y: number): number => clamp01((-y - 1300) / 1000);
+export const warmth = (y: number): number => clamp((y - 1500) / 1000, 0, 1);
+export const coldness = (y: number): number => clamp((-y - 1300) / 1000, 0, 1);
 function regionWeight(s: Species, y: number): number {
   const wm = warmth(y), cd = coldness(y);
   switch (s.region) {

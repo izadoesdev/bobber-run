@@ -3,9 +3,9 @@
 // while you hold some, key hints until the first catches. The reel gauge, catch card, toasts and sailor tags sit over
 // the sea; schools carry no labels, since the cast prompt names the fish and why it won't bite.
 import type { JSX } from 'preact';
-import { W, H, clamp } from '../config';
+import { clamp, money } from '../config';
 import {
-  G, cap, hpMax, boatDef, sonarLvl, isNight, dayNum, dayFrac, windAngle, sailEfficiency, schoolActive,
+  G, cap, hpMax, boatDef, isNight, dayNum, dayFrac, windAngle, sailEfficiency, schoolActive,
   lineMax,
 } from '../game';
 import { SPECIES, fmtKg } from '../econ';
@@ -21,7 +21,7 @@ import { drawChart, nearestUncharted } from './chart';
 import { IslandSigns } from './island';
 import { clearWaypoint, tickWaypoint } from '../waypoint';
 import { tickIslands } from '../islands';
-import { Bar, Canvas, Fish, Hint, Icon, Key, keyed, money, type DrawFn } from './parts';
+import { Bar, Canvas, Fish, Hint, Icon, Key, WX_ICON, cap1, clockText, keyed, viewPct, type DrawFn } from './parts';
 
 // stable keys so a toast keeps its element (and its fade) as older ones leave
 const toastIds = new WeakMap<Toast, number>();
@@ -65,14 +65,12 @@ function Status() {
   );
 }
 
-const WX_CHIP_ICON = { storm: 'storm', rain: 'rain', cloudy: 'cloud' } as const;
-const clockText = (secs: number) => `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, '0')}`;
 
 function Minimap({ step }: { step: Step }) {
   const un = G.up.sextant > 0 ? nearestUncharted() : null, target = guideOn() ? step.at : null;
   const draw: DrawFn = (ctx, w, h, dpr) => {
     const b = G.boat;
-    drawChart(ctx, w, h, b.x, b.y, 300 / w, { dpr, budget: 4, sonar: sonarLvl(), target, round: true, waypoint: G.waypoint });
+    drawChart(ctx, w, h, b.x, b.y, 300 / w, { dpr, budget: 4, target, round: true, waypoint: G.waypoint });
     if (!un) return;
     // an arrow on the rim pointing at the nearest uncharted landmark
     const a = Math.atan2(un.p.y - b.y, un.p.x - b.x), r = w / 2 - 5 * dpr;
@@ -93,7 +91,7 @@ function Minimap({ step }: { step: Step }) {
   };
   const night = isNight(), c = dayFrac();
   const sail = boatDef().prop === 'SAIL', eff = sail ? sailEfficiency() : 0;
-  const wxIcon = WX.state === 'clear' ? (night ? 'moon' : 'sun') : WX_CHIP_ICON[WX.state];
+  const wxIcon = WX.state === 'clear' && night ? 'moon' : WX_ICON[WX.state];
   const part = night ? ', night' : c > 0.55 ? ', dusk' : '';
   return (
     <div class="mini">
@@ -104,7 +102,7 @@ function Minimap({ step }: { step: Step }) {
         </div>
         <span class="day"><Icon k={wxIcon} size="s" />Day {dayNum()}{part}</span>
       </div>
-      {G.up.radio >= 2 && <div class="chip muted forecast"><Icon k="radio" size="s" />{WX.upcoming[0].toUpperCase() + WX.upcoming.slice(1)} in {clockText(WX.next)}</div>}
+      {G.up.radio >= 2 && <div class="chip muted forecast"><Icon k="radio" size="s" />{cap1(WX.upcoming)} in {clockText(WX.next)}</div>}
     </div>
   );
 }
@@ -184,7 +182,7 @@ function CatchCard({ c }: { c: CatchCardState }) {
 function NextLine({ step, prog }: { step: Step; prog?: string | null }) {
   const w = whereText(step);
   return (
-    <div class="row" style={{ gap: '0.4em', alignItems: 'flex-start' }}>
+    <div class="row">
       <Icon k={step.icon} size="s" />
       <span>{step.text}{w && <>, <span class="gold" style={{ whiteSpace: 'nowrap' }}>{w}</span></>}{prog && <span class="muted"> ({prog})</span>}</span>
     </div>
@@ -269,9 +267,6 @@ function StrikeMeter({ f }: { f: FishLine }) {
   );
 }
 
-// world position -> percent of the view, for labels pinned over the canvas
-const viewPct = (x: number, y: number): [number, number] => [(x - G.cam.x) / W * 100, (y - G.cam.y) / H * 100];
-
 // chat lines over boats: each sailor's latest filtered message (uid 'me' is ours), shown for 6 s, then fading
 const CHAT_MS = 6500, CHAT_MAX = 120;
 function ChatBubble({ text, at, x, y, mine }: { text: string; at: number; x: number; y: number; mine?: boolean }) {
@@ -315,25 +310,27 @@ function worldLabels(): JSX.Element[] {
   return labels;
 }
 
-// With the interface hidden (H): only what a catch needs, the catch card and captions; toasts stay above everything.
-function QuietHud() {
+// the catch card, captions, the reel or strike gauge and the prompt. `quiet` (interface hidden with H) keeps only
+// the prompts a catch needs; toasts stay above everything either way
+function Fishing({ quiet }: { quiet?: boolean }) {
+  const f = G.fish;
   return (
-    <div>
+    <>
       {G.card && <CatchCard c={G.card} />}
       <div class="bottom-stack">
         <Captions />
-        {G.fish?.st === 'reel' && <Reel f={G.fish} />}
-        {G.fish?.st === 'bite' && SET.strike !== 'auto' && <StrikeMeter f={G.fish} />}
-        {G.fish && G.prompt && G.mode === 'play' && (
-          <div class={'prompt panel' + (G.fish.st === 'bite' || G.fish.warn ? ' hot' : '')}>{keyed(G.prompt)}</div>
+        {f?.st === 'reel' && <Reel f={f} />}
+        {f?.st === 'bite' && SET.strike !== 'auto' && <StrikeMeter f={f} />}
+        {G.prompt && G.mode === 'play' && (f || !quiet) && (
+          <div class={'prompt panel' + (f?.st === 'bite' || f?.warn ? ' hot' : '')}>{keyed(G.prompt)}</div>
         )}
       </div>
-    </div>
+    </>
   );
 }
 export function Hud() {
   tickIslands(); tickWaypoint();
-  if (!SET.hud) return <QuietHud />;
+  if (!SET.hud) return <div><Fishing quiet /></div>;
   const quest = currentQuest(), step = guide();
   // a waypoint the player set takes over the on-screen arrow from the guide
   const wp: Step | null = G.waypoint ? { text: 'Waypoint', at: G.waypoint, icon: 'map', near: 25 } : null;
@@ -357,15 +354,7 @@ export function Hud() {
         <Tip />
       </div>
       <Minimap step={step} />
-      {G.card && <CatchCard c={G.card} />}
-      <div class="bottom-stack">
-        <Captions />
-        {G.fish?.st === 'reel' && <Reel f={G.fish} />}
-        {G.fish?.st === 'bite' && SET.strike !== 'auto' && <StrikeMeter f={G.fish} />}
-        {G.prompt && G.mode === 'play' && (
-          <div class={'prompt panel' + (G.fish?.st === 'bite' || G.fish?.warn ? ' hot' : '')}>{keyed(G.prompt)}</div>
-        )}
-      </div>
+      <Fishing />
       {G.stats.caught < 2 && !G.fish && <div class="hints">
         <Hint k="Tab" pad="View">Ship</Hint><Hint k="m" pad="Y">Chart</Hint><Hint k="l" pad="LB">Log</Hint>
         <Hint k="Escape" pad="Start">Menu</Hint>{G.pet && <Hint k="p">Pet</Hint>}

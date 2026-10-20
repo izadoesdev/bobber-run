@@ -17,7 +17,7 @@
   border: 0.1em solid rgba(122, 85, 48, 0.7); box-shadow: 0 0.3em 0.8em rgba(0, 0, 0, 0.3); }
 .chat-panel header { display: flex; align-items: baseline; gap: 0.6em; font-size: var(--fs-s, 0.86em); padding: 0 0.2em; }
 .chat-panel header .muted { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-x { font: inherit; font-size: 1.3em; line-height: 1; padding: 0 0.3em; color: #efe9dc; background: none; border: 0; cursor: pointer; }
+.chat-x { font-size: 1.3em; line-height: 1; padding: 0 0.3em; color: #efe9dc; cursor: pointer; }
 .chat-x:hover { color: var(--gold, #f0cf6a); }
 .chat-log { display: flex; flex-direction: column; gap: 0.15em; max-height: 14em; overflow-y: auto; }
 .chat-log .chat-line { background: none; padding: 0.05em 0.3em; }
@@ -27,7 +27,7 @@
 .dock { font-size: var(--fs-s, 0.86em); gap: 0.5em; padding: 0.2em 0.3em 0.2em 0.6em; }
 .dock .dot { width: 0.55em; height: 0.55em; border-radius: 50%; background: var(--muted); flex: none; }
 .dock .dot.online { background: var(--good); } .dock .dot.connecting { background: var(--warn); }
-.dock-btn { font: inherit; font-weight: 700; color: #efe9dc; background: rgba(255, 255, 255, 0.08); border: 0.08em solid rgba(240, 207, 106, 0.45); border-radius: 0.3em;
+.dock-btn { font-weight: 700; color: #efe9dc; background: rgba(255, 255, 255, 0.08); border: 0.08em solid rgba(240, 207, 106, 0.45); border-radius: 0.3em;
   padding: 0.1em 0.5em; cursor: pointer; display: inline-flex; align-items: center; gap: 0.35em; }
 .dock-btn:hover { background: rgba(240, 207, 106, 0.18); }
 .dock-btn kbd { font: inherit; font-size: 0.85em; padding: 0 0.3em; border-radius: 0.2em; background: rgba(255, 255, 255, 0.85); color: #1b2a33; }
@@ -48,7 +48,7 @@ html.touch .dock-btn { min-height: 36px; }
 .cta-sub { font-size: 0.72em; opacity: 0.85; font-weight: 400; }
 .cta-signed { margin: 0.8em 0 0; text-align: center; text-shadow: 0 0.08em 0 #000a; }
 /* the online count in the dock opens the leaderboard; the title screen shows it too */
-.dock-text { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.dock-text { cursor: pointer; }
 .dock-text:hover { text-decoration: underline; text-underline-offset: 0.2em; }
 .online-now { margin: 0.6em 0 0; display: flex; align-items: center; gap: 0.45em; justify-content: center; font-size: var(--fs-s, 0.86em); }
 .online-now .dot { width: 0.55em; height: 0.55em; border-radius: 50%; background: var(--good, #9ad98f); }

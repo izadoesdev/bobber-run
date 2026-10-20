@@ -1,5 +1,5 @@
 // Boat physics: thrust, drag, steering, wind gusts, contacts with land and solids, crashes and sinking.
-import { clamp } from '../config';
+import { clamp, frac } from '../config';
 import { hBil, poisNear } from '../world';
 import { WX } from '../weather';
 import { sfx } from '../audio';
@@ -9,11 +9,10 @@ import { BOATS } from '../econ';
 import { ONLINE } from '../online';
 import type { Poi, Solid } from '../types';
 import { G, inp } from './state';
-import { boatDef, hpMax, keelLvl, speedMul, sailEff, windAngle, toWorld } from './rules';
+import { boatDef, hpMax, keelLvl, speedMul, sailEfficiency, windAngle, toWorld } from './rules';
 import { spawn, toast, jitter, burst } from './feedback';
 import { cancelFishing } from './fishing';
 
-const frac = (x: number): number => x - Math.floor(x);
 
 // the hull outline as 18 points on an ellipse, slightly blunter at the stern
 const hullCache: Record<string, [number, number][]> = {};
@@ -104,7 +103,7 @@ function onImpact(speed: number, at: { x: number; y: number; nx: number; ny: num
   }
   if (speed < 9) { sfx('scrape', 0.4 + k); return; }
   G.shake = Math.max(G.shake, 1.5 + k * 5);
-  sfx('crash', 0.6 + k * 0.7, 1.1 - k * 0.3);
+  sfx('crash', 0.6 + k * 0.7);
   for (let i = 0; i < 3 + k * 10; i++) {
     const a = Math.random() * 6.28, sp = 6 + Math.random() * 22;
     spawn({ kind: 'debris', x: at.x, y: at.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1 + Math.random() * 1.5 });
@@ -154,7 +153,7 @@ export function physicsStep(dt: number): void {
   vf *= Math.exp(-(k + 2.2 * shallow) * dt);
   vs *= Math.exp(-(3.2 + 3 * shallow) * dt);
   let push = 20 * speedMul() * bd.accel;
-  if (bd.prop === 'SAIL') push *= sailEff(b.a) * (1 + 0.3 * WX.wind);
+  if (bd.prop === 'SAIL') push *= sailEfficiency() * (1 + 0.3 * WX.wind);
   if (!G.fish) vf += (thr * push - rev * push * 0.45) * dt;
   const turnT = steer * 1.25 * bd.turn * (0.6 + 0.4 * Math.min(1, Math.abs(vf) / 22));
   b.w += (turnT - b.w) * (1 - Math.exp(-4 * dt));
@@ -194,10 +193,9 @@ function rowOars(dt: number, thr: number, rev: number, steer: number): void {
       const [x, y] = toWorld(back ? -OAR.sweep : OAR.sweep, side * OAR.reach);
       spawn({ kind: 'ring', x, y, life: 1.1, r0: 1, grow: 6 });
       burst('dot', x, y, 4, 14, 0.45);
-      sfx('oar', 0.65, 1, side * 0.35);
+      sfx('oar', 0.65, side * 0.35);
     }
   }
-  b.phase = b.phaseR;
 }
 
 export function sink(): void {

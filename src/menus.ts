@@ -6,7 +6,7 @@ import { SPECIES } from './econ';
 import { ROWS, ACTIONS, applySettings, resetBinds } from './settings';
 import { talkNext } from './story';
 import { NET, sendEmote, EMOTES } from './net';
-import { TITLE_ITEMS, PAUSE_ITEMS } from './ui/index';
+import { TITLE_ITEMS, PAUSE_ITEMS } from './ui/menus';
 import { BOARDS } from './ui/leaders';
 import { closeIsland } from './ui/island';
 import { sfx } from './audio';

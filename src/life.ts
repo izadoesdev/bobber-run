@@ -4,7 +4,7 @@
 // The only boats on the water are real players' (see online.ts).
 import { G, spawn, toWorld, darkness, windAngle } from './game';
 import { hAt, heightAt, hasTile, TS } from './world';
-import { W, H } from './config';
+import { W, H, clamp, wrapAngle } from './config';
 import { WX } from './weather';
 import { BOATS } from './econ';
 import { hash, mulberry } from './noise';
@@ -89,7 +89,6 @@ export interface Dolphin {
   wv: number;
 }
 export interface Pod { t: number; m: Dolphin[] }
-export interface LifeStats { breaches: number; slaps: number; spouts: number; giants: number; calls: number }
 export interface Life {
   whales: Whale[]; pods: Pod[]; giants: Giant[]; jellies: Jelly[];
   /** countdowns to the next spawn attempt */
@@ -99,19 +98,15 @@ export interface Life {
   swarms: Map<string, Swarm>;
   /** cooldown between whale calls */
   callCd: number;
-  /** counters for debugging/tests */
-  stats: LifeStats;
 }
 
 export const LIFE: Life = {
   whales: [], pods: [], giants: [], jellies: [],
   nextWhale: 20, nextPod: 12, nextGiant: 50, t: 0,
-  swarms: new Map(), callCd: 0, stats: { breaches: 0, slaps: 0, spouts: 0, giants: 0, calls: 0 },
+  swarms: new Map(), callCd: 0,
 };
 
 const TAU = Math.PI * 2, rnd = () => Math.random() - 0.5;
-const wrap = (d: number) => Math.atan2(Math.sin(d), Math.cos(d));
-const clamp01 = (v: number) => v < 0 ? 0 : v > 1 ? 1 : v;
 const ease = (v: number, target: number, rate: number, dt: number) => v + (target - v) * (1 - Math.exp(-rate * dt));
 // height without forcing a 128x128 tile build far from the camera (whales roam off-screen)
 const depth = (x: number, y: number) => hasTile(Math.floor(x / TS), Math.floor(y / TS)) ? hAt(x, y) : heightAt(x, y);
@@ -122,7 +117,7 @@ function hear(x: number, y: number, range = 280): [number, number] | null {
   return v > 0.05 ? [v, Math.max(-1, Math.min(1, (x - b.x) / 160))] : null;
 }
 let dark = 0;                                                 // darkness() cached per frame
-const glowK = () => clamp01((dark - 0.25) / 0.5);              // plankton/jelly glow strength
+const glowK = () => clamp((dark - 0.25) / 0.5, 0, 1);              // plankton/jelly glow strength
 function glow(x: number, y: number, sp = 4, life = 1.2, size = 1.2): void {
   spawn({ kind: 'glow', x, y, z: 0, vx: rnd() * sp, vy: rnd() * sp, life: life * (0.7 + Math.random() * 0.6), size: size * (0.7 + Math.random() * 0.6) });
 }
@@ -158,17 +153,15 @@ function spout(w: Whale, k = 1): void {
       vx: rnd() * 5 + wx, vy: wy - (5 + Math.random() * 7) * s, vz: (12 + Math.random() * 9) * Math.sqrt(s), life: 0.8 + Math.random() * 0.6,
     });
   }
-  LIFE.stats.spouts++;
   const hv = hear(bx, by, 200);
-  if (hv) sfx('splash', 0.18 * hv[0] * s, 1.6, hv[1]);
+  if (hv) sfx('splash', 0.18 * hv[0] * s, hv[1]);
 }
 function call(w: Whale, under: boolean): void {
   if (LIFE.callCd > 0) return;
   const hv = hear(w.x, w.y, 300);
   if (!hv) return;
-  LIFE.callCd = 7 + Math.random() * 8; LIFE.stats.calls++;
-  const pitch = (w.size < 0.7 ? 1.45 : 0.85 + Math.random() * 0.25) * (under ? 0.9 : 1);   // calves call higher
-  sfx('whale', (under ? 0.35 : 0.6) * hv[0], pitch, hv[1]);
+  LIFE.callCd = 7 + Math.random() * 8;
+  sfx('whale', (under ? 0.35 : 0.6) * hv[0], hv[1]);
 }
 function splash(x: number, y: number, s: number, big: boolean): void {
   for (let i = 0; i < (big ? 3 : 2); i++) spawn({ kind: 'ring', x: x + rnd() * 4, y: y + rnd() * 4, life: 1.2 + i * 0.45, r0: (2 + i * 2) * s, grow: (big ? 14 : 7) * s * (1 + i * 0.3) });
@@ -211,14 +204,14 @@ function updateWhale(w: Whale, dt: number): void {
       if (db < 40) { w.cur.st = 'circle'; w.cur.last = ang; }
     } else {
       want = ang + w.cur.dir * (Math.PI / 2 + Math.max(-0.6, Math.min(0.6, (db - 34) * 0.04)));
-      w.cur.acc += Math.abs(wrap(ang - w.cur.last)); w.cur.last = ang;
+      w.cur.acc += Math.abs(wrapAngle(ang - w.cur.last)); w.cur.last = ang;
       if (w.cur.acc > TAU) { w.cur = null; w.curDone = true; w.ta = ang; }
     }
     turn = 0.45;
   } else if (Math.random() < dt * 0.04) want = w.a + rnd() * 1.4;  // wander
   steerWhale(w, want, dt);
   if (w.avoid || w.cur) turn = 0.5;
-  w.a += Math.max(-turn * dt, Math.min(turn * dt, wrap(w.ta - w.a)));
+  w.a += Math.max(-turn * dt, Math.min(turn * dt, wrapAngle(w.ta - w.a)));
   let sp = 5, zt = w.z, pitch = 0, tail = 0, roll = Math.sin(LIFE.t * 0.4 + w.seed) * 0.06, mouth = 0;
   switch (w.phase) {
     case 'swim':                                             // long deep dive, nearly invisible
@@ -261,13 +254,13 @@ function updateWhale(w: Whale, dt: number): void {
       if (!w.splashed && pz < 0 && w.z >= 0) {               // bursting out
         w.splashed = 1; splash(hx, hy, s * 0.6, false);
         const hv = hear(hx, hy);
-        if (hv) sfx('splash', 0.5 * hv[0], 0.8, hv[1]);
+        if (hv) sfx('splash', 0.5 * hv[0], hv[1]);
       }
       if (w.splashed === 1 && u > 0.5 && w.z <= 1.5) {        // and crashing back down
-        w.splashed = 2; splash(hx, hy, s, true); LIFE.stats.breaches++;
+        w.splashed = 2; splash(hx, hy, s, true);
         const hv = hear(hx, hy, 320);
         if (hv) {
-          sfx('bigsplash', hv[0] * s, s < 0.7 ? 1.3 : 0.9 + Math.random() * 0.2, hv[1]);
+          sfx('bigsplash', hv[0] * s, hv[1]);
           if (db < 90) G.shake = Math.max(G.shake, 2.5 * (1 - db / 90));
         }
       }
@@ -280,9 +273,9 @@ function updateWhale(w: Whale, dt: number): void {
       tail = k < 0.72 ? Math.sin(k / 0.72 * Math.PI / 2) : Math.max(0, 1 - (k - 0.72) / 0.12);
       if (prev < 0.82 && k >= 0.82 && w.t > dt) {
         const tx = w.x - Math.cos(w.a) * 13 * s, ty = w.y - Math.sin(w.a) * 13 * s;
-        splash(tx, ty, s * 0.7, false); LIFE.stats.slaps++;
+        splash(tx, ty, s * 0.7, false);
         const hv = hear(tx, ty);
-        if (hv) sfx('bigsplash', 0.45 * hv[0] * s, 1.35, hv[1]);
+        if (hv) sfx('bigsplash', 0.45 * hv[0] * s, hv[1]);
         if (--w.slaps <= 0) setPhase(w, 'dive', 6);
       }
       break;
@@ -315,7 +308,7 @@ function updateCalf(c: Whale, m: Whale, dt: number): void {
   const tx = m.x - ca * 6 + sa * 10, ty = m.y - sa * 6 - ca * 10, dx = tx - c.x, dy = ty - c.y, d = Math.hypot(dx, dy);
   c.t += dt; c.spoutT -= dt;
   c.ta = d > 1 ? Math.atan2(dy, dx) : m.a;
-  c.a += Math.max(-1.2 * dt, Math.min(1.2 * dt, wrap((d > 3 ? c.ta : m.a) - c.a)));
+  c.a += Math.max(-1.2 * dt, Math.min(1.2 * dt, wrapAngle((d > 3 ? c.ta : m.a) - c.a)));
   c.sp = ease(c.sp, Math.min(14, m.sp + d * 0.5), 2, dt);
   c.x += Math.cos(c.a) * c.sp * dt; c.y += Math.sin(c.a) * c.sp * dt;
   const breach = m.phase === 'breach';                       // calves stay up and watch
@@ -384,7 +377,6 @@ function spawnGiant(): boolean {
       x: sx, y: sy, a, a0: a, z: -14, len: D.len[0] + Math.random() * (D.len[1] - D.len[0]), kind, glow: 0, ph: Math.random() * TAU,
       t: 0, dur, v, zt: D.z, seed: Math.random() * 10,
     });
-    LIFE.stats.giants++;
     return true;
   }
   return false;
@@ -404,7 +396,7 @@ function giants(dt: number): void {
     // shallows ahead: sink away early
     if (g.t < g.dur * 0.8 && depth(g.x + Math.cos(g.a) * g.len, g.y + Math.sin(g.a) * g.len) > -0.3) g.t = g.dur * 0.8;
     // rise from the deep, cruise, sink again
-    const u = g.t / g.dur, fade = Math.min(clamp01(u / 0.2), clamp01((1 - u) / 0.2));
+    const u = g.t / g.dur, fade = Math.min(clamp(u / 0.2, 0, 1), clamp((1 - u) / 0.2, 0, 1));
     const f = fade * fade * (3 - 2 * fade);
     g.z = -14 + (g.zt + 14) * f;
     g.glow = f * (g.kind === 'squid' ? 0.25 + 0.75 * gk : g.kind === 'eel' ? 0.65 * gk : g.kind === 'ray' ? 0.15 * gk : 0);
@@ -520,7 +512,7 @@ function dolphins(dt: number): void {
     const v = Math.hypot(m.vx, m.vy), vmax = Math.max(30, Math.hypot(b.vx, b.vy) * 1.45);
     if (v > vmax) { m.vx *= vmax / v; m.vy *= vmax / v; }
     m.x += m.vx * dt; m.y += m.vy * dt;
-    if (v > 2) { m.a += wrap(Math.atan2(m.vy, m.vx) - m.a) * Math.min(1, dt * 5); }
+    if (v > 2) { m.a += wrapAngle(Math.atan2(m.vy, m.vx) - m.a) * Math.min(1, dt * 5); }
     if (gk > 0 && Math.random() < dt * 10 * gk) glow(m.x, m.y, 6, 1.1);   // dolphins streak through the glow
   }
   // a pod stays a while, then peels away and is removed only once every dolphin is off-screen

@@ -1,14 +1,15 @@
 // Shared UI primitives: icons, keycaps, bars, canvases, money, and the pointer-vs-keyboard selection model.
-import type { ComponentChildren, CSSProperties, HTMLAttributes, TargetedMouseEvent } from 'preact';
+import type { ComponentChildren, HTMLAttributes, TargetedMouseEvent } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
-import { clamp } from '../config';
-import { G, equipment } from '../game';
+import { W, H, clamp } from '../config';
+import { G } from '../game';
 import { boundKey } from '../settings';
-import { boatFrame, SHIPPED, NA, PLAIN } from '../models';
-import type { BoatId } from '../types';
+import { boatFrame, SHIPPED, NA, PLAIN, type Fit } from '../models';
+import type { BoatId, WeatherState } from '../types';
 import { icon, fishIcon } from './icons';
 
-type Equipment = ReturnType<typeof equipment>;
+/** World position -> percent of the view, for things pinned over the canvas. */
+export const viewPct = (x: number, y: number): [number, number] => [(x - G.cam.x) / W * 100, (y - G.cam.y) / H * 100];
 
 /** Draws into a canvas sized to its CSS box at device resolution. */
 export type DrawFn = (ctx: CanvasRenderingContext2D, w: number, h: number, dpr: number) => void;
@@ -38,9 +39,9 @@ export function Canvas({ draw, cls, ...rest }: CanvasProps) {
 }
 
 export type IconSize = '' | 's' | 'l' | 'xl';
-interface IconProps { k?: string; src?: string; size?: IconSize; cls?: string; style?: CSSProperties }
-export const Icon = ({ k = '', src, size = '', cls = '', style }: IconProps) =>
-  <img class={`icon ${size} ${cls}`} src={src || icon(k)} style={style} draggable={false} alt="" />;
+interface IconProps { k?: string; src?: string; size?: IconSize; cls?: string }
+export const Icon = ({ k = '', src, size = '', cls = '' }: IconProps) =>
+  <img class={`icon ${size} ${cls}`} src={src || icon(k)} draggable={false} alt="" />;
 
 export const Fish = ({ sp, size = '', cls = '' }: { sp: number; size?: IconSize; cls?: string }) =>
   <Icon src={fishIcon(sp)} size={size} cls={cls} />;
@@ -55,10 +56,10 @@ export const Pips = ({ n, of }: { n: number; of: number }) => (
   </div>
 );
 
-// one formatter: toLocaleString builds a new one on every call, and the HUD formats money every frame
-const thousands = new Intl.NumberFormat('en-US');
-export const money = (n: number) => '$' + thousands.format(Math.round(n));
 export const cap1 = (s: string) => s[0].toUpperCase() + s.slice(1);
+/** "3:07" for a count of seconds */
+export const clockText = (secs: number) => `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, '0')}`;
+export const WX_ICON: Record<WeatherState, string> = { clear: 'sun', cloudy: 'cloud', rain: 'rain', storm: 'storm' };
 
 // ---------- keycaps ----------
 const ARROW: Record<string, number> = { ArrowUp: 0, ArrowRight: 90, ArrowDown: 180, ArrowLeft: 270 };
@@ -97,7 +98,7 @@ export const keyed = (s: string) => s.split(/(\[[^\]]+\])/).map(part => {
 
 // ---------- boats ----------
 /** An animated, turning boat for preview panels. */
-export function boatPreview(id: BoatId, eq: Equipment, speed = 6): DrawFn {
+export function boatPreview(id: BoatId, eq: Fit, speed = 6): DrawFn {
   return (ctx, w, h) => {
     ctx.clearRect(0, 0, w, h);
     ctx.imageSmoothingEnabled = false;
@@ -143,7 +144,7 @@ addEventListener('mousemove', e => {
 export const byPointer = (fn: () => void) => () => { if (pointer && !G.pad) fn(); };
 
 // keeps the cursor row visible in scrolling lists when moved by keyboard or pad
-export function useScrollTo(sel: boolean) {
+function useScrollTo(sel: boolean) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (sel && ref.current && (!pointer || G.pad)) ref.current.scrollIntoView({ block: 'nearest' });
@@ -151,23 +152,16 @@ export function useScrollTo(sel: boolean) {
   return ref;
 }
 
-interface CellProps { sel: boolean; cls: string; onClick: () => void; children?: ComponentChildren }
-/** A grid cell that scrolls into view when selected. */
-export function Cell({ sel, cls, onClick, children }: CellProps) {
-  const ref = useScrollTo(sel);
-  return <div ref={ref} class={cls + (sel ? ' sel' : '')} onClick={onClick}>{children}</div>;
-}
-
-interface SetRowProps {
+interface CellProps {
   sel: boolean;
-  /** hovering with a real mouse selects the row */
-  onEnter: () => void;
+  /** hovering with a real mouse selects it */
+  onEnter?: () => void;
   onClick: (e: TargetedMouseEvent<HTMLDivElement>) => void;
   cls?: string;
   children?: ComponentChildren;
 }
-/** A list row in a dialog: hover selects, click activates, and keyboard selection scrolls it into view. */
-export function SetRow({ sel, onEnter, onClick, children, cls = 'item setrow' }: SetRowProps) {
+/** A list row or grid cell: click activates, keyboard selection scrolls it into view, and with onEnter hover selects. */
+export function Cell({ sel, onEnter, onClick, children, cls = 'item setrow' }: CellProps) {
   const ref = useScrollTo(sel);
-  return <div ref={ref} class={cls + (sel ? ' sel' : '')} onMouseMove={byPointer(onEnter)} onClick={onClick}>{children}</div>;
+  return <div ref={ref} class={cls + (sel ? ' sel' : '')} onMouseMove={onEnter && byPointer(onEnter)} onClick={onClick}>{children}</div>;
 }

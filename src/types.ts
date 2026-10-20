@@ -157,8 +157,8 @@ export interface Boat {
   vx: number; vy: number;
   /** previous physics step's pose, for render interpolation */
   px: number; py: number; pa: number;
-  /** oar stroke phases (rowboat only); `phase` mirrors the right oar */
-  phase: number; phaseL: number; phaseR: number;
+  /** oar stroke phases (rowboat only) */
+  phaseL: number; phaseR: number;
   hp: number;
 }
 
@@ -296,18 +296,13 @@ export interface PortRow {
   key?: string;
   /** holding the button keeps buying */
   repeat?: boolean;
-  c?: Contract;
   fish?: number;
   boat?: BoatDef;
-  pt?: Paint;
   paint?: string;
   pr?: Project;
   st?: NeedStatus;
   q?: Port;
-  /** islands tab: the island's key ("i,j") */
-  isle?: string;
-  /** upgrades: what the current level does, and [level, max] */
-  now?: string;
+  /** upgrades: [level, max] */
   pips?: [number, number];
 }
 export type PortItem = PortHeader | PortRow;
@@ -341,8 +336,6 @@ export interface Progress {
   fleet: Record<string, FleetBoat>;
   /** wreck id -> day number of the last diving-bell dive */
   dives: Record<string, number>;
-  finale: boolean;
-  goalIdx: number;
   goalsDone: number[];
   maps: TreasureMap[];
   /** a spot the player marked on the chart: a line to it on the minimap and chart, cleared on arrival */

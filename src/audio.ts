@@ -510,8 +510,7 @@ function duckMusic(ctx: AudioContext, name: SfxName): void {
 
 const RETRIGGER = 0.06;                                          // the same sound twice within 60 ms only gets louder and phasier
 const lastPlayed: Partial<Record<SfxName, number>> = {};
-// `_rate` is accepted for callers that pass a playback rate; the synthesised voices do not use it
-export function sfx(name: SfxName, vol = 1, _rate = 1, pan = 0): void {
+export function sfx(name: SfxName, vol = 1, pan = 0): void {
   const caption = CAPTION[name];
   if (onCaption && caption) onCaption(caption);
   if (!ac || ac.state !== 'running') return;

@@ -1,11 +1,10 @@
 // Keyboard and gamepad. Raw events become entries in G.keys (held) and G.pressed (this frame),
 // translated through the player's key bindings. The cheat console and key rebinding take raw typing.
-import { G, saveGame } from './game';
+import { G, saveGame, toast } from './game';
 import { remap, bind, toggleFullscreen } from './settings';
 import { runCheat } from './cheats';
 import { unlockAudio, suspendAudio, sfx } from './audio';
 import { stepZoom } from './camera';
-import { toast } from './game';
 import { dropCourse } from './game/autopilot';
 import { initTouch } from './ui/touch';
 

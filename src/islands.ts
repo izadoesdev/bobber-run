@@ -2,7 +2,7 @@
 // The main island of every world cell can be bought (with real money, through Stripe; admins claim free); the price
 // falls with distance from Alderhaven. A flag picked before paying waits here until the island is ours, then uploads.
 import { G } from './game';
-import { claimableNear, type Claimable } from './world';
+import { claimableNear } from './world';
 import { NET, watchIslands, uploadIslandLogo, type IslandRow } from './net';
 import { toast } from './game/feedback';
 import { islandPrice } from '../convex/islandRules';
@@ -58,8 +58,3 @@ let returnNote: { s: string; good: boolean } | null = null;
   }
 }
 
-/** The claimable island the boat is at (within its shore plus a little water), if any. */
-export function islandHere(): Claimable | null {
-  const b = G.boat;
-  return claimableNear(b.x, b.y, 90).find(c => Math.hypot(c.x - b.x, c.y - b.y) < c.R + 90) ?? null;
-}

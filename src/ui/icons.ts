@@ -3,7 +3,7 @@ import { Vox, mat, renderVox } from '../voxel';
 import { M } from '../models';
 import { SPECIES } from '../econ';
 import { FISH_T } from '../fishart';
-import { hex } from '../config';
+import { hex, toHex } from '../config';
 
 type Mat = number;
 
@@ -413,7 +413,6 @@ export function icon(key: string): string {
 
 // fish: the species sprite extruded into a voxel slab, seen side-on
 const matCache = new Map<string, Mat>();
-const toHex = (rgb: number[]) => '#' + rgb.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
 function matFor(c: string): Mat {
   let m = matCache.get(c);
   if (m === undefined) {

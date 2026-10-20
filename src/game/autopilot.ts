@@ -5,8 +5,9 @@ import { hAt, poisNear } from '../world';
 import { sfx } from '../audio';
 import type { Poi, Solid } from '../types';
 import { G } from './state';
-import { boatDef, boatSpeed, sailEff, speedMul } from './rules';
+import { boatDef, boatSpeed, sailEfficiency, speedMul } from './rules';
 import { toast } from './feedback';
+import { wrapAngle } from '../config';
 
 /** Treated as land: a little deeper than where the hull grounds, so the boat keeps clear of the beach. */
 const LAND = -0.045;
@@ -96,7 +97,6 @@ function press(k: SteerKey, on: boolean): void {
 }
 
 const arriveR = (): number => 3 + boatDef().B;
-const wrap = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
 
 /**
  * Drive toward the course for one frame: pick a clear heading, steer onto it, and hold the speed at what the boat
@@ -130,16 +130,16 @@ export function steerCourse(): void {
   } else c.side = 0;
 
   // speed: what drag and backing oars (or engine) can still stop from, before the target and before the shore
-  const k = 0.6 * bd.accel, brake = 20 * speedMul() * bd.accel * 0.45 * (bd.prop === 'SAIL' ? sailEff(b.a) : 1);
+  const k = 0.6 * bd.accel, brake = 20 * speedMul() * bd.accel * 0.45 * (bd.prop === 'SAIL' ? sailEfficiency() : 1);
   const stopFrom = (dist: number): number => { const s = Math.max(0, dist); return k * s + Math.sqrt(brake * s); };
   const shore = clearRun(b.x, b.y, b.a, 30 + boatSpeed() * 2) - bd.L;
-  const err = wrap(heading - b.a), turnFirst = Math.abs(err) > 1.1;
+  const err = wrapAngle(heading - b.a), turnFirst = Math.abs(err) > 1.1;
   let vMax = Math.min(stopFrom(d - 2), stopFrom(shore - 3));
   if (turnFirst) vMax = Math.min(vMax, 5);
   if (ahead < 6 + bd.L) vMax = 0;                                       // boxed in: stop
   const vf = b.vx * Math.cos(b.a) + b.vy * Math.sin(b.a);
 
-  const lead = wrap(err - b.w * 0.3), dead = 0.05;                     // ease off early so it doesn't overshoot
+  const lead = wrapAngle(err - b.w * 0.3), dead = 0.05;                     // ease off early so it doesn't overshoot
   press('ArrowRight', lead > dead);
   press('ArrowLeft', lead < -dead);
   press('ArrowUp', !turnFirst && vf < vMax - 0.5);

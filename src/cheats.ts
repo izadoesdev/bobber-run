@@ -24,7 +24,7 @@ export const CHEATS: Cheat[] = [
     G.owned = BOATS.map(b => b.id);
   } },
   { code: 'harbour', what: 'Finish every Alderhaven project but the last', run: () => { G.projects = PROJECTS.filter(p => p.id !== 'grand').map(p => p.id); } },
-  { code: 'grandfinale', what: 'Finish Alderhaven and see the ending', run: () => { G.projects = PROJECTS.map(p => p.id); G.finale = true; return 'finale'; } },
+  { code: 'grandfinale', what: 'Finish Alderhaven and see the ending', run: () => { G.projects = PROJECTS.map(p => p.id); return 'finale'; } },
   { code: 'fullhold', what: 'Fill the hold with fish', run: () => {
     for (let i = 0; G.hold.length < cap() && i < 99; i++) {
       const sp = Math.floor(Math.random() * (SPECIES.length - 1));   // anything but the Old One

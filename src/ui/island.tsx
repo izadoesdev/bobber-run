@@ -1,6 +1,6 @@
 // Claimable islands. While sailing, only the owners' signs show (flag, name and a link if they've added one). Buying
 // and managing happen in the island card, opened from a port's Islands tab, from the sea chart, or by clicking a sign.
-import { W, H } from '../config';
+import { W, H, money } from '../config';
 import { G, saveGame } from '../game';
 import { claimableNear } from '../world';
 import { sfx } from '../audio';
@@ -8,11 +8,9 @@ import { NET, buyIsland, claimIsland, renameIsland, releaseIsland, uploadIslandL
 import { ISLANDS, islandPrice, stashLogo } from '../islands';
 import { setWaypoint } from '../waypoint';
 import { pixelLogo, type Logo } from './logo';
+import { viewPct } from './parts';
 import { track, bucket, flushAnalytics } from '../analytics';
 
-/** Islands are bought with real money (US dollars, through Stripe), unlike everything priced in coins. */
-const usd = (n: number): string => `$${n.toLocaleString('en-US')}`;
-const pct = (x: number, y: number): [number, number] => [(x - G.cam.x) / W * 100, (y - G.cam.y) / H * 100];
 /** Owners' links open in a new tab, after saying plainly that they leave the game. */
 export function visit(url: string): void {
   if (confirm(`You're leaving Bobber Run to visit:\n${url}`)) window.open(url, '_blank', 'noopener,noreferrer');
@@ -26,7 +24,7 @@ export function IslandSigns() {
     const row = ISLANDS.get(c.key);
     if (!row) continue;
     // over the island's middle, or held at the edge of the view while some of the island is on screen
-    const [cx, cy] = pct(c.x, c.y - c.R * 0.35), x = Math.min(90, Math.max(10, cx)), y = Math.min(85, Math.max(30, cy));   // clear of the top HUD
+    const [cx, cy] = viewPct(c.x, c.y - c.R * 0.35), x = Math.min(90, Math.max(10, cx)), y = Math.min(85, Math.max(30, cy));   // clear of the top HUD
     out.push(
       <div class={'island-sign' + (row.mine ? ' mine' : '')} key={c.key} style={{ left: x + '%', top: y + '%' }}>
         <button data-track="island-sign" class="sign-main" onClick={() => openIsland(c.key, 'play')}>{row.logoUrl && <img src={row.logoUrl} alt="" />}<span>{row.name}</span></button>
@@ -109,7 +107,7 @@ export function IslandDialog() {
           {row?.logoUrl && <span class="flag-box"><img class="flag" src={row.logoUrl} alt="" /></span>}
           <div class="grow">
             <h1>{row ? row.name : home ? 'The island of Alderhaven' : 'Unclaimed island'}</h1>
-            <p class="muted">{row ? (row.mine ? 'Your island' : `Owned by ${row.owner}`) : admin ? 'Free to claim (admin)' : `${usd(price)} · paid with Stripe`}</p>
+            <p class="muted">{row ? (row.mine ? 'Your island' : `Owned by ${row.owner}`) : admin ? 'Free to claim (admin)' : `${money(price)} · paid with Stripe`}</p>
           </div>
           {row?.url && <button data-track="island-visit" class="btn small-btn" onClick={() => visit(row.url!)}>Visit {host(row.url)} ↗</button>}
         </header>
@@ -123,7 +121,7 @@ export function IslandDialog() {
           {row && !row.mine && <button data-track="island-report" class="btn small-btn" disabled={f.busy} onClick={() => run(() => reportIsland(key), 'Thanks. A moderator will take a look')}>Report</button>}
           <span class="grow" />
           <button data-track="island-close" class="btn" onClick={closeIsland}>Close</button>
-          {!row && <button data-track="island-buy" class="btn primary" disabled={f.busy || !named || !!NET.profile?.guest} onClick={buy}>{f.busy ? 'Working…' : admin ? 'Claim' : `Buy · ${usd(price)}`}</button>}
+          {!row && <button data-track="island-buy" class="btn primary" disabled={f.busy || !named || !!NET.profile?.guest} onClick={buy}>{f.busy ? 'Working…' : admin ? 'Claim' : `Buy · ${money(price)}`}</button>}
           {row?.mine && <button data-track="island-save" class="btn primary" disabled={f.busy || !named} onClick={() => save(row)}>Save</button>}
         </footer>
       </div>

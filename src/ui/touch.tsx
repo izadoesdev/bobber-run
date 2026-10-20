@@ -12,7 +12,7 @@ import { NET } from '../net';
 import { ONLINE } from '../online';
 import { BOATS } from '../econ';
 import { unlockAudio } from '../audio';
-import { Icon, Fish } from './parts';
+import { Icon, Fish, viewPct } from './parts';
 
 // ---------- touch mode ----------
 // On from the first touch (or a coarse primary pointer at load), off again as soon as a mouse is used.
@@ -121,7 +121,7 @@ function Layer() {
 
 /** The course target: a small buoy-ring on the water. */
 function Pin({ x, y }: { x: number; y: number }) {
-  const left = (x - G.cam.x) / W * 100, top = (y - G.cam.y) / H * 100;
+  const [left, top] = viewPct(x, y);
   return (
     <svg class={'course-pin' + (SET.calm ? '' : ' live')} viewBox="0 0 20 20" style={{ left: left + '%', top: top + '%' }} aria-hidden="true">
       <circle cx="10" cy="10" r="7" fill="none" stroke="#1b2a33" stroke-width="3.4" />

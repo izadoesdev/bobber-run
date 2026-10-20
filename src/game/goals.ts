@@ -43,7 +43,6 @@ export function checkGoals(): void {
   GOALS.forEach((g, k) => {
     if (G.goalsDone.includes(k) || !g.done()) return;
     G.goalsDone.push(k);
-    G.goalIdx = G.goalsDone.length;
     addCoins(g.reward);                            // the coin floater says it; only big milestones get a toast
     if (g.reward >= 200) { toast(`${g.text}  +$${g.reward}`, 'good'); sfx('fanfare'); }
   });

@@ -1,5 +1,5 @@
 // Full-screen documents and panels: the sea chart, the logbook, the ship and hold, and the story journal.
-import { clamp } from '../config';
+import { clamp, money } from '../config';
 import { G, logged, cap, hpMax, boatDef, equipment, fishValue, speedMul, deckLvl, deckBoat } from '../game';
 import { SPECIES, UPGRADES, PAINTS, SUPPLIES, fmtKg } from '../econ';
 import { homePort, claimableNear } from '../world';
@@ -10,7 +10,7 @@ import { QUESTS, CHAPTERS, PEOPLE, currentQuest, questProgress, story } from '..
 import { guide, guideOn, stepLine } from '../game/guide';
 import type { UpgradeKey } from '../types';
 import { drawChart, compassRose } from './chart';
-import { Bar, Canvas, Cell, Fish, Hint, Icon, Key, Pips, boatPreview, money, type DrawFn } from './parts';
+import { Bar, Canvas, Cell, Fish, Hint, Icon, Key, Pips, boatPreview, type DrawFn } from './parts';
 
 // ---------- chart ----------
 let drag: [number, number] | null = null, moved = 0;

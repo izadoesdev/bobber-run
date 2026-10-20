@@ -39,7 +39,6 @@ export const PEOPLE: Record<Speaker, Person> = {
   wren: { name: 'Wren', role: 'Naturalist' },
   nell: { name: 'Nell', role: 'Your grandmother' },
 };
-const S = (g: GameState): Stats => g.stats;
 // the pier's fish count, in words, straight from the project data so the dialogue can't drift from it
 const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
 const pierNeed = PROJECTS.find(p => p.id === 'pier')!.need, pierFish = 'any' in pierNeed ? pierNeed.any : 4;
@@ -47,10 +46,10 @@ const pierFishText = `${WORDS[pierFish] ?? pierFish} fish`;
 const ports = (): number => [...G.found].filter(id => id.startsWith('port:')).length;
 export const CHAPTERS = ['A borrowed boat', 'The chartmaker', 'Night waters', 'The naturalist', 'The Old One'];
 export const QUESTS: Quest[] = [
-  { id: 'first-cast', ch: 0, by: 'maren', title: 'First cast', goal: 'Catch a fish', obj: (g, b) => [Math.min(1, S(g).caught - b.caught), 1], target: 'school', hint: 'Stop over the ripples and press Space to cast. When the bobber dips, press Space again.', reward: { coins: 20 },
+  { id: 'first-cast', ch: 0, by: 'maren', title: 'First cast', goal: 'Catch a fish', obj: (g, b) => [Math.min(1, g.stats.caught - b.caught), 1], target: 'school', hint: 'Stop over the ripples and press Space to cast. When the bobber dips, press Space again.', reward: { coins: 20 },
     intro: [['maren', 'So you are Nell\'s grandchild. Welcome to Alderhaven. Her old rowboat is yours now, and she would want you to use it.'], ['maren', 'See the ripples just off the pier? That is a school of fish. Stop over it, press Space to cast, and catch one.']],
     outro: [['maren', 'Well done. You fish just like Nell did.']] },
-  { id: 'market-day', ch: 0, by: 'maren', title: 'Market day', goal: 'Sell fish at a port', obj: (g, b) => [Math.min(1, S(g).sold - b.sold), 1], target: 'sell', hint: 'Slow down next to a pier, press E to dock, then choose "Sell your catch" in the Market tab.', reward: { shrimp: 5 },
+  { id: 'market-day', ch: 0, by: 'maren', title: 'Market day', goal: 'Sell fish at a port', obj: (g, b) => [Math.min(1, g.stats.sold - b.sold), 1], target: 'sell', hint: 'Slow down next to a pier, press E to dock, then choose "Sell your catch" in the Market tab.', reward: { shrimp: 5 },
     intro: [['maren', 'Now sell your fish for coins. Sail up to the pier, press E to dock, and sell them at the market.']],
     outro: [['maren', 'Good. Spend your coins on bait, repairs and better gear, and you will catch more.']] },
   { id: 'the-pier', ch: 0, by: 'maren', title: 'Mend the pier', goal: 'Fund "Mend the pier" in Alderhaven', obj: () => [projDone('pier') ? 1 : 0, 1], target: { project: 'pier' }, hint: 'Fund it in the Harbour tab at Alderhaven. Save up the coins first, then come back with the fish in your hold.', reward: { coins: 50 },
@@ -59,13 +58,13 @@ export const QUESTS: Quest[] = [
   { id: 'new-port', ch: 1, by: 'ida', title: 'A letter from Ida', goal: 'Find and chart a second port', obj: () => [Math.min(2, ports()), 2], target: 'port', hint: 'Ports are on the larger islands. Sail close to one to add it to your chart.', reward: { glow: 2 },
     intro: [['ida', 'Nell left her old sea chart with me years ago. I live at another port along the coast. Come and find me.']],
     outro: [['ida', 'There you are. Here is Nell\'s chart. She marked a wreck, and every lighthouse that went dark.']] },
-  { id: 'two-lights', ch: 1, by: 'ida', title: 'Dark towers', goal: 'Chart 2 lighthouses', obj: g => [Math.min(2, S(g).lights), 2], target: 'light', reward: { coins: 60 },
+  { id: 'two-lights', ch: 1, by: 'ida', title: 'Dark towers', goal: 'Chart 2 lighthouses', obj: g => [Math.min(2, g.stats.lights), 2], target: 'light', reward: { coins: 60 },
     intro: [['ida', 'Nell circled every lighthouse on her chart. Sail close to two of them to add them to yours.']],
     outro: [['ida', 'Their lamps are all dark. The keepers say someone put them out on purpose.']] },
-  { id: 'nells-wreck', ch: 1, by: 'ida', title: 'Nell\'s wreck', goal: 'Salvage a wreck', obj: (g, b) => [Math.min(1, S(g).wrecks - b.wrecks), 1], target: 'wreck', hint: 'Wrecks show as crosses on your chart. Stop beside one and press E.', reward: { coins: 80 },
+  { id: 'nells-wreck', ch: 1, by: 'ida', title: 'Nell\'s wreck', goal: 'Salvage a wreck', obj: (g, b) => [Math.min(1, g.stats.wrecks - b.wrecks), 1], target: 'wreck', hint: 'Wrecks show as crosses on your chart. Stop beside one and press E.', reward: { coins: 80 },
     intro: [['ida', 'Nell also marked a wreck. Stop beside a wreck and press E to salvage it. Maybe she left something there.']],
     outro: [['nell', '(A page from Nell\'s log, wrapped in oilcloth) "The lights went dark so it would sleep. Do not wake it, little fish."'], ['ida', '"It"? Ask Tobias, the old lighthouse keeper. He knew Nell better than anyone.']] },
-  { id: 'night-catch', ch: 2, by: 'tobias', title: 'By moonlight', goal: 'Catch a fish at night', obj: (g, b) => [Math.min(1, S(g).night - b.night), 1], target: 'night', hint: 'Night comes near the end of each day. With glow lures, fish bite twice as fast in the dark.', reward: { glow: 3 },
+  { id: 'night-catch', ch: 2, by: 'tobias', title: 'By moonlight', goal: 'Catch a fish at night', obj: (g, b) => [Math.min(1, g.stats.night - b.night), 1], target: 'night', hint: 'Night comes near the end of each day. With glow lures, fish bite twice as fast in the dark.', reward: { glow: 3 },
     intro: [['tobias', 'So you found Nell\'s page. Hm. There is more out there at night than you think, young one. Go and catch a fish after dark.']],
     outro: [['tobias', 'Some fish only come up at night. So does something much bigger.']] },
   { id: 'cold-water', ch: 2, by: 'tobias', title: 'Where the water turns cold', goal: 'Sail north into the cold water', obj: g => [coldness(g.boat.y) > 0.5 ? 1 : 0, 1], target: 'north', hint: 'Keep sailing north (up on your chart) until the water turns icy.', reward: { coins: 120 },
@@ -77,7 +76,7 @@ export const QUESTS: Quest[] = [
   { id: 'naturalist', ch: 3, by: 'wren', title: 'The naturalist', goal: 'Log 12 species', obj: () => [Math.min(12, logged()), 12], target: 'species', hint: 'Different fish come out at night, in rain, near wrecks and far from home.', reward: { coins: 200 },
     intro: [['wren', 'I am Wren. I study the fish of this coast, and Nell sent me her sketches for years. Help me finish her work: log twelve species.']],
     outro: [['wren', 'Twelve! Your logbook is better than mine already.']] },
-  { id: 'trophy', ch: 3, by: 'wren', title: 'A fish worth mounting', goal: 'Catch a trophy fish', obj: (g, b) => [Math.min(1, S(g).trophies - b.trophies), 1], target: 'trophy', hint: 'Bait raises the trophy chance, and storms raise it more.', reward: { glow: 3 },
+  { id: 'trophy', ch: 3, by: 'wren', title: 'A fish worth mounting', goal: 'Catch a trophy fish', obj: (g, b) => [Math.min(1, g.stats.trophies - b.trophies), 1], target: 'trophy', hint: 'Bait raises the trophy chance, and storms raise it more.', reward: { glow: 3 },
     intro: [['wren', 'Now catch a trophy: an extra-large fish. Bait gives you a better chance, and so do storms, if you are brave.']],
     outro: [['wren', 'A beauty. That one goes on the wall.']] },
   { id: 'dry-dock', ch: 3, by: 'maren', title: 'A dock for real ships', goal: 'Fund "Build the dry dock"', obj: () => [projDone('drydock') ? 1 : 0, 1], target: { project: 'drydock' }, hint: 'It needs three trophy fish. Keep them in your hold instead of selling them.', reward: { coins: 400 },

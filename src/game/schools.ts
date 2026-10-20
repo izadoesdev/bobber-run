@@ -6,7 +6,7 @@ import { SPECIES, activeAt } from '../econ';
 import { schoolLook } from '../species';
 import { sfx } from '../audio';
 import type { FightStyle, School } from '../types';
-import { W, H } from '../config';
+import { W, H, frac } from '../config';
 import { G } from './state';
 import { boatDef, env } from './rules';
 import { burst, spawn, toast } from './feedback';
@@ -85,7 +85,6 @@ function scare(s: School): void {
 /** Cruising speed and how often a fish picks a new line, by fight style; bottom fish idle along slower still. */
 const CRUISE: Record<FightStyle, number> = { steady: 3.5, darter: 5, generic: 5, jumper: 5.5, erratic: 5.5, boss: 3 };
 const TURN_S: Record<FightStyle, number> = { steady: 4, darter: 2.5, generic: 3, jumper: 3, erratic: 1.2, boss: 5 };
-const frac = (x: number): number => x - Math.floor(x);
 /**
  * hAt without its side effect: where the height tile is not built yet, the same value (the tile's float32 height
  * at that integer cell) is computed directly and remembered. Schools far out at the edge of the swim radius would

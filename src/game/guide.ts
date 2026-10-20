@@ -2,14 +2,17 @@
 // The HUD chip, the objective marker, the minimap, the sea chart and the journal all read `guide()`.
 // Also the first-session tips: a few gentle notes at the right moments, each shown once.
 import { SPECIES, SP, UPGRADES, PROJECTS } from '../econ';
-import { cellPois, poisNear, schoolsNear, homePort, LAIR } from '../world';
+import { poisNear, schoolsNear, homePort, LAIR } from '../world';
 import { SET } from '../prefs';
 import { currentQuest, type Quest, type QuestTarget } from '../story';
 import type { Point, Port, Project, ProjectId, School, UpgradeKey } from '../types';
 import { G } from './state';
 import { boatDef, canLand, cap, hpMax, isNight, dayFrac, DAYLEN, logged } from './rules';
 import { needStatus, nextProject } from './port';
+import { castRange } from './fishing';
+import { portById } from './save';
 import { schoolActive, schoolShown } from './schools';
+import { dirTo, money } from '../config';
 
 // The player's setting for the objective marker: `guide` in Settings (lead-owned), on unless set to false.
 export const guideOn = (): boolean => SET.guide;
@@ -38,16 +41,9 @@ function nearest<T extends Point>(list: Iterable<T>, ok: (p: T) => boolean = () 
 }
 /** The nearest charted port. */
 export function nearestPort(): Port {
-  const ports: Port[] = [];
-  for (const id of G.found) {
-    const m = /^port:(-?\d+),(-?\d+)$/.exec(id);
-    const p = m && cellPois(+m[1], +m[2]).find(q => q.id === id);
-    if (p && p.type === 'port') ports.push(p);
-  }
-  return nearest(ports) || homePort();
+  return nearest([...G.found].filter(id => id.startsWith('port:')).map(portById)) || homePort();
 }
 const SEARCH = 2600;
-const castRange = (): number => 50 + boatDef().L * 0.5;
 const dockNear = (): number => 30 + boatDef().L;
 const canCatch = (s: School): boolean => !s.boss && canLand(s.sp);
 /** The nearest school that will bite now and that your rod can land, optionally of a kind. */
@@ -59,8 +55,6 @@ function nearestSchool(ok: (s: School) => boolean = () => true, rad = 700): Scho
 const at = (text: string, p: Point | null | undefined, icon: string, near: number): Step => p ? { text, at: { x: p.x, y: p.y }, icon, near } : { text, icon, near };
 const clock = (s: number): string => s >= 60 ? `${Math.round(s / 60)} min` : `${Math.max(1, Math.round(s))} s`;
 const fishN = (n: number): string => n === 1 ? '1 fish' : `${n} fish`;
-const thousands = new Intl.NumberFormat('en-US');   // toLocaleString builds a formatter per call, and rows redraw every frame
-const cash = (n: number): string => '$' + thousands.format(Math.round(n));
 
 function sellStep(): Step {
   const p = nearestPort();
@@ -74,7 +68,7 @@ function fishStep(text: string, ok?: (s: School) => boolean, rad?: number): Step
 }
 function earnStep(amount: number, what: string): Step {
   if (G.hold.length >= cap() || (G.hold.length > 0 && dist(nearestPort().end) < dockNear() * 1.5)) return sellStep();
-  return fishStep(`Catch and sell fish to earn ${cash(amount)} more for ${what}`);
+  return fishStep(`Catch and sell fish to earn ${money(amount)} more for ${what}`);
 }
 function buyStep(k: UpgradeKey, what: string): Step {
   const cost = UPGRADES[k].costs[G.up[k]];
@@ -82,7 +76,7 @@ function buyStep(k: UpgradeKey, what: string): Step {
   const name = k === 'rod' ? `a level ${G.up.rod + 2} rod` : `a better ${what}`;
   if (G.coins < cost) return earnStep(cost - G.coins, name);
   const p = nearestPort();
-  return at(`Buy ${name} at ${p.name} for ${cash(cost)}`, p.end, k, dockNear());
+  return at(`Buy ${name} at ${p.name} for ${money(cost)}`, p.end, k, dockNear());
 }
 /** A catch that needs a stronger rod sends you to the outfitter first. */
 const rodFor = (sp: number): Step | null => SPECIES[sp].rod > G.up.rod ? buyStep('rod', 'rod') : null;
@@ -198,14 +192,12 @@ export function guide(): Step {
   return cache;
 }
 
-const DIRS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
 /** "120 m north-east" from the boat, or '' when the place is right here. */
 export function whereText(s: Step): string {
   if (!s.at) return '';
-  const dx = s.at.x - G.boat.x, dy = s.at.y - G.boat.y, d = Math.hypot(dx, dy);
+  const d = Math.hypot(s.at.x - G.boat.x, s.at.y - G.boat.y);
   if (d < Math.max(s.near, 25)) return '';
-  const dir = DIRS[(Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8];
-  return `${Math.max(1, Math.round(d / 10))} m ${dir}`;
+  return `${Math.max(1, Math.round(d / 10))} m ${dirTo(G.boat.x, G.boat.y, s.at.x, s.at.y)}`;
 }
 /** The step with its distance and heading, for the chip and the journal. */
 export function stepLine(s: Step = guide()): string {

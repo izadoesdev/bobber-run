@@ -17,8 +17,9 @@ import { NET, EMOTES, HAD_ACCOUNT_KEY, account, deleteAccount, onlineCount, sign
 import { voyageStarted } from '../telemetry';
 import { PEOPLE, currentQuest } from '../story';
 import type { NetForm, Talk as TalkState } from '../types';
-import { Hint, Icon, Key, SetRow, byPointer, keyLabel, money } from './parts';
+import { Cell, Hint, Icon, Key, byPointer, keyLabel } from './parts';
 import { track } from '../analytics';
+import { money } from '../config';
 
 export const TITLE_ITEMS = () => [...(hasSave() ? ['CONTINUE'] : []), 'NEW VOYAGE', 'SETTINGS', 'CONTROLS', ...(NET.on ? ['ONLINE'] : [])];
 export const PAUSE_ITEMS = ['RESUME', 'JOURNAL', ...(NET.on ? ['LEADERBOARD'] : []), 'SETTINGS', 'CONTROLS', ...(NET.on ? ['ONLINE'] : []), 'SAVE & QUIT'];
@@ -121,14 +122,14 @@ export function Settings() {
           {ROWS.map((r, i) => r.head !== undefined
             ? <div class="list-head caps">{r.head}</div>
             : (
-              <SetRow sel={i === sel} onEnter={() => { G.setSel = i; }} onClick={stepByClick(i)}>
+              <Cell sel={i === sel} onEnter={() => { G.setSel = i; }} onClick={stepByClick(i)}>
                 <span>{r.label}</span>
                 {r.type === 'slider'
                   ? <Volume v={Number(r.get())} />
                   : <span class="value"><Key k="ArrowLeft" />{r.get()}<Key k="ArrowRight" /></span>}
-              </SetRow>
+              </Cell>
             ))}
-          <SetRow cls="item center-t" sel={sel === ROWS.length} onEnter={() => { G.setSel = ROWS.length; }} onClick={() => { G.setSel = ROWS.length; press('Enter'); }}>Back</SetRow>
+          <Cell cls="item center-t" sel={sel === ROWS.length} onEnter={() => { G.setSel = ROWS.length; }} onClick={() => { G.setSel = ROWS.length; press('Enter'); }}>Back</Cell>
         </div>
         <p class="help">{cur?.help || ' '}</p>
         <footer class="foot">
@@ -146,7 +147,7 @@ export function Controls() {
   const sel = G.ctlSel || 0;
   // rows past the actions: reset, then back
   const extraRow = (i: number, label: string) => (
-    <SetRow cls="item center-t" sel={sel === i} onEnter={() => { G.ctlSel = i; }} onClick={() => { G.ctlSel = i; press('Enter'); }}>{label}</SetRow>
+    <Cell cls="item center-t" sel={sel === i} onEnter={() => { G.ctlSel = i; }} onClick={() => { G.ctlSel = i; press('Enter'); }}>{label}</Cell>
   );
   return (
     <div class="center dim-bg">
@@ -154,12 +155,12 @@ export function Controls() {
         <h1>Controls</h1>
         <div class="scroll">
           {ACTIONS.map((a, i) => (
-            <SetRow sel={i === sel} onEnter={() => { G.ctlSel = i; }} onClick={() => { G.ctlSel = i; press('Enter'); }}>
+            <Cell sel={i === sel} onEnter={() => { G.ctlSel = i; }} onClick={() => { G.ctlSel = i; press('Enter'); }}>
               <span>{a.label}</span>
               <span class="value">{G.rebinding === a.id
                 ? <span class="gold">Press a key</span>
                 : <><Key k={a.key} />{SET.binds[a.id] && <span class="muted small">default {keyLabel(a.key)}</span>}</>}</span>
-            </SetRow>
+            </Cell>
           ))}
           {extraRow(ACTIONS.length, 'Reset to defaults')}
           {extraRow(ACTIONS.length + 1, 'Back')}
@@ -278,9 +279,9 @@ export function EmotePick() {
     <div class="emote-pick panel">
       <div class="caps">Greet nearby sailors</div>
       {EMOTES.map((m, i) => (
-        <SetRow sel={i === sel} onEnter={() => { G.emoteSel = i; }} onClick={() => { G.emoteSel = i; press('Enter'); }}>
+        <Cell sel={i === sel} onEnter={() => { G.emoteSel = i; }} onClick={() => { G.emoteSel = i; press('Enter'); }}>
           <span class="key">{i + 1}</span><span>{m}</span>
-        </SetRow>
+        </Cell>
       ))}
     </div>
   );

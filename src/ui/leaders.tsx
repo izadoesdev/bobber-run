@@ -3,7 +3,8 @@
 import { G } from '../game';
 import { NET, leaders, type LeaderBy, type Leaders } from '../net';
 import { fmtKg } from '../econ';
-import { Hint, money } from './parts';
+import { Hint } from './parts';
+import { money } from '../config';
 
 export const BOARDS: { by: LeaderBy; label: string; what: string }[] = [
   { by: 'species', label: 'Species', what: 'Most species logged' },

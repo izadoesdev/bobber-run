@@ -1,6 +1,6 @@
 // The per-frame update while sailing: timers and particles, sound, discovery, nets, flotsam, prompts and
 // the actions the player can take at sea; plus the camera and the ship (hold) screen.
-import { W, H } from '../config';
+import { W, H, smooth01 } from '../config';
 import { hAt, homePort, poisNear, schoolsNear, cratesNear } from '../world';
 import { WX, updateWeather } from '../weather';
 import { SPECIES, SP, SUPPLIES } from '../econ';
@@ -9,12 +9,12 @@ import { SET } from '../prefs';
 import { FUNNEL } from '../models';
 import type { BaitChoice, Crate, Poi, School, TreasureMap, WeatherState, Wreck } from '../types';
 import { G, hit } from './state';
-import { boatDef, boatSpeed, cap, catchNeed, dayNum, hpMax, isNight, logged, netLvl, sailEff, toWorld, windAngle } from './rules';
+import { boatDef, boatSpeed, cap, catchNeed, dayNum, hpMax, isNight, logged, netLvl, sailEfficiency, toWorld, windAngle } from './rules';
 import { addCoins, burst, celebrate, jitter, spawn, toast } from './feedback';
 import { checkGoals } from './goals';
 import { placeAtPort, portById, saveGame } from './save';
-import { endlessStock, idleOk, landNetted, nearestSchool, schoolActive, tryCast, updateFishing, updateFrenzy, useChum } from './fishing';
-import { swimSchools, updateSchools } from './schools';
+import { endlessStock, idleOk, landNetted, nearestSchool, tryCast, updateFishing, updateFrenzy, useChum } from './fishing';
+import { schoolActive, swimSchools, updateSchools } from './schools';
 import { dock, updateFleet } from './port';
 import { dropCourse, steerCourse } from './autopilot';
 
@@ -38,7 +38,7 @@ function salvage(p: Wreck): void {
   const extra = Math.random() < 0.5;
   if (extra) G.bait.glow += 2;
   toast(`You salvaged $${p.loot}${extra ? ' and 2 glow lures' : ''} from the wreck`, 'good');
-  sfx('coin'); setTimeout(() => sfx('coin', 0.8, 1.2), 100);
+  sfx('coin'); setTimeout(() => sfx('coin', 0.8), 100);
   burst('spark', p.x, p.y, 16, 40, 0.8);
   saveGame();
 }
@@ -102,7 +102,6 @@ function tickFeedback(dt: number): void {
   }
 }
 // soundscape follows the boat: speed wash, nearby surf, weather, engine, luffing sails, and the deep ocean far out
-const smooth01 = (x: number): number => { const t = Math.min(1, Math.max(0, x)); return t * t * (3 - 2 * t); };
 /** 0 near home or over shallow water, 1 over the deep ocean well offshore. */
 const deepness = (): number => { const b = G.boat, hp = homePort(); return smooth01((-hAt(b.x, b.y) - 0.3) / 0.12) * smooth01((Math.hypot(b.x - hp.x, b.y - hp.y) - 900) / 1500); };
 function tickSound(dt: number): void {
@@ -111,7 +110,7 @@ function tickSound(dt: number): void {
   for (let k = 0; k < 8; k++) { const a = k / 8 * 6.283; if (hAt(b.x + Math.cos(a) * 40, b.y + Math.sin(a) * 40) > -0.05) shore += 0.125; }
   soundscape({
     speed: playing ? boatSpeed() : 0, shore, wind: WX.wind, rain: WX.rain, engine: playing && bd.prop === 'ENGINE', throttle: G.throttle ? 1 : 0,
-    luff: playing && bd.prop === 'SAIL' && G.throttle && sailEff(b.a) < 0.6 ? 1 : 0, mute: G.mode === 'sunk', port: G.mode === 'port',
+    luff: playing && bd.prop === 'SAIL' && G.throttle && sailEfficiency() < 0.6 ? 1 : 0, mute: G.mode === 'sunk', port: G.mode === 'port',
     deep: deepness(), calm: SET.calm,
   }, dt);
   music(dt, G.musicOn, isNight());
@@ -135,7 +134,7 @@ export function update(dt: number): void {
   if (G.mode !== 'play') { G.prompt = null; return; }
   G.clock += dt;
   updateWeather(dt, s => { if (WEATHER_NEWS[s]) toast(WEATHER_NEWS[s], s === 'storm' ? 'bad' : 'info'); },
-    () => setTimeout(() => sfx('thunder', 1, 0.8 + Math.random() * 0.4), 200 + Math.random() * 900));
+    () => setTimeout(() => sfx('thunder'), 200 + Math.random() * 900));
   if (logged() >= 10 && !G.lairTold) { G.lairTold = true; toast('Sailors talk of a giant fish, the Old One. Its lair is now marked on your chart', 'bad'); }
   const speed = boatSpeed();
   updateFishing(dt);

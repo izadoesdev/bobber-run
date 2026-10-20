@@ -6,7 +6,7 @@ import { SPECIES } from '../econ';
 import { schoolLook } from '../species';
 import { FISH_T } from '../fishart';
 import { hash01 } from '../noise';
-import { hex } from '../config';
+import { hex, toHex } from '../config';
 import type { BoatId } from '../types';
 
 /** Vertex layout: position xyz, normal xyz, colour rgb (pre-multiplied by AO), glowable flag; 10 floats, 40 bytes. */
@@ -185,7 +185,6 @@ export const treeMesh = (k: TreeKind): Mesh => treeMeshes[k] ??= cached('tree:' 
 
 // ---------- fish: each species' sprite extruded into a two-voxel-thick slab ----------
 const matCache = new Map<string, number>();
-const toHex = (x: number[]) => '#' + x.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
 // a material ramp around one sprite colour: 70% for shadow, 115% for lit; glowing ramps shine at night
 function matFor(c: string, glow = false): number {
   const key = glow ? c + '*' : c;

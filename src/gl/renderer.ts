@@ -2,7 +2,7 @@
 // trees and sea life are lit voxel meshes; shadows are projected along the sun into a world-aligned buffer;
 // wakes/splashes are stamped into a foam buffer the water shader reads; then HDR post (bloom, tilt-shift,
 // filmic grading, vignette, grain, rain).
-import { W, H, clamp, lerp } from '../config';
+import { W, H, clamp, lerp, frac, smooth01 } from '../config';
 import { ONLINE, type Sailor } from '../online';
 import { SET, type Quality, type PixelStyle } from '../prefs';
 import { TS, TN, getTile, hasTile, poisNear, schoolsNear, cratesNear, type HeightTile } from '../world';
@@ -122,7 +122,7 @@ function ensureField(): Field {
   const [vw, vh] = maxView(), tw = Math.ceil(vw) + PAD * 2 + SNAP * 2 + 8, th = Math.ceil(vh) + PAD * 2 + SNAP * 2 + 8;
   if (field && tw === field.TW && th === field.TH) return field;
   if (field) { gl.deleteTexture(field.tex); free(gl, field.foam); free(gl, field.shadow); }
-  const tex = texture(gl, tw, th, gl.R16F, gl.RED, gl.FLOAT, gl.LINEAR);
+  const tex = texture(gl, tw, th, gl.R16F, gl.RED, gl.FLOAT);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
   field = {
     TW: tw, TH: th, hdata: new Float32Array(tw * th), tex, V: [0, 0, 0, 0], fs: 0,
@@ -291,7 +291,6 @@ export function boatRenderState(alpha: number): BoatPose {
   pose.x = lerp(b.px, b.x, alpha); pose.y = lerp(b.py, b.y, alpha); pose.a = lerp(b.pa, b.a, alpha);
   return pose;
 }
-const frac = (x: number) => x - Math.floor(x);
 const strokePose = (ph: number) => Math.floor(frac(ph) * NP) % NP;
 const near = (o: Point, cx: number, cy: number, mx: number, my: number) => Math.abs(o.x - cx) < mx && Math.abs(o.y - cy) < my;
 
@@ -369,7 +368,6 @@ const shownVis = new WeakMap<School, number>();
 let visEase = 0;
 let sceneT = 0, schoolEase = 0;
 const GOLD_TINT = 1.2;
-const smooth01 = (x: number) => { const t = clamp(x, 0, 1); return t * t * (3 - 2 * t); };
 const tint3 = [1, 1, 1];
 /** How far a school has sunk on a dive (0 swimming .. 1 out of sight); it rises back the same way. */
 function sunk(s: School): number {

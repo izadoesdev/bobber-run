@@ -8,7 +8,8 @@ import { CREW_RANGE } from '../online';
 import { WX } from '../weather';
 import type { BoatDef, Fish as FishT, NeedStatus, Port as PortT, PortItem, PortRow, Project, UpgradeKey } from '../types';
 import { drawChart } from './chart';
-import { Bar, Canvas, Fish, Hint, Icon, Key, Pips, boatPreview, boatThumb, cap1, flashing, money, useScrollTo } from './parts';
+import { Bar, Canvas, Cell, Fish, Hint, Icon, Key, Pips, WX_ICON, boatPreview, boatThumb, cap1, clockText, flashing } from './parts';
+import { money } from '../config';
 
 const GREET = [
   'The harbourmaster tips his cap.', 'Gulls squabble over the pilings.', 'The smell of tar and salt hangs in the air.',
@@ -31,16 +32,14 @@ function RowVisual({ it }: { it: PortRow }) {
 }
 
 function Row({ it, i }: { it: PortRow; i: number }) {
-  const sel = G.menu.sel === i, ref = useScrollTo(sel);
-  const cls = 'item' + (sel ? ' sel' : '') + (it.ok ? '' : ' off') + (flashing(it.key) ? ' flash' : '');
   // the first click selects, a click on the selected row buys
   const onClick = () => { if (G.menu.sel === i) it.act(); else G.menu.sel = i; };
   return (
-    <div ref={ref} class={cls} onClick={onClick}>
+    <Cell cls={'item' + (it.ok ? '' : ' off') + (flashing(it.key) ? ' flash' : '')} sel={G.menu.sel === i} onClick={onClick}>
       <RowVisual it={it} />
       <div class="grow"><div>{it.label}</div>{it.pips ? <Pips n={it.pips[0]} of={it.pips[1]} /> : it.sub && <div class="sub">{it.sub}</div>}</div>
       <span class={'price' + (it.cost != null && G.coins < it.cost ? ' short' : '')}>{it.right}</span>
-    </div>
+    </Cell>
   );
 }
 
@@ -225,15 +224,13 @@ function Detail({ p, it }: { p: PortT; it: PortRow | null }) {
   );
 }
 
-const WX_ICON: Record<string, string> = { clear: 'sun', cloudy: 'cloud', rain: 'rain', storm: 'storm' };
 // every port posts the weather, so you can plan the next trip from the quay
 function Forecast() {
-  const m = Math.floor(WX.next / 60), s = String(Math.floor(WX.next % 60)).padStart(2, '0');
   const storm = WX.upcoming === 'storm', same = WX.upcoming === WX.state;
   return (
     <div class={'chip forecast' + (storm ? ' warn' : '')} title="Harbour forecast">
-      <span class="caps">Forecast</span><Icon k={WX_ICON[WX.upcoming] || 'sun'} size="s" />
-      {same ? `${cap1(WX.state)} for now` : `${cap1(WX.upcoming)} in ${m}:${s}`}
+      <span class="caps">Forecast</span><Icon k={WX_ICON[WX.upcoming]} size="s" />
+      {same ? `${cap1(WX.state)} for now` : `${cap1(WX.upcoming)} in ${clockText(WX.next)}`}
     </div>
   );
 }

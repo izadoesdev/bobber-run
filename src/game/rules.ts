@@ -3,9 +3,10 @@ import { nA } from '../noise';
 import { WX } from '../weather';
 import { SPECIES, BOATS } from '../econ';
 import type { BoatDef, Env, Fish, ProjectId, UpgradeKey } from '../types';
+import type { Fit } from '../models';
 import { G } from './state';
+import { frac } from '../config';
 
-const frac = (x: number): number => x - Math.floor(x);
 
 // ---------- boat and gear ----------
 // how much one level of each stat upgrade adds (the shop quotes these numbers)
@@ -36,12 +37,12 @@ export function boatStats(bd: BoatDef = boatDef()): { speed: number; hold: numbe
 export const cap = (): number => boatStats().hold;
 export const hpMax = (): number => boatStats().hp;
 // gear a ship carries built in counts like the upgrade
-const built = (k: 'crew' | 'keel' | 'harpoon'): number => boatDef()[k] ?? 0;
-export const crewLvl = (): number => Math.max(G.up.deckhand, built('crew'));
-export const keelLvl = (): number => Math.max(G.up.keel, built('keel'));
-export const harpoonLvl = (): number => Math.max(G.up.harpoon, built('harpoon'));
-export const sonarLvl = (): number => Math.max(G.up.sonar, boatDef().sonar);
-export const netLvl = (): number => Math.max(G.up.net, boatDef().net);
+const gearLvl = (k: UpgradeKey): number => Math.max(G.up[k], builtIn(k));
+export const crewLvl = (): number => gearLvl('deckhand');
+export const keelLvl = (): number => gearLvl('keel');
+export const harpoonLvl = (): number => gearLvl('harpoon');
+export const sonarLvl = (): number => gearLvl('sonar');
+export const netLvl = (): number => gearLvl('net');
 export const projDone = (id: ProjectId): boolean => G.projects.includes(id);
 export const speedMul = (): number => boatStats().speed;
 export const lightR = (): number => 21 + 19 * G.up.lantern;
@@ -89,12 +90,7 @@ export function upgradeStat(k: UpgradeKey, l: number): [string, string] {
 }
 
 /** What the boat should visibly carry (levels the models draw). */
-export interface Equipment {
-  paint: string; plate: number; prop: number; lantern: number; sonar: number; rod: number; ice: number; tackle: number;
-  net: number; radio: number; anchor: number; hold: number; pile: number; deckhand: number; cook: number; quarter: number;
-  bilge: number; reel: number; pet: number; pots: number; harpoon: number; bell: number;
-}
-export function equipment(): Equipment {
+export function equipment(): Fit {
   const u = G.up;
   return {
     paint: G.paint, plate: u.hull, prop: u.prop, lantern: u.lantern, sonar: sonarLvl(), rod: u.rod, ice: u.ice, tackle: u.tackle,
@@ -125,12 +121,11 @@ export function env(): Env {
 
 // ---------- wind and sails ----------
 export const windAngle = (): number => 0.9 + 2.2 * nA(G.clock * 0.0015, 7.3);
-/** Sail push for heading `a`: best across the wind, weak dead into it. */
-export function sailEff(a: number): number {
-  const rel = Math.abs(((a - windAngle()) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI);
+/** Sail push at the boat's heading: best across the wind, weak dead into it. */
+export function sailEfficiency(): number {
+  const rel = Math.abs(((G.boat.a - windAngle()) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI);
   return rel < Math.PI / 2 ? 1 + 0.2 * Math.sin(rel) : 0.35 + 0.85 * Math.cos(rel - Math.PI / 2);
 }
-export const sailEfficiency = (): number => sailEff(G.boat.a);
 
 // ---------- boat frame ----------
 export const boatSpeed = (): number => Math.hypot(G.boat.vx, G.boat.vy);

@@ -12,8 +12,6 @@ import { Port } from './port';
 import { Chart, Journal, Logbook, Ship } from './screens';
 import { Cheats, Controls, EmotePick, Finale, Online, Pause, Settings, Sunk, Talk, Title } from './menus';
 
-export { TITLE_ITEMS, PAUSE_ITEMS } from './menus';
-
 let root: HTMLElement | null = null;
 export function initUI(el: HTMLElement): void { root = el; }
 export function drawUI(): void { if (root) render(<App />, root); }

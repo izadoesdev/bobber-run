@@ -385,7 +385,6 @@ export function trimWorld(x: number, y: number, view: number): void {
     else for (const s of c.schools) s.swim = undefined;     // kept for its state; its fish respawn on the way back
   }
 }
-/** Sizes of the world caches (for tests and the memory budget). */
 // ---------- claimable islands ----------
 /** The main island of a cell: the unit players can claim and name (islets ride along), Alderhaven's included. */
 export interface Claimable { key: string; i: number; j: number; x: number; y: number; R: number }

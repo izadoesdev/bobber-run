@@ -13,18 +13,17 @@ import { G, hit, held } from './state';
 import { boatDef, canLand, cap, catchNeed, crewLvl, env, harpoonLvl, isNight, lineMax, logged } from './rules';
 import { addCoins, burst, jitter, spawn, toast } from './feedback';
 import { saveGame } from './save';
-import { schoolActive, schoolShown, takeFish } from './schools';
+import { schoolActive, takeFish } from './schools';
 
 /** Fight tuning: how hard tension climbs while reeling, and how much surges add. Exposed on BR for tweaking. */
 export const TUNE = { k: 1.5, surge: 0.55 };
 
 /** Chance the golden fish of a school is the one that bites, and what it is worth over a trophy. */
 const GOLD_BITE = 0.4, GOLD_VALUE = 2.5;
-export { schoolActive };
 // idle fishing: easy, non-legendary fish land on their own if you leave the line alone
 export const idleOk = (sp: Species): boolean => !sp.legend && sp.diff < 0.45;
 
-const castRange = (): number => 50 + boatDef().L * 0.5;
+export const castRange = (): number => 50 + boatDef().L * 0.5;
 function nearestWhere(ok: (s: School) => boolean, range: number): School | null {
   const b = G.boat;
   let best: School | null = null, bestD = range;
@@ -37,8 +36,6 @@ function nearestWhere(ok: (s: School) => boolean, range: number): School | null 
 }
 /** The closest biting school within casting range. */
 export const nearestSchool = (): School | null => nearestWhere(schoolActive, castRange());
-/** The closest visible school a little past casting range, biting or not: the one the HUD tags. */
-export const schoolInReach = (): School | null => nearestWhere(s => schoolShown(s) && !s.boss, castRange() + 15);
 
 export function cancelFishing(msg?: string): void {
   if (G.fish && msg) toast(msg);
@@ -205,12 +202,12 @@ function updateJumps(f: FishLine, dt: number, reeling: boolean): void {
       const x = f.fx ?? f.tx, y = f.fy ?? f.ty;
       spawn({ kind: 'ring', x, y, life: 1, r0: 2, grow: 7 });
       burst('dot', x, y, 8, 30, 0.5);
-      sfx('oar', 1, 0.7);
+      sfx('oar');
     }
   } else if ((f.jumpT -= dt) <= 0) {
     f.jump = { t: 0, dir: Math.random() < 0.5 ? -1 : 1 };
     f.jumpT = 2.2 + Math.random() * 2.2;
-    sfx('oar', 0.8, 1.2);
+    sfx('oar', 0.8);
   }
   f.jumpWarn = !f.jump && f.jumpT < 0.5;
 }
@@ -251,7 +248,7 @@ function reelStage(f: FishLine, dt: number, strike: boolean): void {
     G.fish = null;
   } else if (f.prog >= 1 && sp.fight === 'boss' && stage < 2) {
     f.stage = stage + 1; f.prog = 0.12; f.tension = Math.min(f.tension, 0.4); G.shake = 4;
-    sfx('crash', 0.6, 0.5);
+    sfx('crash', 0.6);
     toast(`Still fighting! ${f.stage + 1} of 3`, 'bad');
   } else if (f.prog >= 1) landHooked(f);
 }
@@ -335,7 +332,7 @@ export function landNetted(spIdx: number, stock: FishStock, who: Catcher = 'NETT
   const { fish, firstTrophy } = recordCatch(spIdx, stock, null, who === 'DECKHAND' ? 'deckhand' : who === 'POTS' ? 'pots' : 'net');
   const by = who === 'DECKHAND' ? 'Your deckhand landed' : who === 'POTS' ? 'Your crab pots hauled' : 'Your drift net caught';
   toast(`${by} ${firstTrophy ? 'a trophy ' : ''}${sp.name}, ${fmtKg(fish.kg)}`, firstTrophy ? 'good' : 'info');
-  sfx('coin', 0.5, 0.8);
+  sfx('coin', 0.5);
   holdFullNote();
   saveGame();
 }
