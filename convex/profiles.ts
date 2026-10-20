@@ -19,6 +19,7 @@ export const setName = mutation({
     const userId = await requireUser(ctx), checked = cleanName(name);
     if (!checked.ok) return checked;
     const p = await profileOf(ctx, userId), now = Date.now();
+    if (auto && p && p.name !== 'Sailor') return { ok: true as const, name: p.name };   // a generated name never replaces a chosen one
     if (!auto && p?.nameAt && now - p.nameAt < NAME_MIN_MS) return { ok: false as const, why: 'You just changed your name. Try again in a moment' };
     const nameAt = auto ? p?.nameAt : now;                                   // a generated guest name doesn't count as a rename
     if (p) await ctx.db.patch(p._id, { name: checked.name, nameAt }); else await ctx.db.insert('profiles', { userId, name: checked.name, nameAt });

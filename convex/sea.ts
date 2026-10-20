@@ -49,12 +49,19 @@ export const leave = mutation({
     const p = await ctx.db.query('positions').withIndex('by_user', q => q.eq('userId', userId)).unique(); if (p) await ctx.db.delete(p._id);
   },
 });
+// signed-in sailors only see their own sea; ids are position rows, not account ids
 export const near = query({
   args: { cells: v.array(v.string()) },
   handler: async (ctx, { cells }) => {
-    const userId = await getAuthUserId(ctx), out = [];
-    for (const cell of cells.slice(0, 9)) for (const p of await ctx.db.query('positions').withIndex('by_cell', q => q.eq('cell', cell)).take(SEA_CAP))
-      if (p.userId !== userId) out.push({ id: p.userId, x: p.x, y: p.y, a: p.a, boat: p.boat, paint: p.paint, name: p.name, at: p.at, emote: p.emote ?? null, emoteAt: p.emoteAt ?? 0 });
+    const userId = await getAuthUserId(ctx);
+    const out: { id: string; x: number; y: number; a: number; boat: string; paint: string; name: string; at: number; emote: number | null; emoteAt: number }[] = [];
+    if (!userId) return out;
+    const prefix = `${(await profileOf(ctx, userId))?.sea ?? 0}|`;
+    for (const cell of cells.slice(0, 9)) {
+      if (!cell.startsWith(prefix)) continue;
+      for (const p of await ctx.db.query('positions').withIndex('by_cell', q => q.eq('cell', cell)).take(SEA_CAP))
+        if (p.userId !== userId) out.push({ id: p._id, x: p.x, y: p.y, a: p.a, boat: p.boat, paint: p.paint, name: p.name, at: p.at, emote: p.emote ?? null, emoteAt: p.emoteAt ?? 0 });
+    }
     return out;
   },
 });
@@ -68,7 +75,8 @@ export const sweep = internalMutation({
   args: {},
   handler: async ctx => {
     const now = Date.now();
-    for (const p of await ctx.db.query('positions').withIndex('by_at', q => q.lt('at', now - ACTIVE_MS)).take(500)) await ctx.db.delete(p._id);
+    for (const sea of [undefined, ...Array.from({ length: SEAS }, (_, i) => i)])
+      for (const p of await ctx.db.query('positions').withIndex('by_sea_at', q => q.eq('sea', sea).lt('at', now - ACTIVE_MS)).take(100)) await ctx.db.delete(p._id);
     for (const e of await ctx.db.query('events').withIndex('by_at', q => q.lt('at', now - 86_400_000)).take(200)) await ctx.db.delete(e._id);
   },
 });
