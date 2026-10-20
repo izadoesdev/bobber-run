@@ -24,7 +24,7 @@ export const M = {
   sail: mat(['#c2baa8', '#e2dccc', '#f8f4ea']), net: mat(['#2e4a34', '#3f6a46', '#5a8a5a']), orange: mat(['#a8562a', '#d9733a', '#f0955a']),
   copper: mat(['#7a4a24', '#b0703a', '#d8945a']), ironp: mat(['#3d4852', '#5c6670', '#7d8790']), steel: mat(['#7a848c', '#a9b1b7', '#d3d8da']),
   gilt: mat(['#8a6a1e', '#c49a32', '#f0cf6a']), sailred: mat(['#7e2c25', '#b0423a', '#d0594c']), fishm: mat(['#4a5a6a', '#8a9aa8', '#cfd8dc']),
-  tackle: mat(['#2e5a3a', '#3f7a4a', '#5a9a62']),
+  tackle: mat(['#2e5a3a', '#3f7a4a', '#5a9a62']), rope: mat(['#8a7448', '#b49a62', '#d6bf86']), ropeD: mat(['#5e4c2e', '#7a6440', '#9a8256']),
   // big ships: each hull and waterline band has its own material so paint and plating only touch those
   schoon: mat(['#16262a', '#22393d', '#345257']), schband: mat(['#9a7430', '#c9a04e', '#e8c97a']),
   coal: mat(['#15191c', '#22282c', '#363e44']), dred: mat(['#76261f', '#a8352b', '#c84a3c']), buff: mat(['#9a7a4e', '#c8a46c', '#e6c894']),
@@ -52,11 +52,14 @@ const BOAT = new Vox(-17, 17, -10, 10, 15);
     if (z >= 2 && in2) continue;
     let m: number;
     if (z === ztop(u)) m = in1 ? M.gun : M.paint;
-    else if (z === 1 && in2) m = M.floor;
-    else if (in1 && z >= 1) m = M.lining;
+    else if (z === 1 && in2) m = (v + 21) % 3 === 0 ? M.plank2 : M.floor;          // floorboards with dark seams
+    else if (in1 && z >= 1) m = (u + 30) % 3 === 0 ? M.plank2 : M.lining;          // ribs inside the hull
     else m = z <= 1 ? M.bottom : z === ztop(u) - 1 ? M.stripe : M.paint;
     B.set(u, v, z, m);
   }
+  // a stem post at the bow and a coil of rope on the floor aft of the rower
+  for (let u = 17; u > 0; u--) if (B.get(u, 0, ztop(u))) { B.set(u, 0, ztop(u) + 1, M.gun); break; }
+  for (let u = -6; u <= -4; u++) for (let v = -1; v <= 1; v++) B.set(u, v, 2, u === -5 && v === 0 ? M.ropeD : M.rope);
   for (const [u0, u1] of [[0, 2], [7, 8], [-10, -9]]) for (let u = u0; u <= u1; u++) for (let v = -8; v <= 8; v++)
     if (Math.abs(v) <= hullHW(u, 4) - 0.6 && !B.get(u, v, 4)) B.set(u, v, 4, M.seat);
   // the rower faces the bow (the way you travel) and pushes the oars from locks just in front of him
@@ -79,7 +82,7 @@ export function bladeAt(ph: number): [number, number] {
 /** sprite headings per turn, oar stroke poses, and the extra pose index for oars shipped (stowed) */
 export const NA = 96, NP = 12, SHIPPED = NP;
 // each side has its own stroke pose (sgn -1 = port/left, +1 = starboard/right), so a turn can pull one oar
-export function oarGeom(pose: number, lvl = 0, poseR = pose): { lines: VoxLine[]; points: VoxPoint[] } {
+export function oarGeom(pose: number, lvl = 0, poseR = pose, coat = M.coat): { lines: VoxLine[]; points: VoxPoint[] } {
   const lines: VoxLine[] = [], points: VoxPoint[] = [];
   for (const sgn of [-1, 1]) {
     const ps = sgn < 0 ? pose : poseR;
@@ -100,7 +103,7 @@ export function oarGeom(pose: number, lvl = 0, poseR = pose): { lines: VoxLine[]
     );
     points.push({ p: B, col: RGB[M.tip][1] });
     if (ps !== SHIPPED) {                          // the rower's arm and hand on the handle
-      lines.push({ a: [1, sgn * 3, 7.5], b: Hd, col: RGB[M.coat][sgn < 0 ? 2 : 1] });
+      lines.push({ a: [1, sgn * 3, 7.5], b: Hd, col: RGB[coat][sgn < 0 ? 2 : 1] });
       points.push({ p: Hd, col: RGB[M.skin][2] });
     }
   }
@@ -391,13 +394,62 @@ export interface Fit {
   /** 1 if the ship's cat is aboard */
   pet: number;
   pots: number; harpoon: number; bell: number;
+  /** the captain's own look on the rowboat (see lookSeed); 0 or missing is the plain classic look */
+  look?: number;
 }
 type Put = (u: number, v: number, z: number, m: number) => void;
+
+// ---------- the captain's look ----------
+// Every rowboat is a little different: the rower's coat and hat, the trim along the gunwale, a pennant at the stern
+// and what sits on the stern seat all come from a hash of the captain's name, so everyone sees the same boat for you.
+// Paint jobs still colour the hull and plating still covers the trim; gear fitted later takes the stern seat.
+const LOOK_COAT = [M.coat, mat(['#7e3a26', '#b0523a', '#d0705a']), mat(['#2e5a46', '#3f7a5e', '#5a9a78']), M.stripe,
+  mat(['#4e2e4a', '#6e4268', '#8e5a88']), mat(['#1f5a5e', '#2e7a7e', '#4a9a9a']), M.orange, M.paint];
+const LOOK_HAT = [M.hat, M.redp, mat(['#24382a', '#33503a', '#4a6a48']), mat(['#4a5258', '#6a747a', '#8a9298']), M.door, M.flag];
+const LOOK_TRIM = [M.stripe, M.redp, M.net, mat(['#8a6a1e', '#c49a32', '#e2b94a']), mat(['#1f5a5e', '#2e7a7e', '#4a9a9a']), mat(['#4e2e4a', '#6e4268', '#8e5a88']), M.iron];
+const LOOK_FLAG = [M.redp, M.white, M.stripe, M.flag, M.net, M.orange];
+interface Look { coat: number; hat: number; trim: number; flagA: number; flagB: number; split: boolean; stern: number }
+const looks = new Map<number, Look>();
+/** A stable non-zero look seed from a captain's name (FNV-1a). */
+export function lookSeed(name: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < name.length; i++) { h ^= name.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0) || 1;
+}
+function lookOf(seed: number | undefined): Look | null {
+  if (!seed) return null;
+  let l = looks.get(seed);
+  if (!l) {
+    let h = seed >>> 0;
+    const pick = (n: number): number => { const r = h % n; h = (Math.floor(h / n) ^ (Math.imul(h, 0x9e3779b1) >>> 7)) >>> 0; return r; };
+    const coat = pick(LOOK_COAT.length), hat = (coat + 1 + pick(LOOK_HAT.length - 1)) % LOOK_HAT.length;   // never coat-coloured
+    const a = pick(LOOK_FLAG.length), b = (a + 1 + pick(LOOK_FLAG.length - 1)) % LOOK_FLAG.length;
+    l = { coat: LOOK_COAT[coat], hat: LOOK_HAT[hat], trim: LOOK_TRIM[pick(LOOK_TRIM.length)], flagA: LOOK_FLAG[a], flagB: LOOK_FLAG[b], split: pick(2) === 1, stern: pick(4) };
+    looks.set(seed, l);
+  }
+  return l;
+}
+/** The rower's coat material for a look seed, for the oar arms drawn outside the model. */
+export const lookCoat = (seed: number | undefined): number => lookOf(seed)?.coat ?? M.coat;
+/** The pennant on a staff at the stern, streaming aft, and one thing on the stern seat. Only fills empty space. */
+function lookExtras(eq: Fit, put: Put): void {
+  const lk = lookOf(eq.look);
+  if (!lk) return;
+  for (let z = 7; z <= 9; z++) put(-13, 0, z, M.post);
+  for (const [u, v] of [[-14, 0], [-14, 1], [-15, 0], [-15, 1], [-16, 0]]) put(u, v, 9, lk.split && u <= -15 ? lk.flagB : u === -16 ? lk.flagB : lk.flagA);
+  const u = -9, v = -1, z = 5;
+  if (lk.stern === 0) { put(u, v, z, M.iron); put(u, v + 1, z, M.iron); put(u - 1, v, z, M.iron); put(u - 1, v + 1, z, M.window); }   // a bucket of water
+  else if (lk.stern === 1) { put(u, v, z, lk.trim); put(u, v + 1, z, lk.trim); put(u - 1, v, z, lk.trim); put(u - 1, v + 1, z, lk.trim); put(u, v, z + 1, lk.trim); }   // a folded tarp
+  else if (lk.stern === 2) { put(u, v, z, M.crate); put(u - 1, v, z, M.crate); put(u, v + 1, z, M.band); put(u - 1, v + 1, z, M.crate); put(u, v, z + 1, M.crate); }   // a bait box
+  else { put(u, v, z, M.wetp); put(u - 1, v + 1, z, M.wetp); put(u, v + 1, z, M.fishm); }   // a net bag
+}
 
 // paint jobs swap the hull material; plating swaps the bottom and the waterline band; better sails get red cloth
 function recolour(id: BoatId, eq: Fit, V: Vox): void {
   const bm = BOAT_MODELS[id], remap = new Map<number, number>();
   if (eq.paint !== 'classic' && PAINT_MAT[eq.paint]) remap.set(bm.hull, PAINT_MAT[eq.paint]);
+  const lk = id === 'row' ? lookOf(eq.look) : null;
+  if (lk) { remap.set(M.coat, lk.coat); remap.set(M.hat, lk.hat); remap.set(M.stripe, lk.trim); }
   if (eq.plate > 0) { remap.set(M.bottom, PLATE[eq.plate]); remap.set(STRIPE[id], PLATE[eq.plate]); }
   const layer = V.nu * V.nv, sails = id === 'skiff' || id === 'schooner';
   for (let i = 0; i < V.d.length; i++) {
@@ -532,6 +584,7 @@ export function decorate(id: BoatId, eq: Fit): Vox {
   crewAndFittings(V, m, eq, put);
   dryDockGear(m, eq, put);
   if (eq.pet) shipsCat(V);
+  if (id === 'row') lookExtras(eq, put);
   if (id === 'launch' && eq.prop >= 3) for (const v of [-3, 3]) {   // twin outboards
     V.box(-19, -17, v - 1, v, 3, 8, M.iron); V.box(-19, -17, v - 1, v, 9, 9, M.redp);
   }
@@ -541,7 +594,7 @@ export function decorate(id: BoatId, eq: Fit): Vox {
 export const eqSig = (id: BoatId, eq: Fit): string => [
   id, eq.paint, eq.plate, eq.prop, eq.lantern, eq.sonar, Math.min(2, eq.rod), eq.ice, eq.tackle, eq.net, eq.radio, eq.anchor,
   Math.min(3, eq.hold), eq.pile, eq.deckhand | 0, eq.cook | 0, eq.quarter | 0, eq.pet | 0, eq.pots | 0, eq.harpoon | 0, eq.bell | 0,
-  eq.bilge | 0, eq.reel ? 1 : 0,
+  eq.bilge | 0, eq.reel ? 1 : 0, id === 'row' ? eq.look ?? 0 : 0,
 ].join('|');
 interface SpriteModel { vox: Vox; frames: Map<number, VoxFrame> }
 const models = new Map<string, SpriteModel>();   // signature -> model and its rendered frames, most recent last
@@ -564,7 +617,7 @@ export function boatFrame(id: BoatId, ai: number, pose: number, eq: Fit = PLAIN)
   const bm = BOAT_MODELS[id], m = modelFor(id, eq), k = ai * 16 + (bm.oars ? pose : 0);
   let f = m.frames.get(k);
   if (!f) {
-    const g = bm.oars ? oarGeom(pose, eq.prop, pose) : { lines: [], points: [] };
+    const g = bm.oars ? oarGeom(pose, eq.prop, pose, lookCoat(eq.look)) : { lines: [], points: [] };
     f = renderVox(m.vox, ai / NA * Math.PI * 2, { ...g, rad: bm.rad + 3, outlineZ: bm.outlineZ });
     m.frames.set(k, f);
   }

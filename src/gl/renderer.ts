@@ -13,7 +13,8 @@ import { DIVE_S, SCATTER_S, schoolDrawR } from '../game/schools';
 import { G, darkness, lightR, schoolActive, isNight, dayFrac, equipment, windAngle, boatDef, env } from '../game';
 import { WX } from '../weather';
 import { LIFE, type Whale, type Giant } from '../life';
-import { hasOars, oarGeom, BOAT_MODELS, NP, SHIPPED, PLAIN, type Fit } from '../models';
+import { hasOars, oarGeom, BOAT_MODELS, NP, SHIPPED, PLAIN, lookSeed, lookCoat, type Fit } from '../models';
+import { NET } from '../net';
 import { program, texture, target, msTarget, free, type Program, type Target, type MsTarget } from './glutil';
 import * as SH from './shaders';
 import * as MS from './meshes';
@@ -322,12 +323,34 @@ function drawGiant(g: Giant): void {
   else if (g.kind === 'eel') drawEel(g);
   else inst(MS.shadowFishMesh(), g.x, g.y, a + Math.sin(ph) * 0.07, len / MS.SHADOW_LEN, z, 0, 0, true, 1, 0);
 }
-// other players' boats: a plain fit-out in their paint, lamp lit
+// other players' boats: a plain fit-out in their paint, lamp lit, with the look their captain's name gives them
 const shipEq = new Map<string, Fit>();
-function eqFor(paint: string): Fit {
-  let e = shipEq.get(paint);
-  if (!e) { e = { ...PLAIN, paint: paint || 'classic', lantern: 1 }; shipEq.set(paint, e); }
+function eqFor(paint: string, name: string): Fit {
+  const key = paint + '|' + name;
+  let e = shipEq.get(key);
+  if (!e) {
+    if (shipEq.size > 64) shipEq.clear();
+    e = { ...PLAIN, paint: paint || 'classic', lantern: 1, look: lookSeed(name) }; shipEq.set(key, e);
+  }
   return e;
+}
+// your own look: the same hash of your captain name that everyone else uses, or a seed kept on this device until you have one
+const LOOK_KEY = 'bobber-run-look';
+let deviceLook = 0, lookName: string | undefined, lookVal = 0;
+function myLook(): number {
+  const name = NET.profile?.name;
+  if (name !== lookName || !lookVal) {
+    lookName = name;
+    if (name) lookVal = lookSeed(name);
+    else {
+      if (!deviceLook) {
+        try { deviceLook = Number(localStorage.getItem(LOOK_KEY)) || 0; } catch { }
+        if (!deviceLook) { deviceLook = (Math.random() * 4294967295 >>> 0) || 1; try { localStorage.setItem(LOOK_KEY, String(deviceLook)); } catch { } }
+      }
+      lookVal = deviceLook;
+    }
+  }
+  return lookVal;
 }
 const isBoatId = (id: string): id is BoatId => id in BOAT_MODELS;
 const shipDef = (id: string) => BOATS.find(b => b.id === id) || BOATS[0];
@@ -409,10 +432,10 @@ const W3a = [0, 0, 0], W3b = [0, 0, 0];           // scratch points for boat-loc
 const sceneSchools: School[] = [], sceneCrates: Crate[] = [];
 // oar geometry depends only on the two stroke poses and the propulsion level, so it is built once per combination
 const oarCache = new Map<number, ReturnType<typeof oarGeom>>();
-function oarsFor(poseL: number, prop: number, poseR: number): ReturnType<typeof oarGeom> {
-  const key = (poseL * 16 + poseR) * 16 + prop;
+function oarsFor(poseL: number, prop: number, poseR: number, coat: number): ReturnType<typeof oarGeom> {
+  const key = ((poseL * 16 + poseR) * 16 + prop) * 1024 + coat;
   let g = oarCache.get(key);
-  if (!g) { g = oarGeom(poseL, prop, poseR); oarCache.set(key, g); }
+  if (!g) { g = oarGeom(poseL, prop, poseR, coat); oarCache.set(key, g); }
   return g;
 }
 // the rod and fishing line, in world space (scratch, rebuilt each frame)
@@ -472,7 +495,7 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
     const sh = fleet[i];
     if (!isBoatId(sh.id) || !near(sh, cx, cy, mx + 30, my + 30)) continue;
     const ph = i * 1.7 + (sh.x + sh.y) * 0.002, sw = 1 + WX.wind * 1.6;
-    inst(MS.boatMesh(sh.id, eqFor(sh.paint)), sh.x, sh.y, sh.a, 1, Math.sin(G.t * 1.4 + ph) * (0.2 + WX.wind * 0.4) - 0.4, Math.sin(G.t * 1.0 + ph) * 0.02 * sw, Math.sin(G.t * 1.2 + ph + 1) * 0.03 * sw);
+    inst(MS.boatMesh(sh.id, eqFor(sh.paint, sh.name)), sh.x, sh.y, sh.a, 1, Math.sin(G.t * 1.4 + ph) * (0.2 + WX.wind * 0.4) - 0.4, Math.sin(G.t * 1.0 + ph) * 0.02 * sw, Math.sin(G.t * 1.2 + ph + 1) * 0.03 * sw);
   }
   for (const p of LIFE.pods) for (const m of p.m) {          // each dolphin leaps in turn, then runs just under
     const ph = frac(p.t * 0.9 + m.ph);
@@ -493,7 +516,8 @@ function W3(q: readonly number[], out: number[]): number[] {
 }
 // the boat, bobbing with the swell, plus oars/rod/line built in world space
 function drawPlayerBoat(bs: BoatPose): void {
-  const eq = equipment(), wob = 1 + WX.wind * 2.2;
+  const eq: Fit = equipment(), wob = 1 + WX.wind * 2.2;
+  eq.look = myLook();
   let bz = Math.sin(G.t * 1.6) * (0.2 + WX.wind * 0.45) - 0.4, roll = Math.sin(G.t * 1.3 + 1) * 0.035 * wob;
   if (G.mode === 'sunk') { bz -= G.sunkT * 3; roll += G.sunkT * 0.2; }
   const pitch = Math.sin(G.t * 1.1) * 0.025 * wob;
@@ -501,7 +525,7 @@ function drawPlayerBoat(bs: BoatPose): void {
   b3x = bs.x; b3y = bs.y; b3c = Math.cos(bs.a); b3s = Math.sin(bs.a); b3z = bz;
   if (hasOars(G.boatId)) {
     const stow = G.fish || G.mode !== 'play';
-    const g = oarsFor(stow ? SHIPPED : strokePose(G.boat.phaseL), eq.prop, stow ? SHIPPED : strokePose(G.boat.phaseR));
+    const g = oarsFor(stow ? SHIPPED : strokePose(G.boat.phaseL), eq.prop, stow ? SHIPPED : strokePose(G.boat.phaseR), lookCoat(eq.look));
     for (const l of g.lines) MS.dynBox(W3(l.a, W3a), W3(l.b, W3b), l.wide ? 0.95 : 0.6, l.col);
     for (const pt of g.points) {
       const q = W3(pt.p, W3a);

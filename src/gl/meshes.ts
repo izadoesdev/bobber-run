@@ -99,7 +99,8 @@ function cached(key: string, build: () => Vox, dz = 0, noBottom = false): Mesh {
 
 // ---------- boats (rebuilt when the fitted equipment changes) ----------
 const boatCache = new Map<string, Mesh>();      // signature -> mesh, most recently used last
-// the player's boat plus other players' boats nearby (a handful of hull/paint combinations)
+// the player's boat plus other players' boats nearby (up to 12 shown, each with its own look), with room to spare
+// so a full harbour never rebuilds meshes every frame
 export function boatMesh(id: BoatId, eq: Fit): Mesh {
   const sig = eqSig(id, eq);
   let m = boatCache.get(sig);
@@ -107,7 +108,7 @@ export function boatMesh(id: BoatId, eq: Fit): Mesh {
   const g = voxGeometry(decorate(id, eq));
   m = upload(g.verts, g.idx);
   boatCache.set(sig, m);
-  while (boatCache.size > 12) {
+  while (boatCache.size > 24) {
     const [k, old] = boatCache.entries().next().value!;
     gl.deleteBuffer(old.vbo); gl.deleteBuffer(old.ibo); gl.deleteVertexArray(old.vao); boatCache.delete(k);
   }
