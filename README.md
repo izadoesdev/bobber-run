@@ -53,4 +53,4 @@ TypeScript throughout (`bun run typecheck` checks the client and `convex/`).
 
 ## Credits
 
-Fonts: [Pixelify Sans](https://fonts.google.com/specimen/Pixelify+Sans) and [Jersey 10](https://fonts.google.com/specimen/Jersey+10), SIL Open Font License (see `assets/fonts/`).
+Code: MIT (see `LICENSE`). Fonts: [Pixelify Sans](https://fonts.google.com/specimen/Pixelify+Sans) and [Jersey 10](https://fonts.google.com/specimen/Jersey+10), SIL Open Font License (see `assets/fonts/`).

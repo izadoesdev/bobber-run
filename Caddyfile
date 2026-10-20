@@ -1,0 +1,47 @@
+# Railpack serves the Vite build with this file instead of its default (core/providers/node/Caddyfile.template).
+{
+	admin off
+	persist_config off
+	auto_https off
+	log {
+		format json
+	}
+	servers {
+		trusted_proxies static private_ranges 100.0.0.0/8 # trust railway's proxy
+	}
+}
+
+:{$PORT:80} {
+	log {
+		format json
+	}
+	respond /health 200
+
+	header {
+		-Server
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Strict-Transport-Security "max-age=31536000"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+		# Preact sets inline style attributes; the Convex client talks to *.convex.cloud over https and wss
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.convex.site; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+	}
+
+	root * {{.DIST_DIR}}
+	encode zstd gzip
+
+	# hashed build output never changes; the page itself must always be revalidated so it points at current assets
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+	@page path / /index.html
+	header @page Cache-Control "no-cache"
+
+	# single-page game with no client routes: unknown paths are real 404s, not the game page
+	try_files {path} {path}/index.html
+	file_server {
+		hide .git .env*
+	}
+	handle_errors {
+		respond "{err.status_code} {err.status_text}" {err.status_code}
+	}
+}
