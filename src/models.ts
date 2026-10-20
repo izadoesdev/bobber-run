@@ -3,6 +3,7 @@
 // or meshed for the GL renderer (gl/meshes).
 import { Vox, mat, RGB, renderVox, type Vec3, type VoxFrame, type VoxLine, type VoxPoint } from './voxel';
 import { hash01 } from './noise';
+import { smooth01 } from './config';
 import { PAINTS } from './econ';
 import type { BoatId } from './types';
 
@@ -70,14 +71,13 @@ const BOAT = new Vox(-17, 17, -10, 10, 15);
   B.finalize();
 })();
 const BOAT_RAD = 22;
-const smooth = (x: number) => x * x * (3 - 2 * x);
 /** rowboat oar geometry: the oarlock position, how far out the blade reaches, and the fore-aft sweep of a stroke */
 export const OAR = { lockU: 4, lockV: 6, lockZ: 7, reach: 19, sweep: 8 };
 /** Blade [u, z] at stroke phase ph in [0, 1): the first half pulls it aft through the water, the second lifts it forward. */
-export function bladeAt(ph: number): [number, number] {
-  if (ph < 0.5) return [OAR.sweep - 2 * OAR.sweep * smooth(ph / 0.5), 0.3];
+function bladeAt(ph: number): [number, number] {
+  if (ph < 0.5) return [OAR.sweep - 2 * OAR.sweep * smooth01(ph / 0.5), 0.3];
   const q = (ph - 0.5) / 0.5;
-  return [-OAR.sweep + 2 * OAR.sweep * smooth(q), 0.3 + 3.6 * Math.sin(Math.PI * q)];
+  return [-OAR.sweep + 2 * OAR.sweep * smooth01(q), 0.3 + 3.6 * Math.sin(Math.PI * q)];
 }
 /** sprite headings per turn, oar stroke poses, and the extra pose index for oars shipped (stowed) */
 export const NA = 96, NP = 12, SHIPPED = NP;

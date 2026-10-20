@@ -114,6 +114,14 @@ export function boatMesh(id: BoatId, eq: Fit): Mesh {
   }
   return m;
 }
+// A family of meshes by key (tree kind, wingbeat pose, species...), each built on first use. Every family is
+// registered so reset() forgets them all; a hand-kept list let one slip through after a lost context.
+const families: Map<unknown, Mesh>[] = [];
+function family<K>(name: (k: K) => string, build: (k: K) => () => Vox, dz = 0, noBottom = false): (k: K) => Mesh {
+  const memo = new Map<K, Mesh>();
+  families.push(memo);
+  return k => { let m = memo.get(k); if (!m) memo.set(k, m = cached(name(k), build(k), dz, noBottom)); return m; };
+}
 // a mesh built on first use and kept: the accessor allocates nothing per call
 function lazy(key: string, build: () => Vox, dz = 0): () => Mesh {
   let m: Mesh | null = null, g = -1;
@@ -324,8 +332,7 @@ const BED_BUILD: Record<BedKind, () => Vox> = {
   clam, kelp: () => kelpStrand(9), kelpTall: () => kelpStrand(14), urchin, seagrass, basalt, vent, pebble, shell,
   roots: rootTangle, oyster: oysters, leaves,
 };
-const bedMeshes: Partial<Record<BedKind, Mesh>> = {};
-export const bedMesh = (k: BedKind): Mesh => bedMeshes[k] ??= cached('bed:' + k, BED_BUILD[k], 0, true);
+export const bedMesh = family<BedKind>(k => 'bed:' + k, k => BED_BUILD[k], 0, true);
 // ---------- ice floes: flat rafts of sea ice and the odd small berg, drifting on the far northern sea ----------
 const ICE = { top: mat(['#b4cbd6', '#dbe8ee', '#f2f7fa']), side: mat(['#3f7896', '#6aa2bc', '#9ccbdc']) };   // bluish tops, a cold cyan rim
 function floe(r: number, seed: number): Vox {
@@ -347,10 +354,8 @@ function berg(): Vox {
 export const ICE_KINDS = ['floeS', 'floeM', 'floeL', 'berg'] as const;
 export type IceKind = typeof ICE_KINDS[number];
 const ICE_BUILD: Record<IceKind, () => Vox> = { floeS: () => floe(3, 1), floeM: () => floe(5, 2), floeL: () => floe(7.5, 3), berg };
-const iceMeshes: Partial<Record<IceKind, Mesh>> = {};
-export const iceMesh = (k: IceKind): Mesh => iceMeshes[k] ??= cached('ice:' + k, ICE_BUILD[k], 0, true);
-const treeMeshes: Partial<Record<TreeKind, Mesh>> = {};
-export const treeMesh = (k: TreeKind): Mesh => treeMeshes[k] ??= cached('tree:' + k, TREE_BUILD[k], 0, true);   // trees only turn about the vertical
+export const iceMesh = family<IceKind>(k => 'ice:' + k, k => ICE_BUILD[k], 0, true);
+export const treeMesh = family<TreeKind>(k => 'tree:' + k, k => TREE_BUILD[k], 0, true);   // trees only turn about the vertical
 
 // ---------- fish: each species' sprite extruded into a two-voxel-thick slab ----------
 const matCache = new Map<string, number>();
@@ -365,12 +370,9 @@ function matFor(c: string, glow = false): number {
   }
   return m;
 }
-const fishMeshes: Mesh[] = [], goldMeshes: Mesh[] = [];
 const GOLD_PAL = ['#a47f22', '#f0cf6a', '#fff6d6', '#e2b94a'];
 // glow spots (G) always shine; glowing species' fins (F) shine too. `gold`: the species' shape in gold
-export function fishMesh(spIdx: number, gold = false): Mesh {
-  const meshes = gold ? goldMeshes : fishMeshes;
-  return meshes[spIdx] ??= cached((gold ? 'goldfish:' : 'fish:') + spIdx, () => {
+const fishBuild = (gold: boolean) => (spIdx: number) => () => {
     const sp = SPECIES[spIdx], rows = FISH_T[sp.shape], h = rows.length, w = rows[0].length, glowFins = schoolLook(spIdx).glow, c = gold ? GOLD_PAL : sp.c;
     const col: Record<string, string> = { T: c[0], M: c[1], B: c[2], F: c[3], G: c[3], S: c[0], E: '#1b2a33' };   // sprite letters -> colour
     const V = new Vox(-Math.ceil(w / 2), Math.ceil(w / 2), -1, 1, h + 1);
@@ -380,8 +382,9 @@ export function fishMesh(spIdx: number, gold = false): Mesh {
       V.set(u, 0, z, m); if (ch !== 'F') V.set(u, -1, z, m);
     }
     return V.finalize();
-  });
-}
+};
+const plainFish = family<number>(sp => 'fish:' + sp, fishBuild(false)), goldFish = family<number>(sp => 'goldfish:' + sp, fishBuild(true));
+export const fishMesh = (spIdx: number, gold = false): Mesh => (gold ? goldFish : plainFish)(spIdx);
 
 // ---------- sea life and props ----------
 const LM = { whale: mat(['#26343e', '#34464f', '#4a5c66']), belly: mat(['#6d7780', '#8a949c', '#a9b1b7']), dolphin: mat(['#4a5862', '#66747e', '#86949c']),
@@ -470,11 +473,8 @@ function manta(f: number): Vox {
   return V;
 }
 // four wingbeat poses, picked by phase
-const mantaMeshes: Mesh[] = [];
-export function mantaMesh(ph: number): Mesh {
-  const f = ((Math.floor(ph * 4 / (Math.PI * 2)) % 4) + 4) % 4;
-  return mantaMeshes[f] ??= cached('manta' + f, () => manta(f), 4);
-}
+const mantaPose = family<number>(f => 'manta' + f, f => () => manta(f), 4);
+export const mantaMesh = (ph: number): Mesh => mantaPose(((Math.floor(ph * 4 / (Math.PI * 2)) % 4) + 4) % 4);
 export const MANTA_LEN = 17;
 // the vast dark fish that sometimes slides under the boat: just a silhouette, it is always deep
 export const shadowFishMesh = lazy('shadowfish', () => {
@@ -510,8 +510,7 @@ const eelPart = (kind: EelPart) => () => {
   if (kind === 'tail') for (let u = -2; u <= 1; u++) V.set(u, 0, zc + 1 + (u < 0 ? 1 : 0), GM.eel);
   return V;
 };
-const eelMeshes: Partial<Record<EelPart, Mesh>> = {};
-export const eelMesh = (kind: EelPart): Mesh => eelMeshes[kind] ??= cached('eel' + kind, eelPart(kind), 2);
+export const eelMesh = family<EelPart>(k => 'eel' + k, eelPart, 2);
 
 // jellyfish: a glowing bell (open or squeezed) trailing tentacles; tinted per jelly
 const JM = { bell: mat(['#6a7a84', '#8a9ca6', '#b8c8d0'], true), core: mat(['#8a9cb0', '#b8cce0', '#e8f4ff'], true), tent: mat(['#3a4650', '#56646e', '#7a8892']) };
@@ -526,11 +525,9 @@ function jelly(squeeze: boolean): Vox {
   V.set(0, 0, base - 1, JM.core); V.set(0, 0, base - 2, JM.tent);
   return V;
 }
-const jellyMeshes: Mesh[] = [];
-export const jellyMesh = (squeeze: boolean): Mesh => jellyMeshes[squeeze ? 1 : 0] ??= cached('jelly' + (squeeze ? 1 : 0), () => jelly(squeeze), 5);
+export const jellyMesh = family<boolean>(q => 'jelly' + (q ? 1 : 0), q => () => jelly(q), 5);
 export const dolphinMesh = lazy('dolphin', () => { const V = new Vox(-6, 6, -2, 2, 5); ellipsoid(V, 4.6, 1.3, 1.2, LM.dolphin, LM.belly); V.set(5, 0, 1, LM.dolphin); V.set(0, 0, 3, LM.dolphin); V.set(-1, 0, 4, LM.dolphin); V.box(-6, -6, -1, 1, 1, 1, LM.dolphin); return V.finalize(); });
-const gullMeshes: Mesh[] = [];
-export const gullMesh = (up: number): Mesh => gullMeshes[up] ??= cached('gull' + up, () => { const V = new Vox(-3, 3, -5, 5, 4); V.box(-1, 1, 0, 0, 1, 1, LM.gull); V.set(2, 0, 1, LM.beak); for (let v = 1; v <= 4; v++) { const z = up ? 1 + Math.min(2, v - 1) : 1; V.set(0, v, z, v > 3 ? LM.wing : LM.gull); V.set(0, -v, z, v > 3 ? LM.wing : LM.gull); } return V.finalize(); });
+export const gullMesh = family<number>(up => 'gull' + up, up => () => { const V = new Vox(-3, 3, -5, 5, 4); V.box(-1, 1, 0, 0, 1, 1, LM.gull); V.set(2, 0, 1, LM.beak); for (let v = 1; v <= 4; v++) { const z = up ? 1 + Math.min(2, v - 1) : 1; V.set(0, v, z, v > 3 ? LM.wing : LM.gull); V.set(0, -v, z, v > 3 ? LM.wing : LM.gull); } return V.finalize(); });
 export const leviMesh = lazy('levi', () => { const V = new Vox(-22, 22, -8, 8, 7); ellipsoid(V, 17, 6, 3, LM.levi); for (let u = -22; u <= -16; u++) for (let v = -Math.round((-16 - u) * 0.9); v <= Math.round((-16 - u) * 0.9); v++) V.set(u, v, 3, LM.levi); return V.finalize(); });
 export const bobberMesh = lazy('bobber', () => { const V = new Vox(-1, 1, -1, 1, 4); V.box(-1, 1, -1, 1, 0, 0, M.white); V.box(-1, 1, -1, 1, 1, 1, M.redp); V.set(0, 0, 2, M.redp); V.set(0, 0, 3, M.iron); return V.finalize(); });
 export const buoyMesh = lazy('buoy', () => { const V = new Vox(-2, 3, -2, 2, 10); V.box(-1, 1, -1, 1, 0, 1, M.redp); V.box(-1, 1, -1, 1, 2, 2, M.white); V.box(0, 0, 0, 0, 3, 8, M.iron); V.box(1, 2, 0, 0, 7, 8, M.redp); V.set(0, 0, 9, M.lamp); return V.finalize(); });
@@ -538,8 +535,7 @@ export const buoyMesh = lazy('buoy', () => { const V = new Vox(-2, 3, -2, 2, 10)
 /** After a lost WebGL context is restored: forget every mesh (their buffers died with the context); each rebuilds on next use. */
 export function reset(): void {
   gen++; cache.clear(); boatCache.clear(); dyn = null; dynReady = false;
-  for (const memo of [treeMeshes, bedMeshes, eelMeshes] as Record<string, Mesh>[]) for (const k in memo) delete memo[k];
-  for (const memo of [fishMeshes, goldMeshes, mantaMeshes, jellyMeshes, gullMeshes]) memo.length = 0;
+  for (const memo of families) memo.clear();
 }
 
 // ---------- dynamic thin parts, built in world space every frame ----------

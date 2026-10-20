@@ -1,7 +1,6 @@
-// WebGL2 renderer. Terrain + water come from one fragment shader reading the heightfield; boats, landmarks,
-// trees and sea life are lit voxel meshes; shadows are projected along the sun into a world-aligned buffer;
-// wakes/splashes are stamped into a foam buffer the water shader reads; then HDR post (bloom, tilt-shift,
-// filmic grading, vignette, grain, rain).
+// WebGL2 renderer: one fragment shader draws terrain and water from the heightfield; boats, landmarks, trees and sea
+// life are lit voxel meshes; shadows go along the sun into a world-aligned buffer, wakes into a foam buffer the water
+// reads; then HDR post (bloom, tilt-shift, grading, vignette, grain, rain).
 import { W, H, clamp, lerp, frac, smooth01 } from '../config';
 import { ONLINE, type Sailor } from '../online';
 import { SET, type Quality, type PixelStyle } from '../prefs';
@@ -173,6 +172,8 @@ function ensureTargets(): Frame {
 // the pixel-style dither is anchored to world pixels: STY.org = world pixel of the frame's top-left, and frame height
 const STY = { px: 0, org: [0, 0, 1] };
 function styleUniforms(pg: Program): void { U1(pg, 'uPx', STY.px); U3(pg, 'uOrg', STY.org); }
+function sunUniforms(pg: Program, E: Env): void { U3(pg, 'uSun', E.sun); U3(pg, 'uSunC', E.sunC); U3(pg, 'uAmb', E.amb); }
+function lightUniforms(pg: Program, Lt: Lights): void { gl.uniform1i(pg.u.uNL ?? null, Lt.nl); gl.uniform4fv(pg.u.uL ?? null, Lt.L); gl.uniform3fv(pg.u.uLC ?? null, Lt.LC); }
 function U1(pg: Program, name: string, x: number): void { const l = pg.u[name]; if (l) gl.uniform1f(l, x); }
 function U2(pg: Program, name: string, x: number, y: number): void { const l = pg.u[name]; if (l) gl.uniform2f(l, x, y); }
 function U3(pg: Program, name: string, v: ArrayLike<number>): void { const l = pg.u[name]; if (l) gl.uniform3f(l, v[0], v[1], v[2]); }
@@ -265,22 +266,34 @@ function biomeLerp(g: Float32Array, lx: number, ly: number, out: Float32Array | 
 }
 const bmS = [0, 0, 0, 0];
 
-// ---------- trees: deterministic per height tile ----------
+// ---------- per-tile scenery: one candidate spot per GS x GS cell, hashed into place, cached with the tile ----------
+// fn gets the spot, its cell, and the tile's height there; spots that land outside the tile belong to its neighbour
+function tileSpots(t: HeightTile, GS: number, salt: number, fn: (px: number, py: number, gx: number, gy: number, h: number) => void): void {
+  const x0 = t.tx * TS, y0 = t.ty * TS;
+  for (let gy = Math.floor(y0 / GS); gy <= Math.floor((y0 + TS - 1) / GS); gy++) for (let gx = Math.floor(x0 / GS); gx <= Math.floor((x0 + TS - 1) / GS); gx++) {
+    const px = gx * GS + Math.floor(hash01(gx, gy, salt) * GS), py = gy * GS + Math.floor(hash01(gx, gy, salt + 1) * GS);
+    if (px >= x0 && px < x0 + TS && py >= y0 && py < y0 + TS) fn(px, py, gx, gy, t.h[(py - y0 + 1) * TN + px - x0 + 1]);
+  }
+}
+/** Calls fn for every height tile overlapping world rect [x0, x1] x [y0, y1]. */
+function eachTile(x0: number, y0: number, x1: number, y1: number, fn: (tx: number, ty: number) => boolean | void): void {
+  for (let ty = Math.floor(y0 / TS); ty <= Math.floor(y1 / TS); ty++) for (let tx = Math.floor(x0 / TS); tx <= Math.floor(x1 / TS); tx++) if (fn(tx, ty) === false) return;
+}
+
+// ---------- trees ----------
 const KINDS = MS.TREE_KINDS;
 const KI: Record<string, number> = Object.fromEntries(KINDS.map((k, i) => [k, i]));
 // one candidate per 6x6 cell, chosen by height band and climate; cached on the tile as [x, y, kind, scale, yaw] runs
 function tileTrees(t: HeightTile): number[] {
   if (t.trees) return t.trees;
-  const L: number[] = [], x0 = t.tx * TS, y0 = t.ty * TS, GS = 6;
-  for (let gy = Math.floor(y0 / GS); gy <= Math.floor((y0 + TS - 1) / GS); gy++) for (let gx = Math.floor(x0 / GS); gx <= Math.floor((x0 + TS - 1) / GS); gx++) {
-    const r = hash01(gx, gy, 41), px = gx * GS + Math.floor(hash01(gx, gy, 42) * GS), py = gy * GS + Math.floor(hash01(gx, gy, 43) * GS);
-    if (px < x0 || px >= x0 + TS || py < y0 || py >= y0 + TS) continue;
-    const v = t.h[(py - y0 + 1) * TN + px - x0 + 1];
+  const L: number[] = [], x0 = t.tx * TS, y0 = t.ty * TS;
+  tileSpots(t, 6, 42, (px, py, gx, gy, v) => {
+    const r = hash01(gx, gy, 41);
     if (v < 0.03) {                                                         // mangroves stand out in the shallows
-      if (v < -0.06) continue;
+      if (v < -0.06) return;
       biomeLerp(biomeGrid(t), px - x0, py - y0, bmS, 0);
       if (r < 0.55 * bmS[3]) L.push(px + 0.5, py + 0.5, KI.mangrove, 0.8 + hash01(gx, gy, 46) * 0.35, hash01(gx, gy, 47) * 6.283);
-      continue;
+      return;
     }
     let kind: string | null = null;
     if (v < 0.12) { if (r < 0.025) kind = 'boulders'; }                     // the odd heap of stones on the beach
@@ -314,10 +327,10 @@ function tileTrees(t: HeightTile): number[] {
       else if (shrub) kind = 'fern';
     }
     if (cd > 0.5 && (kind === 'palm' || kind === 'fern' || kind === 'mangrove')) kind = 'snowpine';   // nothing tropical on the ice
-    if (!kind) continue;
+    if (!kind) return;
     if (kind === 'pine' || kind === 'round' || kind === 'snowpine') { if (hash01(gx, gy, 44) < 0.3) kind += 'B'; }   // big variant
     L.push(px + 0.5, py + 0.5, KI[kind], 0.85 + hash01(gx, gy, 46) * 0.35, hash01(gx, gy, 47) * 6.283);
-  }
+  });
   return (t.trees = L);
 }
 
@@ -340,14 +353,12 @@ const BED_STRIDE = 7;                            // x, y, kind, scale, yaw, z, c
 function tileBed(t: HeightTile): Float32Array {
   let A = bedProps.get(t);
   if (A) return A;
-  const L: number[] = [], x0 = t.tx * TS, y0 = t.ty * TS, GS = 5, g = biomeGrid(t);
-  for (let gy = Math.floor(y0 / GS); gy <= Math.floor((y0 + TS - 1) / GS); gy++) for (let gx = Math.floor(x0 / GS); gx <= Math.floor((x0 + TS - 1) / GS); gx++) {
-    const px = gx * GS + Math.floor(hash01(gx, gy, 61) * GS), py = gy * GS + Math.floor(hash01(gx, gy, 62) * GS);
-    if (px < x0 || px >= x0 + TS || py < y0 || py >= y0 + TS) continue;
-    const depth = -t.h[(py - y0 + 1) * TN + px - x0 + 1];
-    if (depth < 0.025 || depth > 0.3) continue;
+  const L: number[] = [], x0 = t.tx * TS, y0 = t.ty * TS, g = biomeGrid(t);
+  tileSpots(t, 5, 61, (px, py, gx, gy, h) => {
+    const depth = -h;
+    if (depth < 0.025 || depth > 0.3) return;
     // a pond walled in by land on every side gets nothing (no coral in an inland pool)
-    if (hAt(px + 20, py) > 0 && hAt(px - 20, py) > 0 && hAt(px, py + 20) > 0 && hAt(px, py - 20) > 0) continue;
+    if (hAt(px + 20, py) > 0 && hAt(px - 20, py) > 0 && hAt(px, py + 20) > 0 && hAt(px, py - 20) > 0) return;
     biomeLerp(g, px - x0, py - y0, bmS, 0);
     // only the region that clearly holds this spot places props: where two meet, neither one's mix of coral,
     // kelp and basalt spills into the other's water
@@ -356,15 +367,15 @@ function tileBed(t: HeightTile): Float32Array {
     if (top >= 0.45 && rf === top) { list = BED_REEF; odds = 0.6 * rf; clear = 0.28; }
     else if (top >= 0.45 && kp === top) { list = BED_KELP; odds = 0.5 * kp; clear = 0.34; }
     else if (top >= 0.45 && vc === top) { list = BED_VOLC; odds = 0.28 * vc; clear = 0.36; }
-    else if (top >= 0.45 && mg === top) { if (depth < 0.04) continue; list = BED_MANG; odds = 0.4 * mg; clear = 0.5; }
+    else if (top >= 0.45 && mg === top) { if (depth < 0.04) return; list = BED_MANG; odds = 0.4 * mg; clear = 0.5; }
     else if (top < 0.25 && coldness(py) > 0.45) { list = BED_ICE; odds = 0.18; clear = 0.4; }
     else if (top < 0.25) { list = BED_HOME; odds = 0.07; clear = 0.4; }
-    else continue;                                                  // a border: bare sand between the two
-    if (r > odds * (1 - smooth01((depth - 0.2) / 0.1) * 0.7)) continue;   // thinning out toward the deep edge
+    else return;                                                    // a border: bare sand between the two
+    if (r > odds * (1 - smooth01((depth - 0.2) / 0.1) * 0.7)) return;     // thinning out toward the deep edge
     let kind = pick(list, rk);
     if ((kind === 'kelpTall' || kind === 'vent') && depth < 0.08) kind = list === BED_KELP ? 'kelp' : 'basalt';
     L.push(px + 0.5, py + 0.5, BI[kind], 0.75 + hash01(gx, gy, 66) * 0.45, hash01(gx, gy, 67) * 6.283, -1.4 - depth * 16, clear);
-  }
+  });
   A = new Float32Array(L);
   bedProps.set(t, A);
   return A;
@@ -379,25 +390,29 @@ const ICE_STRIDE = 6;                            // x, y, kind, scale, yaw, phas
 function tileIce(t: HeightTile): Float32Array {
   let A = iceProps.get(t);
   if (A) return A;
-  const L: number[] = [], x0 = t.tx * TS, y0 = t.ty * TS, GS = 22;
-  if (coldness(y0 + TS) > 0.05) for (let gy = Math.floor(y0 / GS); gy <= Math.floor((y0 + TS - 1) / GS); gy++) for (let gx = Math.floor(x0 / GS); gx <= Math.floor((x0 + TS - 1) / GS); gx++) {
-    const px = gx * GS + Math.floor(hash01(gx, gy, 81) * GS), py = gy * GS + Math.floor(hash01(gx, gy, 82) * GS);
-    if (px < x0 || px >= x0 + TS || py < y0 || py >= y0 + TS) continue;
-    const depth = -t.h[(py - y0 + 1) * TN + px - x0 + 1], cd = coldness(py), r = hash01(gx, gy, 83);
-    if (depth < 0.15 || cd < 0.4 || r > 0.2 * smooth01((cd - 0.4) / 0.4)) continue;
-    if (hAt(px + 26, py) > -0.06 || hAt(px - 26, py) > -0.06 || hAt(px, py + 26) > -0.06 || hAt(px, py - 26) > -0.06) continue;   // clear of the shore
+  const L: number[] = [];
+  if (coldness(t.ty * TS + TS) > 0.05) tileSpots(t, 22, 81, (px, py, gx, gy, h) => {
+    const depth = -h, cd = coldness(py), r = hash01(gx, gy, 83);
+    if (depth < 0.15 || cd < 0.4 || r > 0.2 * smooth01((cd - 0.4) / 0.4)) return;
+    if (hAt(px + 26, py) > -0.06 || hAt(px - 26, py) > -0.06 || hAt(px, py + 26) > -0.06 || hAt(px, py - 26) > -0.06) return;   // clear of the shore
     const bm = biomeMix(px, py);
-    if (bm.kelp > 0.3 || bm.reef > 0.3) continue;
+    if (bm.kelp > 0.3 || bm.reef > 0.3) return;
     const rk = hash01(gx, gy, 84), kind = depth > 0.3 && rk < 0.12 ? 3 : rk < 0.45 ? 0 : rk < 0.8 ? 1 : 2;
     L.push(px + 0.5, py + 0.5, kind, 0.8 + hash01(gx, gy, 85) * 0.5, hash01(gx, gy, 86) * 6.283, hash01(gx, gy, 87) * 6.283);
-  }
+  });
   A = new Float32Array(L);
   iceProps.set(t, A);
   return A;
 }
 
+/** arr, or a copy twice its size when `need` floats won't fit (the scene, foam and particle lists grow as needed) */
+function room(arr: Float32Array<ArrayBuffer>, need: number): Float32Array<ArrayBuffer> {
+  if (need <= arr.length) return arr;
+  const a = new Float32Array(arr.length * 2); a.set(arr); return a;
+}
+
 // ---------- instance pools ----------
-interface Pool { mesh: MS.Mesh; arr: Float32Array; n: number }
+interface Pool { mesh: MS.Mesh; arr: Float32Array<ArrayBuffer>; n: number }
 const POOLS = [new Map<MS.Mesh, Pool>(), new Map<MS.Mesh, Pool>()];   // [casts shadow, no shadow]
 // tint: a brightness or an [r,g,b]; glow: how strongly the mesh's glowable voxels shine (lamps 1, sea life by night);
 // clear: how slowly it fades into the water below the waterline (1 for hulls; sea life shows through a little more)
@@ -406,8 +421,7 @@ function inst(mesh: MS.Mesh, x: number, y: number, yaw = 0, scale = 1, z = 0, pi
   const pool = POOLS[noShadow ? 1 : 0];
   let e = pool.get(mesh);
   if (!e) { e = { mesh, arr: new Float32Array(MS.INST * 32), n: 0 }; pool.set(mesh, e); }
-  if ((e.n + 1) * MS.INST > e.arr.length) { const a = new Float32Array(e.arr.length * 2); a.set(e.arr); e.arr = a; }
-  const A = e.arr, o = e.n * MS.INST, mono = typeof tint === 'number';
+  const A = e.arr = room(e.arr, (e.n + 1) * MS.INST), o = e.n * MS.INST, mono = typeof tint === 'number';
   A[o] = x; A[o + 1] = y; A[o + 2] = yaw; A[o + 3] = scale;
   A[o + 4] = z; A[o + 5] = pitch; A[o + 6] = roll; A[o + 7] = glow;
   A[o + 8] = mono ? tint : tint[0]; A[o + 9] = mono ? tint : tint[1]; A[o + 10] = mono ? tint : tint[2]; A[o + 11] = clear;
@@ -576,19 +590,18 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
   POOLS[0].forEach(resetPool); POOLS[1].forEach(resetPool);
   MS.dynBegin(); DYN[0] = bs.x; DYN[1] = bs.y;
   const cx = camX + W / 2, cy = camY + H / 2;
-  // trees
-  for (let ty = Math.floor((camY - 30) / TS); ty <= Math.floor((camY + H + 60) / TS); ty++) for (let tx = Math.floor((camX - 30) / TS); tx <= Math.floor((camX + W + 30) / TS); tx++) {
+  eachTile(camX - 30, camY - 30, camX + W + 30, camY + H + 60, (tx, ty) => {      // trees
     const t = getTile(tx, ty);
-    if (!t.land) continue;
+    if (!t.land) return;
     const L = tileTrees(t);
     for (let i = 0; i < L.length; i += 5) {
       const x = L[i], y = L[i + 1];
       if (x < camX - 24 || x > camX + W + 24 || y < camY - 12 || y > camY + H + 50) continue;
       inst(MS.treeMesh(KINDS[L[i + 2]]), x, y, L[i + 4], L[i + 3]);
     }
-  }
+  });
   // the sea floor in the shallows: coral, kelp swaying with the swell, stones (never casts a shadow)
-  for (let ty = Math.floor((camY - 20) / TS); ty <= Math.floor((camY + H + 40) / TS); ty++) for (let tx = Math.floor((camX - 20) / TS); tx <= Math.floor((camX + W + 20) / TS); tx++) {
+  eachTile(camX - 20, camY - 20, camX + W + 20, camY + H + 40, (tx, ty) => {
     const A = tileBed(getTile(tx, ty));
     for (let i = 0; i < A.length; i += BED_STRIDE) {
       const x = A[i], y = A[i + 1];
@@ -596,9 +609,9 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
       const k = A[i + 2], sway = SWAY.has(k) ? Math.sin(G.t * 1.3 + x * 0.21 + y * 0.13) * 0.16 : 0;
       inst(MS.bedMesh(BEDS[k]), x, y, A[i + 4], A[i + 3], A[i + 5], sway, sway * 0.6, true, 1, k === BI.vent ? 1 : 0, A[i + 6]);
     }
-  }
+  });
   // ice floes rocking gently and drifting a little about their spot
-  for (let ty = Math.floor((camY - 20) / TS); ty <= Math.floor((camY + H + 40) / TS); ty++) for (let tx = Math.floor((camX - 20) / TS); tx <= Math.floor((camX + W + 20) / TS); tx++) {
+  eachTile(camX - 20, camY - 20, camX + W + 20, camY + H + 40, (tx, ty) => {
     const A = tileIce(getTile(tx, ty));
     for (let i = 0; i < A.length; i += ICE_STRIDE) {
       const ph = A[i + 5], x = A[i] + Math.sin(G.t * 0.05 + ph) * 4, y = A[i + 1] + Math.cos(G.t * 0.04 + ph) * 3;
@@ -606,7 +619,7 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
       inst(MS.iceMesh(ICES[A[i + 2]]), x, y, A[i + 4] + Math.sin(G.t * 0.03 + ph) * 0.3, A[i + 3], -0.5 + Math.sin(G.t * 0.9 + ph) * 0.2,
         Math.sin(G.t * 0.7 + ph) * 0.035, Math.cos(G.t * 0.6 + ph) * 0.035, true, 0.8);   // dimmed a touch: bright ice set off the bloom
     }
-  }
+  });
   // landmarks, flotsam, treasure buoys
   for (const p of pois) {
     if (p.type === 'light') inst(MS.lighthouseMesh(), p.x, p.y);
@@ -835,8 +848,7 @@ function lightsFor(bs: BoatPose, pois: Poi[], dk: number): Lights {
 const FOAM_STRIDE = 8;
 let foamArr = new Float32Array(FOAM_STRIDE * 1024), fN = 0;
 function foam(x: number, y: number, s: number, a: number, kind = 0, ang = 0, asp = 1, fk = 1): void {
-  if ((fN + 1) * FOAM_STRIDE > foamArr.length) { const t = new Float32Array(foamArr.length * 2); t.set(foamArr); foamArr = t; }
-  const F = foamArr, o = fN * FOAM_STRIDE;
+  const F = foamArr = room(foamArr, (fN + 1) * FOAM_STRIDE), o = fN * FOAM_STRIDE;
   F[o] = x; F[o + 1] = y; F[o + 2] = s; F[o + 3] = a; F[o + 4] = kind; F[o + 5] = ang; F[o + 6] = asp; F[o + 7] = fk;
   fN++;
 }
@@ -911,8 +923,7 @@ function foamPoints(bs: BoatPose): number {
 const PART_STRIDE = 9;
 let partArr = new Float32Array(PART_STRIDE * 1024), pN = 0;
 function point(x: number, y: number, z: number, sz: number, r: number, g: number, b: number, a: number, st = 0): void {
-  if ((pN + 1) * PART_STRIDE > partArr.length) { const t = new Float32Array(partArr.length * 2); t.set(partArr); partArr = t; }
-  const P = partArr, o = pN * PART_STRIDE;
+  const P = partArr = room(partArr, (pN + 1) * PART_STRIDE), o = pN * PART_STRIDE;
   P[o] = x; P[o + 1] = y; P[o + 2] = z; P[o + 3] = sz; P[o + 4] = r; P[o + 5] = g; P[o + 6] = b; P[o + 7] = a; P[o + 8] = st;
   pN++;
 }
@@ -965,11 +976,11 @@ function partPoints(): void {
 // ---------- prefetch heights (and tree lists) so new terrain never hitches ----------
 export function prefetch(budgetMs = 4): void {
   const t0 = performance.now(), cx = G.cam.x + W / 2, cy = G.cam.y + H / 2, mx = W / 2 + TS * 1.5, my = H / 2 + TS * 1.5;
-  for (let ty = Math.floor((cy - my) / TS); ty <= Math.floor((cy + my) / TS); ty++) for (let tx = Math.floor((cx - mx) / TS); tx <= Math.floor((cx + mx) / TS); tx++) {
-    if (performance.now() - t0 > budgetMs) return;
+  eachTile(cx - mx, cy - my, cx + mx, cy + my, (tx, ty) => {
+    if (performance.now() - t0 > budgetMs) return false;
     if (!hasTile(tx, ty)) getTile(tx, ty);
     else { const t = getTile(tx, ty); if (t.land && !t.trees) tileTrees(t); }
-  }
+  });
 }
 
 // ---------- frame ----------
@@ -978,19 +989,15 @@ const CAM = [0, 0, 0, 0], HR = [0, 0, 0, 0], HT = [0, 0, 0, 0], SHXY = [0, 0];
 const viewPois: Poi[] = [];
 // other players' boats, gathered once per frame
 const fleet: Sailor[] = [];
-function gatherFleet(): void {
-  fleet.length = 0;
-  for (const s of ONLINE.sailors) fleet.push(s);
-}
+function gatherFleet(): void { fleet.length = 0; for (const s of ONLINE.sailors) fleet.push(s); }
 const drawPool = (e: Pool) => MS.drawInstances(e.mesh, e.arr, e.n);
 function drawMeshes(mode: 0 | 1, F: Field, E: Env, Lt: Lights): void {
   const pg = PG.mesh;
   gl.useProgram(pg.p);
   U4(pg, 'uCam', CAM); U4(pg, 'uHR', HR); U2(pg, 'uShXY', SHXY[0], SHXY[1]); gl.uniform1i(pg.u.uMode ?? null, mode); styleUniforms(pg);
   if (mode === 0) {
-    U3(pg, 'uSun', E.sun); U3(pg, 'uSunC', E.sunC); U3(pg, 'uAmb', E.amb); U1(pg, 'uNight', E.dk); U3(pg, 'uWater', E.water);
-    bindTex(pg, 'uH', F.tex, 0); U4(pg, 'uHT', HT);
-    gl.uniform1i(pg.u.uNL ?? null, Lt.nl); gl.uniform4fv(pg.u.uL ?? null, Lt.L); gl.uniform3fv(pg.u.uLC ?? null, Lt.LC);
+    sunUniforms(pg, E); U1(pg, 'uNight', E.dk); U3(pg, 'uWater', E.water);
+    bindTex(pg, 'uH', F.tex, 0); U4(pg, 'uHT', HT); lightUniforms(pg, Lt);
     if (pg.u.uNB) gl.uniform1i(pg.u.uNB, 0);
   }
   POOLS[0].forEach(drawPool);
@@ -1079,8 +1086,7 @@ export function render(alpha: number): void {
   bindTex(pg, 'uH', F.tex, 0); bindTex(pg, 'uFoam', F.foam.tex, 1); bindTex(pg, 'uShadow', F.shadow.tex, 2);
   U4(pg, 'uHR', HR); U4(pg, 'uHT', HT); U4(pg, 'uCam', CAM); U1(pg, 'uT', G.t); U1(pg, 'uWT', WX.waveT); U1(pg, 'uWind', WX.wind); U1(pg, 'uRain', WX.rain);
   U1(pg, 'uNight', E.dk); U1(pg, 'uCloud', E.cloud); U1(pg, 'uFlash', WX.flash * (SET.calm ? 0.15 : 1)); U2(pg, 'uWD', Math.cos(windAngle()), Math.sin(windAngle()));
-  U3(pg, 'uSun', E.sun); U3(pg, 'uSunC', E.sunC); U3(pg, 'uAmb', E.amb); U3(pg, 'uSky', E.sky); styleUniforms(pg);
-  gl.uniform1i(pg.u.uNL ?? null, Lt.nl); gl.uniform4fv(pg.u.uL ?? null, Lt.L); gl.uniform3fv(pg.u.uLC ?? null, Lt.LC);
+  sunUniforms(pg, E); U3(pg, 'uSky', E.sky); styleUniforms(pg); lightUniforms(pg, Lt);
   gl.uniform1i(pg.u.uNB ?? null, Lt.nb); gl.uniform4fv(pg.u.uB ?? null, Lt.B);
   quad();
   gl.depthMask(true);
@@ -1088,7 +1094,7 @@ export function render(alpha: number): void {
   gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
   partPoints();
   const pp = PG.part;
-  gl.useProgram(pp.p); U4(pp, 'uCam', CAM); U1(pp, 'uPpu', w / CAM[2]); U3(pp, 'uSun', E.sun); U3(pp, 'uSunC', E.sunC); U3(pp, 'uAmb', E.amb); styleUniforms(pp);
+  gl.useProgram(pp.p); U4(pp, 'uCam', CAM); U1(pp, 'uPpu', w / CAM[2]); sunUniforms(pp, E); styleUniforms(pp);
   gl.bindVertexArray(partVao); gl.bindBuffer(gl.ARRAY_BUFFER, partBuf);
   if (pN) gl.bufferData(gl.ARRAY_BUFFER, partArr, gl.STREAM_DRAW, 0, pN * PART_STRIDE);
   gl.drawArrays(gl.POINTS, 0, blendN);

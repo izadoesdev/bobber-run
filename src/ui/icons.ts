@@ -375,7 +375,9 @@ const BUILD: Record<string, () => Vox> = {
   },
 };
 
+// every icon is rendered once and kept as a data URL
 const cache = new Map<string, string>();
+const memo = (key: string, make: () => string): string => { let url = cache.get(key); if (url === undefined) cache.set(key, url = make()); return url; };
 // portraits are drawn face-on; everything else at a three-quarter turn
 const FACE_ON = new Set(['maren', 'ida', 'tobias', 'wren', 'nell']);
 
@@ -402,14 +404,7 @@ function toURL(V: Vox, angle = -0.55): string {
 }
 
 /** Data URL for a named voxel icon (upgrade keys, bait, weather, portraits...); '' for an unknown key. */
-export function icon(key: string): string {
-  const hit = cache.get(key);
-  if (hit !== undefined) return hit;
-  const build = BUILD[key];
-  const url = build ? toURL(build(), FACE_ON.has(key) ? 0 : -0.55) : '';
-  cache.set(key, url);
-  return url;
-}
+export const icon = (key: string): string => memo(key, () => BUILD[key] ? toURL(BUILD[key](), FACE_ON.has(key) ? 0 : -0.55) : '');
 
 // fish: the species sprite extruded into a voxel slab, seen side-on
 const matCache = new Map<string, Mat>();
@@ -424,9 +419,7 @@ function matFor(c: string): Mat {
 }
 
 /** Data URL for a species' icon, by index into SPECIES. */
-export function fishIcon(spIdx: number): string {
-  const key = 'fish:' + spIdx, hit = cache.get(key);
-  if (hit !== undefined) return hit;
+export const fishIcon = (spIdx: number): string => memo('fish:' + spIdx, () => {
   const sp = SPECIES[spIdx], rows = FISH_T[sp.shape], h = rows.length, w = rows[0].length;
   // sprite letters -> palette: top, mid, belly, fins (F is a single-layer fin), eye
   const col: Record<string, string> = { T: sp.c[0], M: sp.c[1], B: sp.c[2], F: sp.c[3], G: sp.c[3], S: sp.c[0], E: '#1b2a33' };
@@ -438,7 +431,5 @@ export function fishIcon(spIdx: number): string {
     V.set(u, 0, z, m);
     if (ch !== 'F') V.set(u, -1, z, m);
   }
-  const url = toURL(V, 0);
-  cache.set(key, url);
-  return url;
-}
+  return toURL(V, 0);
+});

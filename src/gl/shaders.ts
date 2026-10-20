@@ -1,8 +1,9 @@
 // GLSL for the renderer. World: x right, y down (south), z up. The camera looks from the south and
 // above, so a point (x,y,z) lands on screen at (x, y - z) and is nearer the more (y + z) it has.
-const NOISE = `
+const HASH = `
 float hash(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x*p.y); }
-float noise(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f*f*(3.0-2.0*f);
+`;
+const NOISE = `${HASH}float noise(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f*f*(3.0-2.0*f);
   return mix(mix(hash(i), hash(i+vec2(1,0)), u.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y); }
 float fbm(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++){ s += a*noise(p); p = p*2.03 + vec2(17.1, 9.3); a *= 0.5; } return s; }
 `;
@@ -395,9 +396,7 @@ precision highp float; precision highp int; in vec2 vUV; out vec4 o;
 uniform sampler2D uScene, uBloom, uBlur;
 uniform float uT, uExp, uSat, uVig, uTilt, uGrain, uRain, uDrops, uFlash, uBloomK, uSlant, uGrade, uDusk;
 uniform vec3 uTint; uniform vec2 uRes, uUVS; uniform float uQ, uInk; uniform vec4 uCam;
-${STYLE}
-float hash(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x*p.y); }
-// rain: short slanted streaks one art pixel wide, placed in world space (so the sea scrolls under them as you sail)
+${STYLE}${HASH}// rain: short slanted streaks one art pixel wide, placed in world space (so the sea scrolls under them as you sail)
 // and snapped to the art grid, falling down the view and leaning with the wind; a near layer and a fainter far one
 float rainDrops(vec2 p, float amt){
   float s = 0.0;
