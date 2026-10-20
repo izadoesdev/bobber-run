@@ -10,7 +10,7 @@ import { onBoatClick } from './touch';
 import { openChatWith } from './chat';
 import { track } from '../analytics';
 
-const BEHIND = 28, FOLLOW_EVERY_MS = 300;
+const BEHIND = 28, LEAD_S = 1.2, FOLLOW_EVERY_MS = 300;
 let cardUid: string | null = null, following: string | null = null, aim: { x: number; y: number } | null = null, timer = 0;
 
 onBoatClick(uid => { cardUid = uid; track('sailor_card_opened', {}); });
@@ -28,7 +28,8 @@ function follow(uid: string): void {
     // they left, a fish took the line, or the player set their own course: stop
     if (!s || G.mode !== 'play' || (mine && aim && Math.hypot(mine.x - aim.x, mine.y - aim.y) > 1)) return stopFollowing();
     const L = BOATS.find(b => b.id === s.id)?.L ?? 14;
-    const x = s.x - Math.cos(s.a) * (BEHIND + L / 2), y = s.y - Math.sin(s.a) * (BEHIND + L / 2);
+    // aim where they will be shortly, so the autopilot doesn't ease off behind a moving boat
+    const x = s.x + s.vx * LEAD_S - Math.cos(s.a) * (BEHIND + L / 2), y = s.y + s.vy * LEAD_S - Math.sin(s.a) * (BEHIND + L / 2);
     if (setCourse(x, y, true)) aim = courseTarget(); else if (G.fish && G.fish.st !== 'cast' && G.fish.st !== 'wait') stopFollowing();
   }, FOLLOW_EVERY_MS);
 }
