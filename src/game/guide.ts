@@ -1,13 +1,13 @@
 // The guide: from the current state, the player's best next step and, when it has one, the place to go.
 // The HUD chip, the objective marker, the minimap, the sea chart and the journal all read `guide()`.
 // Also the first-session tips: a few gentle notes at the right moments, each shown once.
-import { SPECIES, SP, UPGRADES, PROJECTS } from '../econ';
+import { SPECIES, SP, UPGRADES, PROJECTS, BOATS } from '../econ';
 import { poisNear, schoolsNear, homePort, LAIR } from '../world';
 import { SET } from '../prefs';
 import { currentQuest, type Quest, type QuestTarget } from '../story';
-import type { Point, Port, Project, ProjectId, School, UpgradeKey } from '../types';
+import type { BoatDef, Point, Port, Project, ProjectId, School, UpgradeKey } from '../types';
 import { G } from './state';
-import { boatDef, canLand, cap, hpMax, isNight, dayFrac, DAYLEN, logged } from './rules';
+import { boatDef, canLand, cap, hpMax, isNight, dayFrac, DAYLEN, logged, projDone } from './rules';
 import { needStatus, nextProject } from './port';
 import { castRange } from './fishing';
 import { portById } from './save';
@@ -165,13 +165,24 @@ function speciesStep(): Step {
   return { text: isNight() ? 'Fish in new places to find new species' : 'Fish in new places, or wait for night', icon: 'rod', near: 0 };
 }
 // after the story: the next harbour project, else the next upgrade you can afford, else the logbook
-const UPGRADE_ORDER: UpgradeKey[] = ['hold', 'rod', 'sonar', 'prop', 'hull', 'reel', 'line', 'tackle', 'ice', 'lantern', 'bilge', 'spyglass', 'sextant'];
+// the money upgrades first, then the ones you feel, then the dry dock's (they need the dry dock project)
+const UPGRADE_ORDER: UpgradeKey[] = ['hold', 'rod', 'cook', 'ice', 'sonar', 'prop', 'reel', 'line', 'tackle', 'harpoon', 'hull', 'radio', 'lantern', 'spyglass', 'sextant'];
+/** The next boat you can buy (its project done), cheapest first. */
+const nextBoat = (): BoatDef | undefined => BOATS.find(b => !G.owned.includes(b.id) && (!b.req || projDone(b.req)));
+/** Buy the next boat at a shipyard, or earn toward it. The bigger ships open sea giants (Trawler) and the very largest (Flagship). */
+function boatStep(b: BoatDef): Step {
+  if (G.coins < b.cost) return earnStep(b.cost - G.coins, `the ${b.name}`);
+  const yards = [...G.found].filter(id => id.startsWith('port:')).map(portById).filter(p => p.shipyard), p = nearest(yards) || homePort();
+  return at(`Buy the ${b.name} at ${p.name}'s shipyard for ${money(b.cost)}`, p.end, 'anchor', dockNear());
+}
 function freeStep(): Step {
   const pr = nextProject();
   if (pr) return projectStep(pr);
   if (G.hold.length >= cap()) return sellStep();
-  const k = UPGRADE_ORDER.find(k => { const c = UPGRADES[k].costs[G.up[k]]; return c !== undefined && c <= G.coins; });
+  const k = UPGRADE_ORDER.find(k => { const u = UPGRADES[k], c = u.costs[G.up[k]]; return c !== undefined && c <= G.coins && (!u.req || projDone(u.req)); });
   if (k) return buyStep(k, UPGRADES[k].name(boatDef()).toLowerCase());
+  const b = nextBoat();
+  if (b) return boatStep(b);
   return logged() < SPECIES.length ? speciesStep() : fishStep('Break your own records');
 }
 

@@ -44,6 +44,24 @@ function harbourFish(exclude: Set<Fish>): Set<Fish> {
   return keep;
 }
 /** Everything "Sell all" leaves in the hold, and why. */
+// ---------- fish charts ----------
+/** A species' fish chart: about 20 times what one sells for (legends and landmark fish aren't charted). */
+export const fishChartPrice = (sp: number): number => Math.max(100, Math.round(SPECIES[sp].base * 2) * 10);
+export const chartable = (sp: number): boolean => !SPECIES[sp].legend && !SPECIES[sp].special && SPECIES[sp].w > 0;
+/** Buy where a species lives: the chart shades its waters from now on. */
+export function buyFishChart(sp: number): boolean {
+  const s = SPECIES[sp], price = fishChartPrice(sp);
+  if (!chartable(sp) || G.zones[s.id]) return false;
+  if (G.coins < price) { tooPoor(price); sfx('deny'); return false; }
+  addCoins(-price); G.zones[s.id] = true;
+  sfx('coin'); toast(G.log[s.id] ? `Bought the ${s.name} chart` : 'Bought a chart of an unknown fish', 'good');
+  track('fish_chart_bought', { species: s.id, price_bucket: bucket(price), logged: !!G.log[s.id] });
+  saveGame();
+  return true;
+}
+
+/** The fish "Sell all" keeps back: for active contracts and the next harbour project. */
+export const keptBack = (): Set<Fish> => reserved().all;
 function reserved(): { all: Set<Fish>; contracts: number; harbour: number } {
   const c = contractFish(), h = harbourFish(c);
   return { all: new Set([...c, ...h]), contracts: c.size, harbour: h.size };
@@ -163,16 +181,35 @@ function makeOffer(p: Port): Contract {
   const dest = ports.length ? ports[Math.floor(Math.random() * ports.length)] : p;
   // only fish you can already catch, never legends, and fish from far-off waters only once you've logged them
   const cands = SPECIES.filter((s, i) => s.w > 0 && canLand(i) && !s.legend && (!isRegional(s) || !!G.log[s.id]));
+  // ports ask for fish worth your rod: mostly your newest tier, some from the one below, rarely the easy ones
+  const want = (s: (typeof SPECIES)[number]): number => s.w * (s.rod === G.up.rod ? 4 : s.rod === G.up.rod - 1 ? 1.5 : 0.3);
   let total = 0;
-  for (const s of cands) total += s.w;
+  for (const s of cands) total += want(s);
   let v = Math.random() * total, sp = cands[0];
-  for (const s of cands) { v -= s.w; if (v <= 0) { sp = s; break; } }
+  for (const s of cands) { v -= want(s); if (v <= 0) { sp = s; break; } }
   const n = Math.min(cap(), sp.base < 12 ? 3 + Math.floor(Math.random() * 3) : sp.base < 40 ? 2 + Math.floor(Math.random() * 2) : 1);   // never more than the hold carries
   const dist = Math.hypot(dest.x - p.x, dest.y - p.y);
-  return { id: Math.random().toString(36).slice(2, 8), from: p.id, to: dest.id, toName: dest.name, sp: SP[sp.id], n, reward: Math.round(n * sp.base * (1.7 + Math.random() * 0.6) + dist / 20) };
+  return { id: Math.random().toString(36).slice(2, 8), from: p.id, to: dest.id, toName: dest.name, sp: SP[sp.id], n, day: dayNum(),
+    reward: Math.round(n * sp.base * (1.7 + Math.random() * 0.6) + dist / 20 + contractPremium() * (0.75 + Math.random() * 0.5)) };
 }
+/**
+ * What a contract adds on top of the fish and the trip, so it stays worth a detour as you grow: about 3-4 minutes of
+ * what your best boat earns (its Fleet Office rate stands in for that), nothing extra in a rowboat.
+ */
+function contractPremium(): number {
+  const best = Math.max(...G.owned.map(id => FLEET_PER_MIN[id]));
+  return Math.max(0, best - FLEET_PER_MIN.row) * 20;
+}
+/** Two offers per port, replaced each new day if nobody took them. */
 function offersAt(p: Port): Contract[] {
-  return G.offers[p.id] || (G.offers[p.id] = [makeOffer(p), makeOffer(p)]);
+  const today = dayNum(), was = G.offers[p.id];
+  const fresh = (was ?? []).filter(c => c.day === today);
+  if (!was || fresh.length < was.length || fresh.length < 2) {
+    if (was && fresh.length < was.length) track('contract_offers_refreshed', { port: p.id === homePort().id ? 'home' : 'away' });
+    while (fresh.length < 2) fresh.push(makeOffer(p));
+    G.offers[p.id] = fresh;
+  }
+  return G.offers[p.id];
 }
 /** How many fish of a species are in the hold. */
 export const have = (sp: number): number => G.hold.filter(f => f.sp === sp).length;
@@ -274,7 +311,7 @@ function collectFleet(): void {
   const n = fleetTotal();
   if (!n) { sfx('deny'); return; }
   for (const f of Object.values(G.fleet)) f.earned -= Math.floor(f.earned);   // keep the fractions
-  addCoins(n); sfx('coin'); toast(`Collected $${n} from your fleet`, 'good'); saveGame();
+  addCoins(n); sfx('coin'); toast(`Collected $${n} from your fleet`, 'good'); track('fleet_collected', { earned_bucket: bucket(n) }); saveGame();
 }
 function toggleFleet(p: Port, bd: BoatDef): void {
   const out = G.fleet[bd.id];

@@ -2,7 +2,8 @@
 import { G, sonarLvl, logged, canLand } from '../game';
 import { schoolShown, schoolMood } from '../game/schools';
 import { SPECIES, PAINTS } from '../econ';
-import { poisNear, schoolsNear, claimableNear, LAIR } from '../world';
+import { poisNear, schoolsNear, claimableNear, heightAt, LAIR } from '../world';
+import { livesAt } from '../species';
 import { mapTile, MT } from '../maptiles';
 import { ONLINE } from '../online';
 import { ISLANDS, watchExtra } from '../islands';
@@ -24,6 +25,8 @@ export interface ChartOptions {
   /** the guide's objective: a flag on it, or an arrow at the edge pointing to it ('round' for the minimap's circle) */
   target?: Point | null;
   round?: boolean;
+  /** a species to show: where it lives (shaded, once its zone is known) and where you've caught it (pins) */
+  zone?: number | null;
   /** the player's waypoint: its water route from the boat as a dashed line, and a marker (or a rim arrow on the minimap) */
   waypoint?: Point | null;
   /** mark unclaimed islands too (the full chart) */
@@ -42,6 +45,7 @@ export function drawChart(ctx: Ctx, w: number, h: number, cx: number, cy: number
   ctx.fillStyle = '#4f7389';
   ctx.fillRect(0, 0, w, h);
   drawTiles(ctx, w, h, wx0, wy0, wpp, () => performance.now() - t0 < budget);
+  if (opt.zone != null) drawZone(ctx, w, h, wx0, wy0, wpp, opt.zone, S, u, () => performance.now() - t0 < budget + 4);
   if (opt.grid) drawGrid(ctx, w, h, wx0, wy0, wpp, S, u);
 
   const pois = poisNear(cx, cy, Math.max(w, h) * wpp * 0.6);
@@ -100,6 +104,60 @@ function drawTarget(ctx: Ctx, w: number, h: number, [x, y]: [number, number], u:
 }
 
 // the baked map tiles; tiles not built yet are built while `inBudget()` holds and skipped otherwise
+// ---------- fish zones ----------
+// Where a species lives, worked out from the same rules that place its schools, in world-aligned tiles like the map's
+// (16 samples a side, 8 units apart), cached and built within the frame budget. Landmark fish ring their landmarks.
+const ZN = 16, zoneTiles = new Map<string, HTMLCanvasElement | null>();
+const ZONE_FILL = [255, 214, 90];
+/** Whether the chart may shade species `sp`'s zone: its chart was bought, or you've caught it 5 times. */
+export const zoneKnown = (sp: number): boolean => !!G.zones[SPECIES[sp].id] || (G.log[SPECIES[sp].id]?.n ?? 0) >= 5;
+function zoneTile(sp: number, tx: number, ty: number, build: boolean): HTMLCanvasElement | null | undefined {
+  const k = `${sp}:${tx},${ty}`;
+  if (zoneTiles.has(k)) { const c = zoneTiles.get(k)!; zoneTiles.delete(k); zoneTiles.set(k, c); return c; }   // most recent last
+  if (!build) return undefined;
+  const c = document.createElement('canvas');
+  c.width = c.height = ZN;
+  const g = c.getContext('2d')!, img = g.createImageData(ZN, ZN), step = MT / ZN;
+  let any = false;
+  for (let j = 0; j < ZN; j++) for (let i = 0; i < ZN; i++) {
+    const x = tx * MT + (i + 0.5) * step, y = ty * MT + (j + 0.5) * step, h = heightAt(x, y);
+    if (h > -0.07 || !livesAt(sp, x, y, h)) continue;
+    const o = (j * ZN + i) * 4;
+    img.data[o] = ZONE_FILL[0]; img.data[o + 1] = ZONE_FILL[1]; img.data[o + 2] = ZONE_FILL[2]; img.data[o + 3] = 120; any = true;
+  }
+  g.putImageData(img, 0, 0);
+  if (zoneTiles.size > 900) zoneTiles.delete(zoneTiles.keys().next().value!);   // least recently drawn first
+  zoneTiles.set(k, any ? c : null);
+  return any ? c : null;
+}
+function drawZone(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp: number, sp: number, S: Project, u: number, inBudget: () => boolean): void {
+  const s = SPECIES[sp], tpx = MT / wpp;
+  if (zoneKnown(sp)) {
+    if (s.special) {                                       // wreck and lighthouse fish: a ring round each landmark that holds them
+      for (const p of poisNear(wx0 + w * wpp / 2, wy0 + h * wpp / 2, Math.max(w, h) * wpp * 0.6)) {
+        if (p.school?.sp !== sp) continue;
+        const [x, y] = S(p.school.x, p.school.y);
+        ctx.fillStyle = 'rgba(240,207,106,0.35)'; ctx.beginPath(); ctx.arc(x, y, 9 * u, 0, 7); ctx.fill();
+      }
+    } else {
+      ctx.save(); ctx.imageSmoothingEnabled = true;
+      for (let ty = Math.floor(wy0 / MT); ty <= Math.floor((wy0 + h * wpp) / MT); ty++) {
+        for (let tx = Math.floor(wx0 / MT); tx <= Math.floor((wx0 + w * wpp) / MT); tx++) {
+          const c = zoneTile(sp, tx, ty, inBudget());
+          if (c) ctx.drawImage(c, (tx * MT - wx0) / wpp, (ty * MT - wy0) / wpp, tpx, tpx);
+        }
+      }
+      ctx.restore();
+    }
+  }
+  // the spots where you've caught it: small gold pins with a dark rim
+  for (const [px, py] of G.log[s.id]?.at ?? []) {
+    const [x, y] = S(px, py);
+    ctx.beginPath(); ctx.arc(x, y - 6 * u, 3.4 * u, 0, 7); ctx.moveTo(x, y); ctx.lineTo(x - 2 * u, y - 4 * u); ctx.lineTo(x + 2 * u, y - 4 * u); ctx.closePath();
+    ctx.fillStyle = '#f0cf6a'; ctx.fill(); ctx.lineWidth = 1.2 * u; ctx.strokeStyle = COL.ink; ctx.stroke();
+  }
+}
+
 function drawTiles(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp: number, inBudget: () => boolean): void {
   const tpx = MT / wpp;
   for (let ty = Math.floor(wy0 / MT); ty <= Math.floor((wy0 + h * wpp) / MT); ty++) {

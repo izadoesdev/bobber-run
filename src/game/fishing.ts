@@ -2,7 +2,7 @@
 import { nA } from '../noise';
 import { heightAt, schoolsNear } from '../world';
 import { WX, biteMul, trophyBonus } from '../weather';
-import { SPECIES, SP, activeAt, fmtKg } from '../econ';
+import { SPECIES, activeAt, fmtKg } from '../econ';
 import { favBait } from '../species';
 import { sfx } from '../audio';
 import { SET } from '../prefs';
@@ -255,9 +255,13 @@ function reelStage(f: FishLine, dt: number, strike: boolean): void {
 
 // ---------- landing a catch ----------
 /** Weight, value and trophy roll; good strikes, bait, frenzies, storms and bad luck streaks help. */
-function rollCatch(spIdx: number, f: FishLine | null): Fish {
+function rollCatch(spIdx: number, f: FishLine | null, small = false): Fish {
   const s = SPECIES[spIdx], gold = !!f?.gold;
   let r = Math.pow(Math.random(), 2.2);
+  if (small) {                                          // the deckhand's catch: a small one, about 60% of the usual value, no trophy roll
+    r *= 0.4;
+    return { sp: spIdx, kg: Math.round((s.kg[0] + (s.kg[1] - s.kg[0]) * r) * 100) / 100, value: Math.max(1, Math.round(s.base * (0.55 + 0.9 * r) * 0.75)), trophy: false, t: G.clock };
+  }
   if (f?.perfect) r = Math.min(1, r + 0.1);
   const baitBonus = f?.bait === 'shrimp' ? 0.05 : f?.bait === 'glow' ? 0.12 : 0;
   const chance = Math.min(0.3, 0.04 + G.pity * 0.006) + baitBonus + (f?.frenzy ? 0.1 : 0) + (f?.perfect ? 0.04 : 0) + trophyBonus();
@@ -270,15 +274,24 @@ function rollCatch(spIdx: number, f: FishLine | null): Fish {
   return fish;
 }
 
+/** Remember where a species was caught: the school's spot (or the boat's), newest first, a few spots far enough apart. */
+const SPOTS = 6, SPOT_GAP = 150;
+const isSchool = (s: FishStock): s is School => 'x' in s;
+function spotsWith(was: [number, number][] | undefined, stock: FishStock): [number, number][] {
+  const p: { x: number; y: number } = isSchool(stock) ? stock : G.boat;
+  const here: [number, number] = [Math.round(p.x / 10) * 10, Math.round(p.y / 10) * 10];
+  const rest = (was ?? []).filter(([x, y]) => Math.hypot(x - here[0], y - here[1]) >= SPOT_GAP);
+  return [here, ...rest].slice(0, SPOTS);
+}
 /** Put a fish in the hold and update stock, logbook, records and stats. Returns what the card shows. */
 function recordCatch(spIdx: number, stock: FishStock, f: FishLine | null, method: 'rod' | 'net' | 'deckhand' | 'pots'): { fish: Fish; first: boolean; record: boolean; firstTrophy: boolean } {
-  const sp = SPECIES[spIdx], fish = rollCatch(spIdx, f);
+  const sp = SPECIES[spIdx], fish = rollCatch(spIdx, f, method === 'deckhand');
   G.hold.push(fish);
   takeFish(stock);
   if (WX.state === 'storm') G.stats.storm = (G.stats.storm || 0) + 1;
   const prev = G.log[sp.id];
   const first = !prev, record = !!prev && fish.kg > prev.best, firstTrophy = fish.trophy && !prev?.trophy;
-  G.log[sp.id] = { n: (prev?.n || 0) + 1, best: Math.max(prev?.best || 0, fish.kg), trophy: !!(prev?.trophy || fish.trophy) };
+  G.log[sp.id] = { n: (prev?.n || 0) + 1, best: Math.max(prev?.best || 0, fish.kg), trophy: !!(prev?.trophy || fish.trophy), at: spotsWith(prev?.at, stock) };
   if (!prev || fish.kg > prev.best) netCatch(sp.id, fish.kg, G.cheated);          // a personal best goes on the world record board
   G.stats.caught++;
   track('fish_caught', { species: sp.id, method, kg_bucket: bucket(fish.kg), trophy: !!fish.trophy, golden: !!fish.gold, legend: !!sp.legend,
@@ -321,7 +334,7 @@ function landHooked(f: FishLine): void {
   G.catchAnim = { sp: spIdx, t: 0, x: f.fx ?? f.tx, y: f.fy ?? f.ty };
   holdFullNote();
   G.fish = null;
-  bonusFromDeckhand(spIdx);
+  bonusFromDeckhand(f.s);
   saveGame();
 }
 
@@ -331,20 +344,23 @@ export function landNetted(spIdx: number, stock: FishStock, who: Catcher = 'NETT
   const sp = SPECIES[spIdx];
   const { fish, firstTrophy } = recordCatch(spIdx, stock, null, who === 'DECKHAND' ? 'deckhand' : who === 'POTS' ? 'pots' : 'net');
   const by = who === 'DECKHAND' ? 'Your deckhand landed' : who === 'POTS' ? 'Your crab pots hauled' : 'Your drift net caught';
-  toast(`${by} ${firstTrophy ? 'a trophy ' : ''}${sp.name}, ${fmtKg(fish.kg)}`, firstTrophy ? 'good' : 'info');
+  // the drift net works every few seconds, so it only speaks up for a trophy; the deckhand and pots always say so
+  if (who !== 'NETTED' || firstTrophy) toast(`${by} ${firstTrophy ? 'a trophy ' : ''}${sp.name}, ${fmtKg(fish.kg)}`, firstTrophy ? 'good' : 'info');
   sfx('coin', 0.5);
   holdFullNote();
-  saveGame();
+  if (who !== 'DECKHAND') saveGame();                   // the deckhand's catch is saved with yours
 }
 /** Stand-in stock for catches that don't deplete a school. */
 export const endlessStock = (): FishStock => ({ stock: 99, max: 99 });
 
-/** A deckhand sometimes lands a small extra fish after yours. */
-export function bonusFromDeckhand(spIdx: number): void {
+/**
+ * A deckhand sometimes lands a second, smaller fish from the school you just fished (about 60% of the value, never a
+ * trophy). It leaves the last free slot for your own catch, takes from the school's stock, and skips legends.
+ */
+export function bonusFromDeckhand(s: School): void {
   const chance = [0, 0.25, 0.4][crewLvl()];
-  if (!chance || Math.random() > chance || G.hold.length >= cap()) return;
-  const small = SPECIES[spIdx].rod === 0 ? spIdx : SP.sardine;
-  landNetted(small, endlessStock(), 'DECKHAND');
+  if (!chance || s.boss || SPECIES[s.sp].legend || s.stock <= 0 || cap() - G.hold.length < 2 || Math.random() > chance) return;
+  landNetted(s.sp, s, 'DECKHAND');
 }
 
 /** A treasure X on shallow water 500-1400 units away, or null if none found. */

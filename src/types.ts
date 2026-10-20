@@ -56,6 +56,8 @@ export interface Species {
   diff: number;
 }
 
+/** Gear that catches on its own, and can be switched off. */
+export type Helper = 'deckhand' | 'net' | 'pots';
 export type BoatId = 'row' | 'skiff' | 'launch' | 'trawler' | 'schooner' | 'drifter' | 'flagship';
 export type Propulsion = 'OARS' | 'SAIL' | 'ENGINE';
 export interface BoatDef {
@@ -243,9 +245,17 @@ export interface Toast { s: string; kind: ToastKind; t: number }
 export interface Caption { s: string; t: number }
 export interface Floater { s: string; t: number; kind: 'good' | 'bad' }
 
-export interface Contract { id: string; from: string; to: string; toName: string; sp: number; n: number; reward: number }
+export interface Contract {
+  id: string; from: string; to: string; toName: string; sp: number; n: number; reward: number;
+  /** the game day it was offered; unclaimed offers are replaced each new day */
+  day?: number;
+}
 export interface TreasureMap { id: string; x: number; y: number; reward: number }
-export interface LogEntry { n: number; best: number; trophy?: boolean }
+export interface LogEntry {
+  n: number; best: number; trophy?: boolean;
+  /** where you've caught it: up to 6 spots (rounded world positions), newest first, at least 150 units apart */
+  at?: [number, number][];
+}
 export interface FleetBoat { port: string; portName: string; earned: number }
 export interface Frenzy { s: School; until: number }
 export interface CatchCard { fish: Fish; first: boolean; record: boolean; perfect: boolean; bonus: string | null; t: number }
@@ -264,7 +274,11 @@ export interface Talk { lines: TalkLine[]; i: number; then?: (() => void) | unde
 export interface StoryState { i: number; base: Stats; shown: boolean }
 
 export interface PortMenu { tab: number; sel: number; port: Port | null }
-export interface MapView { x: number; y: number; zoom: number }
+export interface MapView {
+  x: number; y: number; zoom: number;
+  /** the species whose zone and catch spots the chart is showing (index into SPECIES), if any */
+  zoneSp?: number | null;
+}
 export interface NetForm {
   name: string | null; email: string; pass: string; show: boolean; mode: 'signUp' | 'signIn';
   /** the account the form was last shown for; a change clears a half-typed name */
@@ -340,6 +354,10 @@ export interface Progress {
   maps: TreasureMap[];
   /** a spot the player marked on the chart: a line to it on the minimap and chart, cleared on arrival */
   waypoint: Point | null;
+  /** helpers the player switched off (they still own them): the deckhand, the drift net, the crab pots */
+  gearOff: Partial<Record<Helper, true>>;
+  /** species ids whose fish chart you bought: the chart shades where they live */
+  zones: Record<string, true>;
   musicOn: boolean;
   /** port id -> contracts on offer there */
   offers: Record<string, Contract[]>;

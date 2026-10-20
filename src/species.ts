@@ -138,6 +138,15 @@ export function pickSpecies(h: number, d: number, r: () => number, x = 0, y = 0,
   for (const [s, w] of candidates) { v -= w; if (v <= 0) return SP[s.id]; }
   return special === 'wreck' ? SP.moray : special === 'light' ? SP.beacon : SP.sardine;
 }
+/**
+ * Whether a school of species `sp` can live in open water at (x, y) with terrain height h: its depth and distance,
+ * its latitude and its biome. Landmark fish (wrecks, lighthouses, the Old One) are placed by their landmark instead.
+ * Used by the chart's fish-zone layer; it mirrors pickSpecies.
+ */
+export function livesAt(sp: number, x: number, y: number, h: number): boolean {
+  const s = SPECIES[sp];
+  return !s.special && s.w > 0 && s.zone(h, Math.hypot(x - 280, y - 280)) && regionWeight(s, x, y) > 0;
+}
 /** Whether species `sp` bites in these conditions. */
 export function activeAt(sp: number, env: Env): boolean {
   const s = SPECIES[sp];

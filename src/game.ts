@@ -4,6 +4,7 @@ export { G, inp, hit } from './game/state';
 export {
   boatDef, cap, hpMax, crewLvl, keelLvl, harpoonLvl, projDone, speedMul, sonarLvl, lightR, netLvl, lineMax, contractSlots,
   fishValue, env, equipment, logged, canLand, catchNeed, deckLvl, deckBoat, DAYLEN, dayFrac, dayNum, darkness, isNight, windAngle, sailEfficiency, boatSpeed, toWorld,
+  ownedLvl,
 } from './game/rules';
 export { caption, toast, spawn } from './game/feedback';
 export { saveGame, hasSave, savedVoyage, placeAtPort, newGame, loadGame, wipeSave } from './game/save';
@@ -13,5 +14,6 @@ export { schoolActive } from './game/schools';
 export {
   priceAt, saleValue, buySupply, have, ferryCost, needStatus, nextProject, fleetTotal, portTabs, portItems, rest, leavePort,
   selectable, setTab, portMenuInput, type PortTab,
+  buyFishChart, fishChartPrice, chartable,
 } from './game/port';
-export { petCat, update, updateCamera, shipInput } from './game/sailing';
+export { petCat, update, updateCamera, shipInput, smallFry, releaseSmallFry, toggleHelper, SMALL_FRY } from './game/sailing';

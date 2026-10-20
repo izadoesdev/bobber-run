@@ -51,7 +51,13 @@ type Events = {
   island_checkout_started: { price_bucket: string };
   island_checkout_returned: { paid: boolean };
   sign_in_opened: { from: 'title' | 'play' };
-  progress: { minutes: number; day: number; coins_bucket: string; species_logged: number; quest: number; projects: number; reason: 'interval' | 'hidden' };
+  fish_released: { count_bucket: '1-2' | '3-7' | '8+'; how: 'one' | 'small' };
+  helper_toggled: { helper: 'deckhand' | 'net' | 'pots'; on: boolean };
+  contract_offers_refreshed: { port: string };
+  fleet_collected: { earned_bucket: string };
+  fish_chart_bought: { species: string; price_bucket: string; logged: boolean };
+  fish_chart_opened: { species: string; how: 'logbook' | 'chart' };
+  progress: { minutes: number; day: number; coins_bucket: string; earned_bucket?: string; species_logged: number; quest: number; projects: number; reason: 'interval' | 'hidden' };
 };
 
 /** Rough bands keep money and weight useful to group by without thousands of distinct values. */

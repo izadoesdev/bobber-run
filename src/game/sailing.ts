@@ -7,15 +7,16 @@ import { SPECIES, SP, SUPPLIES } from '../econ';
 import { sfx, soundscape, music } from '../audio';
 import { SET } from '../prefs';
 import { FUNNEL } from '../models';
-import type { BaitChoice, Crate, Poi, School, TreasureMap, WeatherState, Wreck } from '../types';
+import type { BaitChoice, Crate, Fish, Helper, Poi, School, TreasureMap, WeatherState, Wreck } from '../types';
 import { G, hit } from './state';
-import { boatDef, boatSpeed, cap, catchNeed, dayNum, hpMax, isNight, logged, netLvl, sailEfficiency, toWorld, windAngle } from './rules';
+import { boatDef, boatSpeed, cap, catchNeed, dayNum, fishValue, hpMax, isNight, logged, netLvl, potsLvl, sailEfficiency, toWorld, windAngle } from './rules';
 import { addCoins, burst, celebrate, jitter, spawn, toast } from './feedback';
 import { checkGoals } from './goals';
 import { placeAtPort, portById, saveGame } from './save';
 import { endlessStock, idleOk, landNetted, nearestSchool, tryCast, updateFishing, updateFrenzy, useChum } from './fishing';
 import { schoolActive, swimSchools, updateSchools } from './schools';
-import { dock, updateFleet } from './port';
+import { dock, keptBack, updateFleet } from './port';
+import { track } from '../analytics';
 import { dropCourse, steerCourse } from './autopilot';
 
 // ---------- landmarks ----------
@@ -155,7 +156,7 @@ const netScratch: School[] = [], poiScratch: Poi[] = [], crateScratch: Crate[] =
 /** Crab pots and the drift net fill the hold on their own; schools refill, and fast engines scatter them. */
 function autoCatches(dt: number, speed: number): void {
   const b = G.boat, bd = boatDef();
-  if (G.up.pots > 0 && G.hold.length < cap() && !G.fish && (G.potT += dt) > [0, 240, 150, 60][G.up.pots]) {
+  if (potsLvl() > 0 && G.hold.length < cap() && !G.fish && (G.potT += dt) > [0, 240, 150, 60][potsLvl()]) {
     G.potT = 0;
     landNetted(SP.crab, endlessStock(), 'POTS');
   }
@@ -275,6 +276,28 @@ export function updateCamera(dt: number, bx: number, by: number): void {
 }
 
 // ship screen: browse the hold (three to a row), release fish you don't want
+/** Fish worth less than this count as small fry for "Release small fish". */
+export const SMALL_FRY = 20;
+/** The small fish in the hold that nothing needs (contracts and the harbour project keep theirs). */
+export function smallFry(): Fish[] {
+  const kept = keptBack();
+  return G.hold.filter(f => fishValue(f) < SMALL_FRY && !kept.has(f) && !f.trophy && !f.gold);
+}
+export function releaseSmallFry(): void {
+  const fry = new Set(smallFry());
+  if (!fry.size) return;
+  G.hold = G.hold.filter(f => !fry.has(f));
+  G.shipSel = Math.min(G.shipSel, Math.max(0, G.hold.length - 1));
+  toast(`Released ${fry.size} small fish`); sfx('splash', 0.6);
+  spawn({ kind: 'ring', x: G.boat.x + 14, y: G.boat.y, life: 1, r0: 1, grow: 6 });
+  track('fish_released', { count_bucket: fry.size < 3 ? '1-2' : fry.size < 8 ? '3-7' : '8+', how: 'small' });
+  saveGame();
+}
+/** Switch a helper (deckhand, drift net, crab pots) on or off; you keep it either way. */
+export function toggleHelper(k: Helper): void {
+  if (G.gearOff[k]) delete G.gearOff[k]; else G.gearOff[k] = true;
+  sfx('select'); track('helper_toggled', { helper: k, on: !G.gearOff[k] }); saveGame();
+}
 export function shipInput(): void {
   const n = G.hold.length, last = Math.max(0, n - 1);
   if (hit('ArrowLeft', 'a', 'A')) G.shipSel = Math.max(0, G.shipSel - 1);
@@ -285,6 +308,7 @@ export function shipInput(): void {
     const [f] = G.hold.splice(Math.min(G.shipSel, n - 1), 1);
     G.shipSel = Math.min(G.shipSel, G.hold.length - 1);
     toast(`Released the ${SPECIES[f.sp].name}`); sfx('splash', 0.6);
+    track('fish_released', { count_bucket: '1-2', how: 'one' });
     spawn({ kind: 'ring', x: G.boat.x + 14, y: G.boat.y, life: 1, r0: 1, grow: 6 });
     saveGame();
   }

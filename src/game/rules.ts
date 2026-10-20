@@ -2,7 +2,7 @@
 import { nA } from '../noise';
 import { WX } from '../weather';
 import { SPECIES, BOATS } from '../econ';
-import type { BoatDef, Env, Fish, ProjectId, UpgradeKey } from '../types';
+import type { BoatDef, Env, Fish, ProjectId, UpgradeKey, Helper } from '../types';
 import type { Fit } from '../models';
 import { G } from './state';
 import { frac } from '../config';
@@ -38,11 +38,16 @@ export const cap = (): number => boatStats().hold;
 export const hpMax = (): number => boatStats().hp;
 // gear a ship carries built in counts like the upgrade
 const gearLvl = (k: UpgradeKey): number => Math.max(G.up[k], builtIn(k));
-export const crewLvl = (): number => gearLvl('deckhand');
+/** A helper's level, or 0 while the player has it switched off. */
+const helperLvl = (k: Helper): number => G.gearOff[k] ? 0 : gearLvl(k);
+export const crewLvl = (): number => helperLvl('deckhand');
 export const keelLvl = (): number => gearLvl('keel');
 export const harpoonLvl = (): number => gearLvl('harpoon');
 export const sonarLvl = (): number => gearLvl('sonar');
-export const netLvl = (): number => gearLvl('net');
+export const netLvl = (): number => helperLvl('net');
+export const potsLvl = (): number => helperLvl('pots');
+/** The level of a helper you own or your boat carries, whether or not it is switched on. */
+export const ownedLvl = (k: Helper): number => gearLvl(k);
 export const projDone = (id: ProjectId): boolean => G.projects.includes(id);
 export const speedMul = (): number => boatStats().speed;
 export const lightR = (): number => 21 + 19 * G.up.lantern;

@@ -426,3 +426,9 @@ html.touch #ui .screen:has(.chartwrap) .foot { padding-right: 130px; }
 /* what you can do right here, under the boat */
 .prompt-world { position: absolute; transform: translate(-50%, 0); font-size: var(--fs-s); white-space: nowrap; color: #fff6dc; text-shadow: 0 0.08em 0 #000, 0 0 0.4em #000c; pointer-events: none; animation: region-in 0.3s ease-out; }
 .prompt-world .key { font-size: 0.9em; }
+/* the logbook's fish chart row, the chart's "showing" line, the ship screen's helpers */
+.fish-chart { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em; margin-top: 0.6em; }
+.chartwrap { position: relative; }
+.chip.zone-on { position: absolute; left: 0.6em; top: 0.6em; z-index: 1; gap: 0.5em; color: #f6eedc; pointer-events: auto; max-width: calc(100% - 1.2em); white-space: normal; }
+.chip.zone-on .x { font: inherit; font-size: 1.2em; line-height: 1; color: var(--muted); background: none; border: 0; padding: 0 0.2em; cursor: pointer; }
+.item.helper .btn.on { border-color: var(--good); color: var(--good); }

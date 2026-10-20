@@ -45,7 +45,7 @@ export const UPGRADES: Record<UpgradeKey, Upgrade> = {
   spyglass: { name: () => 'Spyglass', cat: 'NAVIGATION', costs: [140, 600], lv: ['Chart places from 1.5 times as far away', 'Chart places from twice as far away, and see the species of nearby schools'] },
   sextant:  { name: () => 'Sextant', cat: 'NAVIGATION', costs: [200, 800], lv: ['Your minimap points to the nearest uncharted place', 'Your chart also marks every uncharted place'] },
   radio:    { name: () => 'Radio', cat: 'NAVIGATION', costs: [250, 1500], lv: ['Feeding frenzies come 35% more often', 'Also shows the weather forecast while you sail'] },
-  deckhand: { name: () => 'Deckhand', cat: 'CREW', costs: [300, 2000], lv: ['25% chance to land a bonus small fish after each of yours', '40% chance, and sets the hook for you if you are late'] },
+  deckhand: { name: () => 'Deckhand', cat: 'CREW', costs: [300, 2000], lv: ['25% chance to land a second, smaller fish from the same school (you can switch it off on the Ship screen)', '40% chance, and sets the hook for you if you are late'] },
   cook:     { name: () => 'Cook', cat: 'CREW', costs: [350, 2500], lv: ['Smokes your catch: every sale pays 10% more', 'Every sale pays 20% more'] },
   quarter:  { name: () => 'Quartermaster', cat: 'CREW', costs: [250, 1200], lv: ['Hold 4 contracts at once; contracts pay 15% more', 'Hold 5 contracts at once; contracts pay 30% more'] },
   // dry dock upgrades (need the dry dock project)

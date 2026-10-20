@@ -1,15 +1,17 @@
 // Full-screen documents and panels: the sea chart, the logbook, the ship and hold, and the story journal.
 import { clamp, money } from '../config';
-import { G, logged, cap, hpMax, boatDef, equipment, fishValue, speedMul, deckLvl, deckBoat } from '../game';
+import { G, logged, cap, hpMax, boatDef, equipment, fishValue, speedMul, deckLvl, deckBoat, ownedLvl, smallFry, releaseSmallFry, toggleHelper, SMALL_FRY, buyFishChart, fishChartPrice, chartable } from '../game';
+import { track } from '../analytics';
 import { SPECIES, UPGRADES, PAINTS, SUPPLIES, fmtKg } from '../econ';
-import { homePort, claimableNear } from '../world';
+import { homePort, claimableNear, heightAt } from '../world';
+import { livesAt } from '../species';
 import { setWaypoint, clearWaypoint } from '../waypoint';
 import { openIsland } from './island';
 import { NET } from '../net';
 import { QUESTS, CHAPTERS, PEOPLE, currentQuest, questProgress, story } from '../story';
 import { guide, guideOn, stepLine } from '../game/guide';
 import type { UpgradeKey } from '../types';
-import { drawChart, compassRose } from './chart';
+import { drawChart, compassRose, zoneKnown } from './chart';
 import { Bar, Canvas, Cell, Fish, Hint, Icon, Key, Pips, boatPreview, type DrawFn } from './parts';
 
 // ---------- chart ----------
@@ -25,7 +27,7 @@ export function Chart() {
   const m = G.map, base = m.zoom === 1 ? 2.2 : 4.6;           // world units per CSS pixel
   const step = guide(), target = guideOn() ? step.at : null;
   const draw: DrawFn = (ctx, w, h, dpr) => {
-    drawChart(ctx, w, h, G.boat.x + m.x, G.boat.y + m.y, base / dpr, { dpr, labels: true, grid: true, budget: 10, sextant: G.up.sextant, target, waypoint: G.waypoint, islands: true });
+    drawChart(ctx, w, h, G.boat.x + m.x, G.boat.y + m.y, base / dpr, { dpr, labels: true, grid: true, budget: 10, sextant: G.up.sextant, target, waypoint: G.waypoint, islands: true, zone: m.zoneSp });
     compassRose(ctx, w - 60 * dpr, h - 64 * dpr, 40 * dpr);
   };
   const hp = homePort();
@@ -40,6 +42,9 @@ export function Chart() {
         </div>
       </header>
       <div class="chartwrap">
+        {m.zoneSp != null && <div class="chip zone-on"><Fish sp={m.zoneSp} size="s" /><span>{G.log[SPECIES[m.zoneSp].id] ? SPECIES[m.zoneSp].name : 'Unknown fish'}{zoneKnown(m.zoneSp) ? ': gold water is where it lives' : ''}{G.log[SPECIES[m.zoneSp].id]?.at?.length ? ', pins are where you caught it' : ''}</span>
+          {nearestHome(m.zoneSp) && <button class="btn small-btn" onClick={() => { const p = nearestHome(m.zoneSp!); if (p) setWaypoint(p.x, p.y); }}>Waypoint to nearest</button>}
+          <button class="x" aria-label="Stop showing this fish" onClick={() => { m.zoneSp = null; }}>×</button></div>}
         <Canvas
           draw={draw}
           onPointerDown={e => { if (e.button !== 0) return; drag = [e.clientX, e.clientY]; moved = 0; e.currentTarget.setPointerCapture(e.pointerId); }}
@@ -69,6 +74,47 @@ const WX_TXT: Record<string, string> = { any: '', rain: ', in rain', storm: ', i
 const FIGHTS: Record<string, string> = {
   steady: 'Pulls steadily', darter: 'Darts off suddenly', generic: 'Pulls hard in bursts', jumper: 'Jumps. Stop reeling while it is in the air', erratic: 'Pulls in random directions', boss: 'Fights in three rounds',
 };
+// ---------- fish charts ----------
+/** Where to centre the chart for a species: your nearest catch spot, else the nearest water it lives in (searched outward). */
+let homeKey = '', homeAt: { x: number; y: number } | null = null;   // the search below is too slow to repeat every frame
+function nearestHome(sp: number): { x: number; y: number } | null {
+  const b = G.boat, spots = G.log[SPECIES[sp].id]?.at ?? [];
+  const key = `${sp}:${Math.round(b.x / 100)},${Math.round(b.y / 100)}:${spots.length}:${zoneKnown(sp)}`;
+  if (key === homeKey) return homeAt;
+  homeKey = key;
+  return homeAt = findHome(sp, spots);
+}
+function findHome(sp: number, spots: [number, number][]): { x: number; y: number } | null {
+  const b = G.boat;
+  if (spots.length) { const [x, y] = spots.reduce((a, s) => Math.hypot(s[0] - b.x, s[1] - b.y) < Math.hypot(a[0] - b.x, a[1] - b.y) ? s : a); return { x, y }; }
+  if (!zoneKnown(sp) || SPECIES[sp].special) return null;
+  for (let r = 150; r <= 6000; r += 150) for (let k = 0, n = Math.ceil(r / 40); k < n; k++) {
+    const a = k / n * Math.PI * 2, x = b.x + Math.cos(a) * r, y = b.y + Math.sin(a) * r, h = heightAt(x, y);
+    if (h < -0.07 && livesAt(sp, x, y, h)) return { x, y };
+  }
+  return null;
+}
+/** Open the sea chart on a species: its waters (if known), your catch spots, centred on the nearest of them. */
+export function showOnChart(sp: number, how: 'logbook' | 'chart' = 'logbook'): void {
+  const m = G.map, p = nearestHome(sp);
+  m.zoneSp = sp; m.zoom = 2;
+  if (p) { m.x = p.x - G.boat.x; m.y = p.y - G.boat.y; }
+  G.mode = 'map';
+  track('fish_chart_opened', { species: SPECIES[sp].id, how });
+}
+function FishChartRow({ sp }: { sp: number }) {
+  const s = SPECIES[sp], e = G.log[s.id], known = zoneKnown(sp), price = fishChartPrice(sp), spots = e?.at?.length ?? 0;
+  return (
+    <div class="fish-chart">
+      {(e || known) && <button data-track="fish-show-on-chart" class="btn small-btn" onClick={() => showOnChart(sp)}>Show on chart</button>}
+      {chartable(sp) && !known && <button data-track="fish-chart-buy" class="btn small-btn" disabled={G.coins < price} onClick={() => buyFishChart(sp)}>Buy its chart · {money(price)}</button>}
+      <span class="muted small">{s.legend ? 'Legends are on no chart. Follow the stories.'
+        : known ? `Its waters are on your chart${spots ? `, with ${spots} spot${spots === 1 ? '' : 's'} where you caught it` : ''}.`
+        : e ? `Catch ${5 - e.n} more to learn where it lives, or buy its chart.`
+        : 'Buy its chart to see where it lives, before you ever catch one.'}</span>
+    </div>
+  );
+}
 export function Logbook() {
   const sel = clamp(G.logSel || 0, 0, SPECIES.length - 1), s = SPECIES[sel], e = G.log[s.id], world = NET.records[s.id];
   return (
@@ -96,6 +142,7 @@ export function Logbook() {
             {e && <><dt>Caught</dt><dd>{e.n}</dd><dt>Your best</dt><dd>{fmtKg(e.best)}</dd></>}
             {world && <><dt>World record</dt><dd class="gold">{fmtKg(world.kg)} by {world.name}</dd></>}
           </dl>
+          <FishChartRow sp={sel} />
         </div>
       </div>
       <footer class="foot">
@@ -118,6 +165,9 @@ export function Ship() {
   const need = new Map<number, number>();
   for (const c of G.active) need.set(c.sp, (need.get(c.sp) || 0) + c.n);
   const fitted = (Object.keys(UPGRADES) as UpgradeKey[]).filter(k => G.up[k] > 0);
+  // helpers you own (or your boat carries) can be switched off without selling them
+  const helpers = ([['deckhand', 'Deckhand', 'Sometimes lands a second, smaller fish from the same school'], ['net', 'Drift net', 'Catches small fish while you drift slowly over them'], ['pots', 'Crab pots', 'Haul a crab into your hold now and then']] as const).filter(([k]) => ownedLvl(k) > 0);
+  const fry = smallFry().length;
   return (
     <div class="screen panel rivets">
       <header class="head">
@@ -154,6 +204,8 @@ export function Ship() {
               <button data-track="release-fish" class="btn" onClick={() => { G.pressed.add('x'); }}>Release<Key k="x" /></button>
             </>
             : <span class="muted">Your hold is empty. Go fishing!</span>}</div>
+          {fry > 0 && <div class="well pad row"><span class="grow">{fry} small fish worth under {money(SMALL_FRY)} each. Fish kept for contracts and the harbour stay.</span>
+            <button data-track="release-small" class="btn" onClick={releaseSmallFry}>Release small fish</button></div>}
         </div>
         <div class="col side">
           <div class="list-head caps">Upgrades</div>
@@ -166,6 +218,15 @@ export function Ship() {
             );
           })}
           {!fitted.length && <p class="muted">No upgrades yet. Buy them in the Outfitter tab at any port.</p>}
+          {helpers.length > 0 && <>
+            <div class="list-head caps">Helpers</div>
+            {helpers.map(([k, name, what]) => (
+              <div class="item static helper">
+                <Icon k={k} /><div class="grow"><div>{name}</div><div class="sub">{what}</div></div>
+                <button data-track={`helper-${k}`} class={'btn small-btn' + (G.gearOff[k] ? '' : ' on')} aria-pressed={!G.gearOff[k]} onClick={() => toggleHelper(k)}>{G.gearOff[k] ? 'Off' : 'On'}</button>
+              </div>
+            ))}
+          </>}
         </div>
       </div>
       <footer class="foot">
