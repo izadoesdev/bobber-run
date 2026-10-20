@@ -12,8 +12,6 @@ export { refreshSolids, physicsStep, sink } from './game/physics';
 export { cancelFishing, TUNE, idleOk, bonusFromDeckhand } from './game/fishing';
 export { schoolActive } from './game/schools';
 export {
-  priceAt, saleValue, buySupply, have, ferryCost, needStatus, nextProject, fleetTotal, portTabs, portItems, rest, leavePort,
-  selectable, setTab, portMenuInput, type PortTab,
-  buyFishChart, fishChartPrice, chartable, dockGrade, dockHand, dock,
+  priceAt, fleetTotal, portTabs, portItems, leavePort, setTab, portMenuInput, buyFishChart, fishChartPrice, chartable, dockGrade, dock,
 } from './game/port';
 export { petCat, update, updateCamera, shipInput, smallFry, releaseSmallFry, toggleHelper, SMALL_FRY } from './game/sailing';
