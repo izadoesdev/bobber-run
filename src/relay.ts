@@ -1,7 +1,7 @@
 // The realtime position relay (server/). When VITE_RELAY_URL is set, boat positions and greetings go over this
 // WebSocket at about ten updates a second; otherwise, or while it is unreachable, net.ts uses Convex instead.
 import { heard, ONLINE } from './online';
-import { FORCED_OFFLINE } from './net';
+import { FORCED_OFFLINE } from './offline';
 
 const URL: string | undefined = FORCED_OFFLINE ? undefined : import.meta.env.VITE_RELAY_URL;
 export type RelayBoat = { id: string; name: string; x: number; y: number; a: number; vx: number; vy: number; w: number; boat: string; paint: string; at: number; emote: number | null; emoteAt: number };
