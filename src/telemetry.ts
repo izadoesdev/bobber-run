@@ -39,7 +39,7 @@ function syncContext(): void {
 }
 function progress(reason: 'interval' | 'hidden'): void {
   if (G.mode === 'title') return;
-  track('progress', { minutes: Math.round(playTime / 60), day: dayNum(), coins_bucket: bucket(G.coins), species_logged: logged(),
+  track('progress', { minutes: Math.round(playTime / 60), day: dayNum(), coins_bucket: bucket(G.coins), earned_bucket: bucket(G.earned), species_logged: logged(),
     quest: G.story?.i ?? 0, projects: G.projects.length, reason });
   updateTraits({ boat: G.boatId, day: dayNum(), species_logged: logged(), projects: G.projects.length });
 }
