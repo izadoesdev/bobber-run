@@ -3,7 +3,7 @@
 import { h, render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { ConvexReactClient } from 'convex/react';
-import type { FunctionReference } from 'convex/server';
+import type { FunctionArgs, FunctionReference, FunctionReturnType } from 'convex/server';
 import { ConvexAuthProvider, useAuthActions, useAuthToken, useConvexAuth } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
 import { ONLINE, type Sailor } from './online';
@@ -20,9 +20,10 @@ const FUND_KEY = 'grand-harbour';
 
 /** Just what this module needs from the game state. */
 interface Game { mode: string; boat: { x: number; y: number; a: number; vx: number; vy: number; w: number }; boatId: string; paint: string }
-type Profile = { userId: string; name: string; chosen: boolean; guest: boolean; email: string | null; sea: number | null; admin: boolean };
+// shapes come straight from the server functions, so client and server can't drift apart
+type Profile = NonNullable<FunctionReturnType<typeof api.profiles.me>>;
 /** round: which filling of the fund this is (each filled round raises the next goal). */
-type Fund = { total: number; givers: number; goal: number; round: number; mine: number };
+type Fund = FunctionReturnType<typeof api.fund.get>;
 type Status = 'offline' | 'connecting' | 'online';
 type Result = { ok: true; msg?: string; loaded?: boolean; name?: string } | { ok: false; why: string };
 /** Set once this browser has signed into an account, so the Online screen opens on "I have an account". */
@@ -235,23 +236,18 @@ export async function signOut(): Promise<Result> {
 }
 // ---------- leaderboards and the online count ----------
 export type LeaderBy = 'species' | 'records' | 'heaviest' | 'caught' | 'earned';
-export interface Leaders { rows: { name: string; value: number; label?: string; admin?: boolean }[]; me: { rank: number; value: number } | null }
-/** One fetch (not a subscription); null when offline or the query isn't deployed yet. */
-export async function leaders(by: LeaderBy): Promise<Leaders | null> {
+export type Leaders = FunctionReturnType<typeof api.leaderboard.top>;
+export type WeeklyBoard = FunctionReturnType<typeof api.leaderboard.weekly>;
+/** One fetch, not a subscription; null when offline or the query isn't deployed yet. */
+async function fetchOnce<Q extends FunctionReference<'query'>>(ref: Q, args: FunctionArgs<Q>): Promise<FunctionReturnType<Q> | null> {
   if (!client) return null;
-  try { return await client.query(api.leaderboard.top, { by }); } catch { return null; }
+  try { return await client.query(ref, args); } catch { return null; }
 }
-export interface WeeklyBoard { week: number; start: number; end: number; species: { id: string; name: string; top: { name: string; value: number; admin?: boolean; at: number }[]; mine: number | null }[] }
-/** This week's running species and their heaviest catches (one fetch); null when offline. See convex/rotation.ts. */
-export async function weeklyBoard(): Promise<WeeklyBoard | null> {
-  if (!client) return null;
-  try { return await client.query(api.leaderboard.weekly, {}); } catch { return null; }
-}
+export const leaders = (by: LeaderBy) => fetchOnce(api.leaderboard.top, { by });
+/** This week's running species and their heaviest catches. See convex/rotation.ts. */
+export const weeklyBoard = () => fetchOnce(api.leaderboard.weekly, {});
 /** Sailors online coastwide, for the title screen (no sign-in needed); null if unknown. */
-export async function onlineCount(): Promise<number | null> {
-  if (!client) return null;
-  try { return (await client.query(api.leaderboard.online, {})).total; } catch { return null; }
-}
+export const onlineCount = async () => (await fetchOnce(api.leaderboard.online, {}))?.total ?? null;
 let statsAt = 0;
 /** Report lifetime totals for the leaderboards, at most once a minute; nothing for cheated saves or when offline. */
 export function reportStats(caught: number, earned: number, cheated = false): void {
@@ -261,7 +257,7 @@ export function reportStats(caught: number, earned: number, cheated = false): vo
 }
 // ---------- islands ----------
 /** logoPending: your own logo, still waiting for an admin to approve it before other sailors see it. */
-export interface IslandRow { key: string; name: string; owner: string; logoUrl: string | null; logoPending: boolean; url: string | null; mine: boolean }
+export type IslandRow = FunctionReturnType<typeof api.islands.near>[number];
 /** Keep `cb` up to date with the claimed islands among these cell keys (one subscription; a new key list replaces it). */
 export function watchIslands(keys: string[], cb: (list: IslandRow[]) => void): void {
   if (client) watch<IslandRow[]>('islands', api.islands.near, { keys: keys.slice(0, 150) }, cb);
@@ -277,9 +273,10 @@ export const claimIsland = (key: string, name: string) => islandCall(() => clien
  * Start buying an island with real money: the server holds it for 30 minutes and returns a Stripe Checkout URL to open.
  * Stripe sends the player back to /?island=<key>&paid=1 (or paid=0 if they cancel); the island turns up once paid.
  */
-export async function buyIsland(key: string, name: string, adult?: boolean): Promise<{ ok: true; url: string; price: number } | { ok: false; why: string }> {
+/** `adult`: the buyer confirmed they are 18 or older, or a parent or guardian said yes (the server refuses without it). */
+export async function buyIsland(key: string, name: string, adult: boolean): Promise<FunctionReturnType<typeof api.islands.buy>> {
   if (!NET.authed) return { ok: false, why: 'Sign in to buy islands' };
-  try { return await client!.action(api.islands.buy, { key, name, ...(adult === undefined ? {} : { adult }) }); } catch { return { ok: false, why: 'Could not reach the server' }; }
+  try { return await client!.action(api.islands.buy, { key, name, adult }); } catch { return { ok: false, why: 'Could not reach the server' }; }
 }
 export const renameIsland = (key: string, name: string) => islandCall(() => client!.action(api.islands.rename, { key, name }));
 export const releaseIsland = (key: string) => islandCall(() => client!.mutation(api.islands.release, { key }));

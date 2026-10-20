@@ -3,11 +3,11 @@ import { query, mutation, internalMutation } from './_generated/server';
 import { getAuthUserId } from '@convex-dev/auth/server';
 import { requireUser, profileOf, cellOf, finite } from './lib';
 import { touchIslands } from './islands';
-import { NEAR_MAX, SEAS, MOVE_MIN_MS, EMOTE_MIN_MS } from './limits';
+import { NEAR_MAX, MOVE_MIN_MS, EMOTE_MIN_MS } from './limits';
 
+// The Convex fallback for boat positions when the realtime relay (server/) is down, plus coast news.
+// Everyone sails one shared sea, sea 0; the sea field stays on rows and cell keys so the world could be split again.
 const ACTIVE_MS = 60_000;
-// Everyone sails one shared sea (sea 0). The sea field stays on rows so the world could be split again later.
-// otherwise you are moved to the first sea with space. Seas only see their own boats.
 export const join = mutation({
   args: {},
   handler: async ctx => {
@@ -74,8 +74,7 @@ export const sweep = internalMutation({
   args: {},
   handler: async ctx => {
     const now = Date.now();
-    for (const sea of [undefined, ...Array.from({ length: SEAS }, (_, i) => i)])
-      for (const p of await ctx.db.query('positions').withIndex('by_sea_at', q => q.eq('sea', sea).lt('at', now - ACTIVE_MS)).take(100)) await ctx.db.delete(p._id);
+    for (const p of await ctx.db.query('positions').withIndex('by_sea_at', q => q.eq('sea', 0).lt('at', now - ACTIVE_MS)).take(100)) await ctx.db.delete(p._id);
     for (const e of await ctx.db.query('events').withIndex('by_at', q => q.lt('at', now - 86_400_000)).take(200)) await ctx.db.delete(e._id);
   },
 });
