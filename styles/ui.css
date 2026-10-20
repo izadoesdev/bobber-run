@@ -1,9 +1,9 @@
 /* Bobber Run UI. Two surfaces: wood (frames, navigation, HUD) and parchment (documents, details).
    One focus colour, one type scale, sentence case except short labels. */
-@font-face { font-family: 'Pixelify'; src: url(../assets/fonts/pixelify-sans-latin-400-normal.woff2) format('woff2'); font-weight: 400; }
-@font-face { font-family: 'Pixelify'; src: url(../assets/fonts/pixelify-sans-latin-600-normal.woff2) format('woff2'); font-weight: 600; }
-@font-face { font-family: 'Pixelify'; src: url(../assets/fonts/pixelify-sans-latin-700-normal.woff2) format('woff2'); font-weight: 700; }
-@font-face { font-family: 'Jersey'; src: url(../assets/fonts/jersey-10-latin-400-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Pixelify'; src: url(/fonts/pixelify-sans-latin-400-normal.woff2) format('woff2'); font-weight: 400; font-display: block; }
+@font-face { font-family: 'Pixelify'; src: url(/fonts/pixelify-sans-latin-600-normal.woff2) format('woff2'); font-weight: 600; font-display: block; }
+@font-face { font-family: 'Pixelify'; src: url(/fonts/pixelify-sans-latin-700-normal.woff2) format('woff2'); font-weight: 700; font-display: block; }
+@font-face { font-family: 'Jersey'; src: url(/fonts/jersey-10-latin-400-normal.woff2) format('woff2'); font-display: block; }
 
 #ui {
   /* type */
@@ -285,6 +285,7 @@ h2, .title { font-size: var(--fs-xl); }
 #ui input { pointer-events: auto; font: inherit; color: var(--text); background: var(--well); border: 0.1em solid var(--edge); border-radius: var(--r); padding: 0.3em 0.5em; min-width: 0; flex: 1; }
 #ui input:focus { outline: 0.12em solid var(--focus); }
 .label-world.sailor { color: var(--sea); border-color: rgba(143,184,216,0.6); }
+.label-world.bare { padding: 0; opacity: 0.7; pointer-events: none; filter: drop-shadow(0 0.1em 0 #000a); }
 
 .account-box { margin: 0.6em 0; padding: 0.7em; background: rgba(10,6,3,0.3); border-radius: var(--r); }
 .seg { display: flex; gap: 0.3em; margin-bottom: 0.6em; }

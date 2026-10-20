@@ -215,7 +215,7 @@ function Detail({ p, it }: { p: PortT; it: PortRow | null }) {
       <div class="d-foot">
         {it.cost != null && <span class={'price big' + (G.coins < it.cost ? ' short' : '')}>{money(it.cost)}</span>}
         {it.kind !== 'note' && !finished && (
-          <button class="btn primary" disabled={!it.ok} onClick={() => it.act()}>
+          <button data-track={`port-${it.kind}`} class="btn primary" disabled={!it.ok} onClick={() => it.act()}>
             {!it.ok && it.why && it.why.startsWith('Fully') ? 'Maxed' : it.action}{it.ok && <Key k=" " pad="A" />}
           </button>
         )}
@@ -248,7 +248,7 @@ export function Port({ p }: { p: PortT }) {
       </header>
       <nav class="tabs">
         <Key k="q" pad="LB" />
-        {tabs.map((t, i) => <button class={'tab' + (i === G.menu.tab ? ' on' : '')} onClick={() => setTab(i)}><span class="tnum">{i + 1}</span>{t}</button>)}
+        {tabs.map((t, i) => <button data-track={`port-tab-${t}`} class={'tab' + (i === G.menu.tab ? ' on' : '')} onClick={() => setTab(i)}><span class="tnum">{i + 1}</span>{t}</button>)}
         <Key k="e" pad="RB" />
       </nav>
       <div class="body">
@@ -259,7 +259,7 @@ export function Port({ p }: { p: PortT }) {
         <span class="hints-inline">
           <Hint k="ArrowUp" k2="ArrowDown" pad="D-pad">Choose</Hint><Hint k=" " pad="A">Buy</Hint><Hint k="q" k2="e" pad="LB RB">Switch tab</Hint>
         </span>
-        <button class="btn" onClick={leavePort}><Icon k="anchor" size="s" />Leave port<Key k="Escape" pad="B" /></button>
+        <button data-track="port-leave" class="btn" onClick={leavePort}><Icon k="anchor" size="s" />Leave port<Key k="Escape" pad="B" /></button>
       </footer>
     </div>
   );

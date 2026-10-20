@@ -45,7 +45,7 @@ function Line({ l, live }: { l: ChatLine; live: boolean }) {
     <p class="chat-line">
       {l.admin && <b class="admin" title="Admin">★</b>}
       {l.id === 'me' || !live ? <b class={l.id === 'me' ? 'me' : 'name'}>{l.name}</b>
-        : <button class="who" title={`Mute ${l.name}`} onPointerDown={e => e.preventDefault()} onClick={() => { toggleMute(l.name); ONLINE.note = `${l.name} is muted on this device`; }}>{l.name}</button>}
+        : <button data-track="chat-mute" class="who" title={`Mute ${l.name}`} onPointerDown={e => e.preventDefault()} onClick={() => { toggleMute(l.name); ONLINE.note = `${l.name} is muted on this device`; }}>{l.name}</button>}
       <span>{l.text}</span>
     </p>
   );
@@ -71,7 +71,7 @@ export function Chat() {
           <header>
             <b>Chat</b>
             <span class="muted">{ONLINE.roster.length ? `In your sea: ${ONLINE.roster.join(', ')}` : onlineText()}</span>
-            <button class="chat-x" aria-label="Close chat" onPointerDown={e => e.preventDefault()} onClick={closeChat}>×</button>
+            <button data-track="chat-close" class="chat-x" aria-label="Close chat" onPointerDown={e => e.preventDefault()} onClick={closeChat}>×</button>
           </header>
           <div class="chat-log">{ONLINE.log.slice(-12).map(l => <Line key={`${l.id}${l.at}`} l={l} live />)}</div>
           {ONLINE.note && <p class="chat-note" onClick={() => { ONLINE.note = null; }}>{ONLINE.note}</p>}
@@ -92,8 +92,8 @@ export function Chat() {
       {!open && (
         <div class="dock chip">
           <span class={'dot ' + NET.status} />
-          <button class="dock-text" title="Leaderboard" onClick={() => { G.leadersBack = 'play'; G.mode = 'leaders'; }}>{onlineText()}</button>
-          {live && <button class="dock-btn" onClick={openChat}>Chat<kbd>/</kbd></button>}
+          <button data-track="dock-leaders" class="dock-text" title="Leaderboard" onClick={() => { G.leadersBack = 'play'; G.mode = 'leaders'; }}>{onlineText()}</button>
+          {live && <button data-track="dock-chat" class="dock-btn" onClick={openChat}>Chat<kbd>/</kbd></button>}
           <AccountCta from="play" />
         </div>
       )}

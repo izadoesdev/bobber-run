@@ -47,6 +47,10 @@ type Events = {
   chat_sent: { length_bucket: 'short' | 'medium' | 'long' };
   sailor_card_opened: Record<string, never>;
   sailor_followed: Record<string, never>;
+  island_opened: { owned: boolean; mine: boolean };
+  island_checkout_started: { price_bucket: string };
+  island_checkout_returned: { paid: boolean };
+  sign_in_opened: { from: 'title' | 'play' };
   progress: { minutes: number; day: number; coins_bucket: string; species_logged: number; quest: number; projects: number; reason: 'interval' | 'hidden' };
 };
 

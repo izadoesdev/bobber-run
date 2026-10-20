@@ -32,14 +32,18 @@ export function setVolumes(v: Partial<Record<Bus, number>>): void {
 // Safari before 14.1 only has the prefixed constructor
 type LegacyWindow = Window & { webkitAudioContext?: typeof AudioContext };
 
+// iOS refuses to start audio outside a tap, or while a call or another app holds the speaker ("Failed to start the
+// audio device"); that's expected, so it is swallowed and the next tap tries again
+const resume = (c: AudioContext): void => { c.resume().catch(() => { }); };
+
 /** Pause all sound while the tab is hidden, and pick it back up when it returns. */
 export function suspendAudio(hidden: boolean): void {
   if (!ac) return;
-  if (hidden) void ac.suspend(); else void ac.resume();
+  if (hidden) ac.suspend().catch(() => { }); else resume(ac);
 }
 export function unlockAudio(): void {
   if (ac) {
-    if (ac.state !== 'running') void ac.resume();
+    if (ac.state !== 'running') resume(ac);
     return;
   }
   try {
@@ -47,7 +51,7 @@ export function unlockAudio(): void {
     ac = new Ctor();
     graph = buildGraph(ac, ac.destination);
     startLoops(ac, graph);
-    void ac.resume();
+    resume(ac);
   } catch {
     ac = null;
   }

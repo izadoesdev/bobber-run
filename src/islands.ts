@@ -6,6 +6,7 @@ import { claimableNear, type Claimable } from './world';
 import { NET, watchIslands, uploadIslandLogo, type IslandRow } from './net';
 import { toast } from './game/feedback';
 import { islandPrice } from '../convex/islandRules';
+import { track } from './analytics';
 
 export { islandPrice };
 /** Owner, name and logo by island key ("i,j"); islands nobody owns are absent. */
@@ -18,7 +19,7 @@ export function watchExtra(keys: string[]): void { extra = keys.slice(0, 120); }
 /** Keep the subscription on the islands around the boat (and on the chart); cheap to call every frame. */
 export function tickIslands(): void {
   if (!NET.authed) return;
-  if (returnNote) { toast(returnNote.s, returnNote.good ? 'good' : undefined); returnNote = null; }
+  if (returnNote) { toast(returnNote.s, returnNote.good ? 'good' : undefined); track('island_checkout_returned', { paid: returnNote.good }); returnNote = null; }
   const keys = [...new Set([...claimableNear(G.boat.x, G.boat.y, WATCH_R).map(c => c.key), ...extra])].sort();
   const sig = keys.join(';');
   if (sig === lastKeys) return;

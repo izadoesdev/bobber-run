@@ -57,7 +57,7 @@ export function Chart() {
       </div>
       <footer class="foot">
         <span>{guideOn() && <><span class="gold">Next:</span> {stepLine(step)}. </>}{hp.name} is {Math.round(Math.hypot(G.boat.x - hp.x, G.boat.y - hp.y) / 10)} m away. Your position: {Math.round(G.boat.x / 10)}, {Math.round(G.boat.y / 10)}.</span>
-        <span class="hints-inline"><span class="hint muted">Click the sea for a waypoint, an island to buy or view it</span>{G.waypoint && <button class="btn small-btn" onClick={clearWaypoint}>Clear waypoint</button>}<Hint k="ArrowUp" pad="Stick">Move, or drag</Hint><Hint k="z">Zoom</Hint><Hint k="m" pad="Y">Close</Hint></span>
+        <span class="hints-inline"><span class="hint muted">Click the sea for a waypoint, an island to buy or view it</span>{G.waypoint && <button data-track="chart-waypoint-clear" class="btn small-btn" onClick={clearWaypoint}>Clear waypoint</button>}<Hint k="ArrowUp" pad="Stick">Move, or drag</Hint><Hint k="z">Zoom</Hint><Hint k="m" pad="Y">Close</Hint></span>
       </footer>
     </div>
   );
@@ -151,7 +151,7 @@ export function Ship() {
             ? <>
               <Fish sp={sel.sp} size="s" /><span class="gold">{SPECIES[sel.sp].name}</span>
               <span>{fmtKg(sel.kg)}{sel.gold ? ', golden' : ''}{sel.trophy ? ', trophy' : ''}{need.get(sel.sp) ? ', wanted for a contract' : ''}</span><span class="grow" />
-              <button class="btn" onClick={() => { G.pressed.add('x'); }}>Release<Key k="x" /></button>
+              <button data-track="release-fish" class="btn" onClick={() => { G.pressed.add('x'); }}>Release<Key k="x" /></button>
             </>
             : <span class="muted">Your hold is empty. Go fishing!</span>}</div>
         </div>

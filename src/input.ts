@@ -74,6 +74,7 @@ export function initInput(): void {
   addEventListener('keyup', e => { const k = norm(e.key); G.keys[remap(k)] = false; G.keys[k] = false; });
   // browsers only allow sound after a user gesture: a click or tap counts, not just a key
   addEventListener('pointerdown', () => unlockAudio(), { capture: true });
+  addEventListener('touchend', () => unlockAudio(), { capture: true });   // iOS only counts the end of a tap as a gesture
   // save when the tab is hidden or closed (beforeunload alone is unreliable, especially on mobile), and pause sound meanwhile
   const saveNow = () => { if (G.mode !== 'title') saveGame(); };
   document.addEventListener('visibilitychange', () => { suspendAudio(document.hidden); if (document.hidden) { releaseAll(); saveNow(); } });

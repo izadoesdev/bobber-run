@@ -73,6 +73,14 @@ export function watchGame(dt: number): void {
 export function initTelemetry(): void {
   syncContext();
   document.addEventListener('fullscreenchange', () => track('fullscreen_toggled', { on: !!document.fullscreenElement }));
-  // the tracker sends its own queue when the page goes away; flush so this last snapshot rides along
-  document.addEventListener('visibilitychange', () => { if (document.hidden) { progress('hidden'); flushAnalytics(); } });
+  // the tracker sends its own queue when the page goes away; flush so this last snapshot rides along. iOS and in-app
+  // browsers often close without a visibilitychange, so pagehide sends it too (once per leave, whichever comes first)
+  let leftAt = -1e9;
+  const leave = (): void => {
+    const now = performance.now();
+    if (now - leftAt < 2000) return;
+    leftAt = now; progress('hidden'); flushAnalytics();
+  };
+  document.addEventListener('visibilitychange', () => { if (document.hidden) leave(); });
+  addEventListener('pagehide', leave);
 }

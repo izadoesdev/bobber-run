@@ -18,6 +18,7 @@ import { voyageStarted } from '../telemetry';
 import { PEOPLE, currentQuest } from '../story';
 import type { NetForm, Talk as TalkState } from '../types';
 import { Hint, Icon, Key, SetRow, byPointer, keyLabel, money } from './parts';
+import { track } from '../analytics';
 
 export const TITLE_ITEMS = () => [...(hasSave() ? ['CONTINUE'] : []), 'NEW VOYAGE', 'SETTINGS', 'CONTROLS', ...(NET.on ? ['ONLINE'] : [])];
 export const PAUSE_ITEMS = ['RESUME', 'JOURNAL', ...(NET.on ? ['LEADERBOARD'] : []), 'SETTINGS', 'CONTROLS', ...(NET.on ? ['ONLINE'] : []), 'SAVE & QUIT'];
@@ -29,7 +30,7 @@ interface MenuProps { items: string[]; sel: number; onPick: (i: number) => void;
 function Menu({ items, sel, onPick, setSel }: MenuProps) {
   return (
     <div class="menu">
-      {items.map((s, i) => <button class={'item' + (i === sel ? ' sel' : '')} onMouseMove={byPointer(() => setSel(i))} onClick={() => onPick(i)}>{s}</button>)}
+      {items.map((s, i) => <button data-track={`menu-${s}`} class={'item' + (i === sel ? ' sel' : '')} onMouseMove={byPointer(() => setSel(i))} onClick={() => onPick(i)}>{s}</button>)}
     </div>
   );
 }
@@ -58,11 +59,11 @@ function OnlineNow() {
 /** Signing in is the main thing to do online: a big button while you're a guest, your name once signed in. */
 export function AccountCta({ from }: { from: 'title' | 'play' }) {
   if (!NET.on) return null;
-  const p = NET.profile, go = () => { G.accountBack = from; G.mode = 'account'; };
+  const p = NET.profile, go = () => { G.accountBack = from; G.mode = 'account'; track('sign_in_opened', { from }); };
   if (p && !p.guest) return from === 'title' ? <p class="cta-signed">Signed in as <b>{p.name}</b></p> : null;
   return from === 'title'
-    ? <button class="btn primary cta" onClick={go}>Sign in or make an account<span class="cta-sub">Keep your boat and catch on any device</span></button>
-    : <button class="dock-btn cta-link" title="You are playing as a guest. Sign in to keep your boat on any device" onClick={go}>Sign in</button>;
+    ? <button data-track="sign-in-title" class="btn primary cta" onClick={go}>Sign in or make an account<span class="cta-sub">Keep your boat and catch on any device</span></button>
+    : <button data-track="sign-in-dock" class="dock-btn cta-link" title="You are playing as a guest. Sign in to keep your boat on any device" onClick={go}>Sign in</button>;
 }
 /** Online players with a generated name are sent to pick their own before sailing on (once per session if they skip offline). */
 export function forceName(): void {
@@ -215,14 +216,14 @@ export function Online() {
           <label class="caps" for="net-name">Captain</label>
           <input id="net-name" maxlength={18} autocomplete="off" value={f.name ?? p?.name ?? ''}
             onInput={e => { f.name = e.currentTarget.value; }} onKeyDown={onEnter(saveName)} />
-          <button class="btn" disabled={f.name === null || f.name === p?.name} onClick={saveName}>Save name</button>
+          <button data-track="name-save" class="btn" disabled={f.name === null || f.name === p?.name} onClick={saveName}>Save name</button>
         </div>
       )}
       {(NET.busy || (NET.authed && p?.guest)) && (
         <form class="account-box" onSubmit={submit}>
           <div class="seg">
-            <button type="button" class={'seg-btn' + (f.mode === 'signUp' ? ' on' : '')} onClick={setMode('signUp')}>Make an account</button>
-            <button type="button" class={'seg-btn' + (f.mode === 'signIn' ? ' on' : '')} onClick={setMode('signIn')}>I have an account</button>
+            <button data-track="mode-sign-up" type="button" class={'seg-btn' + (f.mode === 'signUp' ? ' on' : '')} onClick={setMode('signUp')}>Make an account</button>
+            <button data-track="mode-sign-in" type="button" class={'seg-btn' + (f.mode === 'signIn' ? ' on' : '')} onClick={setMode('signIn')}>I have an account</button>
           </div>
           <div class="form-grid">
             <label class="caps" for="net-email">Email</label>
@@ -233,22 +234,22 @@ export function Online() {
               {/* the cast: Preact's per-type input typings can't express a type that toggles on one element */}
               <input id="net-pass" name="password" type={(f.show ? 'text' : 'password') as 'text'} autocomplete={f.mode === 'signUp' ? 'new-password' : 'current-password'} value={f.pass}
                 onInput={e => { f.pass = e.currentTarget.value; }} />
-              <button type="button" class="btn small-btn" onClick={() => { f.show = !f.show; }} aria-label={f.show ? 'Hide password' : 'Show password'}>{f.show ? 'Hide' : 'Show'}</button>
+              <button data-track="password-show" type="button" class="btn small-btn" onClick={() => { f.show = !f.show; }} aria-label={f.show ? 'Hide password' : 'Show password'}>{f.show ? 'Hide' : 'Show'}</button>
             </span>
             <span /><span class="muted small">{f.mode === 'signUp' ? 'At least 8 characters. Your current progress moves to the new account.' : 'Signing in loads the save stored on that account.'}</span>
-            <span /><button type="submit" class="btn primary" disabled={NET.busy}>{NET.busy ? 'Working...' : f.mode === 'signUp' ? 'Make account' : 'Sign in'}</button>
+            <span /><button data-track="account-submit" type="submit" class="btn primary" disabled={NET.busy}>{NET.busy ? 'Working...' : f.mode === 'signUp' ? 'Make account' : 'Sign in'}</button>
           </div>
         </form>
       )}
       {NET.authed && p && !p.guest && !NET.busy && (
         <p class="row">
-          <button class="btn" disabled={NET.busy} onClick={async () => { const r = await signOut(); if (r.ok) say('Signed out. You are sailing as a guest again'); else say(r.why, true); }}>Sign out</button>
-          <button class={'btn' + (arming ? ' danger' : '')} disabled={NET.busy} onClick={removeAccount}>{arming ? 'Press again to delete' : 'Delete account'}</button>
+          <button data-track="sign-out" class="btn" disabled={NET.busy} onClick={async () => { const r = await signOut(); if (r.ok) say('Signed out. You are sailing as a guest again'); else say(r.why, true); }}>Sign out</button>
+          <button data-track="account-delete" class={'btn' + (arming ? ' danger' : '')} disabled={NET.busy} onClick={removeAccount}>{arming ? 'Press again to delete' : 'Delete account'}</button>
         </p>
       )}
       {G.netMsg && <p class={G.netMsg.bad ? 'why left' : 'good'}>{G.netMsg.msg}</p>}
       <p class="help">Online you share the sea with every other sailor. Greet them (G), chat (/), compare world records in the logbook, and give to the coastwide fund in Alderhaven's Harbour tab. <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a></p>
-      {!(G.needName && NET.authed) && <footer class="foot"><span /><button class="btn" onClick={() => { G.needName = false; G.mode = G.accountBack || 'play'; }}>Back<Key k="Escape" pad="B" /></button></footer>}
+      {!(G.needName && NET.authed) && <footer class="foot"><span /><button data-track="account-back" class="btn" onClick={() => { G.needName = false; G.mode = G.accountBack || 'play'; }}>Back<Key k="Escape" pad="B" /></button></footer>}
     </div></div>
   );
 }
@@ -310,7 +311,7 @@ export function Finale() {
         <dt>Ships owned</dt><dd>{G.owned.length}</dd>
       </dl>
       <p class="muted">The sea goes on. Keep fishing, fill the logbook, and grow your fleet.</p>
-      <footer class="foot"><span /><button class="btn primary" onClick={() => { G.mode = 'play'; }}>Keep sailing<Key k="Enter" pad="A" /></button></footer>
+      <footer class="foot"><span /><button data-track="keep-sailing" class="btn primary" onClick={() => { G.mode = 'play'; }}>Keep sailing<Key k="Enter" pad="A" /></button></footer>
     </div></div>
   );
 }

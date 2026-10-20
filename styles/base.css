@@ -4,3 +4,6 @@ body { display: flex; align-items: center; justify-content: center; }
 #stage { position: relative; flex: none; }
 canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
 #ui { position: absolute; left: 0; top: 0; }
+/* the window's size until fit() sets the exact one, so the first frame doesn't lay the UI out in the canvas's
+   default 300x150 box and then jump to full screen (a large layout shift on every load) */
+#screen, #ui { width: 100vw; height: 100vh; }

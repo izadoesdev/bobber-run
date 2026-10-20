@@ -31,7 +31,7 @@ export function Leaderboard() {
     <div class="screen paper doc leaders">
       <header class="head"><h1>Leaderboard</h1><span class="muted">{b.what}</span></header>
       <nav class="tabs">
-        {BOARDS.map((x, i) => <button class={'tab' + (i === tab ? ' on' : '')} onClick={() => { G.leaderTab = i; }}>{x.label}</button>)}
+        {BOARDS.map((x, i) => <button data-track={`leaders-${x.label}`} class={'tab' + (i === tab ? ' on' : '')} onClick={() => { G.leaderTab = i; }}>{x.label}</button>)}
       </nav>
       <div class="body">
         {!NET.on ? <p>The leaderboard needs an internet connection.</p>

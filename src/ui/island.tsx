@@ -8,6 +8,7 @@ import { NET, buyIsland, claimIsland, renameIsland, releaseIsland, uploadIslandL
 import { ISLANDS, islandPrice, stashLogo } from '../islands';
 import { setWaypoint } from '../waypoint';
 import { pixelLogo, type Logo } from './logo';
+import { track, bucket, flushAnalytics } from '../analytics';
 
 /** Islands are bought with real money (US dollars, through Stripe), unlike everything priced in coins. */
 const usd = (n: number): string => `$${n.toLocaleString('en-US')}`;
@@ -28,8 +29,8 @@ export function IslandSigns() {
     const [cx, cy] = pct(c.x, c.y - c.R * 0.35), x = Math.min(90, Math.max(10, cx)), y = Math.min(85, Math.max(30, cy));   // clear of the top HUD
     out.push(
       <div class={'island-sign' + (row.mine ? ' mine' : '')} key={c.key} style={{ left: x + '%', top: y + '%' }}>
-        <button class="sign-main" onClick={() => openIsland(c.key, 'play')}>{row.logoUrl && <img src={row.logoUrl} alt="" />}<span>{row.name}</span></button>
-        {row.url && <button class="sign-link" title={row.url} onClick={() => visit(row.url!)}>visit ↗</button>}
+        <button data-track="island-sign" class="sign-main" onClick={() => openIsland(c.key, 'play')}>{row.logoUrl && <img src={row.logoUrl} alt="" />}<span>{row.name}</span></button>
+        {row.url && <button data-track="island-sign-visit" class="sign-link" title={row.url} onClick={() => visit(row.url!)}>visit ↗</button>}
       </div>,
     );
   }
@@ -41,6 +42,8 @@ interface Form { key: string; name: string; url: string; logo: Logo | null; msg:
 let form: Form | null = null;
 export function openIsland(key: string, back: 'play' | 'map' | 'port' = 'play'): void {
   G.islandKey = key; G.islandBack = back; G.mode = 'island'; sfx('select');
+  const row = ISLANDS.get(key);
+  track('island_opened', { owned: !!row, mine: !!row?.mine });
 }
 export function closeIsland(): void {
   if (form?.logo) URL.revokeObjectURL(form.logo.url);
@@ -81,6 +84,8 @@ export function IslandDialog() {
     if (!r.ok) return r;
     if (f.logo) await stashLogo(key, f.logo.blob);
     saveGame();
+    track('island_checkout_started', { price_bucket: bucket(r.price) });
+    flushAnalytics();
     location.href = r.url;
     return { ok: true };
   }, admin ? `${f.name.trim()} is yours` : 'Opening checkout…');
@@ -106,20 +111,20 @@ export function IslandDialog() {
             <h1>{row ? row.name : home ? 'The island of Alderhaven' : 'Unclaimed island'}</h1>
             <p class="muted">{row ? (row.mine ? 'Your island' : `Owned by ${row.owner}`) : admin ? 'Free to claim (admin)' : `${usd(price)} · paid with Stripe`}</p>
           </div>
-          {row?.url && <button class="btn small-btn" onClick={() => visit(row.url!)}>Visit {host(row.url)} ↗</button>}
+          {row?.url && <button data-track="island-visit" class="btn small-btn" onClick={() => visit(row.url!)}>Visit {host(row.url)} ↗</button>}
         </header>
         {(!row || row.mine) && <IslandForm f={f} onPick={pick} />}
         {!row && !admin && <p class="muted small">Real money, paid securely with Stripe. Islands cost less the farther they are from Alderhaven, and you can own up to 3. Your name, flag and link show to every sailor.</p>}
         {!row && NET.profile?.guest && <p class="why left">Sign in to buy islands, so yours stay yours on any device.</p>}
         {f.msg && <p class={f.msg.bad ? 'why left' : 'good'}>{f.msg.s}</p>}
         <footer class="foot">
-          <button class="btn" onClick={waypoint}>Set waypoint</button>
-          {row?.mine && <button class={'btn' + (f.confirm ? ' danger' : '')} disabled={f.busy} onClick={release}>{f.confirm ? 'Press again to release' : 'Release'}</button>}
-          {row && !row.mine && <button class="btn small-btn" disabled={f.busy} onClick={() => run(() => reportIsland(key), 'Thanks. A moderator will take a look')}>Report</button>}
+          <button data-track="island-waypoint" class="btn" onClick={waypoint}>Set waypoint</button>
+          {row?.mine && <button data-track="island-release" class={'btn' + (f.confirm ? ' danger' : '')} disabled={f.busy} onClick={release}>{f.confirm ? 'Press again to release' : 'Release'}</button>}
+          {row && !row.mine && <button data-track="island-report" class="btn small-btn" disabled={f.busy} onClick={() => run(() => reportIsland(key), 'Thanks. A moderator will take a look')}>Report</button>}
           <span class="grow" />
-          <button class="btn" onClick={closeIsland}>Close</button>
-          {!row && <button class="btn primary" disabled={f.busy || !named || !!NET.profile?.guest} onClick={buy}>{f.busy ? 'Working…' : admin ? 'Claim' : `Buy · ${usd(price)}`}</button>}
-          {row?.mine && <button class="btn primary" disabled={f.busy || !named} onClick={() => save(row)}>Save</button>}
+          <button data-track="island-close" class="btn" onClick={closeIsland}>Close</button>
+          {!row && <button data-track="island-buy" class="btn primary" disabled={f.busy || !named || !!NET.profile?.guest} onClick={buy}>{f.busy ? 'Working…' : admin ? 'Claim' : `Buy · ${usd(price)}`}</button>}
+          {row?.mine && <button data-track="island-save" class="btn primary" disabled={f.busy || !named} onClick={() => save(row)}>Save</button>}
         </footer>
       </div>
     </div>

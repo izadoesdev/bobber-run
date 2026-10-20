@@ -40,18 +40,18 @@ addEventListener('keydown', e => {
 
 export function SailorCard() {
   const s = sailor(cardUid);
-  if (!s) { if (cardUid) cardUid = null; return following ? <p class="follow-chip">Following a sailor <button class="btn small-btn" onClick={stopFollowing}>Stop</button></p> : null; }
+  if (!s) { if (cardUid) cardUid = null; return following ? <p class="follow-chip">Following a sailor <button data-track="follow-stop" class="btn small-btn" onClick={stopFollowing}>Stop</button></p> : null; }
   const boat = BOATS.find(b => b.id === s.id)?.name ?? 'boat', d = Math.round(Math.hypot(s.x - G.boat.x, s.y - G.boat.y) / 10);
   const muted = isMuted(s.name), isFollowed = following === s.uid;
   return (
     <div class="sailor-card panel">
       <header><b>{s.name}</b><span class="muted small">{boat}, {d} m away</span>
-        <button class="btn small-btn" aria-label="Close" onClick={() => { cardUid = null; }}>×</button></header>
+        <button data-track="sailor-close" class="btn small-btn" aria-label="Close" onClick={() => { cardUid = null; }}>×</button></header>
       <div class="row">
-        <button class="btn" onClick={() => { sendEmote(0); cardUid = null; }}>Wave</button>
-        <button class="btn" onClick={() => { openChatWith(`@${s.name} `); cardUid = null; }}>Chat</button>
-        <button class="btn" onClick={() => { if (isFollowed) stopFollowing(); else follow(s.uid); cardUid = null; }}>{isFollowed ? 'Stop following' : 'Follow'}</button>
-        <button class="btn" onClick={() => { toggleMute(s.name); }}>{muted ? 'Unmute' : 'Mute'}</button>
+        <button data-track="sailor-wave" class="btn" onClick={() => { sendEmote(0); cardUid = null; }}>Wave</button>
+        <button data-track="sailor-chat" class="btn" onClick={() => { openChatWith(`@${s.name} `); cardUid = null; }}>Chat</button>
+        <button data-track="sailor-follow" class="btn" onClick={() => { if (isFollowed) stopFollowing(); else follow(s.uid); cardUid = null; }}>{isFollowed ? 'Stop following' : 'Follow'}</button>
+        <button data-track="sailor-mute" class="btn" onClick={() => { toggleMute(s.name); }}>{muted ? 'Unmute' : 'Mute'}</button>
       </div>
     </div>
   );
