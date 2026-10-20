@@ -1,8 +1,10 @@
 // Claimed islands on the client: who owns the islands around you (and on the chart), kept live from the server.
-// The main island of every world cell except Alderhaven's can be bought; the price falls with distance from home.
+// The main island of every world cell can be bought (with real money, through Stripe; admins claim free); the price
+// falls with distance from Alderhaven. A flag picked before paying waits here until the island is ours, then uploads.
 import { G } from './game';
 import { claimableNear, type Claimable } from './world';
-import { NET, watchIslands, type IslandRow } from './net';
+import { NET, watchIslands, uploadIslandLogo, type IslandRow } from './net';
+import { toast } from './game/feedback';
 import { islandPrice } from '../convex/islandRules';
 
 export { islandPrice };
@@ -16,11 +18,43 @@ export function watchExtra(keys: string[]): void { extra = keys.slice(0, 120); }
 /** Keep the subscription on the islands around the boat (and on the chart); cheap to call every frame. */
 export function tickIslands(): void {
   if (!NET.authed) return;
+  if (returnNote) { toast(returnNote.s, returnNote.good ? 'good' : undefined); returnNote = null; }
   const keys = [...new Set([...claimableNear(G.boat.x, G.boat.y, WATCH_R).map(c => c.key), ...extra])].sort();
   const sig = keys.join(';');
   if (sig === lastKeys) return;
   lastKeys = sig;
-  watchIslands(keys, rows => { ISLANDS.clear(); for (const r of rows) ISLANDS.set(r.key, r); });
+  watchIslands(keys, rows => {
+    ISLANDS.clear();
+    for (const r of rows) { ISLANDS.set(r.key, r); if (r.mine) void flushLogo(r.key); }
+  });
+}
+
+// ---------- paying through Stripe ----------
+const LOGO_KEY = (key: string) => `bobber-island-logo:${key}`;
+/** Keep the chosen flag until the paid island shows up as ours (Checkout leaves the page). */
+export async function stashLogo(key: string, png: Blob): Promise<void> {
+  const url = await new Promise<string>(res => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.readAsDataURL(png); });
+  try { localStorage.setItem(LOGO_KEY(key), url); } catch { /* storage full: the owner can add the flag later */ }
+}
+const flushing = new Set<string>();
+async function flushLogo(key: string): Promise<void> {
+  let url: string | null = null;
+  try { url = localStorage.getItem(LOGO_KEY(key)); } catch { }
+  if (!url || flushing.has(key)) return;
+  flushing.add(key);
+  const r = await uploadIslandLogo(key, await (await fetch(url)).blob());
+  if (r.ok) try { localStorage.removeItem(LOGO_KEY(key)); } catch { }
+  flushing.delete(key);
+}
+// back from Stripe Checkout: /?island=<key>&paid=1 (or 0); say how it went once sailing, and tidy the address bar
+let returnNote: { s: string; good: boolean } | null = null;
+{
+  const q = new URLSearchParams(location.search), key = q.get('island'), paid = q.get('paid');
+  if (key && paid !== null) {
+    returnNote = paid === '1' ? { s: 'Payment received. Your island will appear in a moment', good: true } : { s: 'Checkout cancelled. You were not charged', good: false };
+    q.delete('island'); q.delete('paid');
+    history.replaceState(null, '', location.pathname + (q.size ? `?${q}` : '') + location.hash);
+  }
 }
 
 /** The claimable island the boat is at (within its shore plus a little water), if any. */

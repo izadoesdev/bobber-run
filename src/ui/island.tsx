@@ -1,14 +1,16 @@
 // Claimable islands: a sign over every claimed island (its logo and name), a "Claim this island" chip when you
 // sail up to one nobody owns, and the island dialog: claim it (name, logo, price), manage your own, or see whose it is.
 import { W, H } from '../config';
-import { G } from '../game';
-import { addCoins } from '../game/feedback';
+import { G, saveGame } from '../game';
 import { claimableNear } from '../world';
 import { sfx } from '../audio';
-import { NET, claimIsland, renameIsland, releaseIsland, uploadIslandLogo, reportIsland } from '../net';
-import { ISLANDS, islandHere, islandPrice } from '../islands';
+import { NET, buyIsland, claimIsland, renameIsland, releaseIsland, uploadIslandLogo, reportIsland } from '../net';
+import { ISLANDS, islandHere, islandPrice, stashLogo } from '../islands';
 import { pixelLogo, type Logo } from './logo';
-import { Icon, money } from './parts';
+import { Icon } from './parts';
+
+/** Islands are bought with real money (US dollars, through Stripe), unlike everything priced in coins. */
+const usd = (n: number): string => `US$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const pct = (x: number, y: number): [number, number] => [(x - G.cam.x) / W * 100, (y - G.cam.y) / H * 100];
 
@@ -29,7 +31,7 @@ export function IslandSigns() {
   const here = NET.on ? islandHere() : null;
   if (here && !ISLANDS.has(here.key)) out.push(
     <button class="chip island-claim" key="claim" onClick={() => openIsland(here.key)}>
-      <Icon k="anchor" size="s" />Unclaimed island<span class="gold">{money(islandPrice(here.i, here.j))}</span><b>Claim</b>
+      <Icon k="anchor" size="s" />Unclaimed island<span class="gold">{usd(islandPrice(here.i, here.j))}</span><b>{NET.profile?.admin ? 'Claim' : 'Buy'}</b>
     </button>,
   );
   return <>{out}</>;
@@ -64,14 +66,21 @@ export function IslandDialog() {
     if (f.logo) URL.revokeObjectURL(f.logo.url);
     f.logo = l;
   };
+  const admin = !!NET.profile?.admin;
+  // admins claim on the spot; everyone else pays on Stripe's page and comes back to find the island theirs
   const claim = () => run(async () => {
-    if (G.coins < price) return { ok: false, why: `You need ${money(price - G.coins)} more` };
-    const r = await claimIsland(f.key, f.name.trim(), G.cheated);
+    if (admin) {
+      const r = await claimIsland(f.key, f.name.trim());
+      if (r.ok && f.logo) await uploadIslandLogo(f.key, f.logo.blob);
+      return r;
+    }
+    const r = await buyIsland(f.key, f.name.trim());
     if (!r.ok) return r;
-    addCoins(-price);
-    if (f.logo) await uploadIslandLogo(f.key, f.logo.blob);
-    return r;
-  }, `${f.name.trim()} is yours!`);
+    if (f.logo) await stashLogo(f.key, f.logo.blob);
+    saveGame();
+    location.href = r.url;
+    return { ok: true };
+  }, admin ? `${f.name.trim()} is yours!` : 'Opening checkout…');
   const named = f.name.trim().length >= 2;
   return (
     <div class="center dim-bg">
@@ -80,10 +89,11 @@ export function IslandDialog() {
           <h1>Claim this island</h1>
           <p>{home ? 'The island of Alderhaven itself.' : 'An island nobody owns yet.'} Name it and give it a flag; every sailor sees them over the island and on their chart.</p>
           <IslandForm f={f} onPick={pick} />
-          <p class="row"><span class="caps">Price</span><span class="gold">{money(price)}</span><span class="muted small">Islands cost less the farther they are from Alderhaven. You can own up to 3.</span></p>
-          {NET.profile?.guest && <p class="why left">Sign in to claim islands, so yours stay yours on any device.</p>}
+          <p class="row"><span class="caps">Price</span><span class="gold">{admin ? 'Free (admin)' : usd(price)}</span>
+            <span class="muted small">{admin ? 'Admins claim islands without paying.' : 'Real money, paid securely with Stripe. Islands cost less the farther they are from Alderhaven. You can own up to 3.'}</span></p>
+          {NET.profile?.guest && <p class="why left">Sign in to buy islands, so yours stay yours on any device.</p>}
           <footer class="foot"><button class="btn" onClick={closeIsland}>Cancel</button>
-            <button class="btn primary" disabled={f.busy || !named || G.coins < price || !!NET.profile?.guest} onClick={claim}>{f.busy ? 'Working…' : `Claim for ${money(price)}`}</button></footer>
+            <button class="btn primary" disabled={f.busy || !named || !!NET.profile?.guest} onClick={claim}>{f.busy ? 'Working…' : admin ? 'Claim (admin)' : `Buy for ${usd(price)}`}</button></footer>
         </> : row.mine ? <>
           <h1>{row.name}</h1>
           <p class="muted">Your island. Rename it or change its flag; sailors see the change right away.</p>
