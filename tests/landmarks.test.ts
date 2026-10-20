@@ -1,9 +1,9 @@
-// Saves, contracts and island purchases point at landmarks by id and at islands by cell, so the terrain may change
-// its looks but never these: every port, lighthouse and wreck within 7 cells of home keeps its id, name and spot,
-// every claimable island keeps its centre, and in the live terrain piers still reach water, lights stand on land and
-// wrecks lie in the sea. The fixture was recorded from the world before coves, headlands and mountains.
+// Saves, contracts and island purchases point at landmarks by id and at islands by cell, so within one world layout
+// these never change: every port, lighthouse and wreck within 7 cells of home keeps its id, name and spot, and every
+// claimable island its centre; and piers reach water, lights stand on land, wrecks lie in the sea. Changing the world
+// on purpose means bumping WORLD in world.ts (older saves then forget places) and re-recording the fixture with it.
 import { describe, expect, test } from 'bun:test';
-import { cellPois, claimableNear, heightAt } from '../src/world';
+import { WORLD, cellPois, claimableNear, heightAt } from '../src/world';
 import fixture from './fixtures/landmarks.json';
 
 const R = 7;
@@ -11,6 +11,9 @@ const live = new Map<string, ReturnType<typeof cellPois>[number]>();
 for (let j = -R; j <= R; j++) for (let i = -R; i <= R; i++) for (const p of cellPois(i, j)) live.set(p.id, p);
 
 describe('landmarks', () => {
+  test('the fixture belongs to the current world version', () => {
+    expect(fixture.world).toBe(WORLD);
+  });
   test('every landmark keeps its id, name and spot', () => {
     const pinned = Object.entries(fixture.pois as Record<string, [string, string, number, number]>);
     expect(live.size).toBe(pinned.length);

@@ -1,6 +1,6 @@
 // Saving and loading, new voyages, and putting the boat at a port.
 import { W, H, clamp } from '../config';
-import { hAt, homePort, cellPois, nearestWater } from '../world';
+import { hAt, homePort, cellPois, nearestWater, WORLD } from '../world';
 import { SP } from '../econ';
 import { netSaved, reportStats } from '../net';
 import type { BoatId, Contract, Fish, GameState, LogEntry, Pet, Port, ProjectId, Stats, StoryState, TreasureMap, UpgradeKey, BaitKind, BaitChoice } from '../types';
@@ -9,9 +9,10 @@ import { DAYLEN, cap, hpMax } from './rules';
 
 const KEY = 'bobber-run-save-v3', OLD = 'bobber-run-save-v2';
 
+
 /** The v3 save: progress plus where the boat is. Sets are stored as arrays. */
 interface SaveData {
-  savedAt: number;
+  savedAt: number; world?: number;
   coins: number; earned: number; up: Record<UpgradeKey, number>; hp: number; hold: Fish[]; log: Record<string, LogEntry>;
   boatId: BoatId; owned: BoatId[]; bait: Record<BaitKind, number>; baitSel: BaitChoice; paint: string; paints: string[];
   found: string[]; salvaged: string[]; lastPort: string | null; x: number; y: number; a: number;
@@ -29,7 +30,7 @@ export function saveGame(): void {
   try {
     const b = G.boat;
     const data: SaveData = {
-      savedAt: Date.now(), coins: G.coins, earned: G.earned, up: G.up, hp: b.hp, hold: G.hold, log: G.log, boatId: G.boatId, owned: G.owned,
+      savedAt: Date.now(), world: WORLD, coins: G.coins, earned: G.earned, up: G.up, hp: b.hp, hold: G.hold, log: G.log, boatId: G.boatId, owned: G.owned,
       bait: G.bait, baitSel: G.baitSel, paint: G.paint, paints: G.paints, found: [...G.found], salvaged: [...G.salvaged], lastPort: G.lastPort, x: b.x, y: b.y, a: b.a,
       stats: G.stats, story: G.story, gifts: G.gifts, pet: G.pet, projects: G.projects, fleet: G.fleet, dives: G.dives,
       goalsDone: G.goalsDone, cheated: G.cheated, maps: G.maps, waypoint: G.waypoint, gearOff: G.gearOff, zones: G.zones, docks: G.docks, streak: G.streak, musicOn: G.musicOn, offers: G.offers, active: G.active, pity: G.pity, clock: G.clock,
@@ -103,6 +104,21 @@ export function newGame(): void {
   scatterSpawn(home);
 }
 
+/**
+ * A save from an older world layout: progress stays (coins, boats, gear, logbook, story, projects), and everything
+ * that points at a place goes: charted ports, wrecks and dives, contracts, treasure maps, the waypoint, catch spots,
+ * per-port records. Fleet boats come home to Alderhaven with their earnings; the boat starts there too.
+ */
+function forNewWorld(d: Partial<SaveData>): Partial<SaveData> {
+  const home = homePort();
+  const log = Object.fromEntries(Object.entries(d.log || {}).map(([k, e]) => { const { at: _, ...rest } = e; return [k, rest]; }));
+  const fleet = Object.fromEntries(Object.entries(d.fleet || {}).map(([k, f]) => [k, { ...f, port: home.id, portName: home.name }]));
+  return {
+    ...d, world: WORLD, found: [home.id], salvaged: [], dives: {}, offers: {}, active: [], maps: [], waypoint: null, lastPort: home.id,
+    docks: {}, gifts: {}, log, fleet, x: undefined, y: undefined,
+  };
+}
+
 /** Read a v2 save into the v3 shape (only what v2 had). */
 function migrateOld(o: OldSave): Partial<SaveData> {
   const log = Object.fromEntries(Object.entries(o.log || {}).filter(([k]) => SP[k] !== undefined).map(([k, n]) => [k, { n, best: 0 }]));
@@ -124,6 +140,7 @@ export function loadGame(): void {
       if (!o) return;
       d = migrateOld(o);
     }
+    if ((d.world ?? 1) < WORLD) d = forNewWorld(d);   // also covers a cloud save, which net.ts writes here first
     const loaded: Partial<GameState> = {
       coins: int(d.coins), coinsShown: int(d.coins), earned: int(d.earned), up: { ...G.up, ...d.up }, hold: (d.hold || []).filter(f => f && typeof f === 'object'),
       log: d.log || {}, boatId: d.boatId || 'row', owned: d.owned || ['row'], bait: { ...G.bait, ...d.bait }, baitSel: d.baitSel || 'shrimp',
