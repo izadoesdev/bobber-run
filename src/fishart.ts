@@ -1,5 +1,7 @@
 // Per-species body-shape templates (T=top M=mid B=belly F=fin E=eye G=glow S=stripe), extruded into voxel fish.
-export const FISH_T = {
+import type { FishShape } from './types';
+
+export const FISH_T: Record<FishShape, string[]> = {
   slim:  ['.....FF......', 'FF..TTTTTTT..', '.FFTMMMMMMMET', 'FF..BBBBBBBB.', '.....F..F....'],
   perch: ['....F.F.F....', '...FFFFFFF...', 'F..TTTTTTTT..', 'FFTMTMTMTMMET', 'F.MMMMMMMMMMT', 'F..BBBBBBBB..', '.....F..F....'],
   long:  ['......FFF.......', 'F...TTTTTTTTT...', 'FF.TMMMMMMMMMTT.', 'FFTMMMMMMMMMMMET', 'F..BBBBBBBBBBBB.', '.....F....F.....'],

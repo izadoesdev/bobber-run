@@ -1,10 +1,25 @@
 // Species, boats, upgrades, paints (pure data + helpers).
+import type {
+  BaitKind, BoatDef, Env, FightStyle, FishShape, Landmark, Paint, Project, Region, Species, Supply, TimeOfDay,
+  Upgrade, UpgradeCategory, UpgradeKey, WeatherNeed,
+} from './types';
+
+type Zone = Species['zone'];
+type Extra = { region?: Region; weather?: WeatherNeed; special?: Landmark | null; legend?: boolean };
+type Palette = Species['c'];
+
+// fight difficulty: tougher with the rod level a species needs, and a little with its value
+const difficulty = (rod: number, base: number): number => Math.min(0.95, 0.12 + rod * 0.18 + Math.min(0.2, base / 900));
+
 // region: 'any' | 'temperate' (fades out in the far north/south) | 'cold' (north) | 'warm' (south)
 // time: 'any' | 'day' | 'night' | 'twilight'   weather: 'any' | 'rain' (rain or storm) | 'storm'
 // special: wreck/light schools only spawn at those landmarks
-const S = (id, name, base, kg, rod, w, time, shape, c, fight, where, zone, o = {}) => ({ id, name, base, kg, rod, w, time, shape, c, fight, where, zone, region: 'any', weather: 'any', special: null, ...o });
-const shallow = t => h => h > t, deep = (t, dd = 0) => (h, d) => h < t && d > dd;
-export const SPECIES = [
+const S = (id: string, name: string, base: number, kg: [number, number], rod: number, w: number, time: TimeOfDay, shape: FishShape,
+  c: Palette, fight: FightStyle, where: string, zone: Zone, extra: Extra = {}): Species =>
+  ({ id, name, base, kg, rod, w, time, shape, c, fight, where, zone, region: 'any', weather: 'any', special: null, diff: difficulty(rod, base), ...extra });
+const shallow = (t: number): Zone => h => h > t;
+const deep = (t: number, minDist = 0): Zone => (h, d) => h < t && d > minDist;
+export const SPECIES: Species[] = [
   // ---- everywhere ----
   S('anchovy', 'Anchovy', 3, [0.02, 0.06], 0, 5, 'any', 'slim', ['#3f5f8a', '#b3bbc0', '#efe9dc', '#5b7fae'], 'darter', 'Shallows', shallow(-0.25)),
   S('sardine', 'Sardine', 4, [0.05, 0.25], 0, 5, 'any', 'slim', ['#3f5f8a', '#8a949c', '#e6efec', '#5b7fae'], 'steady', 'Shallows', shallow(-0.22)),
@@ -51,37 +66,47 @@ export const SPECIES = [
   S('goldmahi', 'Golden Mahi', 380, [15, 40], 4, 0.35, 'day', 'tuna', ['#a47f22', '#f0cf6a', '#fff6d6', '#e2b94a'], 'jumper', 'Far warm ocean, rarely', deep(-0.4, 2400), { region: 'warm', legend: true }),
   S('oldone', 'The Old One', 2400, [400, 900], 4, 0, 'night', 'levi', ['#14212a', '#33454f', '#8a949c', '#a23d33'], 'boss', 'Its lair, at night', () => false, { legend: true }),
 ];
-export const SP = Object.fromEntries(SPECIES.map((s, i) => [s.id, i]));
+/** species id -> index into SPECIES */
+export const SP: Record<string, number> = Object.fromEntries(SPECIES.map((s, i) => [s.id, i]));
 
 // regions by latitude: home waters are temperate, the far north is cold, the far south warm
-const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
-export const warmth = y => clamp01((y - 1500) / 1000);
-export const coldness = y => clamp01((-y - 1300) / 1000);
-export function regionWeight(s, x, y) {
+const clamp01 = (v: number): number => v < 0 ? 0 : v > 1 ? 1 : v;
+export const warmth = (y: number): number => clamp01((y - 1500) / 1000);
+export const coldness = (y: number): number => clamp01((-y - 1300) / 1000);
+function regionWeight(s: Species, y: number): number {
   const wm = warmth(y), cd = coldness(y);
-  return s.region === 'warm' ? (wm > 0.4 ? 1 : 0) : s.region === 'cold' ? (cd > 0.4 ? 1 : 0) : s.region === 'temperate' ? 1 - Math.max(wm, cd) : 1;
+  switch (s.region) {
+    case 'warm': return wm > 0.4 ? 1 : 0;
+    case 'cold': return cd > 0.4 ? 1 : 0;
+    case 'temperate': return 1 - Math.max(wm, cd);
+    default: return 1;
+  }
 }
-export function pickSpecies(h, d, r, x = 0, y = 0, special = null) {
-  const c = []; let tot = 0;
+/** Weighted random species index for a school at height h, distance d from home (or at a landmark).
+ *  Only latitude (y) matters for regions; x is accepted so callers can pass a position. */
+export function pickSpecies(h: number, d: number, r: () => number, _x = 0, y = 0, special: Landmark | null = null): number {
+  const candidates: [Species, number][] = [];
+  let total = 0;
   for (const s of SPECIES) {
     if (s.special !== special || (!special && !s.zone(h, d))) continue;
-    if (special === 'wreck' && s.id === 'ghost' && d < 1500) continue;
-    const w = s.w * regionWeight(s, x, y); if (w > 0) { c.push([s, w]); tot += w; }
+    if (special === 'wreck' && s.id === 'ghost' && d < 1500) continue;   // the Ghost Carp keeps to far-off wrecks
+    const w = s.w * regionWeight(s, y);
+    if (w > 0) { candidates.push([s, w]); total += w; }
   }
-  let v = r() * tot;
-  for (const [s, w] of c) { v -= w; if (v <= 0) return SP[s.id]; }
+  let v = r() * total;
+  for (const [s, w] of candidates) { v -= w; if (v <= 0) return SP[s.id]; }
   return special === 'wreck' ? SP.moray : special === 'light' ? SP.beacon : SP.sardine;
 }
-// env: { night, twilight, weather }
-export function activeAt(sp, env) {
+/** Whether species `sp` bites in these conditions. */
+export function activeAt(sp: number, env: Env): boolean {
   const s = SPECIES[sp];
   const timeOk = s.time === 'any' || (s.time === 'night' ? env.night : s.time === 'day' ? !env.night : env.twilight);
-  const wxOk = s.weather === 'any' || (s.weather === 'storm' ? env.weather === 'storm' : env.weather === 'rain' || env.weather === 'storm');
-  return timeOk && wxOk;
+  const weatherOk = s.weather === 'any' || (s.weather === 'storm' ? env.weather === 'storm' : env.weather === 'rain' || env.weather === 'storm');
+  return timeOk && weatherOk;
 }
-export const fmtKg = kg => kg < 10 ? kg.toFixed(1) + ' kg' : Math.round(kg) + ' kg';
+export const fmtKg = (kg: number): string => kg < 10 ? kg.toFixed(1) + ' kg' : Math.round(kg) + ' kg';
 
-export const BOATS = [
+export const BOATS: BoatDef[] = [
   { id: 'row',     name: 'Rowboat',      cost: 0,    speed: 1.0,  accel: 1.0, turn: 1.0,  hold: 4,  hp: 100, L: 13.5, B: 5.8, prop: 'OARS',   sonar: 0, net: 0, what: 'Quiet: easier perfect strikes' },
   { id: 'skiff',   name: 'Sail Skiff',   cost: 450,  speed: 1.45, accel: 0.9, turn: 0.95, hold: 7,  hp: 140, L: 16.5, B: 6.4, prop: 'SAIL',   sonar: 0, net: 0, what: 'Sails: fast across the wind' },
   { id: 'launch',  name: 'Motor Launch', cost: 2200, speed: 1.95, accel: 1.5, turn: 1.05, hold: 10, hp: 210, L: 17.5, B: 7,   prop: 'ENGINE', sonar: 0, net: 0, what: 'Engine: fast, but spooks fish' },
@@ -93,7 +118,7 @@ export const BOATS = [
 ];
 // Restoring Alderhaven: the long goal. Each project takes coins and donated fish, unlocks something, and the last one ends the story.
 // need: { any: n } fish of any kind; { kinds: n } different species; { trophy: n } trophy fish; { sp: id, n } a particular species
-export const PROJECTS = [
+export const PROJECTS: Project[] = [
   { id: 'pier', name: 'Mend the pier', cost: 250, need: { any: 5 }, gives: 'The shipyard can build the Trawler', what: 'Rotten planks and a sagging quay. The harbourmaster needs coin and a few fish to feed the carpenters.' },
   { id: 'market', name: 'Raise the fish market', cost: 1500, need: { kinds: 6 }, gives: 'Opens the Fleet Office: send spare boats out to fish for you', what: 'A covered market hall with a slab for every kind of fish. Bring six different species to stock it.' },
   { id: 'drydock', name: 'Build the dry dock', cost: 5000, need: { trophy: 3 }, gives: 'Big ships: the Schooner and Steam Drifter, and dry dock upgrades', what: 'A stone dock deep enough for real ships. Shipwrights want proof of serious anglers: three trophy fish.' },
@@ -101,8 +126,8 @@ export const PROJECTS = [
   { id: 'grand', name: 'The Grand Harbour', cost: 30000, need: { sp: 'oldone', n: 1 }, gives: 'Alderhaven becomes the greatest harbour on the coast', what: 'Banners, a festival, and the Old One mounted over the harbour gate. Bring it home.' },
 ];
 // upgrade tracks, grouped into shop categories; `lv` describes what each level does.
-export const UPGRADES = {
-  prop:     { name: b => ({ OARS: 'Oars', SAIL: 'Sails', ENGINE: 'Engine' })[b.prop], cat: 'VESSEL', costs: [60, 200, 600, 1600], lv: ['+12% top speed', '+24% top speed', '+36% top speed', '+48% top speed'] },
+export const UPGRADES: Record<UpgradeKey, Upgrade> = {
+  prop:     { name: b => ({ OARS: 'Oars', SAIL: 'Sails', ENGINE: 'Engine' } as const)[b.prop], cat: 'VESSEL', costs: [60, 200, 600, 1600], lv: ['+12% top speed', '+24% top speed', '+36% top speed', '+48% top speed'] },
   hull:     { name: () => 'Plating', cat: 'VESSEL', costs: [70, 220, 650, 1700], lv: ['Copper: +25% hull', 'Iron: +50% hull', 'Steel: +75% hull', 'Gilded: +100% hull'] },
   hold:     { name: () => 'Hold', cat: 'VESSEL', costs: [50, 170, 500, 1400], lv: ['+2 fish slots', '+4 fish slots', '+6 fish slots', '+8 fish slots'] },
   bilge:    { name: () => 'Bilge Pump', cat: 'VESSEL', costs: [220, 800], lv: ['Slowly patches the hull at sea', 'Patches the hull quickly'] },
@@ -127,13 +152,16 @@ export const UPGRADES = {
   harpoon:  { name: () => 'Harpoon Gun', cat: 'TACKLE', req: 'drydock', costs: [1500, 4000], lv: ['Legends and ocean giants tire 25% faster', 'They tire 50% faster and pull less'] },
   bell:     { name: () => 'Diving Bell', cat: 'NAVIGATION', req: 'drydock', costs: [2000, 5000], lv: ['Dive each wreck again once a day', 'Deeper dives bring up twice the salvage'] },
 };
-export const UP_CATS = ['VESSEL', 'TACKLE', 'NAVIGATION', 'CREW'];
-export const SUPPLIES = {
+/** Every upgrade key, in shop order. */
+export const UPGRADE_KEYS = Object.keys(UPGRADES) as UpgradeKey[];
+export const UP_CATS: UpgradeCategory[] = ['VESSEL', 'TACKLE', 'NAVIGATION', 'CREW'];
+export const BAIT_KINDS: BaitKind[] = ['shrimp', 'glow', 'chum'];
+export const SUPPLIES: Record<BaitKind, Supply> = {
   shrimp: { name: 'Shrimp Bait', n: 5, cost: 25, what: 'Faster bites and more trophies' },
   glow: { name: 'Glow Lures', n: 3, cost: 60, what: 'Big trophy chance, double bites at night' },
   chum: { name: 'Chum Bucket', n: 2, cost: 80, what: 'Press C near a school to start a feeding frenzy' },
 };
-export const PAINTS = [
+export const PAINTS: Paint[] = [
   { id: 'classic', name: 'Classic', cost: 0 },
   { id: 'seafoam', name: 'Seafoam', cost: 120, ramp: ['#3f7a6a', '#5fa38c', '#8ac7ae'] },
   { id: 'crimson', name: 'Crimson', cost: 140, ramp: ['#6e2420', '#a2342c', '#c8503e'] },
