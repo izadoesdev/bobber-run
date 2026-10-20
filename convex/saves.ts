@@ -39,9 +39,10 @@ export const setAdminCoins = internalMutation({
     const acct = await ctx.db.query('authAccounts').withIndex('providerAndAccountId', q => q.eq('provider', 'password').eq('providerAccountId', email.toLowerCase())).unique();
     const s = acct && await ctx.db.query('saves').withIndex('by_user', q => q.eq('userId', acct.userId)).unique();
     if (!s) throw new Error('No cloud save for that account yet');
-    const now = Date.now(), data = JSON.parse(s.data);
-    Object.assign(data, { coins: Math.floor(coins), savedAt: now });
-    await ctx.db.patch(s._id, { data: JSON.stringify(data), updatedAt: now });
+    // stamped a few minutes ahead, so a tab still open mid-voyage can't overwrite it before the player reloads
+    const now = Date.now(), at = now + 5 * 60_000, data = JSON.parse(s.data);
+    Object.assign(data, { coins: Math.floor(coins), savedAt: at });
+    await ctx.db.patch(s._id, { data: JSON.stringify(data), updatedAt: at });
     return { coins: data.coins };
   },
 });
