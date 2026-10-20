@@ -9,7 +9,7 @@ import type { ServerWebSocket } from 'bun';
 import { filterChat } from './moderate';
 
 const env = (k: string) => { const v = process.env[k]; if (!v) throw new Error(`${k} is not set`); return v; };
-const CONVEX_URL = env('CONVEX_URL'), SITE = env('CONVEX_SITE_URL');
+const CONVEX_URL = env('CONVEX_URL'), SITE = env('CONVEX_SITE_URL'), RELAY_SECRET = process.env.RELAY_SECRET;
 const ORIGINS = (process.env.ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
 const PORT = Number(process.env.PORT ?? 4820);
 const JWKS = createRemoteJWKSet(new URL(`${SITE}/.well-known/jwks.json`));
@@ -95,6 +95,7 @@ async function onMessage(ws: Sock, text: string): Promise<void> {
     if (p.chats.length >= CHAT_BURST || now - (p.chats.at(-1) ?? 0) < CHAT_GAP_MS) return void ws.send(JSON.stringify({ t: 'chat-slow' }));
     p.chats.push(now);
     const v = await filterChat(text);
+    void keep({ userId: p.userId, name: p.name, sea: p.sea, text, shown: v.text, filtered: v.filtered, whole: v.whole, source: v.source, at: now });
     const line = JSON.stringify({ t: 'chat', id: p.id, name: p.name, text: v.text, at: Date.now() });
     for (const o of seas.get(p.sea) ?? []) if (o !== ws && o.data) o.send(line);
     ws.send(JSON.stringify({ t: 'chat', id: 'me', name: p.name, text: v.text, at: Date.now(), filtered: v.filtered }));   // like Roblox, you see what others see
@@ -108,6 +109,17 @@ async function onMessage(ws: Sock, text: string): Promise<void> {
 }
 
 let rosterAt = 0;
+/** Store a chat line in Convex for good (convex/chat.ts); a failed write is logged and retried once. */
+async function keep(line: Record<string, unknown>, retry = true): Promise<void> {
+  if (!RELAY_SECRET) return;
+  try {
+    const r = await fetch(`${SITE}/relay/chat`, { method: 'POST', headers: { Authorization: `Bearer ${RELAY_SECRET}`, 'Content-Type': 'application/json' }, body: JSON.stringify(line), signal: AbortSignal.timeout(5000) });
+    if (!r.ok) throw new Error(`status ${r.status}`);
+  } catch (e) {
+    console.log(JSON.stringify({ msg: 'chat not stored', why: e instanceof Error ? e.message : 'unknown', retry }));
+    if (retry) setTimeout(() => void keep(line, false), 3000);
+  }
+}
 function broadcast(): void {
   const now = Date.now(), withRoster = now - rosterAt > 3000;
   if (withRoster) rosterAt = now;

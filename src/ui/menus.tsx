@@ -166,7 +166,7 @@ export function Online() {
   // deleting takes two presses within a few seconds
   const arming = !!f.delAt && Date.now() - f.delAt < 5000;
   const removeAccount = async () => {
-    if (!arming) { f.delAt = Date.now(); say('This erases your account, cloud save and captain name. World records stay. Press again to delete', true); return; }
+    if (!arming) { f.delAt = Date.now(); say('This erases your account, cloud save and captain name. World records and chat history stay. Press again to delete', true); return; }
     f.delAt = undefined;
     const r = await deleteAccount();
     if (r.ok) say(r.msg ?? ''); else say(r.why, true);
