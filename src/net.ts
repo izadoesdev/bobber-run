@@ -234,7 +234,16 @@ const islandCall = async (fn: () => Promise<{ ok: boolean; why?: string; price?:
   try { const r = await fn(); return r.ok ? { ok: true, ...(r.price ? { price: r.price } : {}) } : { ok: false, why: r.why ?? 'Something went wrong' }; }
   catch { return { ok: false, why: 'Could not reach the server' }; }
 };
-export const claimIsland = (key: string, name: string, cheated = false) => islandCall(() => client!.action(api.islands.claim, { key, name, cheated }));
+/** Admins only: take an island for free (everyone else buys with buyIsland). */
+export const claimIsland = (key: string, name: string, _cheated = false) => islandCall(() => client!.action(api.islands.claim, { key, name }));   // _cheated: old callers; remove once island.tsx uses buyIsland
+/**
+ * Start buying an island with real money: the server holds it for 30 minutes and returns a Stripe Checkout URL to open.
+ * Stripe sends the player back to /?island=<key>&paid=1 (or paid=0 if they cancel); the island turns up once paid.
+ */
+export async function buyIsland(key: string, name: string): Promise<{ ok: true; url: string; price: number } | { ok: false; why: string }> {
+  if (!NET.authed) return { ok: false, why: 'Sign in to buy islands' };
+  try { return await client!.action(api.islands.buy, { key, name }); } catch { return { ok: false, why: 'Could not reach the server' }; }
+}
 export const renameIsland = (key: string, name: string) => islandCall(() => client!.action(api.islands.rename, { key, name }));
 export const releaseIsland = (key: string) => islandCall(() => client!.mutation(api.islands.release, { key }));
 export const reportIsland = (key: string) => islandCall(() => client!.mutation(api.islands.report, { key }));

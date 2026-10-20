@@ -28,9 +28,11 @@ export default defineSchema({
   stats: defineTable({ userId: v.id('users'), caught: v.number(), earned: v.number(), species: v.number(), heaviest: v.number(), heaviestSp: v.string(), at: v.number() })
     .index('by_user', ['userId']).index('by_species', ['species']).index('by_heaviest', ['heaviest']).index('by_caught', ['caught']).index('by_earned', ['earned']),
   // claimed islands (one per world cell, see islandRules.ts) and players' reports about them
+  // status 'pending' is a hold while the buyer pays on Stripe Checkout (until holdUntil); price is in US dollars
   islands: defineTable({ key: v.string(), ownerId: v.id('users'), ownerName: v.string(), name: v.string(), logo: v.optional(v.id('_storage')), price: v.number(),
-    claimedAt: v.number(), updatedAt: v.number(), seenAt: v.number() })
-    .index('by_key', ['key']).index('by_owner', ['ownerId']).index('by_seen', ['seenAt']),
+    claimedAt: v.number(), updatedAt: v.number(), seenAt: v.number(), status: v.optional(v.union(v.literal('owned'), v.literal('pending'))),
+    holdUntil: v.optional(v.number()), sessionId: v.optional(v.string()), paymentIntent: v.optional(v.string()), paidCents: v.optional(v.number()) })
+    .index('by_key', ['key']).index('by_owner', ['ownerId']).index('by_seen', ['seenAt']).index('by_payment', ['paymentIntent']),
   islandReports: defineTable({ key: v.string(), userId: v.id('users'), name: v.string(), logo: v.optional(v.id('_storage')), at: v.number() }).index('by_key_user', ['key', 'userId']),
   // small server-wide values (the relay's online count)
   meta: defineTable({ key: v.string(), value: v.number(), at: v.number() }).index('by_key', ['key']),
