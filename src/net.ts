@@ -4,11 +4,12 @@ import { h, render } from 'preact';
 import { useEffect } from 'preact/hooks';
 import { ConvexReactClient } from 'convex/react';
 import type { FunctionReference } from 'convex/server';
-import { ConvexAuthProvider, useAuthActions, useConvexAuth } from '@convex-dev/auth/react';
+import { ConvexAuthProvider, useAuthActions, useAuthToken, useConvexAuth } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
 import { ONLINE, type Sailor } from './online';
 import type { ToastKind } from './types';
 import { track } from './analytics';
+import { relayKeep, relayLive, relayBoats, relaySend, relayEmote, relayRenamed } from './relay';
 
 const URL: string | undefined = import.meta.env.VITE_CONVEX_URL;
 export const SAVE_KEY = 'bobber-run-save-v3';
@@ -36,7 +37,7 @@ const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 const errText = (e: unknown) => String((e as Error)?.message ?? e).slice(0, 120);
 
 let client: ConvexReactClient | null = null;
-let actions: ReturnType<typeof useAuthActions> | null = null;
+let actions: ReturnType<typeof useAuthActions> | null = null, authToken: string | null = null;
 let G: Game | null = null, speciesIds: string[] = [], toast: (s: string, kind?: ToastKind) => void = () => { };
 let signingIn = false, switching = false, naming = false;
 
@@ -49,14 +50,16 @@ function watch<T>(key: string, ref: FunctionReference<'query'>, args: Record<str
   const pull = () => { try { const r = w.localQueryResult(); if (r !== undefined) cb(r as T); } catch (e) { NET.err = errText(e); } };
   watches[key] = { sig, off: w.onUpdate(pull) }; pull();
 }
+/** Stop a subscription made with watch(). */
+const unwatch = (key: string) => { watches[key]?.off(); delete watches[key]; };
 const call = <A extends Record<string, unknown>>(ref: FunctionReference<'mutation'>, args: A) =>
   client!.mutation(ref, args).catch((e: unknown) => { NET.err = errText(e); throw e; });
 
 // ---------- sign-in ----------
 // Signs in as a guest when nobody is signed in (never during an account switch) and tracks the session.
 function Bridge() {
-  const a = useAuthActions(), { isLoading, isAuthenticated } = useConvexAuth();
-  actions = a;
+  const a = useAuthActions(), { isLoading, isAuthenticated } = useConvexAuth(), token = useAuthToken();
+  actions = a; authToken = isAuthenticated ? token : null;
   useEffect(() => {
     if (isLoading || isAuthenticated || signingIn || switching) return;
     signingIn = true; NET.status = 'connecting';
@@ -126,9 +129,13 @@ export async function netGive(amount: number, cheated = false): Promise<Result> 
 }
 export async function setName(name: string, auto = false): Promise<Result> {
   if (!NET.authed) return { ok: false, why: 'You are offline' };
-  try { return await call(api.profiles.setName, { name, auto }); } catch { return { ok: false, why: 'Could not reach the server' }; } finally { naming = false; }
+  try { const r = await call(api.profiles.setName, { name, auto }); if (r.ok) relayRenamed(); return r; } catch { return { ok: false, why: 'Could not reach the server' }; } finally { naming = false; }
 }
-export function sendEmote(i: number) { if (NET.authed) { call(api.sea.emote, { i }).catch(() => { }); track('greeting_sent', { greeting: i }); } }
+export function sendEmote(i: number) {
+  if (!NET.authed) return;
+  if (relayLive()) relayEmote(i); else call(api.sea.emote, { i }).catch(() => { });
+  track('greeting_sent', { greeting: i });
+}
 
 // ---------- accounts: a guest can make an account (keeping this save), sign into one (loading its save), or sign out ----------
 const waitFor = async (test: () => boolean, ms = 10_000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (test()) return true; await new Promise(r => setTimeout(r, 150)); } return false; };
@@ -219,7 +226,9 @@ type Snap = { at: number; x: number; y: number; a: number; vx: number; vy: numbe
 const snaps = new Map<string, Snap[]>();
 /** The server clock minus ours, from the freshest report seen (a report can't have been written in our future). */
 let clockAhead = -Infinity;
-const SEND_MOVING_S = 0.5, SEND_STILL_S = 10, BEHIND_MS = 600, COAST_MS = 1500, SNAP_DIST = 200;
+// Convex reports about twice a second, the relay about ten times; draw far enough behind to always have the next one
+const SEND_MOVING_S = 0.5, SEND_STILL_S = 10, RELAY_SEND_S = 0.1, RELAY_STILL_S = 1, COAST_MS = 1500, SNAP_DIST = 200;
+const behindMs = () => relayLive() ? 220 : 600;
 const turn = (from: number, to: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 /** Where a boat was at server time t: a cubic curve through the reports either side, matching their velocities. */
 function sample(list: Snap[], t: number): { x: number; y: number; a: number; vx: number; vy: number } {
@@ -241,24 +250,30 @@ function sample(list: Snap[], t: number): { x: number; y: number; a: number; vx:
 }
 export function netTick(dt: number) {
   if (!NET.authed || !G || NET.profile?.sea == null) return;
-  const b = G.boat, cells = cellsAround(NET.profile.sea, b.x, b.y);
-  watch<Raw[]>('sailors', api.sea.near, { cells }, list => { raw = list; });
-  // our position: twice a second while moving, every 10 s when still, one request at a time
+  const b = G.boat, state = { x: b.x, y: b.y, a: b.a, vx: b.vx, vy: b.vy, w: b.w, boat: G.boatId, paint: G.paint };
+  relayKeep(authToken);
   sendT += dt;
   const moved = !lastSent || Math.hypot(b.x - lastSent.x, b.y - lastSent.y) > 0.5 || Math.abs(b.a - lastSent.a) > 0.03;
-  if (G.mode === 'play' && !inFlight && ((moved && sendT > SEND_MOVING_S) || sendT > SEND_STILL_S)) {
-    sendT = 0; inFlight = true; lastSent = { x: b.x, y: b.y, a: b.a };
-    client!.mutation(api.sea.move, { x: b.x, y: b.y, a: b.a, vx: b.vx, vy: b.vy, w: b.w, boat: G.boatId, paint: G.paint }).catch(() => { }).finally(() => { inFlight = false; });
+  if (relayLive()) {                                           // realtime: ten reports a second while moving, one when still
+    unwatch('sailors');
+    raw = relayBoats();
+    if (G.mode === 'play' && ((moved && sendT > RELAY_SEND_S) || sendT > RELAY_STILL_S)) { sendT = 0; lastSent = state; relaySend(state); }
+  } else {                                                     // Convex: twice a second while moving, every 10 s when still
+    watch<Raw[]>('sailors', api.sea.near, { cells: cellsAround(NET.profile.sea, b.x, b.y) }, list => { raw = list; });
+    if (G.mode === 'play' && !inFlight && ((moved && sendT > SEND_MOVING_S) || sendT > SEND_STILL_S)) {
+      sendT = 0; inFlight = true; lastSent = state;
+      client!.mutation(api.sea.move, state).catch(() => { }).finally(() => { inFlight = false; });
+    }
   }
   const now = Date.now(), prev = new Map(ONLINE.sailors.map(s => [s.uid, s]));
   for (const r of raw) {
     clockAhead = Math.max(clockAhead, r.at - now);
     const list = snaps.get(r.id) ?? [];
     if (!list.length || r.at > list[list.length - 1].at) list.push({ at: r.at, x: r.x, y: r.y, a: r.a, vx: r.vx, vy: r.vy, w: r.w });
-    while (list.length > 2 && list[1].at < now + clockAhead - BEHIND_MS - 2000) list.shift();
+    while (list.length > 2 && list[1].at < now + clockAhead - behindMs() - 2000) list.shift();
     snaps.set(r.id, list);
   }
-  const t = now + clockAhead - BEHIND_MS, k = 1 - Math.exp(-20 * dt);
+  const t = now + clockAhead - behindMs(), k = 1 - Math.exp(-20 * dt);
   const live = raw.filter(r => now + clockAhead - r.at < QUIET_MS).sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y)).slice(0, MAX_SHOWN);
   ONLINE.sailors = live.map(r => {
     const at = sample(snaps.get(r.id)!, t);

@@ -1,0 +1,16 @@
+{
+  "name": "bobber-run-relay",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run index.ts"
+  },
+  "dependencies": {
+    "convex": "^1.47.0",
+    "jose": "^6.2.13"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.3",
+    "typescript": "^7.0.2"
+  }
+}
