@@ -241,6 +241,12 @@ export async function leaders(by: LeaderBy): Promise<Leaders | null> {
   if (!client) return null;
   try { return await client.query(api.leaderboard.top, { by }); } catch { return null; }
 }
+export interface WeeklyBoard { week: number; start: number; end: number; species: { id: string; name: string; top: { name: string; value: number; admin?: boolean; at: number }[]; mine: number | null }[] }
+/** This week's running species and their heaviest catches (one fetch); null when offline. See convex/rotation.ts. */
+export async function weeklyBoard(): Promise<WeeklyBoard | null> {
+  if (!client) return null;
+  try { return await client.query(api.leaderboard.weekly, {}); } catch { return null; }
+}
 /** Sailors online coastwide, for the title screen (no sign-in needed); null if unknown. */
 export async function onlineCount(): Promise<number | null> {
   if (!client) return null;
