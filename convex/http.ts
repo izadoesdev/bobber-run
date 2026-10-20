@@ -2,7 +2,7 @@ import { httpRouter } from 'convex/server';
 import { auth } from './auth';
 import { fromRelay } from './chat';
 import { onlineFromRelay } from './stats';
-import { stripeWebhook } from './islands';
+import { stripeWebhook } from './payments';
 
 const http = httpRouter();
 auth.addHttpRoutes(http);

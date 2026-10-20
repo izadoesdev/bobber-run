@@ -274,9 +274,9 @@ export const claimIsland = (key: string, name: string) => islandCall(() => clien
  * Stripe sends the player back to /?island=<key>&paid=1 (or paid=0 if they cancel); the island turns up once paid.
  */
 /** `adult`: the buyer confirmed they are 18 or older, or a parent or guardian said yes (the server refuses without it). */
-export async function buyIsland(key: string, name: string, adult: boolean): Promise<FunctionReturnType<typeof api.islands.buy>> {
+export async function buyIsland(key: string, name: string, adult: boolean): Promise<FunctionReturnType<typeof api.payments.buy>> {
   if (!NET.authed) return { ok: false, why: 'Sign in to buy islands' };
-  try { return await client!.action(api.islands.buy, { key, name, adult }); } catch { return { ok: false, why: 'Could not reach the server' }; }
+  try { return await client!.action(api.payments.buy, { key, name, adult }); } catch { return { ok: false, why: 'Could not reach the server' }; }
 }
 export const renameIsland = (key: string, name: string) => islandCall(() => client!.action(api.islands.rename, { key, name }));
 export const releaseIsland = (key: string) => islandCall(() => client!.mutation(api.islands.release, { key }));

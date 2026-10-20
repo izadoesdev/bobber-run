@@ -21,6 +21,7 @@ import type * as leaderboard from "../leaderboard.js";
 import type * as lib from "../lib.js";
 import type * as limits from "../limits.js";
 import type * as names from "../names.js";
+import type * as payments from "../payments.js";
 import type * as profiles from "../profiles.js";
 import type * as records from "../records.js";
 import type * as rotation from "../rotation.js";
@@ -48,6 +49,7 @@ declare const fullApi: ApiFromModules<{
   lib: typeof lib;
   limits: typeof limits;
   names: typeof names;
+  payments: typeof payments;
   profiles: typeof profiles;
   records: typeof records;
   rotation: typeof rotation;

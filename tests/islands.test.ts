@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { islandPrice, isClaimable, priceOfKey } from '../convex/islandRules';
-import { signedByStripe } from '../convex/islands';
+import { signedByStripe } from '../convex/payments';
 
 describe('island prices', () => {
   test('home cells cost $1000 and the floor is $150', () => {
