@@ -6,6 +6,7 @@ import { ONLINE, toggleMute, type ChatLine } from '../online';
 import { relayChat, relayLive } from '../relay';
 import { NET } from '../net';
 import { track } from '../analytics';
+import { AccountCta } from './menus';
 
 const SHOW_MS = 20_000, MAX_LEN = 120;
 let open = false, draft = '', focusNext = false;
@@ -32,6 +33,7 @@ function Line({ l }: { l: ChatLine }) {
   if (l.id === 'sys') return <p class="chat-line sys">{l.text}</p>;
   return (
     <p class="chat-line">
+      {l.admin && <b class="admin" title="Admin">★</b>}
       {l.id === 'me' ? <b class="me">{l.name}</b>
         : <button class="who" title={`Mute ${l.name}`} onClick={() => { toggleMute(l.name); ONLINE.note = `${l.name} is muted on this device`; }}>{l.name}</button>}
       <span>{l.text}</span>
@@ -39,10 +41,10 @@ function Line({ l }: { l: ChatLine }) {
   );
 }
 
+const openChat = () => { if (canChat()) { open = true; focusNext = true; } };
 export function Chat() {
   if (!canChat() && !open) return null;
   const now = Date.now(), lines = ONLINE.log.filter(l => open || now - l.at < SHOW_MS).slice(-8);
-  if (!open && !lines.length && !ONLINE.note && !relayLive()) return null;
   return (
     <div class={'chat' + (open ? ' open' : '')}>
       {open && ONLINE.roster.length > 0 && <p class="chat-roster">In your sea: {ONLINE.roster.join(', ')}</p>}
@@ -55,7 +57,10 @@ export function Chat() {
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); send(); } else if (e.key === 'Escape') { open = false; } }}
             onBlur={() => { open = false; }} />
         : <p class="chat-note">Chat needs the realtime server, which isn't connected right now</p>)}
-      {!open && <p class="chat-hint">Press / to chat</p>}
+      {!open && <div class="chat-bar">
+        {relayLive() && <button class="btn small-btn chat-open" onClick={openChat}>Chat <kbd>/</kbd></button>}
+        <AccountCta from="play" />
+      </div>}
     </div>
   );
 }

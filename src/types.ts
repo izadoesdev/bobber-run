@@ -431,6 +431,8 @@ export interface Screens {
   /** settings/controls return here */
   back: Mode;
   accountBack: Mode; journalBack: Mode; cheatBack: Mode;
+  /** online players must pick their own captain name before sailing on */
+  needName: boolean;
   cheatBuf: string; cheatErr: boolean;
   /** action id waiting for a new key on the controls screen */
   rebinding: string | null;

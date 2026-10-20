@@ -105,7 +105,7 @@ function screenInput(dt: number, refit: () => void): void {
     case 'controls': return controls();
     case 'talk': if (hit(' ', 'Enter', 'e')) talkNext(); else if (hit('Escape')) talkNext(true); return;
     case 'emote': return emote();
-    case 'account': if (hit('Escape')) go(G.accountBack); return;
+    case 'account': if (hit('Escape') && !G.needName) go(G.accountBack); return;   // a name must be picked first
     case 'journal': if (hit('j', 'Escape', 'Enter', ' ')) go(G.journalBack); return;
     case 'finale': if (hit(' ', 'Enter', 'Escape')) go('play', 'select'); return;
     case 'port': return portMenuInput(dt);

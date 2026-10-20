@@ -5,7 +5,10 @@
 // unreachable, a small local filter masks the obvious cases instead.
 const KEY = process.env.AI_GATEWAY_API_KEY;
 const ENDPOINT = 'https://ai-gateway.vercel.sh/v1/evaluate', MODEL = 'typesafe-ai/jev-1.14.0';
-const TIMEOUT_MS = 2500, BLOCK_AT = 0.5, MAX_WORDS = 24;
+// a little more relaxed than Roblox's under-13 filter: mild words and friendly teasing pass, but personal info and
+// moving off the game are still caught early
+const TIMEOUT_MS = 2500, MAX_WORDS = 24, WORD_AT = 0.65;
+const WHOLE_AT: Record<string, number> = { personal_info: 0.5, off_platform: 0.5, sexual: 0.55, hate: 0.55, harm: 0.6, scam: 0.6 };
 
 const WHOLE = {
   personal_info: 'Does `msg.text` share or ask for personal information such as a real full name, phone number, home address, email, school, age, or exact location?',
@@ -15,7 +18,7 @@ const WHOLE = {
   harm: 'Does `msg.text` threaten violence, encourage self-harm or suicide (including "kys"), or describe real-world violence?',
   scam: 'Is `msg.text` a scam, phishing attempt, or offer of free currency or items in exchange for something?',
 };
-const WORD = (i: number) => `Would Roblox's chat filter for a 13+ player replace the word \`msg.w${i}\` with hashtags when it appears in \`msg.text\`?`;
+const WORD = (i: number) => `Is the word \`msg.w${i}\` in \`msg.text\` strong profanity, a slur, or a sexual word that a 13+ chat filter would hide? Mild words like damn, hell, crap, wtf, stupid or idiot are fine.`;
 
 export type Verdict = { text: string; filtered: boolean; whole: boolean; source: 'jev' | 'local' };
 
@@ -54,12 +57,12 @@ export async function filterChat(text: string): Promise<Verdict> {
   words.forEach((_, i) => { questions[`w${i}`] = { type: 'boolean', instructions: WORD(i) }; });
   const a = await ask(state, questions);
   if (!a) return local(text);
-  if (Object.keys(WHOLE).some(k => (a[k]?.probability ?? 0) >= BLOCK_AT)) return { text: mask(text), filtered: true, whole: true, source: 'jev' };
+  if (Object.keys(WHOLE).some(k => (a[k]?.probability ?? 0) >= WHOLE_AT[k])) return { text: mask(text), filtered: true, whole: true, source: 'jev' };
   let i = 0, filtered = false;
   const out = text.split(/(\s+)/).map(tok => {
     if (!tok.trim()) return tok;
     const p = i < MAX_WORDS ? a[`w${i}`]?.probability ?? 0 : 0; i++;
-    if (p >= BLOCK_AT) { filtered = true; return mask(tok); }
+    if (p >= WORD_AT) { filtered = true; return mask(tok); }
     return tok;
   }).join('');
   return { text: out, filtered, whole: false, source: 'jev' };

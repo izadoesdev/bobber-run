@@ -17,7 +17,7 @@ export const FUND_KEY = 'grand-harbour';
 
 /** Just what this module needs from the game state. */
 interface Game { mode: string; boat: { x: number; y: number; a: number; vx: number; vy: number; w: number }; boatId: string; paint: string }
-type Profile = { userId: string; name: string; guest: boolean; email: string | null; sea: number | null };
+type Profile = { userId: string; name: string; chosen: boolean; guest: boolean; email: string | null; sea: number | null; admin: boolean };
 type Fund = { total: number; givers: number; goal: number; mine: number };
 type Status = 'offline' | 'connecting' | 'online';
 type Result = { ok: true; msg?: string; loaded?: boolean; name?: string } | { ok: false; why: string };

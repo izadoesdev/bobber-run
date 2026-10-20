@@ -29,7 +29,7 @@ export function relayKeep(next: string | null): void {
     if (m.t === 'welcome') { open = true; retry = 1000; }
     else if (m.t === 'boats') { boats = m.list; if (m.roster) ONLINE.roster = m.roster; }
     else if (m.t === 'sys') heard({ id: 'sys', name: '', text: m.text, at: m.at });
-    else if (m.t === 'chat') heard({ id: m.id, name: m.name, text: m.text, at: m.at });
+    else if (m.t === 'chat') heard({ id: m.id, name: m.name, text: m.text, at: m.at, admin: !!m.admin });
     else if (m.t === 'chat-slow') ONLINE.note = 'You are sending messages too fast. Wait a moment';
   };
   sock.onclose = () => {

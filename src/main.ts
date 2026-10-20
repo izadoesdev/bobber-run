@@ -22,6 +22,7 @@ import { initInput, pollPad } from './input';
 import { menuInput } from './menus';
 import { initAnalytics } from './analytics';
 import { initTelemetry, watchGame } from './telemetry';
+import { forceName } from './ui/menus';
 import { baseScale, targetScale, easeScale, shipZoom } from './camera';
 
 const screen = document.getElementById('screen') as HTMLCanvasElement;
@@ -85,6 +86,7 @@ export function tick(dt: number): void {
   updateStory();
   netTick(dt);
   watchGame(dt);
+  forceName();
   updateLife(dt);
   const bs = boatRenderState(alpha);
   if (G.mode === 'play' || G.mode === 'sunk' || G.mode === 'title') updateCamera(dt, bs.x, bs.y);   // menus freeze the view behind them

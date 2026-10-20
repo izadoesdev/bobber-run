@@ -6,7 +6,7 @@ export interface Sailor {
   online: true; emote: number | null; emoteAt: number;
 }
 /** A chat line as everyone sees it (already filtered by the relay). `id` is the sailor's uid, or 'me'. */
-export interface ChatLine { id: string; name: string; text: string; at: number }
+export interface ChatLine { id: string; name: string; text: string; at: number; admin?: boolean }
 export const ONLINE: { sailors: Sailor[]; chat: Map<string, { text: string; at: number }>; log: ChatLine[]; note: string | null; roster: string[] } = {
   sailors: [], chat: new Map(), log: [], note: null, roster: [],
 };

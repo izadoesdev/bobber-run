@@ -13,7 +13,7 @@ const CONVEX_URL = env('CONVEX_URL'), SITE = env('CONVEX_SITE_URL'), RELAY_SECRE
 const ORIGINS = (process.env.ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
 const PORT = Number(process.env.PORT ?? 4820);
 const JWKS = createRemoteJWKSet(new URL(`${SITE}/.well-known/jwks.json`));
-const me = makeFunctionReference<'query', Record<string, never>, { userId: string; name: string; sea: number | null } | null>('profiles:me');
+const me = makeFunctionReference<'query', Record<string, never>, { userId: string; name: string; sea: number | null; admin: boolean } | null>('profiles:me');
 
 const TICK_MS = 100;          // how often each boat is told about its neighbours
 const RANGE = 900;            // world units; farther boats aren't sent
@@ -22,19 +22,19 @@ const MSGS_PER_S = 30, MAX_PER_USER = 3, MAX_MSG = 4096;   // a sign-in token is
 const CHAT_MAX = 120, CHAT_GAP_MS = 1200, CHAT_BURST = 6, CHAT_WINDOW_MS = 15_000;   // chat: a line every 1.2 s, 6 per 15 s
 
 type Boat = { x: number; y: number; a: number; vx: number; vy: number; w: number; boat: string; paint: string; at: number };
-interface Peer { id: string; userId: string; name: string; sea: number; token: string; boat: Boat | null; emote: number | null; emoteAt: number; tokens: number; refill: number; chats: number[] }
+interface Peer { id: string; userId: string; name: string; sea: number; admin: boolean; token: string; boat: Boat | null; emote: number | null; emoteAt: number; tokens: number; refill: number; chats: number[] }
 type Sock = ServerWebSocket<Peer | null>;
 const seas = new Map<number, Set<Sock>>();
 const perUser = new Map<string, number>();
 
 /** The signed-in player behind a token, as Convex sees them; null if the token or profile doesn't check out. */
-async function player(token: string): Promise<{ userId: string; name: string; sea: number } | null> {
+async function player(token: string): Promise<{ userId: string; name: string; sea: number; admin: boolean } | null> {
   try {
     const { payload } = await jwtVerify(token, JWKS, { issuer: SITE, audience: 'convex' });
     const convex = new ConvexHttpClient(CONVEX_URL); convex.setAuth(token);
     const p = await convex.query(me, {});
     if (!p || String(payload.sub).split('|')[0] !== p.userId) return null;
-    return { userId: p.userId, name: p.name, sea: p.sea ?? 0 };
+    return { userId: p.userId, name: p.name, sea: p.sea ?? 0, admin: !!p.admin };
   } catch (e) {
     console.log(JSON.stringify({ msg: 'sign-in refused', why: e instanceof Error ? `${e.name}: ${e.message}`.slice(0, 160) : 'unknown' }));
     return null;
@@ -94,15 +94,15 @@ async function onMessage(ws: Sock, text: string): Promise<void> {
     if (!text) return;
     if (p.chats.length >= CHAT_BURST || now - (p.chats.at(-1) ?? 0) < CHAT_GAP_MS) return void ws.send(JSON.stringify({ t: 'chat-slow' }));
     p.chats.push(now);
-    const v = await filterChat(text);
+    const v = p.admin ? { text, filtered: false, whole: false, source: 'admin' } : await filterChat(text);   // admins aren't filtered
     void keep({ userId: p.userId, name: p.name, sea: p.sea, text, shown: v.text, filtered: v.filtered, whole: v.whole, source: v.source, at: now });
-    const line = JSON.stringify({ t: 'chat', id: p.id, name: p.name, text: v.text, at: Date.now() });
+    const line = JSON.stringify({ t: 'chat', id: p.id, name: p.name, admin: p.admin, text: v.text, at: Date.now() });
     for (const o of seas.get(p.sea) ?? []) if (o !== ws && o.data) o.send(line);
-    ws.send(JSON.stringify({ t: 'chat', id: 'me', name: p.name, text: v.text, at: Date.now(), filtered: v.filtered }));   // like Roblox, you see what others see
+    ws.send(JSON.stringify({ t: 'chat', id: 'me', name: p.name, admin: p.admin, text: v.text, at: Date.now(), filtered: v.filtered }));   // like Roblox, you see what others see
   } else if (m.t === 'renamed') {                                // re-read the name from Convex; the client's word isn't taken
     if (typeof m.token === 'string') p.token = m.token;
     const who = await player(p.token);
-    if (who) p.name = who.name;
+    if (who) { p.name = who.name; p.admin = who.admin; }
   } else if (m.t === 'token' && typeof m.token === 'string') {   // sign-in tokens expire; the client hands over fresh ones
     p.token = m.token;
   }

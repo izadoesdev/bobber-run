@@ -7,7 +7,6 @@
 .chat-line .me { color: #b8e0ea; cursor: default; }
 .chat-line .who:hover { text-decoration: line-through; }
 .chat-note { margin: 0; padding: 0.15em 0.5em; font-size: var(--fs-s, 0.86em); color: #e9c98f; background: rgba(10, 18, 24, 0.55); border-radius: var(--r, 0.3em); cursor: pointer; }
-.chat-hint { margin: 0; font-size: 0.75em; opacity: 0.6; text-shadow: 0 0.08em 0 #000a; }
 .chat-input { font: inherit; font-size: var(--fs-s, 0.86em); padding: 0.4em 0.6em; border-radius: var(--r, 0.3em); border: 0.12em solid var(--gold, #f0cf6a);
   background: rgba(10, 18, 24, 0.85); color: #efe9dc; outline: none; }
 .chat.open .chat-line { background: rgba(10, 18, 24, 0.75); }
@@ -21,3 +20,13 @@
 .sailor-card .row { display: flex; gap: 0.4em; flex-wrap: wrap; }
 .follow-chip { position: absolute; left: 50%; bottom: 4.5em; transform: translateX(-50%); margin: 0; padding: 0.25em 0.6em; display: flex; align-items: center; gap: 0.6em;
   background: rgba(10, 18, 24, 0.7); border-radius: var(--r, 0.3em); font-size: var(--fs-s, 0.86em); }
+.chat-line .admin { color: var(--gold, #f0cf6a); margin-right: 0.25em; }
+/* the always-visible chat button and the guest sign-in chip under the log */
+.chat-bar { display: flex; gap: 0.4em; align-items: center; flex-wrap: wrap; }
+.chat-open { font-weight: 700; }
+.chat-open kbd { font: inherit; margin-left: 0.4em; padding: 0 0.35em; border-radius: 0.2em; background: rgba(255, 255, 255, 0.85); color: #1b2a33; }
+.cta-chip b { color: var(--gold, #f0cf6a); }
+/* the title screen's sign-in call to action */
+.cta { display: flex; flex-direction: column; align-items: center; gap: 0.15em; margin: 0.9em auto 0; padding: 0.7em 1.6em; font-size: 1.05em; }
+.cta-sub { font-size: 0.72em; opacity: 0.85; font-weight: 400; }
+.cta-signed { margin: 0.8em 0 0; text-align: center; text-shadow: 0 0.08em 0 #000a; }

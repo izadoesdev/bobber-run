@@ -42,9 +42,25 @@ export function Title() {
       <div class="panel rivets menu-box">
         <Menu items={TITLE_ITEMS()} sel={G.titleSel || 0} setSel={i => { G.titleSel = i; }} onPick={i => { G.titleSel = i; press('Enter'); }} />
       </div>
+      <AccountCta from="title" />
       <div class="hints-inline shadowed"><Hint k="ArrowUp" k2="ArrowDown" pad="D-pad">Choose</Hint><Hint k="Enter" pad="A">Select</Hint></div>
     </div>
   );
+}
+/** Signing in is the main thing to do online: a big button while you're a guest, your name once signed in. */
+export function AccountCta({ from }: { from: 'title' | 'play' }) {
+  if (!NET.on) return null;
+  const p = NET.profile, go = () => { G.accountBack = from; G.mode = 'account'; };
+  if (p && !p.guest) return from === 'title' ? <p class="cta-signed">Signed in as <b>{p.name}</b></p> : null;
+  return from === 'title'
+    ? <button class="btn primary cta" onClick={go}>Sign in or make an account<span class="cta-sub">Keep your boat and catch on any device</span></button>
+    : <button class="btn small-btn cta-chip" onClick={go}>Playing as a guest · <b>Sign in</b></button>;
+}
+/** Online players with a generated name are sent to pick their own before sailing on (once per session if they skip offline). */
+export function forceName(): void {
+  const p = NET.profile;
+  if (G.mode !== 'play' || G.needName || !NET.authed || !p || p.chosen || p.admin || NET.busy) return;
+  G.needName = true; G.accountBack = 'play'; G.mode = 'account';
 }
 
 export function Pause() {
@@ -150,7 +166,10 @@ export function Online() {
   const say = (msg: string, bad = false) => { G.netMsg = { msg, bad }; };
   const saveName = async () => {
     const r = await setName(f.name ?? p?.name ?? '');
-    if (r.ok) { f.name = null; say(`Your captain name is now ${r.name}`); } else say(r.why, true);
+    if (!r.ok) { say(r.why, true); return; }
+    f.name = null; say(`Your captain name is now ${r.name}`);
+    if (NET.profile && r.name) NET.profile = { ...NET.profile, name: r.name, chosen: true };   // don't wait for the server's copy, or the prompt comes back
+    if (G.needName) { G.needName = false; G.netMsg = null; G.mode = G.accountBack || 'play'; }
   };
   // read the fields themselves: password managers often fill them without an input event
   const submit = async (e: TargetedSubmitEvent<HTMLFormElement>) => {
@@ -179,7 +198,8 @@ export function Online() {
     : `Signed in as ${p?.email || 'a sailor'}. Your save follows you to any device.`;
   return (
     <div class="center dim-bg"><div class="panel rivets dialog online">
-      <h1>Online</h1>
+      <h1>{G.needName ? 'Choose your captain name' : 'Online'}</h1>
+      {G.needName && <p class="good">Other sailors see this name over your boat and in chat. Pick your own to start sailing.</p>}
       <p class="row"><span class={'dot ' + NET.status} />{status}</p>
       {NET.authed && (
         <div class="form-row">
@@ -219,7 +239,7 @@ export function Online() {
       )}
       {G.netMsg && <p class={G.netMsg.bad ? 'why left' : 'good'}>{G.netMsg.msg}</p>}
       <p class="help">Online you share a sea with up to 30 sailors. Greet them (G), compare world records in the logbook, and give to the coastwide fund in Alderhaven's Harbour tab. <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a></p>
-      <footer class="foot"><span /><button class="btn" onClick={() => { G.mode = G.accountBack || 'play'; }}>Back<Key k="Escape" pad="B" /></button></footer>
+      {!G.needName && <footer class="foot"><span /><button class="btn" onClick={() => { G.mode = G.accountBack || 'play'; }}>Back<Key k="Escape" pad="B" /></button></footer>}
     </div></div>
   );
 }
