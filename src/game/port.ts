@@ -18,21 +18,45 @@ export function priceAt(p: Port, spIdx: number, extra = 0): number {
   const s = (G.sat[p.id]?.[spIdx] || 0) + extra;
   return p.mult[spIdx] * Math.max(0.5, 1 - s * 0.07);
 }
-/** Fish set aside for active contracts (the most valuable of each species). */
-function reserved(): Set<Fish> {
+/** Fish set aside for active contracts (the most valuable of each species). Contracts bigger than the hold can't be met, so they keep nothing. */
+function contractFish(): Set<Fish> {
   const keep = new Set<Fish>();
   for (const c of G.active) {
+    if (c.n > cap()) continue;
     let n = c.n;
     G.hold.filter(f => f.sp === c.sp && !keep.has(f)).sort((a, b) => b.value - a.value).forEach(f => { if (n-- > 0) keep.add(f); });
   }
   return keep;
 }
+/**
+ * Fish the next harbour project asks for (particular species, trophies or one of each kind).
+ * "Any fish" needs are not held back, or an early rowboat could never sell anything.
+ */
+function harbourFish(exclude: Set<Fish>): Set<Fish> {
+  const pr = nextProject(), keep = new Set<Fish>();
+  if (!pr || 'any' in pr.need) return keep;
+  for (const f of needStatus(pr.need).pick) if (!exclude.has(f)) keep.add(f);
+  return keep;
+}
+/** Everything "Sell all" leaves in the hold, and why. */
+function reserved(): { all: Set<Fish>; contracts: number; harbour: number } {
+  const c = contractFish(), h = harbourFish(c);
+  return { all: new Set([...c, ...h]), contracts: c.size, harbour: h.size };
+}
+const CONFIRM_S = 4;
+/** Asks once, then acts on a second press within a few seconds. */
+function confirmed(what: string, ask: string): boolean {
+  if (G.confirm && G.confirm.what === what && G.t - G.confirm.t < CONFIRM_S) { G.confirm = null; return true; }
+  G.confirm = { what, t: G.t }; toast(ask, 'bad'); sfx('deny');
+  return false;
+}
 /** Other players' boats within crew range of a point. */
 export const sailorsNear = (x: number, y: number): number => ONLINE.sailors.filter(s => Math.hypot(s.x - x, s.y - y) < CREW_RANGE).length;
 /** Everything a sale is multiplied by besides the port's price: the cook's smoking and the crew bonus for sailors nearby. */
 export const saleBonus = (): { cook: number; crew: number } => ({ cook: 0.1 * G.up.cook, crew: crewBonus(G.boat.x, G.boat.y) });
-export function saleValue(p: Port): { tot: number; n: number; kept: number } {
-  const keep = reserved(), sold: Record<number, number> = {}, b = saleBonus(), mul = (1 + b.cook) * (1 + b.crew);
+/** What "Sell all" pays. With `all`, fish kept back for contracts and the harbour are sold too. */
+export function saleValue(p: Port, all = false): { tot: number; n: number; kept: number; harbour: number } {
+  const r = reserved(), keep = all ? new Set<Fish>() : r.all, sold: Record<number, number> = {}, b = saleBonus(), mul = (1 + b.cook) * (1 + b.crew);
   let tot = 0, n = 0;
   for (const f of G.hold) {
     if (keep.has(f)) continue;
@@ -40,12 +64,20 @@ export function saleValue(p: Port): { tot: number; n: number; kept: number } {
     sold[f.sp] = (sold[f.sp] || 0) + 1;
     n++;
   }
-  return { tot, n, kept: keep.size };
+  return { tot, n, kept: r.contracts, harbour: r.harbour };
 }
+/** A full hold where every fish is kept back would leave nothing to sell and no room to fish, so Sell all can sell those too. */
+const stuck = (n: number): boolean => n === 0 && G.hold.length >= cap();
 function sell(p: Port): void {
-  const { tot, n } = saleValue(p);
+  let all = false, { tot, n } = saleValue(p);
+  if (stuck(n)) {
+    if (!confirmed('sell-kept', 'Every fish is kept for a contract or the harbour. Press Sell all again to sell them anyway')) return;
+    all = true; ({ tot, n } = saleValue(p, true));
+  }
   if (!n) { sfx('deny'); return; }
-  const keep = reserved(), sat = G.sat[p.id] || (G.sat[p.id] = {});
+  const keep = all ? new Set<Fish>() : reserved().all, sat = G.sat[p.id] || (G.sat[p.id] = {});
+  const legend = G.hold.find(f => !keep.has(f) && SPECIES[f.sp].legend);
+  if (legend && !confirmed('sell-legend', `Your hold has ${SPECIES[legend.sp].name}, a legend. Press Sell all again to sell it`)) return;
   for (const f of G.hold) if (!keep.has(f)) sat[f.sp] = (sat[f.sp] || 0) + 1;
   G.hold = G.hold.filter(f => keep.has(f));
   addCoins(tot); G.stats.sold++;
@@ -108,7 +140,7 @@ function buyBoat(bd: BoatDef): void {
 function switchBoat(bd: BoatDef): void {
   const health = G.boat.hp / hpMax();
   G.boatId = bd.id;
-  G.boat.hp = Math.round(hpMax() * Math.max(health, 1));
+  G.boat.hp = Math.round(hpMax() * Math.min(health, 1));   // keep the same share of hull; switching is not a free repair
   while (G.hold.length > cap()) G.hold.pop();
 }
 
@@ -117,12 +149,13 @@ const chartedPorts = (except: string): Port[] => [...G.found].filter(id => id.st
 function makeOffer(p: Port): Contract {
   const ports = chartedPorts(p.id);
   const dest = ports.length ? ports[Math.floor(Math.random() * ports.length)] : p;
-  const cands = SPECIES.filter(s => s.w > 0 && s.rod <= G.up.rod + 1);
+  // only fish you can already catch, and never legends
+  const cands = SPECIES.filter(s => s.w > 0 && s.rod <= G.up.rod && !s.legend);
   let total = 0;
   for (const s of cands) total += s.w;
   let v = Math.random() * total, sp = cands[0];
   for (const s of cands) { v -= s.w; if (v <= 0) { sp = s; break; } }
-  const n = sp.base < 12 ? 3 + Math.floor(Math.random() * 3) : sp.base < 40 ? 2 + Math.floor(Math.random() * 2) : 1;
+  const n = Math.min(cap(), sp.base < 12 ? 3 + Math.floor(Math.random() * 3) : sp.base < 40 ? 2 + Math.floor(Math.random() * 2) : 1);   // never more than the hold carries
   const dist = Math.hypot(dest.x - p.x, dest.y - p.y);
   return { id: Math.random().toString(36).slice(2, 8), from: p.id, to: dest.id, toName: dest.name, sp: SP[sp.id], n, reward: Math.round(n * sp.base * (1.7 + Math.random() * 0.6) + dist / 20) };
 }
@@ -140,8 +173,17 @@ function deliver(c: Contract): void {
   addCoins(pay); G.stats.contracts++;
   sfx('fanfare'); toast(`Contract done  +$${pay}`, 'good'); celebrate(); saveGame();
 }
+function abandon(c: Contract): void {
+  if (!confirmed('abandon:' + c.id, `Press Abandon again to give up the ${SPECIES[c.sp].name} contract`)) return;
+  G.active = G.active.filter(a => a !== c);
+  sfx('select'); toast(`You gave up the contract for ${c.toName}`); saveGame();
+}
+/** Fish the active contracts ask for, all together. */
+const promised = (): number => G.active.reduce((a, c) => a + c.n, 0);
+const fits = (c: Contract): boolean => promised() + c.n <= cap();
 function take(p: Port, c: Contract): void {
   if (G.active.length >= contractSlots()) { toast(`You can hold ${contractSlots()} contracts at once`, 'bad'); sfx('deny'); return; }
+  if (!fits(c)) { toast(`Your hold can't carry ${c.n} more fish for contracts. Finish or abandon one first`, 'bad'); sfx('deny'); return; }
   G.active.push(c);
   G.offers[p.id] = G.offers[p.id].filter(o => o !== c);
   G.offers[p.id].push(makeOffer(p));
@@ -263,23 +305,35 @@ function marketItems(p: Port, items: Rows): void {
   header(items, 'SELL');
   items.push({
     kind: 'sell', icon: 'coin', label: 'Sell your catch',
-    sub: sv.n ? `${sv.n} fish${sv.kept ? `, ${sv.kept} kept for contracts` : ''}${crew ? `, crew bonus +${Math.round(crew * 100)}%` : ''}` : 'Your hold is empty',
-    right: sv.n ? '+' + cash(sv.tot) : '', ok: sv.n > 0, why: sv.n ? '' : (sv.kept ? 'Every fish is kept back for a contract' : 'Your hold is empty. Go fishing!'),
+    sub: sv.n ? `${sv.n} fish${sv.kept ? `, ${sv.kept} kept for contracts` : ''}${sv.harbour ? `, ${sv.harbour} kept for the harbour` : ''}${crew ? `, crew bonus +${Math.round(crew * 100)}%` : ''}` : 'Your hold is empty',
+    right: sv.n ? '+' + cash(sv.tot) : '', ok: sv.n > 0 || stuck(sv.n),
+    why: sv.n ? '' : stuck(sv.n) ? 'Your hold is full of fish kept back. Press Sell all twice to sell them anyway' : sv.kept || sv.harbour ? 'Every fish is kept back for a contract or the harbour' : 'Your hold is empty. Go fishing!',
     action: 'Sell all', act: () => sell(p),
   });
   header(items, 'CONTRACTS');
   for (const c of G.active) if (c.to === p.id) {
     const n = have(c.sp), name = SPECIES[c.sp].name;
     items.push({
-      kind: 'deliver', c, fish: c.sp, label: `Deliver ${c.n} ${name}`, sub: `You have ${n} of ${c.n}`, right: '+' + cash(contractPay(c)), ok: n >= c.n,
-      why: n >= c.n ? '' : `Catch ${c.n - n} more ${name}`, action: 'Deliver', act: () => n >= c.n ? deliver(c) : deny(),
+      kind: 'deliver', c, fish: c.sp, label: `Deliver ${c.n} ${name}`, sub: `You have ${n} of ${c.n}`, right: '+' + cash(contractPay(c)), ok: true,
+      why: n >= c.n ? '' : c.n > cap() ? `Your hold carries only ${cap()} fish` : `Catch ${c.n - n} more ${name}`,
+      ...(n >= c.n ? { action: 'Deliver', act: () => deliver(c) } : { action: 'Abandon', act: () => abandon(c) }),
+      what: n >= c.n ? '' : `Deliver ${c.n} ${name} here for ${cash(contractPay(c))}. Abandoning it frees the slot and the fish it keeps back; nothing else is lost.`,
+    });
+  }
+  for (const c of G.active) if (c.to !== p.id) {           // contracts for other ports can be given up here
+    const name = SPECIES[c.sp].name, n = have(c.sp);
+    items.push({
+      kind: 'contract', c, fish: c.sp, label: `${c.n} ${name} for ${c.toName}`, sub: `You have ${Math.min(n, c.n)} of ${c.n}`, right: 'Taken', ok: true,
+      action: 'Abandon', act: () => abandon(c),
+      what: `Deliver ${c.n} ${name} to ${c.toName} for ${cash(contractPay(c))}. Abandoning it frees the slot; nothing else is lost.`,
     });
   }
   for (const c of offersAt(p)) {
-    const full = G.active.length >= contractSlots(), name = SPECIES[c.sp].name, weak = SPECIES[c.sp].rod > G.up.rod;
+    const full = G.active.length >= contractSlots(), room = fits(c), name = SPECIES[c.sp].name, weak = SPECIES[c.sp].rod > G.up.rod;
     items.push({
-      kind: 'take', c, fish: c.sp, label: `${c.n} ${name}`, sub: `Bring them to ${c.toName}`, right: cash(contractPay(c)), ok: !full,
-      why: full ? `You already hold ${contractSlots()} contracts. The Quartermaster adds more` : '', action: 'Take contract', act: () => take(p, c),
+      kind: 'take', c, fish: c.sp, label: `${c.n} ${name}`, sub: `Bring them to ${c.toName}`, right: cash(contractPay(c)), ok: !full && room,
+      why: full ? `You already hold ${contractSlots()} contracts. The Quartermaster adds more` : room ? '' : `Your hold can't carry these alongside your other contracts`,
+      action: 'Take contract', act: () => take(p, c),
       what: `Catch ${c.n} ${name} (${SPECIES[c.sp].where.toLowerCase()}) and bring them to ${c.toName} for ${cash(contractPay(c))}.`
         + `${weak ? ` You need a level ${SPECIES[c.sp].rod + 1} rod for them.` : ''} The best ${name} in your hold are kept back from sale. You hold ${G.active.length} of ${contractSlots()} contracts.`,
     });

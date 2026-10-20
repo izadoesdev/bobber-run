@@ -1,9 +1,10 @@
 // Keyboard and gamepad. Raw events become entries in G.keys (held) and G.pressed (this frame),
 // translated through the player's key bindings. The cheat console and key rebinding take raw typing.
-import { G } from './game';
+import { G, saveGame } from './game';
+import { NET } from './net';
 import { remap, bind, toggleFullscreen } from './settings';
 import { runCheat } from './cheats';
-import { unlockAudio, sfx } from './audio';
+import { unlockAudio, suspendAudio, sfx } from './audio';
 import { stepZoom } from './camera';
 import { toast } from './game';
 
@@ -35,7 +36,7 @@ function cheatConsoleKey(e: KeyboardEvent): void {
 function onKeyDown(e: KeyboardEvent): void {
   if (isTyping(e.target)) { if (e.key === 'Escape') e.target.blur(); return; }   // a form field has the keyboard
   unlockAudio(); G.pad = false;
-  if (BLOCKED.has(e.key)) e.preventDefault();
+  if (BLOCKED.has(e.key) && !(e.key === 'Tab' && G.mode === 'account')) e.preventDefault();   // Tab moves between the account form's fields
   if (G.mode === 'cheat') return cheatConsoleKey(e);
   if (CHEATS_ENABLED && isCheatKey(e) && (G.mode === 'play' || G.mode === 'port')) {
     e.preventDefault(); G.cheatBack = G.mode; G.mode = 'cheat'; G.cheatBuf = ''; G.cheatErr = false; sfx('select'); return;
@@ -65,7 +66,12 @@ export function initInput(): void {
   addEventListener('wheel', e => { if (!canZoom() || (e.target instanceof Element && e.target.closest('.screen, .dialog, .panel'))) return; zoom(e.deltaY < 0 ? 1 : -1); }, { passive: true });
   addEventListener('keydown', onKeyDown);
   addEventListener('keyup', e => { const k = norm(e.key); G.keys[remap(k)] = false; G.keys[k] = false; });
-  document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
+  // browsers only allow sound after a user gesture: a click or tap counts, not just a key
+  addEventListener('pointerdown', () => unlockAudio(), { capture: true });
+  // save when the tab is hidden or closed (beforeunload alone is unreliable, especially on mobile), and pause sound meanwhile
+  const saveNow = () => { if (G.mode !== 'title' && !NET.skipUnloadSave) saveGame(); };
+  document.addEventListener('visibilitychange', () => { suspendAudio(document.hidden); if (document.hidden) { releaseAll(); saveNow(); } });
+  addEventListener('pagehide', saveNow);
   addEventListener('blur', releaseAll);
 }
 

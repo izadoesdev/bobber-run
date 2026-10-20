@@ -19,7 +19,7 @@ export const FLEET_HOLD_MIN = 10;
 // Restoring Alderhaven: the long goal. Each project takes coins and donated fish, unlocks something, and the last one ends the story.
 // need: { any: n } fish of any kind; { kinds: n } different species; { trophy: n } trophy fish; { sp: id, n } a particular species
 export const PROJECTS: Project[] = [
-  { id: 'pier', name: 'Mend the pier', cost: 250, need: { any: 5 }, gives: 'The shipyard can build the Trawler', what: 'Rotten planks and a sagging quay. The carpenters work for coin and a few fish.' },
+  { id: 'pier', name: 'Mend the pier', cost: 250, need: { any: 4 }, gives: 'The shipyard can build the Trawler', what: 'Rotten planks and a sagging quay. The carpenters work for coin and a few fish.' },
   { id: 'market', name: 'Raise the fish market', cost: 1500, need: { kinds: 6 }, gives: 'The Fleet Office: spare boats fish for you', what: 'A covered market hall with a slab for every kind of fish.' },
   { id: 'drydock', name: 'Build the dry dock', cost: 4000, need: { trophy: 3 }, gives: 'The Schooner, Steam Drifter and 4 dry dock upgrades', what: 'A stone dock deep enough for real ships. Shipwrights want proof of serious anglers.' },
   { id: 'lights', name: 'Light the coast', cost: 10000, need: { sp: 'beacon', n: 3 }, gives: 'The Flagship, and every nearby lighthouse charted', what: 'Relight the lighthouse chain with beaconfish oil. Beaconfish bite below lighthouses at night.' },

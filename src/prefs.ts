@@ -30,5 +30,8 @@ export const SET: Settings = {
   strike: 'normal', reelAssist: false, reelToggle: false, zoom: 1, binds: {},
 };
 // storage may be unavailable (private mode) or hold junk; defaults stand in either case
-try { Object.assign(SET, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { }
+// First run: follow the system's reduced-motion preference until the player picks their own settings.
+const saved = (() => { try { return localStorage.getItem(KEY); } catch { return null; } })();
+if (!saved && typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) Object.assign(SET, { calm: true, shake: false, tilt: false });
+try { Object.assign(SET, JSON.parse(saved || '{}')); } catch { }
 export function savePrefs(): void { try { localStorage.setItem(KEY, JSON.stringify(SET)); } catch { } }

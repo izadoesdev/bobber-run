@@ -98,14 +98,20 @@ async function syncSave() {
   try {
     const cloud = await client!.query(api.saves.load, {}), local = localSave();
     if (cloud && (!local || cloud.updatedAt > local.at)) { if (G?.mode === 'title') { localStorage.setItem(SAVE_KEY, cloud.data); NET.cloudNote = 'Loaded your save from the cloud'; } }
-    else if (local) await call(api.saves.put, { data: local.data, updatedAt: local.at || Date.now() });
+    else if (local) await putSave(local.data, local.at || Date.now());
   } catch { /* offline: try again on the next save */ }
+}
+/** Upload a save. The server turns away writes less than 2 s after the last one ("busy"), so retry once after that. */
+async function putSave(data: string, updatedAt: number) {
+  const r = await call(api.saves.put, { data, updatedAt });
+  if (!r.ok && 'busy' in r && r.busy) { await new Promise(res => setTimeout(res, 2200)); return call(api.saves.put, { data, updatedAt }); }
+  return r;
 }
 let saveTimer = 0;
 /** Called after every local save; uploads at most every few seconds. */
 export function netSaved() {
   if (!NET.authed || saveTimer) return;
-  saveTimer = window.setTimeout(() => { saveTimer = 0; if (!NET.authed || switching) return; const l = localSave(); if (l) call(api.saves.put, { data: l.data, updatedAt: l.at || Date.now() }).catch(() => { }); }, 4000);
+  saveTimer = window.setTimeout(() => { saveTimer = 0; if (!NET.authed || switching) return; const l = localSave(); if (l) putSave(l.data, l.at || Date.now()).catch(() => { }); }, 4000);
 }
 // cheat-tainted saves never call these (the server also accepts an optional `cheated` flag, which this client
 // leaves out so it works against older backends too)
@@ -152,17 +158,29 @@ export async function account(flow: 'signUp' | 'signIn', rawEmail: string, passw
     // wait until the server sees the new account (slow connections can take a while)
     if (!await waitFor(() => !!NET.profile && NET.profile.userId !== oldUser && !NET.profile.guest, 20_000)) return { ok: false, why: 'The server is taking a long time. Check your connection, then try again' };
     if (flow === 'signUp') {
-      if (keep) await call(api.saves.put, { data: keep.data, updatedAt: Date.now() });
+      if (keep) await putSave(keep.data, Date.now());
       if (oldName && oldName !== 'Sailor') await setName(oldName);
       return { ok: true, msg: `Account made and signed in as ${email}. Your progress is saved to it` };
     }
     const cloud = await client.query(api.saves.load, {});
     if (cloud) { localStorage.setItem(SAVE_KEY, cloud.data); NET.skipUnloadSave = true; return { ok: true, reload: true, msg: 'Signed in. Loading your save' }; }   // the reload must not save over it
-    if (keep) await call(api.saves.put, { data: keep.data, updatedAt: Date.now() });
+    if (keep) await putSave(keep.data, Date.now());
     return { ok: true, msg: `Signed in as ${email}` };
   } catch (e) {
     return { ok: false, why: accountError(errText(e), flow) };
   } finally { NET.busy = false; switching = false; }
+}
+/** Erase this account and its cloud save, name and gifts on the server (world records stay), then sign out. This device keeps its own save. */
+export async function deleteAccount(): Promise<Result> {
+  if (!NET.authed || !actions) return { ok: false, why: 'You are offline' };
+  NET.busy = true; switching = true;
+  try {
+    await call(api.cleanup.deleteMe, {});
+    try { await actions.signOut(); } catch { /* the session was erased with the account */ }
+    NET.profile = null;
+    return { ok: true, msg: 'Your account is deleted. You are sailing as a guest on this device' };
+  } catch { return { ok: false, why: 'Could not reach the server. Your account is unchanged' }; }
+  finally { NET.busy = false; switching = false; }
 }
 export async function signOut() { if (!actions) return; NET.busy = true; try { await actions.signOut(); NET.profile = null; } finally { NET.busy = false; } }
 /** Test hook: ask the server who we are right now (no tokens exposed). */
@@ -178,27 +196,39 @@ const cellsAround = (sea: number, x: number, y: number) => {
 type Raw = { id: string; x: number; y: number; a: number; boat: string; paint: string; name: string; at: number; emote: number | null; emoteAt: number };
 let lastSent: { x: number; y: number; a: number } | null = null, sendT = 0, inFlight = false, raw: Raw[] = [];
 const seenSailors = new Set<string>();
+/** Each sailor's last report, its estimated velocity (from the last two reports) and when it arrived here. */
+interface Track { x: number; y: number; a: number; at: number; vx: number; vy: number; recv: number }
+const tracks = new Map<string, Track>();
+const SEND_MOVING_S = 2.5, SEND_STILL_S = 10, PREDICT_MAX_S = 3;
 export function netTick(dt: number) {
   if (!NET.authed || !G || NET.profile?.sea == null) return;
   const b = G.boat, cells = cellsAround(NET.profile.sea, b.x, b.y);
   watch<Raw[]>('sailors', api.sea.near, { cells }, list => { raw = list; });
-  // our position: about once a second while moving, every 10 s when still, one request at a time
+  // our position: every 2.5 s while moving, every 10 s when still, one request at a time (others predict in between)
   sendT += dt;
   const moved = !lastSent || Math.hypot(b.x - lastSent.x, b.y - lastSent.y) > 1 || Math.abs(b.a - lastSent.a) > 0.05;
-  if (G.mode === 'play' && !inFlight && ((moved && sendT > 1) || sendT > 10)) {
+  if (G.mode === 'play' && !inFlight && ((moved && sendT > SEND_MOVING_S) || sendT > SEND_STILL_S)) {
     sendT = 0; inFlight = true; lastSent = { x: b.x, y: b.y, a: b.a };
     client!.mutation(api.sea.move, { x: b.x, y: b.y, a: b.a, boat: G.boatId, paint: G.paint }).catch(() => { }).finally(() => { inFlight = false; });
   }
-  // the nearest few sailors glide toward their last reported spot; anyone quiet for 25 s drops out
-  const now = Date.now(), prev = new Map(ONLINE.sailors.map(s => [s.uid, s])), k = 1 - Math.exp(-2.5 * dt);
+  // the nearest few sailors: dead-reckon from their last two reports, and glide the drawn boat toward that guess
+  const now = Date.now(), prev = new Map(ONLINE.sailors.map(s => [s.uid, s])), k = 1 - Math.exp(-4 * dt);
   const live = raw.filter(r => now - r.at < QUIET_MS).sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y)).slice(0, MAX_SHOWN);
   ONLINE.sailors = live.map(r => {
-    const s: Sailor = prev.get(r.id) ?? { uid: r.id, id: r.boat, name: r.name, paint: r.paint, x: r.x, y: r.y, a: r.a, vx: 0, vy: 0, online: true, emote: null, emoteAt: 0 };
+    let tr = tracks.get(r.id);
+    if (!tr || tr.at !== r.at) {                                      // a new report: update the velocity estimate
+      const span = tr ? (r.at - tr.at) / 1000 : 0;
+      const vx = tr && span > 0.2 && span < 12 ? (r.x - tr.x) / span : 0, vy = tr && span > 0.2 && span < 12 ? (r.y - tr.y) / span : 0;
+      tr = { x: r.x, y: r.y, a: r.a, at: r.at, vx, vy, recv: now }; tracks.set(r.id, tr);
+    }
+    const ahead = Math.min(PREDICT_MAX_S, (now - tr.recv) / 1000), tx = tr.x + tr.vx * ahead, ty = tr.y + tr.vy * ahead;
+    const s: Sailor = prev.get(r.id) ?? { uid: r.id, id: r.boat, name: r.name, paint: r.paint, x: tx, y: ty, a: r.a, vx: 0, vy: 0, online: true, emote: null, emoteAt: 0 };
     const px = s.x, py = s.y, da = Math.atan2(Math.sin(r.a - s.a), Math.cos(r.a - s.a));
-    s.x += (r.x - s.x) * k; s.y += (r.y - s.y) * k; s.a += da * k;
+    s.x += (tx - s.x) * k; s.y += (ty - s.y) * k; s.a += da * k;
     s.vx = (s.x - px) / Math.max(dt, 1e-3); s.vy = (s.y - py) / Math.max(dt, 1e-3);
     Object.assign(s, { id: r.boat, paint: r.paint, name: r.name, emote: r.emote, emoteAt: r.emoteAt });   // id = boat model, as the renderer expects
     if (!seenSailors.has(r.id)) { seenSailors.add(r.id); if (seenSailors.size > 1 || G!.mode === 'play') toast(`${r.name} sailed into view`); }
     return s;
   });
+  for (const id of tracks.keys()) if (!live.some(r => r.id === id)) tracks.delete(id);
 }

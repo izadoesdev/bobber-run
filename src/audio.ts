@@ -32,6 +32,11 @@ export function setVolumes(v: Partial<Record<Bus, number>>): void {
 // Safari before 14.1 only has the prefixed constructor
 type LegacyWindow = Window & { webkitAudioContext?: typeof AudioContext };
 
+/** Pause all sound while the tab is hidden, and pick it back up when it returns. */
+export function suspendAudio(hidden: boolean): void {
+  if (!ac) return;
+  if (hidden) void ac.suspend(); else void ac.resume();
+}
 export function unlockAudio(): void {
   if (ac) {
     if (ac.state !== 'running') void ac.resume();

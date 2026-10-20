@@ -21,7 +21,7 @@ export const G: GameState = {
   // timers
   crashCd: 0, spookCd: 0, petCd: 0, petT: 0, wakeAcc: 0, idleRing: 0, smokeT: 0, bilgeT: 0, saveT: 0, netT: 0, potT: 0,
   // feedback
-  toasts: [], captions: [], floaters: [], parts: [], card: null, catchAnim: null, bought: null, myEmote: null,
+  toasts: [], captions: [], floaters: [], parts: [], card: null, catchAnim: null, bought: null, confirm: null, myEmote: null,
   // camera
   cam: { x: 0, y: 0 }, look: { x: 0, y: 0 }, shake: 0, shakeX: 0, shakeY: 0,
   // input

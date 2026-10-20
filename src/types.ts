@@ -166,6 +166,8 @@ export interface Fish {
   trophy: boolean;
   /** game clock when it was caught */
   t?: number;
+  /** the golden fish of its school */
+  gold?: boolean;
 }
 
 export type LineStage = 'cast' | 'wait' | 'bite' | 'reel';
@@ -193,6 +195,20 @@ export interface FishLine {
   idle?: boolean;
   /** boss fights go three rounds */
   stage?: number;
+  /** nibbles still to come before the bite, as seconds before it; and the game time of the last one */
+  teases?: number[];
+  teaseT?: number;
+  /** a short note shown while waiting: bait preference or the conditions this fish needs */
+  hint?: string | null;
+  /** strike windows for this bite, in seconds: perfect, then any strike */
+  win?: [number, number];
+  /** generic fish and the boss run with the bait: the bobber slides along this heading */
+  run?: number;
+  /** the golden fish of its school took the bait */
+  gold?: boolean;
+  /** the hooked fish's position, pulled closer as you reel and thrown out by its surges */
+  fx?: number;
+  fy?: number;
   surge?: number;
   warn?: boolean;
   jumpT?: number;
@@ -245,13 +261,17 @@ export interface StoryState { i: number; base: Stats; shown: boolean }
 
 export interface PortMenu { tab: number; sel: number; port: Port | null }
 export interface MapView { x: number; y: number; zoom: number }
-export interface NetForm { name: string | null; email: string; pass: string; show: boolean; mode: 'signUp' | 'signIn' }
+export interface NetForm {
+  name: string | null; email: string; pass: string; show: boolean; mode: 'signUp' | 'signIn';
+  /** when "Delete account" was first pressed (ms); a second press within a few seconds deletes */
+  delAt?: number;
+}
 
 // ---------- port menu rows (portItems) ----------
 export interface NeedStatus { have: number; want: number; label: string; pick: Fish[]; sp?: number }
 export type PortItemKind =
   | 'sell' | 'deliver' | 'take' | 'rest' | 'repair' | 'supply' | 'upgrade' | 'boat' | 'paint'
-  | 'collect' | 'fleet' | 'note' | 'project' | 'fund' | 'ferry';
+  | 'collect' | 'fleet' | 'note' | 'project' | 'fund' | 'ferry' | 'contract';
 export interface PortHeader { kind: 'header'; label: string }
 export interface PortRow {
   kind: PortItemKind;
@@ -366,6 +386,8 @@ export interface Feedback {
   catchAnim: CatchAnim | null;
   /** last purchase, for a flash on the bought row */
   bought: { id: string; t: number } | null;
+  /** a two-press confirmation in progress (selling a legend, abandoning a contract) and when it was asked */
+  confirm: { what: string; t: number } | null;
   myEmote: { i: number; t: number } | null;
 }
 

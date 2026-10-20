@@ -5,7 +5,7 @@ import { SP } from '../econ';
 import { netSaved } from '../net';
 import type { BoatId, Contract, Fish, GameState, LogEntry, Pet, Port, ProjectId, Stats, StoryState, TreasureMap, UpgradeKey, BaitKind, BaitChoice } from '../types';
 import { G, freshStats, freshUpgrades } from './state';
-import { DAYLEN, hpMax } from './rules';
+import { DAYLEN, cap, hpMax } from './rules';
 
 const KEY = 'bobber-run-save-v3', OLD = 'bobber-run-save-v2';
 
@@ -126,8 +126,8 @@ export function loadGame(): void {
     };
     Object.assign(G, loaded);
     G.boat.hp = clamp(d.hp ?? hpMax(), 1, hpMax());
-    // older saves stored destination names in capitals
-    for (const c of [...G.active, ...Object.values(G.offers).flat()]) if (c && c.to) c.toName = portById(c.to).name;
+    // older saves stored destination names in capitals, and could ask for more fish than the hold carries
+    for (const c of [...G.active, ...Object.values(G.offers).flat()]) if (c && c.to) { c.toName = portById(c.to).name; c.n = Math.min(c.n, cap()); }
     const { x, y } = d, a = d.a || 0;
     if (typeof x === 'number' && typeof y === 'number' && Number.isFinite(x) && hAt(x, y) < -0.05) {
       Object.assign(G.boat, { x, y, a, px: x, py: y, pa: a });

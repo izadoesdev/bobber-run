@@ -1,12 +1,19 @@
 // Menus and dialogs: title, pause, settings, controls, online, cheats, greeting picker,
 // conversations, the finale and the towed-home card.
 import type { TargetedMouseEvent } from 'preact';
+
+// The account form's email field takes focus when the form first appears, so typing (and Tab) works at once.
+let focusedForm = false;
+const focusOnce = (el: HTMLInputElement | null) => {
+  if (!el) { focusedForm = false; return; }
+  if (!focusedForm) { focusedForm = true; el.focus(); }
+};
 import { CHEATS_ENABLED } from '../input';
 import { G, hasSave, dayNum, logged } from '../game';
 import { SPECIES } from '../econ';
 import { ROWS, ACTIONS, SET } from '../settings';
 import { CHEATS } from '../cheats';
-import { NET, EMOTES, account, signOut, setName } from '../net';
+import { NET, EMOTES, account, deleteAccount, signOut, setName } from '../net';
 import { PEOPLE, currentQuest } from '../story';
 import type { NetForm, Talk as TalkState } from '../types';
 import { Hint, Icon, Key, SetRow, byPointer, keyLabel, money } from './parts';
@@ -83,6 +90,7 @@ export function Settings() {
         <p class="help">{cur?.help || ' '}</p>
         <footer class="foot">
           <span class="hints-inline"><Hint k="ArrowUp" k2="ArrowDown" pad="D-pad">Choose</Hint><Hint k="ArrowLeft" k2="ArrowRight">Change</Hint></span>
+          <a class="small" href="/privacy.html" target="_blank" rel="noopener">Privacy</a>
           <Hint k="Escape" pad="B">Back</Hint>
         </footer>
       </div>
@@ -142,6 +150,14 @@ export function Online() {
       if (r.reload) setTimeout(() => location.reload(), 900);
     } else say(r.why, true);
   };
+  // deleting takes two presses within a few seconds
+  const arming = !!f.delAt && Date.now() - f.delAt < 5000;
+  const removeAccount = async () => {
+    if (!arming) { f.delAt = Date.now(); say('This erases your account, cloud save and captain name. World records stay. Press again to delete', true); return; }
+    f.delAt = undefined;
+    const r = await deleteAccount();
+    if (r.ok) say(r.msg ?? ''); else say(r.why, true);
+  };
   const onEnter = (fn: () => void) => (e: KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); fn(); } };
   const setMode = (mode: NetForm['mode']) => () => { f.mode = mode; G.netMsg = null; };
   const status = NET.status !== 'online'
@@ -168,7 +184,7 @@ export function Online() {
           </div>
           <div class="form-grid">
             <label class="caps" for="net-email">Email</label>
-            <input id="net-email" type="email" autocomplete="email" value={f.email}
+            <input id="net-email" ref={focusOnce} type="email" autocomplete="email" value={f.email}
               onInput={e => { f.email = e.currentTarget.value; }} onKeyDown={onEnter(submit)} />
             <label class="caps" for="net-pass">Password</label>
             <span class="row">
@@ -183,10 +199,13 @@ export function Online() {
         </div>
       )}
       {NET.authed && !p?.guest && (
-        <p><button class="btn" disabled={NET.busy} onClick={async () => { await signOut(); say('Signed out. You are sailing as a guest again'); }}>Sign out</button></p>
+        <p class="row">
+          <button class="btn" disabled={NET.busy} onClick={async () => { await signOut(); say('Signed out. You are sailing as a guest again'); }}>Sign out</button>
+          <button class={'btn' + (arming ? ' danger' : '')} disabled={NET.busy} onClick={removeAccount}>{arming ? 'Press again to delete' : 'Delete account'}</button>
+        </p>
       )}
       {G.netMsg && <p class={G.netMsg.bad ? 'why left' : 'good'}>{G.netMsg.msg}</p>}
-      <p class="help">Online you share a sea with up to 30 sailors. Greet them (G), compare world records in the logbook, and give to the coastwide fund in Alderhaven's Harbour tab.</p>
+      <p class="help">Online you share a sea with up to 30 sailors. Greet them (G), compare world records in the logbook, and give to the coastwide fund in Alderhaven's Harbour tab. <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a></p>
       <footer class="foot"><span /><button class="btn" onClick={() => { G.mode = G.accountBack || 'play'; }}>Back<Key k="Escape" pad="B" /></button></footer>
     </div></div>
   );

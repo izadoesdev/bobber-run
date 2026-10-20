@@ -55,10 +55,10 @@ function SellDetail({ p }: { p: PortT }) {
       {Object.keys(groups).length
         ? <div class="ledger">{Object.entries(groups).map(([key, fs]) => {
           const sp = +key, m = p.mult[sp], pct = Math.round((m - 1) * 100);
-          const each = Math.round(fs.reduce((a, f) => a + fishValue(f), 0) / fs.length * priceAt(p, sp) * mul);
+          const each = Math.round(fs.reduce((a, f) => a + fishValue(f), 0) / fs.length * priceAt(p, sp) * mul), golden = fs.filter(f => f.gold).length;
           return (
             <div class="row">
-              <Fish sp={sp} size="s" /><span class="grow">{SPECIES[sp].name} ×{fs.length}</span>
+              <Fish sp={sp} size="s" /><span class="grow">{SPECIES[sp].name} ×{fs.length}{golden > 0 && <> <span class="stamp gold">{golden > 1 ? `${golden} golden` : 'Golden'}</span></>}</span>
               <span class={'trend ' + (pct > 0 ? 'up good' : pct < 0 ? 'down bad' : '')}>{pct > 0 ? '+' : ''}{pct}%</span>
               <span class="gold">{money(each)}</span>
             </div>
@@ -189,8 +189,10 @@ function DetailBody({ it }: { it: PortRow }) {
     case 'collect':
     case 'fund':
     case 'take':
+    case 'contract':
       return <p>{it.what}</p>;
     case 'deliver':
+      return <><p>{it.sub}.</p>{it.what && <p class="muted">{it.what}</p>}</>;
     case 'note':
       return <p>{it.sub}.</p>;
     default:

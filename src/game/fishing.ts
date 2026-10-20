@@ -14,27 +14,6 @@ import { addCoins, burst, jitter, spawn, toast } from './feedback';
 import { saveGame } from './save';
 import { schoolActive, schoolShown, takeFish } from './schools';
 
-// Line state added by this module (not saved; fold into types.ts when convenient).
-declare module '../types' {
-  interface FishLine {
-    /** nibbles still to come before the bite, as seconds before it; and the game time of the last one */
-    teases?: number[];
-    teaseT?: number;
-    /** a short note shown while waiting: bait preference or the conditions this fish needs */
-    hint?: string | null;
-    /** strike windows for this bite, in seconds: perfect, then any strike */
-    win?: [number, number];
-    /** generic fish and the boss run with the bait: the bobber slides along this heading */
-    run?: number;
-    /** the golden fish of its school took the bait */
-    gold?: boolean;
-    /** the hooked fish's position, pulled closer as you reel and thrown out by its surges */
-    fx?: number;
-    fy?: number;
-  }
-  interface Fish { gold?: boolean }
-}
-
 /** Fight tuning: how hard tension climbs while reeling, and how much surges add. Exposed on BR for tweaking. */
 export const TUNE = { k: 1.5, surge: 0.55 };
 
@@ -401,7 +380,7 @@ export function updateFrenzy(dt: number): void {
     const b = G.boat;
     const cands = schoolsNear(b.x, b.y, 420).filter(s => {
       const d = Math.hypot(s.x - b.x, s.y - b.y);
-      return d > 120 && d < 420 && activeAt(s.sp, env()) && SPECIES[s.sp].rod <= G.up.rod + 1 && frenzyOk(s);
+      return d > 120 && d < 420 && activeAt(s.sp, env()) && SPECIES[s.sp].rod <= G.up.rod && frenzyOk(s);
     });
     if (cands.length) {
       const s = cands[Math.floor(Math.random() * cands.length)];
