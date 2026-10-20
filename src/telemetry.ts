@@ -1,7 +1,7 @@
 // Watches game state and reports changes to analytics, so menus, story, settings and the network layer don't each
 // need their own tracking calls: screens opened, quests finished, the ending, settings and zoom changes, online
 // status, boat and the signed-in profile, plus a progress snapshot every ten minutes of play and when the tab is hidden.
-import { G, dayNum, logged } from './game';
+import { G, dayNum, logged, hasSave } from './game';
 import { SET } from './prefs';
 import { NET } from './net';
 import { QUESTS } from './story';
@@ -44,8 +44,28 @@ function progress(reason: 'interval' | 'hidden'): void {
   updateTraits({ boat: G.boatId, day: dayNum(), species_logged: logged(), projects: G.projects.length });
 }
 
+// ---------- the first minutes of each page load: how long until the game shows, the first input, cast and catch ----------
+// One first_minutes event per page load, sent at the first catch or when the player leaves, whichever comes first.
+const secs = (ms: number | null): string => ms === null ? 'never' : ms < 2000 ? '<2' : ms < 5000 ? '2-5' : ms < 10_000 ? '5-10'
+  : ms < 30_000 ? '10-30' : ms < 60_000 ? '30-60' : ms < 300_000 ? '1-5m' : '5m+';
+const first = { shown: null as number | null, input: null as number | null, cast: null as number | null, caught: null as number | null, base: -1, returning: false, sent: false };
+function sendFirst(ended: 'caught' | 'left'): void {
+  if (first.sent || first.shown === null) return;
+  first.sent = true;
+  track('first_minutes', { shown_s: secs(first.shown), input_s: secs(first.input), cast_s: secs(first.cast), catch_s: secs(first.caught), returning: first.returning, ended });
+}
+/** Per frame: times are from the start of the page load (performance.now()). */
+function watchFirst(): void {
+  const now = performance.now();
+  if (first.shown === null) { first.shown = now; first.returning = hasSave(); }
+  if (G.mode === 'play' && first.base < 0) first.base = G.stats.caught;   // after a save loads, so its old catches don't count
+  if (first.cast === null && G.fish) first.cast = now;
+  if (first.caught === null && first.base >= 0 && G.stats.caught > first.base) { first.caught = now; sendFirst('caught'); }
+}
+
 /** Called every frame from the main loop; the checks themselves run about once a second. */
 export function watchGame(dt: number): void {
+  if (!first.sent) watchFirst();
   if (G.mode !== 'title' && G.mode !== 'pause') playTime += dt;
   if (G.mode !== mode) {
     const screen = SCREENS[G.mode];
@@ -87,8 +107,11 @@ export function initTelemetry(): void {
   const leave = (): void => {
     const now = performance.now();
     if (now - leftAt < 2000) return;
-    leftAt = now; progress('hidden'); flushAnalytics();
+    leftAt = now; sendFirst('left'); progress('hidden'); flushAnalytics();
   };
+  const firstInput = (): void => { first.input ??= performance.now(); };
+  addEventListener('keydown', firstInput, { once: true, capture: true });
+  addEventListener('pointerdown', firstInput, { once: true, capture: true });
   document.addEventListener('visibilitychange', () => { if (document.hidden) leave(); });
   addEventListener('pagehide', leave);
 }
