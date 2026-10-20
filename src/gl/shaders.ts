@@ -336,7 +336,6 @@ precision highp float; precision highp int; in vec2 vUV; out vec4 o;
 uniform sampler2D uScene, uBloom, uBlur;
 uniform float uT, uExp, uSat, uVig, uTilt, uGrain, uRain, uFlash, uBloomK, uSlant, uGrade, uDusk;
 uniform vec3 uTint; uniform vec2 uRes, uUVS; uniform float uQ, uInk;
-uniform float uHaze, uGlowX; uniform vec3 uHazeC, uGlowC;
 ${STYLE}
 float hash(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x*p.y); }
 vec3 aces(vec3 x){ return clamp((x*(2.51*x + 0.03))/(x*(2.43*x + 0.59) + 0.14), 0.0, 1.0); }
@@ -365,11 +364,6 @@ void main(){
     c = mix(c, c*vec3(0.36, 0.42, 0.48), edge*uInk);
   }
   if (uBloomK > 0.0) c += texture(uBloom, tuv).rgb*uBloomK;
-  if (uHaze > 0.0){                                                      // the far sea fades into haze at the top, glowing toward the sun
-    float t = smoothstep(0.8, 1.0, uv.y);
-    vec2 g = (uv - vec2(uGlowX, 1.06))*vec2(uRes.x/uRes.y*0.45, 1.0);
-    c = mix(c, uHazeC, t*t*0.45*uHaze) + uGlowC*exp(-dot(g, g)*10.0)*(0.4 + 0.6*t)*uHaze;
-  }
   if (uRain > 0.01){
     vec2 q = vec2(uv.x*170.0 + uv.y*uSlant*40.0, uv.y*9.0 + uT*7.0); vec2 id = floor(q); float r = hash(id);
     float f = fract(q.y), x = fract(q.x);

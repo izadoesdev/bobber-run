@@ -29,10 +29,10 @@ export interface RenderOptions {
   /** internal resolution scale for the 'smooth' style (adapted when quality is 'auto') */
   scale: number;
   quality: Quality;
-  /** post effect strengths, 0..1 (horizon: haze and a sun glow at the top of the view) */
-  fx: { bloom: number; tilt: number; grade: number; ink?: number; horizon?: number };
+  /** post effect strengths, 0..1 */
+  fx: { bloom: number; tilt: number; grade: number; ink?: number };
 }
-export const R: RenderOptions = { S0: 1, S: 1, scale: 1, quality: 'auto', fx: { bloom: 1, tilt: 1, grade: 1, horizon: 1 } };
+export const R: RenderOptions = { S0: 1, S: 1, scale: 1, quality: 'auto', fx: { bloom: 1, tilt: 1, grade: 1 } };
 
 type GL = WebGL2RenderingContext;
 let gl: GL, cv: HTMLCanvasElement, hdr = false;
@@ -947,23 +947,11 @@ export function render(alpha: number): void {
   styleUniforms(cp); U1(cp, 'uQ', 0); U1(cp, 'uInk', px ? 0.75 * (R.fx.ink ?? 1) : 0);
   U1(cp, 'uT', G.t); U1(cp, 'uExp', E.exp); U1(cp, 'uSat', E.sat); U1(cp, 'uVig', 0.42); U1(cp, 'uTilt', tilt); U1(cp, 'uGrain', SET.calm || px ? 0 : 0.01);
   U1(cp, 'uGrade', R.fx.grade ?? 1); U1(cp, 'uDusk', E.dusk);
-  horizon(cp, E, R.fx.horizon ?? 0);
   U1(cp, 'uRain', WX.rain); U1(cp, 'uFlash', WX.flash * (SET.calm ? 0.15 : 1)); U1(cp, 'uBloomK', bloomK); U1(cp, 'uSlant', 0.3 + WX.wind * 0.7);
   U3(cp, 'uTint', E.tint); U2(cp, 'uRes', out ? w : cv.width, out ? h : cv.height);
   quad();
   if (out) present(out, h, (camX0 - camX) * upx, (camY0 - camY) * upx, R.S / upx);
   gl.bindVertexArray(null);
-}
-// The camera looks north, so the far edge of the view is the top of the screen: there the sea fades into the sky's
-// haze, glowing where the sun (or moon) stands beyond the horizon. A warm sun low in the sky glows most.
-const HAZE = [0, 0, 0], GLOW = [0, 0, 0], WHITE = [1, 1, 1];
-function horizon(pg: Program, E: Env, k: number): void {
-  U1(pg, 'uHaze', k);
-  if (!k) return;
-  const az = Math.atan2(E.sun[0], -E.sun[1]);    // 0 due north, negative toward the west
-  U1(pg, 'uGlowX', 0.5 + clamp(az / (Math.PI / 2), -1.2, 1.2) * 0.6);
-  U3(pg, 'uHazeC', scale3(HAZE, mix3(HAZE, E.sky, WHITE, 0.3 * (1 - E.dk)), 0.8));
-  U3(pg, 'uGlowC', scale3(GLOW, E.sunC, (0.45 + 0.5 * E.dusk) * (1.2 - E.sun[2] * 0.6)));
 }
 // Scale the pixel-style frame (its used w x h) up to the canvas: k device pixels per render pixel, sliding by the
 // camera's leftover fraction of a render pixel (dx, dy) rounded to whole device pixels. Whole-number scales give
