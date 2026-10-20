@@ -67,22 +67,22 @@ export const ROWS: SettingEntry[] = [
   { label: 'Sound captions', ...toggle('captions'), help: 'Shows a short caption for sounds that carry information, like a bite or thunder.' },
   { head: 'Display' },
   { label: 'Fullscreen', get: () => document.fullscreenElement ? 'On' : 'Off', change: toggleFullscreen, help: 'Press F at any time to switch.' },
-  { label: 'Pixel style', ...pick('pixel', ['chunky', 'crisp', 'smooth'], ['Chunky', 'Crisp', 'Smooth']), help: 'Chunky draws one pixel per art pixel, Crisp two, Smooth uses the full screen resolution.' },
-  { label: 'Graphics', ...pick('quality', QUALITIES, ['Auto', 'High', 'Medium', 'Low']), help: 'Only affects Smooth. Auto lowers the resolution when frames run slow.' },
-  { label: 'Tilt-shift blur', ...toggle('tilt') },
-  { label: 'Bloom', ...toggle('bloom') },
+  { label: 'Pixel style', ...pick('pixel', ['chunky', 'crisp', 'smooth'], ['Chunky', 'Crisp', 'Smooth']), help: 'Chunky: big, blocky pixels. Crisp: smaller, sharper pixels. Smooth: the full screen resolution.' },
+  { label: 'Graphics', ...pick('quality', QUALITIES, ['Auto', 'High', 'Medium', 'Low']), help: 'Only used with the Smooth pixel style. Auto lowers the resolution if the game runs slowly.' },
+  { label: 'Edge blur', ...toggle('tilt'), help: 'Blurs the top and bottom of the screen, so the sea looks like a tiny model.' },
+  { label: 'Glow', ...toggle('bloom'), help: 'A soft glow around lights and bright water.' },
   { label: 'Screen shake', ...toggle('shake') },
   { label: 'Reduce flashing', ...toggle('calm'), help: 'Dims lightning and stops pulsing, shaking and bobbing interface animations.' },
   { label: 'High contrast', ...toggle('contrast'), help: 'Solid panels, brighter text and stronger outlines.' },
   { label: 'Interface size', ...pick('ui', UI_SIZES, ['85%', '100%', '115%', '130%', '150%']) },
-  { label: 'Sea zoom', get: () => `${Math.round(SET.zoom * 100)}%`, change: d => { stepZoom(d > 0 ? 1 : -1); }, help: 'How much of the sea you see. Bigger ships already see further. You can also use the mouse wheel or - and + while sailing.' },
+  { label: 'Sea zoom', get: () => `${Math.round(SET.zoom * 100)}%`, change: d => { stepZoom(d > 0 ? 1 : -1); }, help: 'How much of the sea you can see. Bigger ships already see further. While sailing you can also use the mouse wheel, or the - and + keys.' },
   { label: 'Font', ...pick('font', ['pixel', 'plain'], ['Pixel', 'Plain']), help: 'Plain uses a smooth system font that is easier to read.' },
-  { label: 'Interface while sailing', ...toggle('hud', 'Shown', 'Hidden'), help: 'Press H while sailing to hide the status panel, minimap, quest and hints, for clean screenshots or calm sailing. Toasts and the fishing gauge stay.' },
-  { label: 'Objective marker', ...toggle('guide'), help: 'Shows where to go next: an arrow on screen and a flag on the minimap and chart.' },
+  { label: 'Interface while sailing', ...toggle('hud', 'Shown', 'Hidden'), help: 'Press H while sailing to hide the status panel, minimap, quest and hints, for screenshots or calm sailing. Messages and the fishing bars still show.' },
+  { label: 'Objective marker', ...toggle('guide'), help: 'Shows where to go next: an arrow on screen and a marker on the minimap and chart.' },
   { head: 'Fishing' },
   { label: 'Strike timing', ...pick('strike', ['normal', 'relaxed', 'auto'], ['Normal', 'Relaxed', 'Automatic']), help: 'Relaxed gives you more time to strike. Automatic sets the hook for you.' },
-  { label: 'Reel assist', ...toggle('reelAssist'), help: 'Fish pull less hard, and your reel lets go by itself while a fish jumps.' },
-  { label: 'Reeling', ...pick('reelToggle', [false, true], ['Hold button', 'Press to toggle']), help: 'Toggle lets you tap once to start reeling and again to stop.' },
+  { label: 'Reel assist', ...toggle('reelAssist'), help: 'Fish pull less hard, and you stop reeling by yourself while a fish jumps.' },
+  { label: 'Reeling', ...pick('reelToggle', [false, true], ['Hold button', 'Press to toggle']), help: 'Press to toggle: tap once to start reeling and again to stop. Hold button: reel while you hold it.' },
 ];
 
 // ---------- key bindings ----------
@@ -90,9 +90,9 @@ export const ROWS: SettingEntry[] = [
 // so the rest of the game only ever checks the defaults.
 export interface Action { id: string; label: string; key: string }
 export const ACTIONS: Action[] = [
-  { id: 'up', label: 'Row forward', key: 'ArrowUp' }, { id: 'down', label: 'Row back', key: 'ArrowDown' },
+  { id: 'up', label: 'Go forward', key: 'ArrowUp' }, { id: 'down', label: 'Go back', key: 'ArrowDown' },
   { id: 'left', label: 'Steer left', key: 'ArrowLeft' }, { id: 'right', label: 'Steer right', key: 'ArrowRight' },
-  { id: 'cast', label: 'Cast, strike and reel', key: ' ' }, { id: 'use', label: 'Dock, salvage, haul', key: 'e' },
+  { id: 'cast', label: 'Cast, strike and reel', key: ' ' }, { id: 'use', label: 'Dock, salvage, haul up treasure', key: 'e' },
   { id: 'bait', label: 'Switch bait', key: 'b' }, { id: 'chum', label: 'Throw chum', key: 'c' }, { id: 'pet', label: 'Pet the cat', key: 'p' },
   { id: 'ship', label: 'Ship and hold', key: 'Tab' }, { id: 'chart', label: 'Sea chart', key: 'm' }, { id: 'log', label: 'Logbook', key: 'l' },
   { id: 'hud', label: 'Hide or show the interface', key: 'h' },

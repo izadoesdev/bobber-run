@@ -523,7 +523,7 @@ export function sfx(name: SfxName, vol = 1, _rate = 1, pan = 0): void {
 interface LoopVoice { g: GainNode; fl: BiquadFilterNode }
 interface Engine { g: GainNode; o1: OscillatorNode; o2: OscillatorNode; lfo: OscillatorNode; lp: BiquadFilterNode }
 type LoopName = 'sea' | 'lap' | 'wash' | 'spray' | 'surf' | 'wind' | 'rain' | 'luff' | 'roof' | 'stove' | 'hiss';
-type Loops = Record<LoopName, LoopVoice> & { wall: LoopVoice; engine: Engine };
+type Loops = Record<LoopName, LoopVoice> & { wall: LoopVoice; engine: Engine; drone: GainNode };
 let loops: Loops | null = null;
 
 function loopSource(ctx: AudioContext, kind: NoiseColor, type: BiquadFilterType, f: number, q: number, dest: AudioNode): LoopVoice {
@@ -558,7 +558,20 @@ function startLoops(ctx: AudioContext, gr: Graph): void {
     stove: loop('brown', 'lowpass', 300),                        // indoors: warm low roar of the stove
     hiss: loop('white', 'bandpass', 2000, 0.5, gr.tapeIn),       // tape hiss under the music (music bus)
   };
-  loops = { ...voices, wall: { fl: wall, g: wallG }, engine: startEngine(ctx, gr) };
+  loops = { ...voices, wall: { fl: wall, g: wallG }, engine: startEngine(ctx, gr), drone: startDrone(ctx, wall) };
+}
+
+// the deep ocean: a low, slowly breathing drone of two detuned sines (a fifth apart), well under the music
+function startDrone(ctx: AudioContext, dest: AudioNode): GainNode {
+  const g = ctx.createGain(), lp = ctx.createBiquadFilter(), lfo = ctx.createOscillator(), lfoG = ctx.createGain(), breath = ctx.createGain();
+  lp.type = 'lowpass'; lp.frequency.value = 170; lp.Q.value = 0.4;
+  breath.gain.value = 0.7; lfo.frequency.value = 0.07; lfoG.gain.value = 0.3;
+  lfo.connect(lfoG).connect(breath.gain);
+  for (const f of [49, 73.6, 98.4]) { const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f; o.connect(lp); o.start(); }
+  g.gain.value = 0;
+  lp.connect(breath).connect(g).connect(dest);
+  lfo.start();
+  return g;
 }
 
 // engine: a low triangle and sine, gently saturated and softly pulsed, like a single-cylinder outboard heard from the tiller
@@ -587,7 +600,7 @@ function startEngine(ctx: AudioContext, gr: Graph): Engine {
   return { g, o1, o2, lfo, lp };
 }
 
-let lapPhase = 0, portMix = 0;
+let lapPhase = 0, portMix = 0, deepMix = 0;
 const poisson = (rate: number, dt: number) => Math.floor(rate * dt + Math.random());   // event count with the right mean
 
 // one-shots heard inside the harbour office: rain ticking on the wooden roof, a drip, the stove crackling
@@ -615,6 +628,34 @@ function portEvents(c: AudioContext, dt: number, rain: number): void {
   curBus = 'sfx';
 }
 
+// far out over deep water: whale song now and then, and trains of distant clicks (none with calm sounds on)
+function deepEvents(c: AudioContext, dt: number, calm: boolean): void {
+  const m = deepMix * (1 - portMix);
+  if (m < 0.05) return;
+  curBus = 'amb';
+  try {
+    if (poisson(m / (calm ? 90 : 45), dt)) {                     // a whale's phrase: two or three long glides, low and far away
+      const p = r(-0.8, 0.8), base = r(120, 190), v = 0.03 * m;
+      let t = r(0, dt);
+      for (let k = 0, n = 2 + Math.floor(Math.random() * 2); k < n; k++) {
+        const f = base * r(0.9, 2.4), f1 = base * r(0.8, 2.6), d = r(1.1, 2.2);
+        tone(c, { f, f1, t, a: r(0.4, 0.8), d, vol: v, lp: 760, pan: p, rev: 0.9 });
+        tone(c, { f: f * 2.01, f1: f1 * 2.01, t, a: r(0.4, 0.8), d: d * 0.8, vol: v * 0.25, lp: 900, pan: p, rev: 0.9 });   // a faint overtone
+        t += d * r(0.7, 1.1);
+      }
+    }
+    if (!calm && poisson(m / 30, dt)) {                           // clicks from somewhere below, in a short slowing train
+      const p = r(-0.9, 0.9), f = r(2400, 4200);
+      let t = r(0, dt), gap = r(0.04, 0.08);
+      for (let k = 0, n = 6 + Math.floor(Math.random() * 9); k < n; k++) {
+        hiss(c, { t, a: 0.001, d: 0.005, vol: 0.016 * m, f, q: 4, pan: p, rev: 0.5 });
+        t += gap; gap *= r(1.02, 1.12);
+      }
+    }
+  } catch { /* a dropped call is harmless */ }
+  curBus = 'sfx';
+}
+
 /** The world around the boat, sampled every frame. Levels are 0..1 unless noted. */
 export interface SoundscapeState {
   /** boat speed, world units per second */
@@ -627,6 +668,10 @@ export interface SoundscapeState {
   luff: number;
   mute: boolean;
   port: boolean;
+  /** how far out over deep water the boat is (brings in the deep-ocean ambience) */
+  deep: number;
+  /** calm sounds: no clicks, rarer whale song */
+  calm: boolean;
 }
 
 // called every frame with the state of the world around the boat
@@ -667,6 +712,11 @@ export function soundscape(s: SoundscapeState, dt: number): void {
   set(L.roof.g, 0.018 * rain * portMix, 0.3);
   set(L.stove.g, 0.05 * portMix * (0.8 + 0.2 * Math.sin(t * 1.3) * Math.sin(t * 0.7 + 2)), 0.2);
   if (portMix > 0.02) portEvents(ac, dtc, rain);
+
+  // the deep ocean comes in slowly as the water darkens far from shore
+  deepMix += ((s.mute ? 0 : s.deep) - deepMix) * (1 - Math.exp(-dtc / 4));
+  set(L.drone, 0.022 * deepMix * (1 - portMix) * (s.calm ? 0.7 : 1), 0.5);
+  deepEvents(ac, dtc, s.calm);
 }
 
 // ---------- music: mallet melody over slow pads and a soft bass, C pentatonic, through tape and reverb ----------

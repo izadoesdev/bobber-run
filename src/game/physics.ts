@@ -114,9 +114,9 @@ function onImpact(speed: number, at: { x: number; y: number; nx: number; ny: num
   if (dmg <= 0 || G.god) return;
   const taken = Math.min(dmg, Math.max(0, G.boat.hp));   // the hull bottoms out at zero
   G.boat.hp -= taken;
-  toast(`-${taken} hull`, 'bad');
+  toast(`Crash! -${taken} hull`, 'bad');
   if (G.boat.hp <= 0) sink();
-  else if (G.boat.hp < hpMax() * 0.3) toast('Hull critical. Repair at a port', 'bad');
+  else if (G.boat.hp < hpMax() * 0.3) toast('Your hull is badly damaged. Repair it at a port before your boat sinks', 'bad');
 }
 
 // Other sailors' boats are solid: running into one bounces you off it with a wet slap. Each client only moves its own
@@ -146,7 +146,7 @@ export function physicsStep(dt: number): void {
   b.px = b.x; b.py = b.y; b.pa = b.a;
   const thr = inp.up() ? 1 : 0, rev = inp.down() ? 1 : 0;
   const steer = ((inp.right() ? 1 : 0) - (inp.left() ? 1 : 0)) * (G.fish ? 0.6 : 1);   // you can still turn with a line out
-  if (G.fish && (thr || rev)) cancelFishing('Reeled in');
+  if (G.fish && (thr || rev)) cancelFishing('You started sailing, so you reeled in your line');
   // forward / sideways velocity in the boat frame; shallow water drags harder
   let c = Math.cos(b.a), s = Math.sin(b.a);
   let vf = b.vx * c + b.vy * s, vs = -b.vx * s + b.vy * c;
@@ -205,6 +205,6 @@ export function sink(): void {
   const fee = Math.min(G.coins, 5 + Math.min(40, Math.round(G.coins * 0.04)));   // a small tow fee; the catch is kept
   G.coins -= fee; G.fish = null;
   track('boat_sunk', { boat: G.boatId, tow_cost_bucket: bucket(fee), storm: WX.state === 'storm' });
-  G.sunkMsg = `The harbour tug tows you home. Your catch is safe${fee ? `, and the tow cost $${fee}` : ''}`;
+  G.sunkMsg = `A tug towed you back to the last port you visited. You kept your fish${fee ? `, and the tow cost $${fee}` : ''}`;
   burst('debris', G.boat.x, G.boat.y, 30, 40, () => 2 + Math.random() * 2);
 }

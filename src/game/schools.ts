@@ -74,10 +74,10 @@ function scare(s: School): void {
   sfx('splash', 0.35);
   if (s.heat >= DIVE_HEAT) {
     s.spooked = G.t + DIVE_S; s.heat = 0;
-    toast(`The ${name} dove deep. Throttle down near fish`, 'bad');
+    toast(`The ${name} swam deep and won't bite for a while. Go slower near fish`, 'bad');
   } else if (G.spookCd <= 0) {
     G.spookCd = 30;
-    toast(`Your engine scattered the ${name}. They will regroup`);
+    toast(`Your engine scared off the ${name}. Slow down and they will come back`);
   }
 }
 

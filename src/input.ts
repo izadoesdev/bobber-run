@@ -6,9 +6,13 @@ import { runCheat } from './cheats';
 import { unlockAudio, suspendAudio, sfx } from './audio';
 import { stepZoom } from './camera';
 import { toast } from './game';
+import { dropCourse } from './game/autopilot';
+import { initTouch } from './ui/touch';
 
 /** Keys whose browser default (page scroll, focus change) the game suppresses. */
 const BLOCKED = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Tab']);
+/** Steering keys (after rebinding) and Escape take the helm back from a clicked course. */
+const TAKES_HELM = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd', 'Escape']);
 /** Letters are tracked in lower case, so Shift or Caps Lock between press and release can't leave a key held. */
 const norm = (key: string) => (key.length === 1 ? key.toLowerCase() : key);
 const releaseAll = () => { for (const k in G.keys) G.keys[k] = false; };
@@ -47,6 +51,7 @@ function onKeyDown(e: KeyboardEvent): void {
   if ((e.key === 'f' || e.key === 'F') && remap(e.key) === e.key) { if (!e.repeat) toggleFullscreen(); return; }   // unless f is rebound
   if (canZoom() && (e.key === '=' || e.key === '+' || e.key === '-' || e.key === '_')) { if (!e.repeat) zoom(e.key === '-' || e.key === '_' ? -1 : 1); return; }
   const k = remap(norm(e.key));
+  if (TAKES_HELM.has(k)) dropCourse();
   G.keys[k] = true;
   if (!e.repeat) G.pressed.add(k);
 }
@@ -74,6 +79,7 @@ export function initInput(): void {
   document.addEventListener('visibilitychange', () => { suspendAudio(document.hidden); if (document.hidden) { releaseAll(); saveNow(); } });
   addEventListener('pagehide', saveNow);
   addEventListener('blur', releaseAll);
+  initTouch();
 }
 
 // ---------- gamepad ----------
@@ -89,7 +95,7 @@ export function pollPad(): void {
     PageUp: port && btn(4), PageDown: port && btn(5), Tab: btn(8), Enter: btn(9),
   };
   for (const [k, down] of Object.entries(state)) {
-    if (down && !padPrev[k]) { G.pressed.add(k); G.pad = true; unlockAudio(); }
+    if (down && !padPrev[k]) { G.pressed.add(k); G.pad = true; unlockAudio(); if (TAKES_HELM.has(k)) dropCourse(); }
     if (down !== !!padPrev[k]) G.keys[k] = down;
     padPrev[k] = down;
   }

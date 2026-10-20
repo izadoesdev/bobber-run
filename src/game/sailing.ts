@@ -1,7 +1,7 @@
 // The per-frame update while sailing: timers and particles, sound, discovery, nets, flotsam, prompts and
 // the actions the player can take at sea; plus the camera and the ship (hold) screen.
 import { W, H } from '../config';
-import { hAt, poisNear, schoolsNear, cratesNear } from '../world';
+import { hAt, homePort, poisNear, schoolsNear, cratesNear } from '../world';
 import { WX, updateWeather } from '../weather';
 import { SPECIES, SP, SUPPLIES } from '../econ';
 import { sfx, soundscape, music } from '../audio';
@@ -16,6 +16,7 @@ import { placeAtPort, portById, saveGame } from './save';
 import { endlessStock, idleOk, landNetted, nearestSchool, schoolActive, tryCast, updateFishing, updateFrenzy, useChum } from './fishing';
 import { swimSchools, updateSchools } from './schools';
 import { dock, updateFleet } from './port';
+import { dropCourse, steerCourse } from './autopilot';
 
 // ---------- landmarks ----------
 function discover(p: Poi): void {
@@ -23,20 +24,20 @@ function discover(p: Poi): void {
   const bounty = p.type === 'light' ? 15 : p.type === 'port' ? 10 : 0;
   if (bounty) addCoins(bounty);
   if (p.type === 'light') G.stats.lights++;
-  toast(`Charted ${p.name}${bounty ? `  +$${bounty}` : ''}`, 'good'); sfx('discover'); saveGame();
+  toast(`Added ${p.name} to your chart${bounty ? `  +$${bounty}` : ''}`, 'good'); sfx('discover'); saveGame();
 }
 function salvage(p: Wreck): void {
   if (G.salvaged.has(p.id)) {                      // the diving bell: one more dive per wreck per day
     G.dives[p.id] = dayNum();
     const loot = Math.round(p.loot * 0.6 * (G.up.bell >= 2 ? 2 : 1));
     addCoins(loot);
-    toast(`The diving bell brings up $${loot} more`, 'good'); sfx('coin'); saveGame();
+    toast(`Your diving bell found $${loot} more in the wreck`, 'good'); sfx('coin'); saveGame();
     return;
   }
   G.salvaged.add(p.id); addCoins(p.loot); G.stats.wrecks++;
   const extra = Math.random() < 0.5;
   if (extra) G.bait.glow += 2;
-  toast(`Salvaged $${p.loot}${extra ? ' and 2 glow lures' : ''}`, 'good');
+  toast(`You salvaged $${p.loot}${extra ? ' and 2 glow lures' : ''} from the wreck`, 'good');
   sfx('coin'); setTimeout(() => sfx('coin', 0.8, 1.2), 100);
   burst('spark', p.x, p.y, 16, 40, 0.8);
   saveGame();
@@ -51,8 +52,8 @@ function haul(m: TreasureMap): void {
 }
 function pickUp(c: Crate): void {
   c.taken = true; c.respawn = G.t + 240;
-  if (Math.random() < 0.3) { G.bait.shrimp += 2; toast('Flotsam: 2 shrimp bait'); }
-  else { addCoins(c.value); toast(`Flotsam  +$${c.value}`, 'good'); }
+  if (Math.random() < 0.3) { G.bait.shrimp += 2; toast('You picked up floating cargo: 2 shrimp bait'); }
+  else { addCoins(c.value); toast(`You picked up floating cargo  +$${c.value}`, 'good'); }
   sfx('coin');
   burst('debris', c.x, c.y, 10, 30, 0.8);
 }
@@ -101,7 +102,10 @@ function tickFeedback(dt: number): void {
     if (G.card.t > 3.2 || (G.card.t > 0.4 && hit(' ', 'Enter'))) { G.card = null; G.pressed.delete(' '); }
   }
 }
-// soundscape follows the boat: speed wash, nearby surf, weather, engine, luffing sails
+// soundscape follows the boat: speed wash, nearby surf, weather, engine, luffing sails, and the deep ocean far out
+const smooth01 = (x: number): number => { const t = Math.min(1, Math.max(0, x)); return t * t * (3 - 2 * t); };
+/** 0 near home or over shallow water, 1 over the deep ocean well offshore. */
+const deepness = (): number => { const b = G.boat, hp = homePort(); return smooth01((-hAt(b.x, b.y) - 0.3) / 0.12) * smooth01((Math.hypot(b.x - hp.x, b.y - hp.y) - 900) / 1500); };
 function tickSound(dt: number): void {
   const b = G.boat, bd = boatDef(), playing = G.mode === 'play';
   let shore = 0;
@@ -109,16 +113,18 @@ function tickSound(dt: number): void {
   soundscape({
     speed: playing ? boatSpeed() : 0, shore, wind: WX.wind, rain: WX.rain, engine: playing && bd.prop === 'ENGINE', throttle: G.throttle ? 1 : 0,
     luff: playing && bd.prop === 'SAIL' && G.throttle && sailEff(b.a) < 0.6 ? 1 : 0, mute: G.mode === 'sunk', port: G.mode === 'port',
+    deep: deepness(), calm: SET.calm,
   }, dt);
   music(dt, G.musicOn, isNight());
 }
 const WEATHER_NEWS: Record<WeatherState, string> = {
-  storm: 'A storm rolls in. Big fish bite, but mind the wind', rain: 'Rain. The fish are biting', cloudy: 'Clouds gather', clear: 'The sky clears',
+  storm: 'A storm is here. The wind pushes your boat, but trophy fish are more likely', rain: 'It is raining. Bites come a little slower, but Rain Trout come out', cloudy: 'It is getting cloudy', clear: 'The sky is clear again',
 };
 
 export function update(dt: number): void {
   G.t += dt;
   tickFeedback(dt);
+  if (G.mode !== 'play') dropCourse();             // a course is only for open water: menus, port and sinking end it
   if (G.mode !== 'title') checkGoals();
   if (G.mode === 'sunk') {                          // towed home after a pause
     if ((G.sunkT += dt) > 3.4) { placeAtPort(portById(G.lastPort)); G.boat.hp = Math.round(hpMax() * 0.75); G.mode = 'play'; saveGame(); }
@@ -131,7 +137,7 @@ export function update(dt: number): void {
   G.clock += dt;
   updateWeather(dt, s => toast(WEATHER_NEWS[s], s === 'storm' ? 'bad' : 'info'),
     () => setTimeout(() => sfx('thunder', 1, 0.8 + Math.random() * 0.4), 200 + Math.random() * 900));
-  if (logged() >= 10 && !G.lairTold) { G.lairTold = true; toast('Sailors whisper of the Old One. Its lair is on your chart', 'bad'); }
+  if (logged() >= 10 && !G.lairTold) { G.lairTold = true; toast('Sailors talk of a giant fish, the Old One. Its lair is now marked on your chart', 'bad'); }
   const speed = boatSpeed();
   updateFishing(dt);
   updateFrenzy(dt);
@@ -139,6 +145,7 @@ export function update(dt: number): void {
   scanSurroundings();
   G.prompt = promptFor(speed);
   handleActions(dt, speed);
+  steerCourse();
   boatEffects(dt, speed);
   if (G.up.bilge > 0 && G.boat.hp < hpMax() && (G.bilgeT += dt) > [0, 4, 1.4][G.up.bilge]) { G.bilgeT = 0; G.boat.hp++; }   // the pump patches the hull
   if ((G.saveT += dt) > 15) { G.saveT = 0; saveGame(); }
@@ -185,13 +192,13 @@ function promptFor(speed: number): string | null {
   const f = G.fish;
   if (f) {
     if (f.st === 'reel') {
-      if (f.jump || f.jumpWarn) return 'It is jumping. Let go!';
-      if (f.warn) return 'It is about to run. Ease off!';
+      if (f.jump || f.jumpWarn) return 'It is jumping. Stop reeling!';
+      if (f.warn) return 'It is about to pull hard. Stop reeling!';
       if (SET.reelToggle) return 'Press [SPACE] to start or stop reeling';
       if (idleOk(SPECIES[f.s.sp]) && !f.reelOn) return 'It will tire itself out. Hold [SPACE] to reel faster';
-      return 'Hold [SPACE] to reel. Let go before the line snaps';
+      return 'Hold [SPACE] to reel. Let go when the line gets tight, or it snaps';
     }
-    if (f.st === 'bite') return f.run !== undefined ? 'It runs with the bait. Strike! [SPACE]' : 'Strike now! [SPACE]';
+    if (f.st === 'bite') return f.run !== undefined ? 'It is swimming off with the bait. Strike now! [SPACE]' : 'Strike now! [SPACE]';
     if (f.st === 'wait') {
       if (f.teaseT !== undefined && G.t - f.teaseT < 0.9) return 'A nibble... wait for the real bite';
       return f.hint ? `Wait for the bobber to dip. ${f.hint}` : 'Wait for the bobber to dip';
@@ -199,7 +206,7 @@ function promptFor(speed: number): string | null {
     return null;
   }
   if (G.nearPort) return speed < 14 ? `[E] Dock at ${G.nearPort.name}` : 'Slow down to dock';
-  if (G.nearTreasure) return speed < 12 ? '[E] Haul up the treasure chest' : 'Slow down over the X';
+  if (G.nearTreasure) return speed < 12 ? '[E] Haul up the treasure chest' : 'Slow down over the X to haul up the treasure';
   if (G.nearWreck) return speed < 12 ? `[E] Salvage the ${G.nearWreck.name.replace('Wreck of the ', '')}` : 'Slow down to salvage';
   if (G.nearSchool) {
     const s = SPECIES[G.nearSchool.sp];

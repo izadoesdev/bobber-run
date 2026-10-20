@@ -119,7 +119,7 @@ function Minimap({ step }: { step: Step }) {
         {sail && (
           <div class="chip">
             <Icon k="arrow" size="s" style={{ transform: `rotate(${windAngle()}rad)` }} />
-            Wind <span class={eff > 0.9 ? 'good' : eff > 0.6 ? '' : 'bad'}>{Math.round(eff * 100)}%</span>
+            Sail power <span class={eff > 0.9 ? 'good' : eff > 0.6 ? '' : 'bad'}>{Math.round(eff * 100)}%</span>
           </div>
         )}
         {G.up.radio >= 2 && (
@@ -144,7 +144,7 @@ function Reel({ f }: { f: FishLine }) {
         {f.perfect && f.t < 2.5 && !f.gold && <span class="gold">Perfect strike</span>}
         <span class="grow" />
         {warn
-          ? <span class="callout"><Icon k="warn" size="s" />{f.jump || f.jumpWarn ? 'It jumps. Let go!' : 'It runs. Ease off!'}</span>
+          ? <span class="callout"><Icon k="warn" size="s" />{f.jump || f.jumpWarn ? 'It is jumping. Stop reeling!' : 'It is pulling hard. Stop reeling!'}</span>
           : SET.reelToggle && <span class="muted small">{f.reelOn ? 'Reeling' : 'Paused'}</span>}
       </div>
       <div class="meter">
@@ -175,7 +175,7 @@ function CatchCard({ c }: { c: CatchCardState }) {
         <div class="row">{fmtKg(f.kg)}<span class="gold">{money(f.value)}</span></div>
         <div>
           {c.first && <span class="stamp bad">New species</span>}
-          {c.record && <span class="stamp good">Record</span>}
+          {c.record && <span class="stamp good">New best</span>}
           {f.trophy && <span class="stamp gold">Trophy</span>}
           {c.perfect && <span class="stamp sea">Perfect</span>}
           {f.gold && <span class="stamp gold">Golden</span>}
@@ -243,6 +243,7 @@ function measure(): DOMRect | null {
     uiBox = root?.getBoundingClientRect() ?? null;
     em = root ? parseFloat(getComputedStyle(root).fontSize) || 16 : 16;
     panels = root ? [...root.querySelectorAll('.hud-left, .mini, .hints, .net-chip, .toast')].map(e => e.getBoundingClientRect()) : [];
+    panels.push(...[...document.querySelectorAll('#touch .tbar, #touch .tact')].map(e => e.getBoundingClientRect()));   // touch buttons
   }
   return uiBox;
 }
@@ -312,12 +313,12 @@ function StrikeMeter({ f }: { f: FishLine }) {
 // world position -> percent of the view, for labels pinned over the canvas
 const viewPct = (x: number, y: number): [number, number] => [(x - G.cam.x) / W * 100, (y - G.cam.y) / H * 100];
 
-const MOOD_NOTE = { biting: '', scattered: 'regrouping', empty: 'fished out' } as const;
+const MOOD_NOTE = { biting: '', scattered: 'scared, back soon', empty: 'no fish left for now' } as const;
 // the school in reach: what it is ("?" until logged), its favourite bait, a golden fish, and why it won't bite
 function SchoolTag({ s }: { s: School }) {
   const sp = SPECIES[s.sp], mood = schoolMood(s), fav = favBait(sp), [x, y] = viewPct(s.x, s.y - 9);
   if (x < 3 || x > 97 || y < 8 || y > 94) return null;
-  const need = catchNeed(s.sp), note = MOOD_NOTE[mood] || (need ? (sp.rod > G.up.rod ? `needs rod ${sp.rod + 1}` : 'needs a bigger boat') : '');
+  const need = catchNeed(s.sp), note = MOOD_NOTE[mood] || (need ? (sp.rod > G.up.rod ? `needs a level ${sp.rod + 1} rod` : 'needs a bigger boat') : '');
   return (
     <div class={'label-world chip row' + (sp.legend ? ' gold' : '')} key="school-tag" style={{ left: x + '%', top: y + '%', gap: '0.3em' }}>
       <Fish sp={s.sp} size="s" />
@@ -330,6 +331,16 @@ function SchoolTag({ s }: { s: School }) {
   );
 }
 
+// chat lines over boats: each sailor's latest filtered message (uid 'me' is ours), shown for 6 s, then fading
+const CHAT_MS = 6500, CHAT_MAX = 120;
+function ChatBubble({ text, at, x, y, mine }: { text: string; at: number; x: number; y: number; mine?: boolean }) {
+  const age = Date.now() - at, fade = Math.min(1, Math.max(0, (CHAT_MS - age) / 500));
+  return (
+    <div class={'bubble say' + (mine ? ' mine' : '')} style={{ left: x + '%', top: y + '%', opacity: fade }}>
+      {text.length > CHAT_MAX ? text.slice(0, CHAT_MAX - 1) + '…' : text}
+    </div>
+  );
+}
 // the tag for the school in reach, school names (spyglass 2), other sailors' name tags and greetings, and your own greeting
 function worldLabels(): JSX.Element[] {
   const labels: JSX.Element[] = [];
@@ -342,19 +353,24 @@ function worldLabels(): JSX.Element[] {
       labels.push(<div class={'label-world chip' + (SPECIES[s.sp].legend ? ' gold' : '')} style={{ left: x + '%', top: y + '%' }}>{SPECIES[s.sp].name}</div>);
     }
   }
-  // other sailors: a name tag, plus a speech bubble for a few seconds after they greet
-  const fresh = (at: number) => Date.now() - at < 4500;
+  // other sailors: a name tag, plus a speech bubble for a few seconds after they greet or chat (the newer wins)
+  const now = Date.now(), fresh = (at: number) => now - at < 4500, said = ONLINE.chat;
   for (const s of ONLINE.sailors) {
     const [x, y] = viewPct(s.x, s.y - 22);
     if (x < 2 || x > 98 || y < 6 || y > 96) continue;
     labels.push(<div class="label-world chip sailor" key={'n' + s.uid} style={{ left: x + '%', top: y + '%' }}>{s.name}</div>);
-    if (s.emote != null && fresh(s.emoteAt)) {
+    const line = said.get(s.uid), talking = line && now - line.at < CHAT_MS && (s.emote == null || line.at > s.emoteAt);
+    if (talking) labels.push(<ChatBubble key={'c' + s.uid} text={line.text} at={line.at} x={x} y={y - 6.5} />);
+    else if (s.emote != null && fresh(s.emoteAt)) {
       labels.push(<div class="bubble" key={'b' + s.uid} style={{ left: x + '%', top: y - 5 + '%' }}>{EMOTES[s.emote]}</div>);
     }
   }
-  if (G.myEmote && G.t - G.myEmote.t < 4.5) {
-    const [x, y] = viewPct(G.boat.x, G.boat.y - 24);
-    labels.push(<div class="bubble mine" key="me" style={{ left: x + '%', top: y + '%' }}>{EMOTES[G.myEmote.i]}</div>);
+  const mine = said.get('me'), [mx, my] = viewPct(G.boat.x, G.boat.y - 24);
+  const emoteAt = G.myEmote ? now - (G.t - G.myEmote.t) * 1000 : -Infinity;   // game time to wall-clock time
+  if (mine && now - mine.at < CHAT_MS && mine.at > emoteAt) {
+    labels.push(<ChatBubble key="me-chat" text={mine.text} at={mine.at} x={mx} y={my} mine />);
+  } else if (G.myEmote && G.t - G.myEmote.t < 4.5) {
+    labels.push(<div class="bubble mine" key="me" style={{ left: mx + '%', top: my + '%' }}>{EMOTES[G.myEmote.i]}</div>);
   }
   return labels;
 }
@@ -422,7 +438,7 @@ export function Hud() {
         )}
       </div>
       <div class="hints">
-        <Hint k="Tab" pad="View">Ship</Hint><Hint k="m" pad="Y">Chart</Hint><Hint k="l" pad="LB">Log</Hint>
+        <Hint k="Tab" pad="View">Ship</Hint><Hint k="m" pad="Y">Chart</Hint><Hint k="l" pad="LB">Logbook</Hint>
         <Hint k="Escape" pad="Start">Menu</Hint><Hint k="h">Hide</Hint>{G.pet && <Hint k="p">Pet {G.pet.name}</Hint>}
       </div>
     </div>

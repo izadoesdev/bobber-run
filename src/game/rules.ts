@@ -72,15 +72,15 @@ const UPGRADE_STAT: Record<UpgradeKey, [string, (l: number) => string]> = {
   sonar: ['Sonar', l => ['off', 'schools', 'schools by species', 'species and legends'][l]],
   lantern: ['Night light', l => `${((21 + 19 * l) / 21).toFixed(1)}x reach`],
   spyglass: ['Charting range', l => `${[1, 1.5, 2][l]}x`],
-  sextant: ['Sextant', l => ['off', 'points to the nearest', 'marks them all'][l]],
+  sextant: ['Sextant', l => ['off', 'points to the nearest uncharted place', 'marks every uncharted place'][l]],
   radio: ['Feeding frenzies', l => l ? 'every 45 to 80 s' : 'every 70 to 120 s'],
   deckhand: ['Bonus catch', l => pct([0, 0.25, 0.4][l]) + ' chance'],
   cook: ['Sale price', l => `+${10 * l}%`],
   quarter: ['Contracts', l => `${3 + l} at once, pay +${15 * l}%`],
   pots: ['Crab pots', l => ['none', '1 crab / 4 min', '1 crab / 2.5 min', '1 crab / min'][l]],
   keel: ['Storm push', l => pct([1, 0.5, 0][l])],
-  harpoon: ['Giants land', l => `${pct(1 + 0.25 * l)} speed`],
-  bell: ['Daily re-dive', l => ['none', '60% of the loot', '120% of the loot'][l]],
+  harpoon: ['Landing giants', l => `${pct(1 + 0.25 * l)} speed`],
+  bell: ['Daily wreck dive', l => ['none', '60% of the loot', '120% of the loot'][l]],
 };
 /** The stat upgrade `k` changes and its value at level `l` (gear built into the current boat counts as a floor). */
 export function upgradeStat(k: UpgradeKey, l: number): [string, string] {

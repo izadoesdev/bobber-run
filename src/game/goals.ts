@@ -22,8 +22,8 @@ const GOALS: Goal[] = [
   goal('Catch a fish at night', 60, () => G.stats.night >= 1),
   goal('Salvage a wreck', 50, () => G.stats.wrecks >= 1),
   goal('Find a sunken treasure', 100, () => G.stats.treasures >= 1),
-  goal('Fish through a storm', 120, () => G.stats.storm >= 1),
-  goal('Fish a feeding frenzy', 80, () => G.stats.frenzy >= 1),
+  goal('Catch a fish in a storm', 120, () => G.stats.storm >= 1),
+  goal('Catch a fish in a feeding frenzy', 80, () => G.stats.frenzy >= 1),
   goal('Buy the Motor Launch', 150, () => G.owned.includes('launch')),
   goal('Land a Bluefin Tuna', 200, () => !!G.log.tuna),
   goal('Log 10 species', 250, () => logged() >= 10, () => [logged(), 10]),
@@ -35,7 +35,7 @@ const GOALS: Goal[] = [
   goal('Catch 10 trophies', 300, () => G.stats.trophies >= 10, () => [G.stats.trophies, 10]),
   goal('Earn $10,000 in total', 500, () => G.earned >= 10000, () => [G.earned, 10000]),
   goal('Max out every upgrade', 800, () => UPGRADE_KEYS.every(k => G.up[k] >= UPGRADES[k].costs.length)),
-  goal('A trophy of every species', 3000, () => trophied() >= SPECIES.length, () => [trophied(), SPECIES.length]),
+  goal('Catch a trophy of every species', 3000, () => trophied() >= SPECIES.length, () => [trophied(), SPECIES.length]),
 ];
 
 export interface GoalView { text: string; prog: [number, number] | null; reward?: number }

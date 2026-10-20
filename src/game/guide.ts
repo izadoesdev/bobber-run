@@ -76,7 +76,7 @@ function fishStep(text: string, ok?: (s: School) => boolean, rad?: number): Step
 }
 function earnStep(amount: number, what: string): Step {
   if (G.hold.length >= cap() || (G.hold.length > 0 && dist(nearestPort().end) < dockNear() * 1.5)) return sellStep();
-  return fishStep(`Earn ${cash(amount)} more for ${what} by fishing`);
+  return fishStep(`Catch and sell fish to earn ${cash(amount)} more for ${what}`);
 }
 function buyStep(k: UpgradeKey, what: string): Step {
   const cost = UPGRADES[k].costs[G.up[k]];
@@ -98,7 +98,7 @@ function projectStep(pr: Project): Step {
   if (G.coins < pr.cost) return earnStep(pr.cost - G.coins, name);
   const left = st.want - st.have;
   if (left > 0) {
-    if ('any' in nd) return fishStep(`Catch ${fishN(left)} more for ${name}`);
+    if ('any' in nd) return fishStep(`Catch ${left} more fish for ${name}`);
     if ('kinds' in nd) return fishStep(`Catch ${left} more kind${left > 1 ? 's' : ''} of fish for ${name}`, s => !G.hold.some(f => f.sp === s.sp));
     if ('trophy' in nd) return fishStep(`Catch ${left} more trophy fish for ${name}`);
     if (nd.sp === 'oldone') return lairStep();
@@ -108,7 +108,7 @@ function projectStep(pr: Project): Step {
     if (nd.sp === 'beacon') return beaconStep(left);
     return fishStep(`Catch ${left} more ${SPECIES[sp].name}`, s => s.sp === sp, SEARCH / 2);
   }
-  return at(`Fund ${name} at ${home.name}'s Harbour tab`, home.end, 'anchor', dockNear());
+  return at(`Fund ${name} in the Harbour tab at ${home.name}`, home.end, 'anchor', dockNear());
 }
 function beaconStep(left: number): Step {
   if (G.hold.length >= cap()) return sellStep();
@@ -122,7 +122,7 @@ function beaconStep(left: number): Step {
 function lairStep(): Step {
   const r = rodFor(SP.oldone);
   if (r) return r;
-  if (!isNight()) return at(`Sail to the Old One's lair. It rises at night, in ${clock(untilNight())}`, LAIR, 'moon', castRange());
+  if (!isNight()) return at(`Sail to the Old One's lair. It comes up at night, in ${clock(untilNight())}`, LAIR, 'moon', castRange());
   return at('Catch the Old One at its lair', LAIR, 'moon', castRange());
 }
 
@@ -137,19 +137,19 @@ function questStep(q: Quest): Step {
     case 'sell': return G.hold.length ? sellStep() : fishStep('Catch a fish to sell');
     case 'port': {
       const p = nearest(poisNear(b.x, b.y, SEARCH), p => p.type === 'port' && !G.found.has(p.id));
-      return p ? at('Find another harbour', p, 'anchor', 60) : { text: 'Explore the coast for another harbour', icon: 'anchor', near: 0 };
+      return p ? at('Sail close to the new port to chart it', p, 'anchor', 60) : { text: 'Explore the coast to find another port', icon: 'anchor', near: 0 };
     }
     case 'light': {
       const p = nearest(poisNear(b.x, b.y, SEARCH), p => p.type === 'light' && !G.found.has(p.id));
-      return p ? at('Sail close to the lighthouse', p, 'lantern', 60) : { text: 'Explore for lighthouses', icon: 'lantern', near: 0 };
+      return p ? at('Sail close to the lighthouse to chart it', p, 'lantern', 60) : { text: 'Explore the coast to find lighthouses', icon: 'lantern', near: 0 };
     }
     case 'wreck': {
       const p = nearest(poisNear(b.x, b.y, SEARCH), p => p.type === 'wreck' && !G.salvaged.has(p.id));
-      return p ? at('Salvage the wreck', p, 'map', 30 + boatDef().L * 0.5) : { text: 'Explore for a wreck', icon: 'map', near: 0 };
+      return p ? at('Salvage the wreck', p, 'map', 30 + boatDef().L * 0.5) : { text: 'Explore the coast to find a wreck', icon: 'map', near: 0 };
     }
     case 'night':
       if (!isNight()) return fishStep(`Night falls in ${clock(untilNight())}. Fish until then`);
-      return fishStep('Catch a fish by moonlight');
+      return fishStep('Catch a fish while it is night');
     case 'north': return at('Sail north into the cold water', { x: b.x, y: Math.min(b.y - 200, -1950) }, 'arrow', 0);
     case 'species': return speciesStep();
     case 'trophy': return fishStep(G.baitSel === 'none' ? 'Catch a trophy fish. Bait helps' : 'Catch a trophy fish');
@@ -170,7 +170,7 @@ function speciesStep(): Step {
   if (s) return at('Catch a new species for your logbook', s, 'rod', castRange());
   if (G.hold.length >= cap()) return sellStep();
   if (UPGRADES.rod.costs[G.up.rod] !== undefined && G.coins >= UPGRADES.rod.costs[G.up.rod]) return buyStep('rod', 'rod');
-  return { text: isNight() ? 'Try new waters for new species' : 'Try new waters, or fish at night', icon: 'rod', near: 0 };
+  return { text: isNight() ? 'Fish in new places to find new species' : 'Fish in new places, or wait for night', icon: 'rod', near: 0 };
 }
 // after the story: the next harbour project, else the next upgrade you can afford, else the logbook
 const UPGRADE_ORDER: UpgradeKey[] = ['hold', 'rod', 'sonar', 'prop', 'hull', 'reel', 'line', 'tackle', 'ice', 'lantern', 'bilge', 'spyglass', 'sextant'];
@@ -187,7 +187,7 @@ function freeStep(): Step {
 function decide(): Step {
   if (G.boat.hp < hpMax() * 0.35) {
     const p = nearestPort();
-    return at(G.coins > 0 ? `Repair your hull at ${p.name}` : `Your hull is weak. Sail gently to ${p.name}`, p.end, 'repair', dockNear());
+    return at(G.coins > 0 ? `Repair your hull at ${p.name}` : `Your hull is weak. Avoid rocks on the way to ${p.name}`, p.end, 'repair', dockNear());
   }
   const q = currentQuest();
   return q ? questStep(q) : freeStep();
@@ -223,13 +223,15 @@ export function markerTarget(s: Step = guide()): Point | null {
 // ---------- first-session tips ----------
 const TIP_KEY = 'bobber-run-tips';
 export type TipId = 'school' | 'full' | 'port' | 'night' | 'storm' | 'hull';
-const TIPS: { id: TipId; text: string; when: () => boolean }[] = [
-  { id: 'hull', text: 'Rocks and shallows dent your hull. Any port can patch it up', when: () => G.boat.hp < hpMax() * 0.6 },
+/** On touch screens the buttons say Dock and Cast, not E and Space. */
+const touch = (): boolean => typeof document !== 'undefined' && document.documentElement.classList.contains('touch');
+const TIPS: { id: TipId; text: string | (() => string); when: () => boolean }[] = [
+  { id: 'hull', text: 'Rocks and shallow water damage your hull. Repair it at any port', when: () => G.boat.hp < hpMax() * 0.6 },
   { id: 'full', text: 'Your hold is full. Sell your catch at any port', when: () => G.hold.length >= cap() },
-  { id: 'port', text: 'Slow down by the pier and press [E] to dock and sell your catch', when: () => !!G.nearPort && G.hold.length > 0 },
-  { id: 'school', text: 'Stop by the ripples and press [SPACE] to cast. Strike when the bobber dips', when: () => !G.fish && !!schoolInReach() },
-  { id: 'storm', text: 'Storms push you about, but trophy fish bite more often', when: () => WX.state === 'storm' },
-  { id: 'night', text: 'Night brings out different fish. Glow lures bite twice as fast in the dark', when: () => isNight() },
+  { id: 'port', text: () => touch() ? 'Slow down by the pier and tap Dock to sell your catch' : 'Slow down by the pier and press [E] to dock and sell your catch', when: () => !!G.nearPort && G.hold.length > 0 },
+  { id: 'school', text: () => touch() ? 'Stop at the ripples and tap Cast. When the bobber dips, tap Strike' : 'Stop at the ripples and press [SPACE] to cast. When the bobber dips, press [SPACE] again to strike', when: () => !G.fish && !!schoolInReach() },
+  { id: 'storm', text: 'Storms push your boat around, but trophy fish bite more often', when: () => WX.state === 'storm' },
+  { id: 'night', text: 'Night brings out different fish. Glow lures work twice as fast in the dark', when: () => isNight() },
 ];
 const TIP_S = 9, TIP_GAP = 14;
 let seen: Partial<Record<TipId, true>> = {};
@@ -241,7 +243,7 @@ export function tip(): { text: string; fade: boolean } | null {
   if (!shown && G.mode === 'play' && !G.fish && !G.card && G.t - lastT > TIP_GAP) {
     const next = TIPS.find(t => !seen[t.id] && t.when());
     if (next) {
-      shown = { id: next.id, text: next.text, t: G.t }; lastT = G.t; seen[next.id] = true;
+      shown = { id: next.id, text: typeof next.text === 'function' ? next.text() : next.text, t: G.t }; lastT = G.t; seen[next.id] = true;
       try { localStorage.setItem(TIP_KEY, JSON.stringify(seen)); } catch { }
     }
   }

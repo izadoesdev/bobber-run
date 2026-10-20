@@ -26,7 +26,7 @@ export function Chart() {
         <h1>Sea chart</h1>
         <div class="legend">
           <span><i class="lg port" />Port</span><span><i class="lg light" />Lighthouse</span><span><i class="lg wreck" />Wreck</span>
-          <span><i class="lg treasure" />Treasure</span><span><Icon k="star" size="s" />Frenzy</span><span><i class="lg unknown" />Uncharted</span>
+          <span><i class="lg treasure" />Treasure</span><span><Icon k="star" size="s" />Feeding frenzy</span><span><i class="lg unknown" />Uncharted</span>
           {target && <span><i class="lg" style={{ background: 'none', border: '0.16em solid #f0cf6a', borderRadius: '50%', boxShadow: '0 0 0 0.08em #1b2a33' }} />Next step</span>}
         </div>
       </header>
@@ -45,8 +45,8 @@ export function Chart() {
         />
       </div>
       <footer class="foot">
-        <span>{guideOn() && <><span class="gold">Next:</span> {stepLine(step)}. </>}Home is {Math.round(Math.hypot(G.boat.x - hp.x, G.boat.y - hp.y) / 10)} m away. Position {Math.round(G.boat.x / 10)}, {Math.round(G.boat.y / 10)}.</span>
-        <span class="hints-inline"><Hint k="ArrowUp" pad="Stick">Pan or drag</Hint><Hint k="z">Zoom or scroll</Hint><Hint k="m" pad="Y">Close</Hint></span>
+        <span>{guideOn() && <><span class="gold">Next:</span> {stepLine(step)}. </>}{hp.name} is {Math.round(Math.hypot(G.boat.x - hp.x, G.boat.y - hp.y) / 10)} m away. Your position: {Math.round(G.boat.x / 10)}, {Math.round(G.boat.y / 10)}.</span>
+        <span class="hints-inline"><Hint k="ArrowUp" pad="Stick">Move the chart, or drag</Hint><Hint k="z">Zoom or scroll</Hint><Hint k="m" pad="Y">Close</Hint></span>
       </footer>
     </div>
   );
@@ -56,7 +56,7 @@ export function Chart() {
 const WHEN: Record<string, string> = { any: 'Any time', day: 'By day', night: 'At night', twilight: 'At dusk or dawn' };
 const WX_TXT: Record<string, string> = { any: '', rain: ', in rain', storm: ', in storms' };
 const FIGHTS: Record<string, string> = {
-  steady: 'A steady puller', darter: 'Sudden darts', generic: 'Hard runs', jumper: 'Leaps. Let go mid-air', erratic: 'Erratic', boss: 'Fights in three rounds',
+  steady: 'Pulls steadily', darter: 'Darts off suddenly', generic: 'Pulls hard in bursts', jumper: 'Jumps. Stop reeling while it is in the air', erratic: 'Pulls in random directions', boss: 'Fights in three rounds',
 };
 export function Logbook() {
   const sel = clamp(G.logSel || 0, 0, SPECIES.length - 1), s = SPECIES[sel], e = G.log[s.id], world = NET.records[s.id];
@@ -74,7 +74,7 @@ export function Logbook() {
         <div class="page">
           <div class="hero"><Fish sp={sel} cls={'huge' + (e ? '' : ' sil')} /></div>
           <h2 class={'center-t' + (s.legend ? ' gold' : '')}>{e ? s.name : 'Unknown species'}</h2>
-          <div class="center-t">{s.legend && <span class="stamp gold">Legend</span>}{e?.trophy && <span class="stamp bad">Trophy taken</span>}</div>
+          <div class="center-t">{s.legend && <span class="stamp gold">Legend</span>}{e?.trophy && <span class="stamp bad">Trophy caught</span>}</div>
           <dl class="facts">
             <dt>Where</dt><dd>{s.where}</dd>
             <dt>When</dt><dd>{WHEN[s.time]}{WX_TXT[s.weather]}</dd>
@@ -82,8 +82,8 @@ export function Logbook() {
             {s.deck > 0 && <><dt>Boat</dt><dd class={s.deck > deckLvl() ? 'bad' : 'good'}>{deckBoat(sel).name}{s.deck < 2 ? ' or larger' : ''}{s.deck > deckLvl() ? '. Yours is too small' : ''}</dd></>}
             <dt>Worth</dt><dd class="gold">About {money(s.base)}</dd>
             <dt>Fights</dt><dd>{FIGHTS[s.fight]}</dd>
-            {e && <><dt>Caught</dt><dd>{e.n}</dd><dt>Record</dt><dd>{fmtKg(e.best)}</dd></>}
-            {world && <><dt>World</dt><dd class="gold">{fmtKg(world.kg)} by {world.name}</dd></>}
+            {e && <><dt>Caught</dt><dd>{e.n}</dd><dt>Your best</dt><dd>{fmtKg(e.best)}</dd></>}
+            {world && <><dt>World record</dt><dd class="gold">{fmtKg(world.kg)} by {world.name}</dd></>}
           </dl>
         </div>
       </div>
@@ -145,7 +145,7 @@ export function Ship() {
             : <span class="muted">Your hold is empty. Go fishing!</span>}</div>
         </div>
         <div class="col side">
-          <div class="list-head caps">Fitted gear</div>
+          <div class="list-head caps">Upgrades</div>
           {fitted.map(k => {
             const u = UPGRADES[k];
             return (
@@ -154,7 +154,7 @@ export function Ship() {
               </div>
             );
           })}
-          {!fitted.length && <p class="muted">Nothing fitted yet. Visit an outfitter in port.</p>}
+          {!fitted.length && <p class="muted">No upgrades yet. Buy them in the Outfitter tab at any port.</p>}
         </div>
       </div>
       <footer class="foot">

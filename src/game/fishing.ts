@@ -46,7 +46,7 @@ export function cancelFishing(msg?: string): void {
 }
 export function tryCast(s: School): void {
   const sp = SPECIES[s.sp];
-  if (G.hold.length >= cap()) { toast('Hold full. Sell at a port', 'bad'); sfx('deny'); return; }
+  if (G.hold.length >= cap()) { toast('Your hold is full. Sell your fish at a port', 'bad'); sfx('deny'); return; }
   const need = catchNeed(s.sp);
   if (need) { toast(`${sp.name} ${need}`, 'bad'); sfx('deny'); return; }
   const bait = G.baitSel !== 'none' && G.bait[G.baitSel] > 0 ? G.baitSel : null;
@@ -61,11 +61,11 @@ const BAIT_NAME = { shrimp: 'shrimp bait', glow: 'glow lures' } as const;
 /** One short note for the wait: the bait this fish prefers, or the conditions it needs. */
 function castHint(sp: Species, bait: BaitChoice | null): string {
   const fav = favBait(sp);
-  if (bait !== fav) return `${sp.name} prefer ${BAIT_NAME[fav]}`;
-  if (sp.weather === 'storm') return `${sp.name} only rise in storms`;
-  if (sp.weather === 'rain') return `Rain brings the ${sp.name} up`;
-  if (sp.time === 'twilight') return `${sp.name} feed only at dusk and dawn`;
-  return `${sp.name} love ${BAIT_NAME[fav]}. A quicker bite`;
+  if (bait !== fav) return `${sp.name} bite faster on ${BAIT_NAME[fav]}`;
+  if (sp.weather === 'storm') return `${sp.name} only bite in storms`;
+  if (sp.weather === 'rain') return `${sp.name} only bite in the rain`;
+  if (sp.time === 'twilight') return `${sp.name} only bite at dusk and dawn`;
+  return `${sp.name} love ${BAIT_NAME[fav]}, so they bite sooner`;
 }
 
 /** How hard each kind of fish pulls at fight phase `ph` (0 = slack, >1 = a surge). */
@@ -83,7 +83,7 @@ export function updateFishing(dt: number): void {
   if (!f) return;
   f.t += dt;
   const b = G.boat;
-  if (Math.hypot(f.tx - b.x, f.ty - b.y) > 80) { cancelFishing('Line too long. You sailed away'); return; }
+  if (Math.hypot(f.tx - b.x, f.ty - b.y) > 80) { cancelFishing('You sailed too far from your bobber, so you reeled in'); return; }
   const strike = hit(' ');
   if (f.st === 'cast') castStage(f);
   else if (f.st === 'wait') waitStage(f, dt, strike);
@@ -185,7 +185,7 @@ function hooked(f: FishLine, sp: Species): void {
     spawn({ kind: 'ring', x: f.tx, y: f.ty, life: 1, r0: 2, grow: 10 });
   }
   if (f.gold) toast(`A golden ${sp.name} is on the line!`, 'good');
-  else if (f.perfect) toast('Perfect strike! A head start on the catch', 'good');
+  else if (f.perfect) toast('Perfect strike! Your catch bar gets a head start', 'good');
 }
 
 /** Where the hooked fish swims: reeled closer as the catch fills, thrown out by surges, weaving side to side. */
@@ -249,7 +249,7 @@ function reelStage(f: FishLine, dt: number, strike: boolean): void {
   if (Math.random() < dt * (3 + surge * 10)) spawn({ kind: 'dot', x: (f.fx ?? f.tx) + jitter(4), y: (f.fy ?? f.ty) + jitter(3), vx: jitter(18), vy: jitter(18), life: 0.35 });
   if (f.tension >= lineMax()) {
     sfx('snap');
-    toast(f.jump ? 'It threw the hook mid-jump!' : 'Line snapped!', 'bad');
+    toast(f.jump ? 'It shook off the hook while jumping. The fish got away' : 'Your line snapped. The fish got away', 'bad');
     track('fish_lost', { species: sp.id, reason: f.jump ? 'threw_hook' : 'snapped' });
     G.fish = null;
   } else if (f.prog >= 1 && sp.fight === 'boss' && stage < 2) {
@@ -300,18 +300,18 @@ function recordCatch(spIdx: number, stock: FishStock, f: FishLine | null, method
 function bottleBonus(sp: Species): string | null {
   if (Math.random() >= 0.12) return null;
   const map = G.maps.length < 2 && Math.random() < 0.4 ? makeMap() : null;
-  if (map) { G.maps.push(map); return 'A bottle with a treasure map! Check your chart'; }
+  if (map) { G.maps.push(map); return 'You also found a bottle with a treasure map. It is marked on your chart'; }
   if (Math.random() < 0.6) {
     const c = 6 + Math.floor(Math.random() * (10 + sp.base * 0.4));
     addCoins(c);
-    return `Also hooked a bottle with $${c} inside`;
+    return `You also found a bottle with $${c} inside`;
   }
   G.bait.shrimp += 3;
-  return 'Also hooked 3 shrimp bait';
+  return 'You also found 3 shrimp bait';
 }
 
 function holdFullNote(): void {
-  if (G.hold.length >= cap()) toast('Hold full. Head to a port to sell', 'good');
+  if (G.hold.length >= cap()) toast('Your hold is full. Sell your fish at a port', 'good');
 }
 
 /** The fish on the line is landed: catch card, bonus, and maybe a deckhand's extra catch. */
@@ -337,7 +337,7 @@ export function landNetted(spIdx: number, stock: FishStock, who: Catcher = 'NETT
   const sp = SPECIES[spIdx];
   const { fish, firstTrophy } = recordCatch(spIdx, stock, null, who === 'DECKHAND' ? 'deckhand' : who === 'POTS' ? 'pots' : 'net');
   if (firstTrophy) toast(`First ${sp.name} trophy!`, 'good');
-  const by = who === 'DECKHAND' ? 'Your deckhand landed' : who === 'POTS' ? 'Your crab pots hauled' : 'Netted';
+  const by = who === 'DECKHAND' ? 'Your deckhand landed' : who === 'POTS' ? 'Your crab pots hauled' : 'Your drift net caught';
   toast(`${by} ${sp.name}, ${fmtKg(fish.kg)}`);
   sfx('coin', 0.5, 0.8);
   holdFullNote();
@@ -392,7 +392,7 @@ export function updateFrenzy(dt: number): void {
     if (cands.length) {
       const s = cands[Math.floor(Math.random() * cands.length)];
       startFrenzy(s, 70);
-      toast(`Feeding frenzy! Follow the gulls to the ${SPECIES[s.sp].name}`, 'good');
+      toast(`Feeding frenzy! ${SPECIES[s.sp].name} are biting fast. Follow the gulls`, 'good');
       sfx('gulls');
     } else G.nextFrenzy = G.t + 20;
   }
@@ -405,6 +405,6 @@ export function useChum(): void {
   G.bait.chum--;
   startFrenzy(s, 45);
   sfx('splash'); sfx('gulls');
-  toast(`Chum in the water. The ${SPECIES[s.sp].name} are feeding`, 'good');
+  toast(`You threw chum. The ${SPECIES[s.sp].name} are in a feeding frenzy`, 'good');
   for (let i = 0; i < 14; i++) spawn({ kind: 'dot', x: s.x + jitter(20), y: s.y + jitter(14), vx: 0, vy: 0, life: 1.5, foam: true });
 }

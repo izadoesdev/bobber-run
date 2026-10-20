@@ -1,5 +1,5 @@
 // Menus and dialogs: title, pause, settings, controls, online, cheats, greeting picker,
-// conversations, the finale and the towed-home card.
+// conversations, the finale and the boat-sank card.
 import type { TargetedMouseEvent, TargetedSubmitEvent } from 'preact';
 
 // The account form's email field takes focus when the form first appears, so typing (and Tab) works at once.
@@ -99,7 +99,7 @@ export function Settings() {
   );
 }
 
-const CONTROLS_HELP = 'Choose an action and press Enter to change its key. WASD always steers too.' + (CHEATS_ENABLED ? ' Press ` or F2 while sailing for the cheat console.' : '') + ' Gamepad: stick steers, A casts, X docks, Y opens the chart, B goes back.';
+const CONTROLS_HELP = 'Choose an action and press Enter to change its key. The WASD keys also steer.' + (CHEATS_ENABLED ? ' Press ` or F2 while sailing for the cheat console.' : '') + ' Gamepad: stick steers, A casts, X docks, Y opens the chart, B goes back.';
 export function Controls() {
   const sel = G.ctlSel || 0;
   // rows past the actions: reset, then back
@@ -174,7 +174,7 @@ export function Online() {
   const onEnter = (fn: () => void) => (e: KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); fn(); } };
   const setMode = (mode: NetForm['mode']) => () => { f.mode = mode; G.netMsg = null; };
   const status = NET.status !== 'online'
-    ? (NET.status === 'connecting' ? 'Connecting to the coast...' : 'Offline. The game still works, just without online features.')
+    ? (NET.status === 'connecting' ? 'Connecting to the server...' : 'Offline. The game still works, just without online features.')
     : p?.guest ? 'You are sailing as a guest. Make an account to keep your save on any device.'
     : `Signed in as ${p?.email || 'a sailor'}. Your save follows you to any device.`;
   return (
@@ -261,7 +261,7 @@ export function Cheats() {
     <div class="center dim-bg"><div class="panel rivets dialog cheats">
       <h1>Cheats</h1>
       <div class={'cheat-input' + (G.cheatErr ? ' err' : '')}>{G.cheatBuf || ''}<span class="caret" /></div>
-      <p class="help">{G.cheatErr ? 'That is not a code. Try one of these:' : 'Type a code and press Enter.'}</p>
+      <p class="help">{G.cheatErr ? 'That code does not exist. Try one of these:' : 'Type a code and press Enter.'}</p>
       <div class="scroll"><dl class="facts">{CHEATS.map(c => <><dt class="code" onClick={() => { G.cheatBuf = c.code; }}>{c.code}</dt><dd>{c.what}</dd></>)}</dl></div>
       <footer class="foot"><Hint k="Enter">Use code</Hint><Hint k="Escape">Close</Hint></footer>
     </div></div>
@@ -289,7 +289,7 @@ export function Finale() {
 export function Sunk() {
   return (
     <div class="sunk"><div class="panel rivets sunk-card">
-      <h1>Towed home</h1><p>{G.sunkMsg}.</p><p class="muted">Your boat is patched up at the quay.</p>
+      <h1>Your boat sank</h1><p>{G.sunkMsg}.</p><p class="muted">Your hull has been repaired to 75%.</p>
     </div></div>
   );
 }

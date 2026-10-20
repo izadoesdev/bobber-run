@@ -301,7 +301,77 @@ h2, .title { font-size: var(--fs-xl); }
 @keyframes bubble-in { from { transform: translate(-50%, -70%); opacity: 0; } to { transform: translate(-50%, -100%); opacity: 1; } }   /* keeps the centring transform */
 .bubble::after { content: ''; position: absolute; left: 50%; bottom: -0.35em; transform: translateX(-50%); border: 0.35em solid transparent; border-top-color: #fff6dc; border-bottom: 0; }
 .bubble.mine { background: #f0d27a; } .bubble.mine::after { border-top-color: #f0d27a; }
+.bubble.say { white-space: normal; max-width: 16em; width: max-content; text-align: center; overflow-wrap: anywhere; line-height: 1.3; }
 .emote-pick { position: absolute; left: 50%; bottom: 5em; transform: translateX(-50%); padding: 0.6em; min-width: 16em; pointer-events: auto; }
 
 /* long item details scroll; the price and Buy button stay pinned at the bottom of the card */
 .detail .d-foot { position: sticky; bottom: -0.9em; padding: 0.5em 0 0.2em; background: linear-gradient(transparent, #e8d6ad 35%); }
+
+/* ---------- pointer sailing and touch controls (src/ui/touch.tsx) ----------
+   The course pin shows for mouse and touch alike; everything else applies only once html has .touch
+   (a coarse pointer at load, or the first touch), so the desktop look is untouched. */
+#screen { touch-action: none; -webkit-touch-callout: none; }
+#touch { position: absolute; inset: 0; pointer-events: none; font-family: 'Pixelify', ui-monospace, monospace; color: #f6eedc; user-select: none; -webkit-user-select: none; }
+.course-pin { position: absolute; width: 18px; height: 18px; transform: translate(-50%, -50%); filter: drop-shadow(0 1px 0 #000a); }
+.course-pin.live { animation: pin 0.9s ease-in-out infinite alternate; }
+@keyframes pin { from { transform: translate(-50%, -50%) scale(0.85); } to { transform: translate(-50%, -50%) scale(1.1); } }
+
+.tb { pointer-events: auto; touch-action: none; -webkit-tap-highlight-color: transparent; position: relative; flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  width: 52px; height: 54px; padding: 0; font: 11px/1 'Pixelify', ui-monospace, monospace; letter-spacing: 0.03em; color: inherit; text-shadow: 0 1px 0 #0009;
+  background: rgba(27, 19, 13, 0.84); border: 2px solid rgba(122, 85, 48, 0.9); border-radius: 9px; box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35); }
+.tb .icon { width: 26px; height: 26px; }
+.tb.down { background: rgba(240, 207, 106, 0.3); border-color: #f0cf6a; }
+.tb.off { opacity: 0.5; }
+.tb.main, .tb.use { border-radius: 50%; border-color: #c9a24a; background: linear-gradient(#a87a3a, #7a5530); color: #fff6dc; }
+.tb.main { width: 80px; height: 80px; font-size: 13px; } .tb.main .icon { width: 36px; height: 36px; }
+.tb.use { width: 64px; height: 64px; font-size: 12px; }
+.tb.main.down, .tb.use.down { background: linear-gradient(#c9a24a, #a87a3a); }
+.tbadge { position: absolute; top: -6px; right: -6px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: #f0cf6a; color: #2a1f17; font-size: 12px; line-height: 20px; text-shadow: none; }
+.tglyph { width: 24px; height: 24px; fill: none; }
+.tglyph.text { display: flex; align-items: center; justify-content: center; font-size: 15px; }
+.tb .cat-dot { width: 20px; height: 15px; margin-top: 4px; }
+.tbar, .tact, .tcorner { position: fixed; display: flex; align-items: flex-end; }
+.tbar { left: max(8px, env(safe-area-inset-left)); bottom: max(8px, env(safe-area-inset-bottom)); gap: 6px; }
+.tact { right: max(10px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); gap: 10px; }
+.tcorner { right: max(10px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); gap: 8px; }
+.tcorner.top { top: max(10px, env(safe-area-inset-top)); bottom: auto; }
+
+/* phone-sized text and tap targets: never smaller than 12px (scaled by Interface size), at least 44px to tap */
+html.touch #ui > .app { font-size: max(1em, calc(12px * var(--ui-k, 1))); }
+html.touch #ui :is(.item:not(.static), .btn, .tab, .seg-btn) { min-height: 44px; }
+html.touch #ui :is(.dialog, .card, .talk, .online, .cheats, .finale, .sunk-card, .emote-pick, .reel) { max-width: calc(100vw - 1.2em); }
+/* the on-screen buttons replace keyboard hints; keycaps inside prompts and buttons would only confuse */
+html.touch #ui :is(.hint, .tnum), html.touch #ui :is(.prompt, .btn, .tabs, .hud-status .row) > .key { display: none; }
+html.touch #ui .prompt { white-space: normal; text-align: center; max-width: calc(100vw - 2em); }
+html.touch #ui .bottom-stack { bottom: 76px; }
+html.touch #ui .net-chip { bottom: 76px; right: auto; left: 0.8em; }
+/* room in the footer for the Close (and chart Zoom) buttons; the port has its own Set off button */
+html.touch #ui .screen:not(:has(.tabs)) .foot { min-height: 52px; padding-right: 64px; }
+html.touch #ui .screen.flush .foot { padding-right: 76px; }
+html.touch #ui .screen:has(.chartwrap) .foot { padding-right: 130px; }
+/* phones on their side are short: tighter frames and a smaller picture in the details card */
+@media (max-height: 500px) {
+  html.touch #ui .screen { inset: 0.4em; padding: 0.5em 0.8em; }
+  html.touch #ui .head { margin-bottom: 0.2em; }
+  html.touch #ui .tabs { margin-bottom: 0.3em; }
+  html.touch #ui .detail .icon.xl { width: 3em; height: 3em; }
+  html.touch #ui .detail .preview { display: none; }
+}
+
+/* phones held upright: side-by-side panels stack, and the action buttons sit above the bar */
+@media (orientation: portrait) {
+  html.touch .tact { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 66px); }
+  html.touch #ui .bottom-stack { bottom: 170px; width: calc(100vw - 1.6em); }
+  html.touch #ui .net-chip { bottom: 170px; }
+  html.touch #ui .toasts { top: 32%; }
+  html.touch #ui :is(.head, .tabs) { flex-wrap: wrap; }
+  html.touch #ui .tab { border-radius: var(--r); border-bottom: 0.12em solid var(--wood-hi); }
+  html.touch #ui .body { flex-direction: column; overflow-y: auto; }
+  html.touch #ui .body > .col { flex: none; overflow: visible; }
+  html.touch #ui .body > .list { flex: 1 1 auto; min-height: 9em; }
+  html.touch #ui .body > .detail { flex: none; max-height: 45%; }
+  html.touch #ui .journal { flex-direction: column; }
+  html.touch #ui .journal > .page { min-height: 0; }
+  html.touch #ui .journal .page + .page { border-left: 0; border-top: 0.15em solid rgba(120, 80, 30, 0.35); box-shadow: none; }
+  html.touch #ui .lgrid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}

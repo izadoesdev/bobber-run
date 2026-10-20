@@ -65,11 +65,11 @@ function SellDetail({ p }: { p: PortT }) {
           );
         })}</div>
         : <p>Nothing in the hold yet.</p>}
-      {(G.up.ice > 0 || bonus.cook > 0) && <p class="small">Included: {[G.up.ice > 0 && `ice box +${5 * G.up.ice}%`, bonus.cook > 0 && `cook +${Math.round(bonus.cook * 100)}%`].filter(Boolean).join(', ')}.</p>}
+      {(G.up.ice > 0 || bonus.cook > 0) && <p class="small">Prices include: {[G.up.ice > 0 && `ice box +${5 * G.up.ice}%`, bonus.cook > 0 && `cook +${Math.round(bonus.cook * 100)}%`].filter(Boolean).join(', ')}.</p>}
       {bonus.crew > 0
         ? <p class="small good">Crew bonus +{Math.round(bonus.crew * 100)}%: {sailors} sailor{sailors === 1 ? '' : 's'} nearby</p>
         : NET.on && <p class="small muted">Crew bonus: +5% per sailor within {CREW_RANGE / 10} m, up to +15%.</p>}
-      <p class="small muted">Prices are per fish. Each one of a kind sold here lowers its price 7% for a few minutes.</p>
+      <p class="small muted">Prices are per fish. The % compares this port's price with the usual price. Each fish you sell here lowers the price of that kind by 7% for a few minutes.</p>
       {best.length > 0 && <p class="muted">This port pays well for {best.map(o => o.s.name).join(', ')}.</p>}
     </div>
   );
@@ -84,13 +84,13 @@ function ProjectDetail({ pr, st }: { pr: Project; st: NeedStatus }) {
         <div class="checklist">
           <div class={'row' + (G.coins >= pr.cost ? ' good' : '')}>
             <Icon k="coin" size="s" />{money(pr.cost)}<span class="grow" />
-            <span class="num">{G.coins >= pr.cost ? 'Ready' : `${money(G.coins)} now`}</span>
+            <span class="num">{G.coins >= pr.cost ? 'Ready' : `You have ${money(G.coins)}`}</span>
           </div>
           <div class={'row' + (st.have >= st.want ? ' good' : '')}>
             {st.sp !== undefined ? <Fish sp={st.sp} size="s" /> : <Icon k="hold" size="s" />}{st.label}<span class="grow" />
             <span class="num">{st.have}/{st.want}</span>
           </div>
-          {st.pick.length > 0 && <div class="row wrap muted small">Donates: {st.pick.map(f => <Fish sp={f.sp} size="s" />)}</div>}
+          {st.pick.length > 0 && <div class="row wrap muted small">Uses these fish: {st.pick.map(f => <Fish sp={f.sp} size="s" />)}</div>}
         </div>
       )}
       <p><span class="caps">Unlocks</span> <span class="good">{pr.gives}</span></p>
@@ -142,7 +142,7 @@ function BoatCompare({ b }: { b: BoatDef }) {
         ))}
       </div>
       <p>{b.what}.{gear.length > 0 && ` Built in: ${gear.join(', ')}.`}</p>
-      {giants.length > 0 && <p>Its deck can land sea giants: {giants.join(', ')}.</p>}
+      {giants.length > 0 && <p>Big enough to land sea giants: {giants.join(', ')}.</p>}
     </>
   );
 }
@@ -257,7 +257,7 @@ export function Port({ p }: { p: PortT }) {
         <span class="hints-inline">
           <Hint k="ArrowUp" k2="ArrowDown" pad="D-pad">Choose</Hint><Hint k=" " pad="A">Buy</Hint><Hint k="q" k2="e" pad="LB RB">Switch tab</Hint>
         </span>
-        <button class="btn" onClick={leavePort}><Icon k="anchor" size="s" />Set off<Key k="Escape" pad="B" /></button>
+        <button class="btn" onClick={leavePort}><Icon k="anchor" size="s" />Leave port<Key k="Escape" pad="B" /></button>
       </footer>
     </div>
   );
