@@ -26,6 +26,10 @@ export interface ChartOptions {
   /** the guide's objective: a flag on it, or an arrow at the edge pointing to it ('round' for the minimap's circle) */
   target?: Point | null;
   round?: boolean;
+  /** the player's waypoint: a dashed line from the boat, and a marker (or a rim arrow on the minimap) */
+  waypoint?: Point | null;
+  /** mark unclaimed islands too (the full chart) */
+  islands?: boolean;
 }
 
 type Ctx = CanvasRenderingContext2D;
@@ -61,7 +65,8 @@ export function drawChart(ctx: Ctx, w: number, h: number, cx: number, cy: number
   }
   if (opt.labels) drawLabels(ctx, pois, S, u, showUncharted);
   if (opt.target) drawTarget(ctx, w, h, S(opt.target.x, opt.target.y), u, !!opt.round);
-  drawIslandNames(ctx, cx, cy, Math.max(w, h) * wpp * 0.6, S, u, !!opt.labels);
+  drawIslandNames(ctx, cx, cy, Math.max(w, h) * wpp * 0.6, S, u, !!opt.labels, !!opt.islands);
+  if (opt.waypoint) drawWaypoint(ctx, w, h, S, S(opt.waypoint.x, opt.waypoint.y), u, !!opt.round, opt.labels ? opt.waypoint : null);
   drawSailors(ctx, w, h, S, u, !!opt.labels);
   drawBoat(ctx, S, u);
 }
@@ -241,14 +246,17 @@ function flagImg(url: string): HTMLImageElement | null {
   if (!im) { if (flagImgs.size > 200) flagImgs.clear(); im = new Image(); im.src = url; flagImgs.set(url, im); }
   return im.complete && im.naturalWidth ? im : null;
 }
-function drawIslandNames(ctx: Ctx, cx: number, cy: number, rad: number, S: Project, u: number, labels: boolean): void {
+function drawIslandNames(ctx: Ctx, cx: number, cy: number, rad: number, S: Project, u: number, labels: boolean, unclaimed: boolean): void {
   const near = claimableNear(cx, cy, rad);
   if (labels) watchExtra(near.map(c => c.key));            // the full chart asks for every island it shows
   ctx.font = `600 ${Math.round(12 * u)}px Pixelify, monospace`;
   ctx.textAlign = 'center';
   for (const c of near) {
     const row = ISLANDS.get(c.key);
-    if (!row) continue;
+    if (!row) {                                          // for sale: a faint dashed ring on the full chart
+      if (unclaimed) { const [x, y] = S(c.x, c.y); ctx.setLineDash([3 * u, 3 * u]); ctx.lineWidth = 1.2 * u; ctx.strokeStyle = 'rgba(58,42,28,0.45)'; ctx.beginPath(); ctx.arc(x, y, 5 * u, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
+      continue;
+    }
     const [x, y] = S(c.x, c.y), f = row.logoUrl ? flagImg(row.logoUrl) : null, fs = (labels ? 16 : 10) * u;
     if (f) { ctx.imageSmoothingEnabled = false; ctx.drawImage(f, x - fs / 2, y - fs - (labels ? 8 : 2) * u, fs, fs); }
     if (!labels) continue;
@@ -257,6 +265,36 @@ function drawIslandNames(ctx: Ctx, cx: number, cy: number, rad: number, S: Proje
   }
   ctx.textAlign = 'start';
 }
+/** The waypoint: a dashed line from the boat to a white diamond, or on the minimap an arrow on the rim when it's outside. */
+const WP = '#e6efec';
+function drawWaypoint(ctx: Ctx, w: number, h: number, S: Project, [x, y]: [number, number], u: number, round: boolean, label: Point | null): void {
+  const [bx, by] = S(G.boat.x, G.boat.y), r = w / 2 - 6 * u;
+  const inside = round ? Math.hypot(x - w / 2, y - h / 2) < r : x > 0 && x < w && y > 0 && y < h;
+  let ex = x, ey = y;
+  if (!inside && round) { const a = Math.atan2(y - h / 2, x - w / 2); ex = w / 2 + Math.cos(a) * r; ey = h / 2 + Math.sin(a) * r; }
+  ctx.save();
+  ctx.setLineDash([4 * u, 3 * u]); ctx.lineWidth = 3 * u; ctx.strokeStyle = 'rgba(27,42,51,0.6)';
+  ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ex, ey); ctx.stroke();
+  ctx.lineWidth = 1.5 * u; ctx.strokeStyle = WP; ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.translate(ex, ey);
+  if (inside) {
+    ctx.beginPath(); ctx.moveTo(0, -5 * u); ctx.lineTo(5 * u, 0); ctx.lineTo(0, 5 * u); ctx.lineTo(-5 * u, 0); ctx.closePath();
+  } else {
+    ctx.rotate(Math.atan2(ey - h / 2, ex - w / 2));
+    ctx.beginPath(); ctx.moveTo(5 * u, 0); ctx.lineTo(-4 * u, -4 * u); ctx.lineTo(-4 * u, 4 * u); ctx.closePath();
+  }
+  ctx.fillStyle = WP; ctx.fill(); ctx.lineWidth = 1.2 * u; ctx.strokeStyle = COL.ink; ctx.stroke();
+  ctx.restore();
+  if (label && inside) {                                   // the full chart says how far and which way
+    const d = Math.hypot(label.x - G.boat.x, label.y - G.boat.y), dir = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'][(Math.round(Math.atan2(label.y - G.boat.y, label.x - G.boat.x) / (Math.PI / 4)) + 8) % 8];
+    const s = `${Math.max(1, Math.round(d / 10))} m ${dir}`;
+    ctx.font = `600 ${Math.round(12 * u)}px Pixelify, monospace`; ctx.textAlign = 'center';
+    ctx.lineWidth = 3 * u; ctx.strokeStyle = 'rgba(27,42,51,0.85)'; ctx.strokeText(s, x, y - 9 * u);
+    ctx.fillStyle = WP; ctx.fillText(s, x, y - 9 * u); ctx.textAlign = 'start';
+  }
+}
+
 /** Every other sailor we know about: the nearby ones we draw on the water, plus the far ones the relay reports for the chart. */
 type Mark = { uid: string; name: string; x: number; y: number; paint?: string };
 function sailorMarks(): Mark[] {

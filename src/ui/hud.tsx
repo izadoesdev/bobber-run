@@ -21,6 +21,7 @@ import { guide, guideOn, markerTarget, tip, whereText, type Step } from '../game
 import type { CatchCard as CatchCardState, FishLine, School, Toast } from '../types';
 import { drawChart, nearestUncharted } from './chart';
 import { IslandSigns } from './island';
+import { clearWaypoint, tickWaypoint } from '../waypoint';
 import { tickIslands } from '../islands';
 import { Bar, Canvas, Fish, Hint, Icon, Key, keyed, money, type DrawFn } from './parts';
 
@@ -73,7 +74,7 @@ function Minimap({ step }: { step: Step }) {
   const un = G.up.sextant > 0 ? nearestUncharted() : null, target = guideOn() ? step.at : null;
   const draw: DrawFn = (ctx, w, h, dpr) => {
     const b = G.boat;
-    drawChart(ctx, w, h, b.x, b.y, 300 / w, { dpr, budget: 4, sonar: sonarLvl(), target, round: true });
+    drawChart(ctx, w, h, b.x, b.y, 300 / w, { dpr, budget: 4, sonar: sonarLvl(), target, round: true, waypoint: G.waypoint });
     if (!un) return;
     // an arrow on the rim pointing at the nearest uncharted landmark
     const a = Math.atan2(un.p.y - b.y, un.p.x - b.x), r = w / 2 - 5 * dpr;
@@ -184,12 +185,12 @@ function CatchCard({ c }: { c: CatchCardState }) {
   );
 }
 
-function NextLine({ step }: { step: Step }) {
+function NextLine({ step, prog }: { step: Step; prog?: string | null }) {
   const w = whereText(step);
   return (
     <div class="row" style={{ gap: '0.4em', alignItems: 'flex-start' }}>
       <Icon k={step.icon} size="s" />
-      <span>{step.text}{w && <>, <span class="gold" style={{ whiteSpace: 'nowrap' }}>{w}</span></>}</span>
+      <span>{step.text}{w && <>, <span class="gold" style={{ whiteSpace: 'nowrap' }}>{w}</span></>}{prog && <span class="muted"> ({prog})</span>}</span>
     </div>
   );
 }
@@ -213,8 +214,8 @@ function measure(): DOMRect | null {
 }
 const covered = (x: number, y: number, pad: number): boolean =>
   panels.some(r => x > r.left - pad && x < r.right + pad && y > r.top - pad && y < r.bottom + pad);
-function Marker({ step }: { step: Step }) {
-  const p = markerTarget(step), box = p && measure();
+function Marker({ step, force }: { step: Step; force?: boolean }) {
+  const p = force ? (G.fish || G.card || G.mode !== 'play' ? null : step.at ?? null) : markerTarget(step), box = p && measure();
   if (!p || !box) return null;
   const toPx = (wx: number, wy: number): [number, number] => {
     const [x, y] = viewPct(wx, wy);
@@ -356,20 +357,22 @@ function QuietHud() {
   );
 }
 export function Hud() {
-  tickIslands();
+  tickIslands(); tickWaypoint();
   if (!SET.hud) return <QuietHud />;
   const quest = currentQuest(), step = guide();
+  // a waypoint the player set takes over the on-screen arrow from the guide
+  const wp: Step | null = G.waypoint ? { text: 'Waypoint', at: G.waypoint, icon: 'map', near: 25 } : null;
   return (
     <div>
       {worldLabels()}
       <IslandSigns />
-      <Marker step={step} />
+      <Marker step={wp ?? step} force={!!wp} />
       <div class="hud-left">
         <Status />
         <button class="chip objective" onClick={() => { G.journalBack = 'play'; G.mode = 'journal'; }} title="Open the journal (J)">
-          <NextLine step={step} />
-          {quest && (() => { const pr = questProgress(quest); return pr && pr.want > 1 ? <span class="muted">{pr.have}/{pr.want}</span> : null; })()}
+          <NextLine step={step} prog={(() => { const pr = quest && questProgress(quest); return pr && pr.want > 1 ? `${pr.have}/${pr.want}` : null; })()} />
         </button>
+        {wp && <div class="chip waypoint small"><Icon k="map" size="s" />Waypoint <span class="gold">{whereText(wp)}</span><button class="x" aria-label="Clear waypoint" onClick={clearWaypoint}>×</button></div>}
         {G.active.length > 0 && (
           <div class="chip contracts small">
             {G.active.map(c => { const n = Math.min(G.hold.filter(f => f.sp === c.sp).length, c.n);

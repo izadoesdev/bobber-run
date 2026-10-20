@@ -277,7 +277,7 @@ export interface NetForm {
 export interface NeedStatus { have: number; want: number; label: string; pick: Fish[]; sp?: number }
 export type PortItemKind =
   | 'sell' | 'deliver' | 'take' | 'rest' | 'repair' | 'supply' | 'upgrade' | 'boat' | 'paint'
-  | 'collect' | 'fleet' | 'note' | 'project' | 'fund' | 'ferry' | 'contract';
+  | 'collect' | 'fleet' | 'note' | 'project' | 'fund' | 'ferry' | 'contract' | 'island';
 export interface PortHeader { kind: 'header'; label: string }
 export interface PortRow {
   kind: PortItemKind;
@@ -304,6 +304,8 @@ export interface PortRow {
   pr?: Project;
   st?: NeedStatus;
   q?: Port;
+  /** islands tab: the island's key ("i,j") */
+  isle?: string;
   /** upgrades: what the current level does, and [level, max] */
   now?: string;
   pips?: [number, number];
@@ -343,6 +345,8 @@ export interface Progress {
   goalIdx: number;
   goalsDone: number[];
   maps: TreasureMap[];
+  /** a spot the player marked on the chart: a line to it on the minimap and chart, cleared on arrival */
+  waypoint: Point | null;
   musicOn: boolean;
   /** port id -> contracts on offer there */
   offers: Record<string, Contract[]>;
@@ -431,6 +435,8 @@ export interface Screens {
   /** settings/controls return here */
   back: Mode;
   accountBack: Mode; journalBack: Mode; cheatBack: Mode; leadersBack: Mode;
+  /** the island the island card is showing, and where closing it returns */
+  islandKey: string | null; islandBack: Mode;
   /** which leaderboard tab is showing */
   leaderTab: number;
   /** online players must pick their own captain name before sailing on */

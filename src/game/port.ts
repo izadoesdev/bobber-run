@@ -1,6 +1,8 @@
 // Ports: the market, outfitter, shipyard, fleet office, ferry and Alderhaven's harbour projects,
 // plus contracts, the inn, harbourmaster gifts, docking and the port menu.
-import { homePort, poisNear } from '../world';
+import { homePort, poisNear, claimableNear } from '../world';
+import { ISLANDS, watchExtra, islandPrice } from '../islands';
+import { ISLAND_CELL } from '../../convex/islandRules';
 import { SPECIES, SP, BOATS, UPGRADES, UPGRADE_KEYS, UP_CATS, PAINTS, SUPPLIES, BAIT_KINDS, PROJECTS, FLEET_PER_MIN, FLEET_HOLD_MIN } from '../econ';
 import { sfx } from '../audio';
 import { NET, netGive } from '../net';
@@ -303,10 +305,10 @@ export function rest(): void {
 // ---------- the port menu ----------
 // One row of tabs; each tab is a single list grouped under section headers.
 // Every item says what it costs, whether it can be bought, and if not, why.
-export type PortTab = 'MARKET' | 'OUTFITTER' | 'SHIPYARD' | 'FLEET' | 'FERRY' | 'HARBOUR';
+export type PortTab = 'MARKET' | 'OUTFITTER' | 'SHIPYARD' | 'FLEET' | 'FERRY' | 'ISLANDS' | 'HARBOUR';
 export function portTabs(p: Port): PortTab[] {
   return ['MARKET', 'OUTFITTER', ...(p.shipyard ? ['SHIPYARD' as const] : []), ...(projDone('market') ? ['FLEET' as const] : []),
-    'FERRY', ...(p.id === homePort().id ? ['HARBOUR' as const] : [])];
+    'FERRY', ...(NET.on ? ['ISLANDS' as const] : []), ...(p.id === homePort().id ? ['HARBOUR' as const] : [])];
 }
 const thousands = new Intl.NumberFormat('en-US');   // toLocaleString builds a formatter per call, and rows redraw every frame
 const cash = (n: number): string => '$' + thousands.format(Math.round(n));
@@ -499,6 +501,33 @@ function ferryItems(p: Port, items: Rows): void {
   }
 }
 
+// ---------- islands ----------
+/** Compass direction from (x0, y0) to (x1, y1), in words. */
+const COMPASS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
+const dirTo = (x0: number, y0: number, x1: number, y1: number): string => COMPASS[(Math.round(Math.atan2(y1 - y0, x1 - x0) / (Math.PI / 4)) + 8) % 8];
+const usd = (n: number): string => '$' + thousands.format(n);
+const openIsland = (key: string): void => { G.islandKey = key; G.islandBack = 'port'; G.mode = 'island'; sfx('select'); };
+/** Your islands, then the nearest islands to this port: owner or "Unclaimed", price, how far and which way. */
+function islandItems(p: Port, items: Rows): void {
+  const near = claimableNear(p.x, p.y, 3400).map(c => ({ c, d: Math.hypot(c.x - p.x, c.y - p.y) })).sort((a, b) => a.d - b.d).slice(0, 14);
+  watchExtra(near.map(n => n.c.key));
+  const row = (c: { key: string; x: number; y: number; i: number; j: number }, d: number) => {
+    const r = ISLANDS.get(c.key), where = `${Math.round(d / 10)} m ${dirTo(p.x, p.y, c.x, c.y)}`;
+    items.push({
+      kind: 'island', isle: c.key, icon: 'anchor', label: r ? r.name : 'Unclaimed island', sub: r ? (r.mine ? `Your island · ${where}` : `Owned by ${r.owner} · ${where}`) : where,
+      right: r ? (r.mine ? 'Yours' : 'Owned') : usd(islandPrice(c.i, c.j)), ok: true, action: r ? (r.mine ? 'Manage' : 'View') : NET.profile?.admin ? 'Claim' : 'Buy',
+      act: () => openIsland(c.key),
+    });
+  };
+  const mine = [...ISLANDS.values()].filter(r => r.mine);
+  if (mine.length) {
+    header(items, 'YOUR ISLANDS');
+    for (const r of mine) { const [i, j] = r.key.split(',').map(Number), c = claimableNear((i + 0.5) * ISLAND_CELL, (j + 0.5) * ISLAND_CELL, ISLAND_CELL).find(x => x.key === r.key); if (c) row(c, Math.hypot(c.x - p.x, c.y - p.y)); }
+  }
+  header(items, 'ISLANDS NEARBY');
+  for (const { c, d } of near) if (!ISLANDS.get(c.key)?.mine) row(c, d);
+}
+
 /** The rows of the current tab at port `p`. */
 export function portItems(p: Port): PortItem[] {
   const tab = portTabs(p)[G.menu.tab] || 'MARKET', items: Rows = [];
@@ -509,6 +538,7 @@ export function portItems(p: Port): PortItem[] {
     case 'FLEET': fleetItems(p, items); break;
     case 'HARBOUR': harbourItems(items); break;
     case 'FERRY': ferryItems(p, items); break;
+    case 'ISLANDS': islandItems(p, items); break;
   }
   return items;
 }

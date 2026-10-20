@@ -2,7 +2,9 @@
 import { clamp } from '../config';
 import { G, logged, cap, hpMax, boatDef, equipment, fishValue, speedMul, deckLvl, deckBoat } from '../game';
 import { SPECIES, UPGRADES, PAINTS, SUPPLIES, fmtKg } from '../econ';
-import { homePort } from '../world';
+import { homePort, claimableNear } from '../world';
+import { setWaypoint, clearWaypoint } from '../waypoint';
+import { openIsland } from './island';
 import { NET } from '../net';
 import { QUESTS, CHAPTERS, PEOPLE, currentQuest, questProgress, story } from '../story';
 import { guide, guideOn, stepLine } from '../game/guide';
@@ -11,12 +13,19 @@ import { drawChart, compassRose } from './chart';
 import { Bar, Canvas, Cell, Fish, Hint, Icon, Key, Pips, boatPreview, money, type DrawFn } from './parts';
 
 // ---------- chart ----------
-let drag: [number, number] | null = null;
+let drag: [number, number] | null = null, moved = 0;
+// a click (not a drag) on the chart: an island opens its card; anywhere else sets the waypoint
+function chartClick(e: PointerEvent, base: number): void {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const x = G.boat.x + G.map.x + (e.clientX - r.left - r.width / 2) * base, y = G.boat.y + G.map.y + (e.clientY - r.top - r.height / 2) * base;
+  const isle = claimableNear(x, y, 10).find(c => Math.hypot(c.x - x, c.y - y) < c.R * 0.8);
+  if (isle) openIsland(isle.key, 'map'); else setWaypoint(x, y);
+}
 export function Chart() {
   const m = G.map, base = m.zoom === 1 ? 2.2 : 4.6;           // world units per CSS pixel
   const step = guide(), target = guideOn() ? step.at : null;
   const draw: DrawFn = (ctx, w, h, dpr) => {
-    drawChart(ctx, w, h, G.boat.x + m.x, G.boat.y + m.y, base / dpr, { dpr, labels: true, grid: true, budget: 10, sextant: G.up.sextant, target });
+    drawChart(ctx, w, h, G.boat.x + m.x, G.boat.y + m.y, base / dpr, { dpr, labels: true, grid: true, budget: 10, sextant: G.up.sextant, target, waypoint: G.waypoint, islands: true });
     compassRose(ctx, w - 60 * dpr, h - 64 * dpr, 40 * dpr);
   };
   const hp = homePort();
@@ -33,20 +42,22 @@ export function Chart() {
       <div class="chartwrap">
         <Canvas
           draw={draw}
-          onPointerDown={e => { drag = [e.clientX, e.clientY]; e.currentTarget.setPointerCapture(e.pointerId); }}
+          onPointerDown={e => { if (e.button !== 0) return; drag = [e.clientX, e.clientY]; moved = 0; e.currentTarget.setPointerCapture(e.pointerId); }}
           onPointerMove={e => {
             if (!drag) return;
             m.x -= (e.clientX - drag[0]) * base;
             m.y -= (e.clientY - drag[1]) * base;
+            moved += Math.hypot(e.clientX - drag[0], e.clientY - drag[1]);
             drag = [e.clientX, e.clientY];
           }}
-          onPointerUp={() => { drag = null; }}
+          onPointerUp={e => { if (drag && moved < 6) chartClick(e, base); drag = null; }}
+          onContextMenu={e => { e.preventDefault(); clearWaypoint(); }}
           onWheel={e => { m.zoom = e.deltaY > 0 ? 2 : 1; }}
         />
       </div>
       <footer class="foot">
         <span>{guideOn() && <><span class="gold">Next:</span> {stepLine(step)}. </>}{hp.name} is {Math.round(Math.hypot(G.boat.x - hp.x, G.boat.y - hp.y) / 10)} m away. Your position: {Math.round(G.boat.x / 10)}, {Math.round(G.boat.y / 10)}.</span>
-        <span class="hints-inline"><Hint k="ArrowUp" pad="Stick">Move the chart, or drag</Hint><Hint k="z">Zoom or scroll</Hint><Hint k="m" pad="Y">Close</Hint></span>
+        <span class="hints-inline"><span class="hint muted">Click the sea for a waypoint, an island to buy or view it</span>{G.waypoint && <button class="btn small-btn" onClick={clearWaypoint}>Clear waypoint</button>}<Hint k="ArrowUp" pad="Stick">Move, or drag</Hint><Hint k="z">Zoom</Hint><Hint k="m" pad="Y">Close</Hint></span>
       </footer>
     </div>
   );
