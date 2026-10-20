@@ -96,10 +96,22 @@ export function tick(dt: number): void {
   drawUI();
   prefetch(3);
 }
+// Frame pacing: 120 Hz screens would otherwise draw twice as often as anyone can see, which is what makes laptops run
+// hot. Sailing draws at most 60 frames a second; menus, the port, the title and a boat lying still draw 30. Everything
+// moves by elapsed time, so the pace only changes how often the picture updates.
+let lastFrame = 0, stillFor = 0;
+function frameBudgetMs(): number {
+  if (G.mode !== 'play' && G.mode !== 'sunk') return 1000 / 30;
+  const b = G.boat, moving = G.fish || G.throttle || Math.hypot(b.vx, b.vy) > 2 || Math.abs(b.w) > 0.05 || ONLINE.sailors.length;
+  return moving || stillFor < 2 ? 1000 / 60 : 1000 / 30;
+}
 function frame(ts: number): void {
-  const dt = Math.min(0.1, (ts - last) / 1000); last = ts;
-  tick(dt);
   requestAnimationFrame(frame);
+  if (ts - lastFrame < frameBudgetMs() - 2) return;     // 2 ms of slack keeps a 60 Hz screen at its full 60
+  const dt = Math.min(0.1, (ts - last) / 1000); last = ts; lastFrame = ts;
+  const b = G.boat;
+  stillFor = Math.hypot(b.vx, b.vy) > 2 || G.throttle || G.fish ? 0 : stillFor + dt;
+  tick(dt);
 }
 addEventListener('beforeunload', () => { if (G.mode !== 'title') saveGame(); });
 
