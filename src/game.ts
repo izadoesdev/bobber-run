@@ -7,7 +7,6 @@ export {
   type Equipment,
 } from './game/rules';
 export { caption, toast, spawn } from './game/feedback';
-export { currentGoal } from './game/goals';
 export { saveGame, hasSave, placeAtPort, newGame, loadGame, wipeSave } from './game/save';
 export { refreshSolids, physicsStep, sink } from './game/physics';
 export { schoolActive, cancelFishing, TUNE, idleOk, bonusFromDeckhand } from './game/fishing';

@@ -1,16 +1,14 @@
 // The sailing HUD, kept quiet: one slim status bar and one objective line top left, the minimap (with the wind and
 // the day on its ring) top right, and the rest only when it matters: hull when damaged, bait by a school, contracts
-// while you hold some, key hints for new captains. The reel gauge, catch card, toasts and world labels sit over the sea.
+// while you hold some, key hints until the first catches. The reel gauge, catch card, toasts and sailor tags sit over
+// the sea; schools carry no labels, since the cast prompt names the fish and why it won't bite.
 import type { JSX } from 'preact';
 import { W, H, clamp } from '../config';
 import {
   G, cap, hpMax, boatDef, sonarLvl, isNight, dayNum, dayFrac, windAngle, sailEfficiency, schoolActive,
-  lineMax, catchNeed,
+  lineMax,
 } from '../game';
 import { SPECIES, fmtKg } from '../econ';
-import { favBait } from '../species';
-import { schoolInReach } from '../game/fishing';
-import { schoolMood } from '../game/schools';
 import { schoolsNear } from '../world';
 import { WX } from '../weather';
 import { SET } from '../settings';
@@ -18,7 +16,7 @@ import { EMOTES } from '../net';
 import { ONLINE } from '../online';
 import { currentQuest, questProgress } from '../story';
 import { guide, guideOn, markerTarget, tip, whereText, type Step } from '../game/guide';
-import type { CatchCard as CatchCardState, FishLine, School, Toast } from '../types';
+import type { CatchCard as CatchCardState, FishLine, Toast } from '../types';
 import { drawChart, nearestUncharted } from './chart';
 import { IslandSigns } from './island';
 import { clearWaypoint, tickWaypoint } from '../waypoint';
@@ -30,9 +28,9 @@ const toastIds = new WeakMap<Toast, number>();
 let toastN = 0;
 const TOAST_ICON: Partial<Record<Toast['kind'], string>> = { good: 'star', bad: 'warn' };
 
-/** `low`: outside the sailing view, only the two newest, tucked lower. */
+/** At most the two newest; `low` tucks them lower, outside the sailing view. */
 export function Toasts({ low }: { low: boolean }) {
-  const shown = low ? G.toasts.slice(-2) : G.toasts;
+  const shown = G.toasts.slice(-2);
   return (
     <div class={'toasts' + (low ? ' low' : '')} role="status" aria-live="polite">
       {shown.map(t => {
@@ -142,9 +140,7 @@ function Reel({ f }: { f: FishLine }) {
         {f.gold && <span class="gold"><Icon k="star" size="s" />Golden</span>}
         {f.perfect && f.t < 2.5 && !f.gold && <span class="gold">Perfect strike</span>}
         <span class="grow" />
-        {warn
-          ? <span class="callout"><Icon k="warn" size="s" />{f.jump || f.jumpWarn ? 'It is jumping. Stop reeling!' : 'It is pulling hard. Stop reeling!'}</span>
-          : SET.reelToggle && <span class="muted small">{f.reelOn ? 'Reeling' : 'Paused'}</span>}
+        {warn ? <Icon k="warn" size="s" /> : SET.reelToggle && <span class="muted small">{f.reelOn ? 'Reeling' : 'Paused'}</span>}
       </div>
       <div class="meter">
         <span class="caps">Line</span>
@@ -237,13 +233,11 @@ function Marker({ step, force }: { step: Step; force?: boolean }) {
   const [bx, by] = toPx(G.boat.x, G.boat.y), a = Math.atan2(ty - by, tx - bx);
   let R = Math.min(box.width, box.height) * 0.3;
   while (R > 4 * em && covered(bx + Math.cos(a) * R, by + Math.sin(a) * R, 1.5 * em)) R -= em;   // pulled in past a panel
-  const w = whereText(step);
   return (
-    <div key="guide-off" aria-hidden="true" style={{ position: 'absolute', ...pct(bx + Math.cos(a) * R, by + Math.sin(a) * R), transform: 'translate(-50%, -50%)', pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+    <div key="guide-off" aria-hidden="true" style={{ position: 'absolute', ...pct(bx + Math.cos(a) * R, by + Math.sin(a) * R), transform: 'translate(-50%, -50%)', pointerEvents: 'none' }}>
       <svg viewBox="0 0 16 16" width="1.6em" height="1.6em" style={{ display: 'block', transform: `rotate(${a}rad)`, filter: 'drop-shadow(0 0.12em 0 #000a)' }}>
         <path d="M14.5 8 L2.5 2.5 L5.5 8 L2.5 13.5 Z" fill={TARGET_COL} stroke="#1b2a33" stroke-width="1.4" stroke-linejoin="round" />
       </svg>
-      {w && <span class="chip" style={{ position: 'absolute', top: '100%', marginTop: '0.15em', fontSize: 'var(--fs-s)', padding: '0 0.4em', whiteSpace: 'nowrap' }}><Icon k={step.icon} size="s" />{w.split(' ').slice(0, 2).join(' ')}</span>}
     </div>
   );
 }
@@ -278,24 +272,6 @@ function StrikeMeter({ f }: { f: FishLine }) {
 // world position -> percent of the view, for labels pinned over the canvas
 const viewPct = (x: number, y: number): [number, number] => [(x - G.cam.x) / W * 100, (y - G.cam.y) / H * 100];
 
-const MOOD_NOTE = { biting: '', scattered: 'scared, back soon', empty: 'no fish left for now' } as const;
-// the school in reach: what it is ("?" until logged), its favourite bait, a golden fish, and why it won't bite
-function SchoolTag({ s }: { s: School }) {
-  const sp = SPECIES[s.sp], mood = schoolMood(s), fav = favBait(sp), [x, y] = viewPct(s.x, s.y - 9);
-  if (x < 3 || x > 97 || y < 8 || y > 94) return null;
-  const need = catchNeed(s.sp), note = MOOD_NOTE[mood] || (need ? (sp.rod > G.up.rod ? `needs a level ${sp.rod + 1} rod` : 'needs a bigger boat') : '');
-  return (
-    <div class={'label-world chip row' + (sp.legend ? ' gold' : '')} key="school-tag" style={{ left: x + '%', top: y + '%', gap: '0.3em' }}>
-      <Fish sp={s.sp} size="s" />
-      <span>{sp.name}</span>
-      {!G.log[sp.id] && <span class="gold" title="Not in your logbook yet">?</span>}
-      {s.gold && mood !== 'empty' && <Icon k="star" size="s" />}
-      <Icon k={fav} size="s" style={{ opacity: G.baitSel === fav ? 1 : 0.5 }} />
-      {note && <span class="muted">{note}</span>}
-    </div>
-  );
-}
-
 // chat lines over boats: each sailor's latest filtered message (uid 'me' is ours), shown for 6 s, then fading
 const CHAT_MS = 6500, CHAT_MAX = 120;
 function ChatBubble({ text, at, x, y, mine }: { text: string; at: number; x: number; y: number; mine?: boolean }) {
@@ -306,16 +282,15 @@ function ChatBubble({ text, at, x, y, mine }: { text: string; at: number; x: num
     </div>
   );
 }
-// the tag for the school in reach, school names (spyglass 2), other sailors' name tags and greetings, and your own greeting
+// the species of nearby schools as a small fish, no words (spyglass 2), other sailors' name tags and greetings,
+// and your own greeting
 function worldLabels(): JSX.Element[] {
   const labels: JSX.Element[] = [];
-  const tagged = G.fish ? (G.fish.st === 'reel' ? null : G.fish.s) : schoolInReach();
-  if (tagged) labels.push(<SchoolTag s={tagged} />);
-  if (G.up.spyglass >= 2) for (const s of schoolsNear(G.boat.x, G.boat.y, 120)) {
-    if (!schoolActive(s) || s.boss || s === tagged) continue;
+  if (G.up.spyglass >= 2 && !G.fish) for (const s of schoolsNear(G.boat.x, G.boat.y, 120)) {
+    if (!schoolActive(s) || s.boss) continue;
     const [x, y] = viewPct(s.x, s.y - 6);
     if (x > 4 && x < 96 && y > 30 && y < 92) {
-      labels.push(<div class={'label-world chip' + (SPECIES[s.sp].legend ? ' gold' : '')} style={{ left: x + '%', top: y + '%' }}>{SPECIES[s.sp].name}</div>);
+      labels.push(<div class="label-world bare" style={{ left: x + '%', top: y + '%' }} title={SPECIES[s.sp].name}><Fish sp={s.sp} size="s" /></div>);
     }
   }
   // other sailors: a name tag, plus a speech bubble for a few seconds after they greet or chat (the newer wins)
@@ -369,10 +344,10 @@ export function Hud() {
       <Marker step={wp ?? step} force={!!wp} />
       <div class="hud-left">
         <Status />
-        <button class="chip objective" onClick={() => { G.journalBack = 'play'; G.mode = 'journal'; }} title="Open the journal (J)">
+        <button data-track="objective" class="chip objective" onClick={() => { G.journalBack = 'play'; G.mode = 'journal'; }} title="Open the journal (J)">
           <NextLine step={step} prog={(() => { const pr = quest && questProgress(quest); return pr && pr.want > 1 ? `${pr.have}/${pr.want}` : null; })()} />
         </button>
-        {wp && <div class="chip waypoint small"><Icon k="map" size="s" />Waypoint <span class="gold">{whereText(wp)}</span><button class="x" aria-label="Clear waypoint" onClick={clearWaypoint}>×</button></div>}
+        {wp && <div class="chip waypoint small"><Icon k="map" size="s" />Waypoint <span class="gold">{whereText(wp)}</span><button data-track="waypoint-clear" class="x" aria-label="Clear waypoint" onClick={clearWaypoint}>×</button></div>}
         {G.active.length > 0 && (
           <div class="chip contracts small">
             {G.active.map(c => { const n = Math.min(G.hold.filter(f => f.sp === c.sp).length, c.n);
@@ -391,7 +366,7 @@ export function Hud() {
           <div class={'prompt panel' + (G.fish?.st === 'bite' || G.fish?.warn ? ' hot' : '')}>{keyed(G.prompt)}</div>
         )}
       </div>
-      {G.stats.caught < 5 && <div class="hints">
+      {G.stats.caught < 2 && !G.fish && <div class="hints">
         <Hint k="Tab" pad="View">Ship</Hint><Hint k="m" pad="Y">Chart</Hint><Hint k="l" pad="LB">Log</Hint>
         <Hint k="Escape" pad="Start">Menu</Hint>{G.pet && <Hint k="p">Pet</Hint>}
       </div>}

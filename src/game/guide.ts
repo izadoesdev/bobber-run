@@ -3,7 +3,6 @@
 // Also the first-session tips: a few gentle notes at the right moments, each shown once.
 import { SPECIES, SP, UPGRADES, PROJECTS } from '../econ';
 import { cellPois, poisNear, schoolsNear, homePort, LAIR } from '../world';
-import { WX } from '../weather';
 import { SET } from '../prefs';
 import { currentQuest, type Quest, type QuestTarget } from '../story';
 import type { Point, Port, Project, ProjectId, School, UpgradeKey } from '../types';
@@ -11,7 +10,6 @@ import { G } from './state';
 import { boatDef, canLand, cap, hpMax, isNight, dayFrac, DAYLEN, logged } from './rules';
 import { needStatus, nextProject } from './port';
 import { schoolActive, schoolShown } from './schools';
-import { schoolInReach } from './fishing';
 
 // The player's setting for the objective marker: `guide` in Settings (lead-owned), on unless set to false.
 export const guideOn = (): boolean => SET.guide;
@@ -222,15 +220,11 @@ export function markerTarget(s: Step = guide()): Point | null {
 
 // ---------- first-session tips ----------
 const TIP_KEY = 'bobber-run-tips';
-export type TipId = 'school' | 'full' | 'port' | 'night' | 'storm' | 'hull';
-/** On touch screens the buttons say Dock and Cast, not E and Space. */
-const touch = (): boolean => typeof document !== 'undefined' && document.documentElement.classList.contains('touch');
-const TIPS: { id: TipId; text: string | (() => string); when: () => boolean }[] = [
+export type TipId = 'hull' | 'night';
+// only what no prompt or toast already says: the cast and dock prompts teach fishing and selling, and the weather
+// and a full hold get their own toasts
+const TIPS: { id: TipId; text: string; when: () => boolean }[] = [
   { id: 'hull', text: 'Rocks and shallow water damage your hull. Repair it at any port', when: () => G.boat.hp < hpMax() * 0.6 },
-  { id: 'full', text: 'Your hold is full. Sell your catch at any port', when: () => G.hold.length >= cap() },
-  { id: 'port', text: () => touch() ? 'Slow down by the pier and tap Dock to sell your catch' : 'Slow down by the pier and press [E] to dock and sell your catch', when: () => !!G.nearPort && G.hold.length > 0 },
-  { id: 'school', text: () => touch() ? 'Stop at the ripples and tap Cast. When the bobber dips, tap Strike' : 'Stop at the ripples and press [SPACE] to cast. When the bobber dips, press [SPACE] again to strike', when: () => !G.fish && !!schoolInReach() },
-  { id: 'storm', text: 'Storms push your boat around, but trophy fish bite more often', when: () => WX.state === 'storm' },
   { id: 'night', text: 'Night brings out different fish. Glow lures work twice as fast in the dark', when: () => isNight() },
 ];
 const TIP_S = 9, TIP_GAP = 14;
@@ -243,7 +237,7 @@ export function tip(): { text: string; fade: boolean } | null {
   if (!shown && G.mode === 'play' && !G.fish && !G.card && G.t - lastT > TIP_GAP) {
     const next = TIPS.find(t => !seen[t.id] && t.when());
     if (next) {
-      shown = { id: next.id, text: typeof next.text === 'function' ? next.text() : next.text, t: G.t }; lastT = G.t; seen[next.id] = true;
+      shown = { id: next.id, text: next.text, t: G.t }; lastT = G.t; seen[next.id] = true;
       try { localStorage.setItem(TIP_KEY, JSON.stringify(seen)); } catch { }
     }
   }

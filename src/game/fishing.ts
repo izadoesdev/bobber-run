@@ -128,7 +128,7 @@ function tease(f: FishLine, sp: Species): void {
 function waitStage(f: FishLine, dt: number, strike: boolean): void {
   const nibbling = f.teaseT !== undefined && G.t - f.teaseT < 0.8;
   if (strike) {
-    toast(nibbling ? 'Just a nibble. Wait for the bobber to go under' : 'Too early. Wait for the bobber to dip');
+    toast(nibbling ? 'Just a nibble' : 'Too early');
     f.wait += 1.2; sfx('deny', 0.5); G.dry++;
   }
   if (Math.random() < dt * 0.8) spawn({ kind: 'ring', x: f.tx, y: f.ty, life: 0.8, r0: 2, grow: 3 });
@@ -157,19 +157,18 @@ function biteStage(f: FishLine, strike: boolean): void {
   const sp = SPECIES[f.s.sp];
   const [perfectWin, biteWin] = f.win ??= strikeWindows();
   const auto = (crewLvl() >= 2 && f.t > 0.42) || (SET.strike === 'auto' && f.t > 0.3);
-  if (auto && SET.strike !== 'auto') toast('Your deckhand sets the hook');
   if (strike || auto) {
     f.st = 'reel'; f.perfect = f.t < perfectWin; f.t = 0;
     f.tension = f.perfect ? 0.1 : 0.25; f.prog = f.perfect ? 0.25 : 0.08; f.reeling = true; G.dry = 0;
     sfx(f.perfect ? 'perfect' : 'plop');
-    hooked(f, sp);
+    hooked(f);
   } else if (f.t > biteWin) {
     if (idleOk(sp)) {                                   // small fish hook themselves
       f.st = 'reel'; f.t = 0; f.tension = 0.15; f.prog = 0.05; f.selfHooked = true; G.dry = 0;
       sfx('plop');
-      hooked(f, sp);
+      hooked(f);
     } else {
-      toast('It got away. Another bite will come soon');
+      toast('It got away');
       track('fish_lost', { species: sp.id, reason: 'missed_strike' });
       f.st = 'wait'; f.t = 0;
       f.wait = (1.5 + Math.random() * 2.5) * Math.max(0.4, 1 - 0.15 * ++G.dry);
@@ -177,15 +176,13 @@ function biteStage(f: FishLine, strike: boolean): void {
   }
 }
 
-/** The fish is on: say so when it's special, and make a perfect strike unmistakable. */
-function hooked(f: FishLine, sp: Species): void {
+/** The fish is on: make a perfect strike unmistakable (the reel panel names a golden fish). */
+function hooked(f: FishLine): void {
   f.fx = f.tx; f.fy = f.ty;
   if (f.perfect) {
     burst('spark', f.tx, f.ty, 14, 34, 0.8);
     spawn({ kind: 'ring', x: f.tx, y: f.ty, life: 1, r0: 2, grow: 10 });
   }
-  if (f.gold) toast(`A golden ${sp.name} is on the line!`, 'good');
-  else if (f.perfect) toast('Perfect strike! Your catch bar gets a head start', 'good');
 }
 
 /** Where the hooked fish swims: reeled closer as the catch fills, thrown out by surges, weaving side to side. */
@@ -249,13 +246,13 @@ function reelStage(f: FishLine, dt: number, strike: boolean): void {
   if (Math.random() < dt * (3 + surge * 10)) spawn({ kind: 'dot', x: (f.fx ?? f.tx) + jitter(4), y: (f.fy ?? f.ty) + jitter(3), vx: jitter(18), vy: jitter(18), life: 0.35 });
   if (f.tension >= lineMax()) {
     sfx('snap');
-    toast(f.jump ? 'It shook off the hook while jumping. The fish got away' : 'Your line snapped. The fish got away', 'bad');
+    toast(f.jump ? 'It threw the hook' : 'Your line snapped', 'bad');
     track('fish_lost', { species: sp.id, reason: f.jump ? 'threw_hook' : 'snapped' });
     G.fish = null;
   } else if (f.prog >= 1 && sp.fight === 'boss' && stage < 2) {
     f.stage = stage + 1; f.prog = 0.12; f.tension = Math.min(f.tension, 0.4); G.shake = 4;
     sfx('crash', 0.6, 0.5);
-    toast(`It is still fighting! Round ${f.stage + 1} of 3`, 'bad');
+    toast(`Still fighting! ${f.stage + 1} of 3`, 'bad');
   } else if (f.prog >= 1) landHooked(f);
 }
 
@@ -336,9 +333,8 @@ export type Catcher = 'NETTED' | 'DECKHAND' | 'POTS';
 export function landNetted(spIdx: number, stock: FishStock, who: Catcher = 'NETTED'): void {
   const sp = SPECIES[spIdx];
   const { fish, firstTrophy } = recordCatch(spIdx, stock, null, who === 'DECKHAND' ? 'deckhand' : who === 'POTS' ? 'pots' : 'net');
-  if (firstTrophy) toast(`First ${sp.name} trophy!`, 'good');
   const by = who === 'DECKHAND' ? 'Your deckhand landed' : who === 'POTS' ? 'Your crab pots hauled' : 'Your drift net caught';
-  toast(`${by} ${sp.name}, ${fmtKg(fish.kg)}`);
+  toast(`${by} ${firstTrophy ? 'a trophy ' : ''}${sp.name}, ${fmtKg(fish.kg)}`, firstTrophy ? 'good' : 'info');
   sfx('coin', 0.5, 0.8);
   holdFullNote();
   saveGame();

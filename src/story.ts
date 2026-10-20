@@ -47,8 +47,8 @@ const pierFishText = `${WORDS[pierFish] ?? pierFish} fish`;
 const ports = (): number => [...G.found].filter(id => id.startsWith('port:')).length;
 export const CHAPTERS = ['A borrowed boat', 'The chartmaker', 'Night waters', 'The naturalist', 'The Old One'];
 export const QUESTS: Quest[] = [
-  { id: 'first-cast', ch: 0, by: 'maren', title: 'First cast', goal: 'Catch 3 fish', obj: (g, b) => [S(g).caught - b.caught, 3], target: 'school', hint: 'Stop over the ripples and press Space to cast. When the bobber dips under, press Space again to strike and hook the fish.', reward: { coins: 20 },
-    intro: [['maren', 'So you are Nell\'s grandchild. Welcome to Alderhaven. Her old rowboat is yours now, and she would want you to use it.'], ['maren', 'See the ripples just off the pier? That is a school of fish. Stop over it, press Space to cast, and catch three fish.']],
+  { id: 'first-cast', ch: 0, by: 'maren', title: 'First cast', goal: 'Catch a fish', obj: (g, b) => [Math.min(1, S(g).caught - b.caught), 1], target: 'school', hint: 'Stop over the ripples and press Space to cast. When the bobber dips, press Space again.', reward: { coins: 20 },
+    intro: [['maren', 'So you are Nell\'s grandchild. Welcome to Alderhaven. Her old rowboat is yours now, and she would want you to use it.'], ['maren', 'See the ripples just off the pier? That is a school of fish. Stop over it, press Space to cast, and catch one.']],
     outro: [['maren', 'Well done. You fish just like Nell did.']] },
   { id: 'market-day', ch: 0, by: 'maren', title: 'Market day', goal: 'Sell fish at a port', obj: (g, b) => [Math.min(1, S(g).sold - b.sold), 1], target: 'sell', hint: 'Slow down next to a pier, press E to dock, then choose "Sell your catch" in the Market tab.', reward: { shrimp: 5 },
     intro: [['maren', 'Now sell your fish for coins. Sail up to the pier, press E to dock, and sell them at the market.']],

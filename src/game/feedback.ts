@@ -14,7 +14,7 @@ setCaptionHook((s: string) => { if (SET.captions) caption(s); });
 
 export function toast(s: string, kind: ToastKind = 'info'): void {
   G.toasts.push({ s, kind, t: 2.8 });
-  if (G.toasts.length > 4) G.toasts.shift();
+  if (G.toasts.length > 3) G.toasts.shift();
 }
 
 /** Add a particle; its starting lifetime is remembered for fading. */

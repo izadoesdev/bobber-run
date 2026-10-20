@@ -64,7 +64,6 @@ export function petCat(): void {
   sfx('purr');
   const b = G.boat;
   for (let i = 0; i < 6; i++) spawn({ kind: 'spark', x: b.x + jitter(6), y: b.y + jitter(4), vx: jitter(8), vy: -10 - Math.random() * 8, life: 1 });
-  if (Math.random() < 0.3) toast(`${G.pet.name} purrs`);
 }
 
 // ---------- every frame ----------
@@ -118,7 +117,7 @@ function tickSound(dt: number): void {
   music(dt, G.musicOn, isNight());
 }
 const WEATHER_NEWS: Record<WeatherState, string> = {
-  storm: 'A storm is here. The wind pushes your boat, but trophy fish are more likely', rain: 'It is raining. Bites come a little slower, but Rain Trout come out', cloudy: 'It is getting cloudy', clear: 'The sky is clear again',
+  storm: 'A storm rolls in. Trophy fish bite more often', rain: 'Rain. Rain Trout come out', cloudy: '', clear: '',
 };
 
 export function update(dt: number): void {
@@ -135,7 +134,7 @@ export function update(dt: number): void {
   if (G.mode !== 'title') updateFleet(dt);
   if (G.mode !== 'play') { G.prompt = null; return; }
   G.clock += dt;
-  updateWeather(dt, s => toast(WEATHER_NEWS[s], s === 'storm' ? 'bad' : 'info'),
+  updateWeather(dt, s => { if (WEATHER_NEWS[s]) toast(WEATHER_NEWS[s], s === 'storm' ? 'bad' : 'info'); },
     () => setTimeout(() => sfx('thunder', 1, 0.8 + Math.random() * 0.4), 200 + Math.random() * 900));
   if (logged() >= 10 && !G.lairTold) { G.lairTold = true; toast('Sailors talk of a giant fish, the Old One. Its lair is now marked on your chart', 'bad'); }
   const speed = boatSpeed();
@@ -194,6 +193,7 @@ function promptFor(speed: number): string | null {
     if (f.st === 'reel') {
       if (f.jump || f.jumpWarn) return 'It is jumping. Stop reeling!';
       if (f.warn) return 'It is about to pull hard. Stop reeling!';
+      if (G.stats.caught >= 3) return null;      // the reel gauge says the rest once you know it
       if (SET.reelToggle) return 'Press [SPACE] to start or stop reeling';
       if (idleOk(SPECIES[f.s.sp]) && !f.reelOn) return 'It will tire itself out. Hold [SPACE] to reel faster';
       return 'Hold [SPACE] to reel. Let go when the line gets tight, or it snaps';
@@ -201,7 +201,7 @@ function promptFor(speed: number): string | null {
     if (f.st === 'bite') return f.run !== undefined ? 'It is swimming off with the bait. Strike now! [SPACE]' : 'Strike now! [SPACE]';
     if (f.st === 'wait') {
       if (f.teaseT !== undefined && G.t - f.teaseT < 0.9) return 'A nibble... wait for the real bite';
-      return f.hint ? `Wait for the bobber to dip. ${f.hint}` : 'Wait for the bobber to dip';
+      return f.hint ? `Wait for the bobber to dip. ${f.hint}` : G.stats.caught < 3 ? 'Wait for the bobber to dip' : null;
     }
     return null;
   }
