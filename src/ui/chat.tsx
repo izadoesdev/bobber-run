@@ -26,6 +26,7 @@ function send(): void {
 }
 
 function Line({ l }: { l: ChatLine }) {
+  if (l.id === 'sys') return <p class="chat-line sys">{l.text}</p>;
   return (
     <p class="chat-line">
       {l.id === 'me' ? <b class="me">{l.name}</b>
@@ -38,9 +39,10 @@ function Line({ l }: { l: ChatLine }) {
 export function Chat() {
   if (!canChat() && !open) return null;
   const now = Date.now(), lines = ONLINE.log.filter(l => open || now - l.at < SHOW_MS).slice(-8);
-  if (!open && !lines.length && !ONLINE.note) return null;
+  if (!open && !lines.length && !ONLINE.note && !relayLive()) return null;
   return (
     <div class={'chat' + (open ? ' open' : '')}>
+      {open && ONLINE.roster.length > 0 && <p class="chat-roster">In your sea: {ONLINE.roster.join(', ')}</p>}
       {lines.map(l => <Line key={`${l.id}${l.at}`} l={l} />)}
       {ONLINE.note && <p class="chat-note" onClick={() => { ONLINE.note = null; }}>{ONLINE.note}</p>}
       {open && (relayLive()

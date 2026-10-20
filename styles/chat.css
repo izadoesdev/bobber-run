@@ -11,3 +11,5 @@
 .chat-input { font: inherit; font-size: var(--fs-s, 0.86em); padding: 0.4em 0.6em; border-radius: var(--r, 0.3em); border: 0.12em solid var(--gold, #f0cf6a);
   background: rgba(10, 18, 24, 0.85); color: #efe9dc; outline: none; }
 .chat.open .chat-line { background: rgba(10, 18, 24, 0.75); }
+.chat-line.sys { color: #b3c4cc; font-style: italic; }
+.chat-roster { margin: 0; padding: 0.15em 0.5em; font-size: 0.8em; color: #cbd8dd; background: rgba(10, 18, 24, 0.7); border-radius: var(--r, 0.3em); }

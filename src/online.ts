@@ -7,8 +7,8 @@ export interface Sailor {
 }
 /** A chat line as everyone sees it (already filtered by the relay). `id` is the sailor's uid, or 'me'. */
 export interface ChatLine { id: string; name: string; text: string; at: number }
-export const ONLINE: { sailors: Sailor[]; chat: Map<string, { text: string; at: number }>; log: ChatLine[]; note: string | null } = {
-  sailors: [], chat: new Map(), log: [], note: null,
+export const ONLINE: { sailors: Sailor[]; chat: Map<string, { text: string; at: number }>; log: ChatLine[]; note: string | null; roster: string[] } = {
+  sailors: [], chat: new Map(), log: [], note: null, roster: [],
 };
 
 // sailors muted on this device, by captain name (names are unique enough here, and survive reconnects)
@@ -21,11 +21,11 @@ export function toggleMute(name: string): boolean {
   if (muted.has(name)) ONLINE.log = ONLINE.log.filter(l => l.name !== name);
   return muted.has(name);
 }
-/** A filtered line arrived: keep it in the log and as that sailor's speech bubble. */
+/** A filtered line arrived: keep it in the log and as that sailor's speech bubble. Game lines (id 'sys') have no bubble. */
 export function heard(line: ChatLine): void {
-  if (line.id !== 'me' && isMuted(line.name)) return;
+  if (line.id !== 'me' && line.id !== 'sys' && isMuted(line.name)) return;
   ONLINE.log = [...ONLINE.log.slice(-49), line];
-  ONLINE.chat.set(line.id, { text: line.text, at: Date.now() });
+  if (line.id !== 'sys') ONLINE.chat.set(line.id, { text: line.text, at: Date.now() });
 }
 
 /** Fishing alongside other sailors pays: +5% per sailor within CREW_RANGE, up to +15%. */

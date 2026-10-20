@@ -27,12 +27,13 @@ export function relayKeep(next: string | null): void {
   sock.onmessage = e => {
     const m = JSON.parse(String(e.data));
     if (m.t === 'welcome') { open = true; retry = 1000; }
-    else if (m.t === 'boats') boats = m.list;
+    else if (m.t === 'boats') { boats = m.list; if (m.roster) ONLINE.roster = m.roster; }
+    else if (m.t === 'sys') heard({ id: 'sys', name: '', text: m.text, at: m.at });
     else if (m.t === 'chat') heard({ id: m.id, name: m.name, text: m.text, at: m.at });
     else if (m.t === 'chat-slow') ONLINE.note = 'You are sending messages too fast. Wait a moment';
   };
   sock.onclose = () => {
-    if (ws === sock) { ws = null; open = false; boats = []; }
+    if (ws === sock) { ws = null; open = false; boats = []; ONLINE.roster = []; }
     retryAt = Date.now() + retry; retry = Math.min(30_000, retry * 2);
   };
 }

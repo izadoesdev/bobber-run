@@ -48,9 +48,17 @@ function allowed(p: Peer): boolean {
   p.tokens = Math.min(MSGS_PER_S, p.tokens + (now - p.refill) / 1000 * MSGS_PER_S); p.refill = now;
   return p.tokens >= 1 && p.tokens-- > 0;
 }
+/** A line from the game itself (joins and leaves), sent to everyone in a sea. */
+function announce(sea: number, text: string, except?: Sock): void {
+  const line = JSON.stringify({ t: 'sys', text, at: Date.now() });
+  for (const o of seas.get(sea) ?? []) if (o !== except && o.data) o.send(line);
+}
+/** Who is in a sea, by captain name; sent with each boats update so the list stays current. */
+const roster = (sea: number) => [...(seas.get(sea) ?? [])].flatMap(s => s.data ? [s.data.name] : []).sort();
 function leave(ws: Sock): void {
   const p = ws.data; if (!p) return;
   seas.get(p.sea)?.delete(ws);
+  announce(p.sea, `${p.name} left the sea`);
   const n = (perUser.get(p.userId) ?? 1) - 1;
   if (n > 0) perUser.set(p.userId, n); else perUser.delete(p.userId);
   ws.data = null;
@@ -69,6 +77,7 @@ async function onMessage(ws: Sock, text: string): Promise<void> {
     ws.data = { id: crypto.randomUUID().slice(0, 12), ...who, token: m.token, boat: null, emote: null, emoteAt: 0, tokens: MSGS_PER_S, refill: Date.now(), chats: [] };
     if (!seas.has(who.sea)) seas.set(who.sea, new Set());
     seas.get(who.sea)!.add(ws);
+    announce(who.sea, `${who.name} joined the sea`, ws);
     ws.send(JSON.stringify({ t: 'welcome', sea: who.sea }));
     return;
   }
@@ -98,16 +107,19 @@ async function onMessage(ws: Sock, text: string): Promise<void> {
   }
 }
 
+let rosterAt = 0;
 function broadcast(): void {
-  const now = Date.now();
-  for (const socks of seas.values()) {
+  const now = Date.now(), withRoster = now - rosterAt > 3000;
+  if (withRoster) rosterAt = now;
+  for (const [sea, socks] of seas) {
+    const names = withRoster ? roster(sea) : null;
     const boats: { ws: Sock; p: Peer; b: Boat }[] = [];
     for (const ws of socks) { const p = ws.data; if (p?.boat && now - p.boat.at < STALE_MS) boats.push({ ws, p, b: p.boat }); }
     for (const ws of socks) {
       const me = ws.data; if (!me) continue;
       const list = boats.filter(o => o.ws !== ws && (!me.boat || Math.hypot(o.b.x - me.boat.x, o.b.y - me.boat.y) < RANGE))
         .map(({ p, b }) => ({ id: p.id, name: p.name, emote: p.emote, emoteAt: p.emoteAt, ...b }));
-      ws.send(JSON.stringify({ t: 'boats', now, list }));
+      ws.send(JSON.stringify(names ? { t: 'boats', now, list, roster: names } : { t: 'boats', now, list }));
     }
   }
 }
