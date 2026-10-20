@@ -1,0 +1,280 @@
+// Menus and dialogs: title, pause, settings, controls, online, cheats, bottle and greeting pickers,
+// conversations, the finale and the towed-home card.
+import type { TargetedMouseEvent } from 'preact';
+import { G, hasSave, dayNum, logged } from '../game';
+import { SPECIES } from '../econ';
+import { ROWS, ACTIONS, SET } from '../settings';
+import { CHEATS } from '../cheats';
+import { NET, BOTTLE_MSGS, EMOTES, account, signOut, setName } from '../net';
+import { PEOPLE, currentQuest } from '../story';
+import type { NetForm, Talk as TalkState } from '../types';
+import { Hint, Icon, Key, SetRow, byPointer, keyLabel, money } from './parts';
+
+export const TITLE_ITEMS = () => [...(hasSave() ? ['CONTINUE'] : []), 'NEW VOYAGE', 'SETTINGS', 'CONTROLS', ...(NET.on ? ['ONLINE'] : [])];
+export const PAUSE_ITEMS = ['RESUME', 'JOURNAL', 'SETTINGS', 'CONTROLS', ...(NET.on ? ['ONLINE'] : []), 'SAVE & QUIT'];
+
+// Mouse picks go through the same input path as the keyboard: select the row, then press a key for main.js.
+const press = (key: string) => { G.pressed.add(key); };
+
+interface MenuProps { items: string[]; sel: number; onPick: (i: number) => void; setSel: (i: number) => void }
+function Menu({ items, sel, onPick, setSel }: MenuProps) {
+  return (
+    <div class="menu">
+      {items.map((s, i) => <button class={'item' + (i === sel ? ' sel' : '')} onMouseMove={byPointer(() => setSel(i))} onClick={() => onPick(i)}>{s}</button>)}
+    </div>
+  );
+}
+
+export function Title() {
+  return (
+    <div class="center">
+      <div class="logo">Bobber Run</div>
+      <div class="tagline">Fish, sell, upgrade, and sail further</div>
+      <div class="panel rivets menu-box">
+        <Menu items={TITLE_ITEMS()} sel={G.titleSel || 0} setSel={i => { G.titleSel = i; }} onPick={i => { G.titleSel = i; press('Enter'); }} />
+      </div>
+      <div class="hints-inline shadowed"><Hint k="ArrowUp" k2="ArrowDown" pad="D-pad">Choose</Hint><Hint k="Enter" pad="A">Select</Hint></div>
+    </div>
+  );
+}
+
+export function Pause() {
+  return (
+    <div class="center dim-bg">
+      <div class="logo still">Paused</div>
+      <div class="panel rivets menu-box">
+        <Menu items={PAUSE_ITEMS} sel={G.pauseSel || 0} setSel={i => { G.pauseSel = i; }} onPick={i => { G.pauseSel = i; press('Enter'); }} />
+      </div>
+    </div>
+  );
+}
+
+// a ten-step volume meter
+const Volume = ({ v }: { v: number }) => (
+  <div class="vol" title={`${v} of 10`}>{Array.from({ length: 10 }, (_, k) => <i class={k < v ? 'on' : ''} />)}</div>
+);
+
+export function Settings() {
+  const sel = G.setSel || 1, cur = ROWS[sel];                    // row 0 is a section head
+  // clicking the left part of a row steps the value down, the right part steps it up
+  const stepByClick = (i: number) => (e: TargetedMouseEvent<HTMLDivElement>) => {
+    G.setSel = i;
+    const b = e.currentTarget.getBoundingClientRect();
+    press(e.clientX < b.left + b.width * 0.7 ? 'ArrowLeft' : 'ArrowRight');
+  };
+  return (
+    <div class="center dim-bg">
+      <div class="panel rivets dialog">
+        <h1>Settings</h1>
+        <div class="scroll">
+          {ROWS.map((r, i) => r.head !== undefined
+            ? <div class="list-head caps">{r.head}</div>
+            : (
+              <SetRow sel={i === sel} onEnter={() => { G.setSel = i; }} onClick={stepByClick(i)}>
+                <span>{r.label}</span>
+                {r.type === 'slider'
+                  ? <Volume v={Number(r.get())} />
+                  : <span class="value"><Key k="ArrowLeft" />{r.get()}<Key k="ArrowRight" /></span>}
+              </SetRow>
+            ))}
+          <SetRow cls="item center-t" sel={sel === ROWS.length} onEnter={() => { G.setSel = ROWS.length; }} onClick={() => { G.setSel = ROWS.length; press('Enter'); }}>Back</SetRow>
+        </div>
+        <p class="help">{cur?.help || ' '}</p>
+        <footer class="foot">
+          <span class="hints-inline"><Hint k="ArrowUp" k2="ArrowDown" pad="D-pad">Choose</Hint><Hint k="ArrowLeft" k2="ArrowRight">Change</Hint></span>
+          <Hint k="Escape" pad="B">Back</Hint>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+const CONTROLS_HELP = 'Choose an action and press Enter to change its key. WASD always steers too. Press ` or F2 while sailing for the cheat console. Gamepad: stick steers, A casts, X docks, Y opens the chart, B goes back.';
+export function Controls() {
+  const sel = G.ctlSel || 0;
+  // rows past the actions: reset, then back
+  const extraRow = (i: number, label: string) => (
+    <SetRow cls="item center-t" sel={sel === i} onEnter={() => { G.ctlSel = i; }} onClick={() => { G.ctlSel = i; press('Enter'); }}>{label}</SetRow>
+  );
+  return (
+    <div class="center dim-bg">
+      <div class="panel rivets dialog">
+        <h1>Controls</h1>
+        <div class="scroll">
+          {ACTIONS.map((a, i) => (
+            <SetRow sel={i === sel} onEnter={() => { G.ctlSel = i; }} onClick={() => { G.ctlSel = i; press('Enter'); }}>
+              <span>{a.label}</span>
+              <span class="value">{G.rebinding === a.id
+                ? <span class="gold">Press a key</span>
+                : <><Key k={a.key} />{SET.binds[a.id] && <span class="muted small">default {keyLabel(a.key)}</span>}</>}</span>
+            </SetRow>
+          ))}
+          {extraRow(ACTIONS.length, 'Reset to defaults')}
+          {extraRow(ACTIONS.length + 1, 'Back')}
+        </div>
+        <p class="help">{G.rebinding ? 'Press the new key, or Esc to cancel.' : CONTROLS_HELP}</p>
+        <footer class="foot">
+          <span class="hints-inline"><Hint k="ArrowUp" k2="ArrowDown">Choose</Hint><Hint k="Enter">Change key</Hint></span>
+          <Hint k="Escape" pad="B">Back</Hint>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+// online status, captain name and accounts. Form fields keep their text in G.netForm, so the
+// per-frame redraw never wipes what you are typing.
+export function Online() {
+  const p = NET.profile;
+  const f: NetForm = (G.netForm ||= { name: null, email: '', pass: '', show: false, mode: 'signUp' });
+  const say = (msg: string, bad = false) => { G.netMsg = { msg, bad }; };
+  const saveName = async () => {
+    const r = await setName(f.name ?? p?.name ?? '');
+    if (r.ok) { f.name = null; say(`Your captain name is now ${r.name}`); } else say(r.why, true);
+  };
+  const submit = async () => {
+    say(f.mode === 'signUp' ? 'Making your account...' : 'Signing in...');
+    const r = await account(f.mode, f.email.trim(), f.pass);
+    if (r.ok) {
+      f.pass = '';
+      say(r.msg ?? '');
+      if (r.reload) setTimeout(() => location.reload(), 900);
+    } else say(r.why, true);
+  };
+  const onEnter = (fn: () => void) => (e: KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); fn(); } };
+  const setMode = (mode: NetForm['mode']) => () => { f.mode = mode; G.netMsg = null; };
+  const status = NET.status !== 'online'
+    ? (NET.status === 'connecting' ? 'Connecting to the coast...' : 'Offline. The game still works, just without online features.')
+    : p?.guest ? 'You are sailing as a guest. Make an account to keep your save on any device.'
+    : `Signed in as ${p?.email || 'a sailor'}. Your save follows you to any device.`;
+  return (
+    <div class="center dim-bg"><div class="panel rivets dialog online">
+      <h1>Online</h1>
+      <p class="row"><span class={'dot ' + NET.status} />{status}</p>
+      {NET.authed && (
+        <div class="form-row">
+          <label class="caps" for="net-name">Captain</label>
+          <input id="net-name" maxlength={18} autocomplete="off" value={f.name ?? p?.name ?? ''}
+            onInput={e => { f.name = e.currentTarget.value; }} onKeyDown={onEnter(saveName)} />
+          <button class="btn" disabled={f.name === null || f.name === p?.name} onClick={saveName}>Save name</button>
+        </div>
+      )}
+      {NET.authed && p?.guest && (
+        <div class="account-box">
+          <div class="seg">
+            <button class={'seg-btn' + (f.mode === 'signUp' ? ' on' : '')} onClick={setMode('signUp')}>Make an account</button>
+            <button class={'seg-btn' + (f.mode === 'signIn' ? ' on' : '')} onClick={setMode('signIn')}>I have an account</button>
+          </div>
+          <div class="form-grid">
+            <label class="caps" for="net-email">Email</label>
+            <input id="net-email" type="email" autocomplete="email" value={f.email}
+              onInput={e => { f.email = e.currentTarget.value; }} onKeyDown={onEnter(submit)} />
+            <label class="caps" for="net-pass">Password</label>
+            <span class="row">
+              {/* the cast: Preact's per-type input typings can't express a type that toggles on one element */}
+              <input id="net-pass" type={(f.show ? 'text' : 'password') as 'text'} autocomplete={f.mode === 'signUp' ? 'new-password' : 'current-password'} value={f.pass}
+                onInput={e => { f.pass = e.currentTarget.value; }} onKeyDown={onEnter(submit)} />
+              <button class="btn small-btn" onClick={() => { f.show = !f.show; }} aria-label={f.show ? 'Hide password' : 'Show password'}>{f.show ? 'Hide' : 'Show'}</button>
+            </span>
+            <span /><span class="muted small">{f.mode === 'signUp' ? 'At least 8 characters. Your current progress moves to the new account.' : 'Signing in loads the save stored on that account.'}</span>
+            <span /><button class="btn primary" disabled={NET.busy || !f.email || f.pass.length < 8} onClick={submit}>{NET.busy ? 'Working...' : f.mode === 'signUp' ? 'Make account' : 'Sign in'}</button>
+          </div>
+        </div>
+      )}
+      {NET.authed && !p?.guest && (
+        <p><button class="btn" disabled={NET.busy} onClick={async () => { await signOut(); say('Signed out. You are sailing as a guest again'); }}>Sign out</button></p>
+      )}
+      {G.netMsg && <p class={G.netMsg.bad ? 'why left' : 'good'}>{G.netMsg.msg}</p>}
+      <p class="help">Online you share a sea with up to 30 sailors. Greet them (G), toss and read bottles (T), compare world records in the logbook, and give to the coastwide fund in Alderhaven's Harbour tab.</p>
+      <footer class="foot"><span /><button class="btn" onClick={() => { G.mode = G.accountBack || 'play'; }}>Back<Key k="Escape" pad="B" /></button></footer>
+    </div></div>
+  );
+}
+
+// pick a greeting
+export function EmotePick() {
+  const sel = G.emoteSel || 0;
+  return (
+    <div class="emote-pick panel">
+      <div class="caps">Greet nearby sailors</div>
+      {EMOTES.map((m, i) => (
+        <SetRow sel={i === sel} onEnter={() => { G.emoteSel = i; }} onClick={() => { G.emoteSel = i; press('Enter'); }}>
+          <span class="key">{i + 1}</span><span>{m}</span>
+        </SetRow>
+      ))}
+    </div>
+  );
+}
+
+// pick a phrase for a message in a bottle
+export function BottlePick() {
+  const sel = G.bottleSel || 0;
+  return (
+    <div class="center dim-bg"><div class="panel rivets dialog">
+      <h1>Message in a bottle</h1>
+      <p class="muted">Pick a line. Other sailors who pass by can fish it out and read it.</p>
+      <div class="scroll">{BOTTLE_MSGS.map((m, i) => (
+        <SetRow sel={i === sel} onEnter={() => { G.bottleSel = i; }} onClick={() => { G.bottleSel = i; press('Enter'); }}><span>{m}</span></SetRow>
+      ))}</div>
+      <footer class="foot">
+        <span class="hints-inline"><Hint k="ArrowUp" k2="ArrowDown">Choose</Hint><Hint k="Enter">Throw</Hint></span>
+        <Hint k="Escape">Cancel</Hint>
+      </footer>
+    </div></div>
+  );
+}
+
+// a conversation: portrait, name, one line at a time
+export function Talk({ t }: { t: TalkState }) {
+  const [who, text] = t.lines[t.i], person = PEOPLE[who];
+  return (
+    <div class="talk-wrap" onClick={() => press(' ')}>
+      <div class="talk panel rivets">
+        <div class="portrait"><Icon k={who} size="xl" /></div>
+        <div class="grow">
+          <div class="row"><span class="title gold">{person.name}</span><span class="muted small">{person.role}</span></div>
+          <p class="line">{text}</p>
+        </div>
+        <div class="talk-foot"><span class="muted small">{t.i + 1}/{t.lines.length}</span><Hint k=" " pad="A">Next</Hint><Hint k="Escape" pad="B">Skip</Hint></div>
+      </div>
+    </div>
+  );
+}
+
+export function Cheats() {
+  return (
+    <div class="center dim-bg"><div class="panel rivets dialog cheats">
+      <h1>Cheats</h1>
+      <div class={'cheat-input' + (G.cheatErr ? ' err' : '')}>{G.cheatBuf || ''}<span class="caret" /></div>
+      <p class="help">{G.cheatErr ? 'That is not a code. Try one of these:' : 'Type a code and press Enter.'}</p>
+      <div class="scroll"><dl class="facts">{CHEATS.map(c => <><dt class="code" onClick={() => { G.cheatBuf = c.code; }}>{c.code}</dt><dd>{c.what}</dd></>)}</dl></div>
+      <footer class="foot"><Hint k="Enter">Use code</Hint><Hint k="Escape">Close</Hint></footer>
+    </div></div>
+  );
+}
+
+export function Finale() {
+  return (
+    <div class="center dim-bg"><div class="panel rivets dialog finale">
+      <div class="logo still">The Grand Harbour</div>
+      <p>Lanterns hang over every quay. The Old One watches from the harbour gate, and boats come from all along the coast to sell their catch in Alderhaven.</p>
+      {!currentQuest() && <p>At the end of the quay, Nell sits with her feet over the water, telling anyone who will listen about her grandchild.</p>}
+      <p class="gold">You are Harbourmaster now.</p>
+      <dl class="facts">
+        <dt>Days at sea</dt><dd>{dayNum()}</dd><dt>Fish caught</dt><dd>{G.stats.caught}</dd>
+        <dt>Species logged</dt><dd>{logged()} of {SPECIES.length}</dd><dt>Coins earned</dt><dd>{money(G.earned)}</dd>
+        <dt>Ships owned</dt><dd>{G.owned.length}</dd>
+      </dl>
+      <p class="muted">The sea goes on. Keep fishing, fill the logbook, and grow your fleet.</p>
+      <footer class="foot"><span /><button class="btn primary" onClick={() => { G.mode = 'play'; }}>Keep sailing<Key k="Enter" pad="A" /></button></footer>
+    </div></div>
+  );
+}
+
+export function Sunk() {
+  return (
+    <div class="sunk"><div class="panel rivets sunk-card">
+      <h1>Towed home</h1><p>{G.sunkMsg}.</p><p class="muted">Your boat is patched up at the quay.</p>
+    </div></div>
+  );
+}
