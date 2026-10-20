@@ -4,6 +4,7 @@ import { homePort, poisNear } from '../world';
 import { SPECIES, SP, BOATS, UPGRADES, UPGRADE_KEYS, UP_CATS, PAINTS, SUPPLIES, BAIT_KINDS, PROJECTS, FLEET_PER_MIN, FLEET_HOLD_MIN } from '../econ';
 import { sfx } from '../audio';
 import { NET, netGive } from '../net';
+import { track, bucket } from '../analytics';
 import { CREW_RANGE, ONLINE, crewBonus } from '../online';
 import { BOAT_MODELS } from '../models';
 import type { BaitKind, BoatDef, BoatId, Contract, Fish, NeedStatus, Paint, Point, Port, PortItem, PortRow, Project, ProjectNeed, UpgradeKey } from '../types';
@@ -81,6 +82,7 @@ function sell(p: Port): void {
   for (const f of G.hold) if (!keep.has(f)) sat[f.sp] = (sat[f.sp] || 0) + 1;
   G.hold = G.hold.filter(f => keep.has(f));
   addCoins(tot); G.stats.sold++;
+  track('catch_sold', { fish: n, value_bucket: bucket(tot), port: p.name, sold_kept: all });
   sfx('coin'); setTimeout(() => sfx('coin', 0.7, 1.3), 90);
   toast(`Sold ${n} fish for $${tot}`, 'good'); saveGame();
 }
@@ -92,6 +94,7 @@ function repair(): void {
   const pay = Math.min(Math.ceil(miss * REPAIR_PER_HP), G.coins);   // short of coin: patch what you can afford
   addCoins(-pay);
   G.boat.hp = Math.min(m, G.boat.hp + Math.ceil(pay / REPAIR_PER_HP));
+  track('hull_repaired', { cost_bucket: bucket(pay), full: G.boat.hp >= m });
   sfx('select'); toast(G.boat.hp >= m ? 'Hull repaired' : 'Patched what you could afford'); saveGame();
 }
 
@@ -104,6 +107,7 @@ function buy(k: UpgradeKey): void {
   const before = hpMax();
   addCoins(-cost); G.up[k]++; G.stats.upgrades++;
   if (k === 'hull') G.boat.hp += hpMax() - before;   // new plating comes fully sound
+  track('upgrade_bought', { upgrade: k, level: G.up[k], cost });
   sfx('levelup'); toast(`${u.name(boatDef())} upgraded to level ${G.up[k] + 1}`, 'good'); celebrate(); markBought(k); saveGame();
 }
 export function buySupply(kind: BaitKind): void {
@@ -112,6 +116,7 @@ export function buySupply(kind: BaitKind): void {
   addCoins(-it.cost);
   G.bait[kind] = (G.bait[kind] || 0) + it.n;
   if (kind !== 'chum') G.baitSel = kind;
+  track('supply_bought', { supply: kind, cost: it.cost });
   sfx('select'); toast(`+${it.n} ${it.name.toLowerCase()}`); markBought(kind); saveGame();
 }
 function buyPaint(pt: Paint): void {
@@ -123,17 +128,20 @@ function buyPaint(pt: Paint): void {
   }
   if (G.coins < pt.cost) { tooPoor(pt.cost); sfx('deny'); return; }
   addCoins(-pt.cost); G.paints.push(pt.id); G.paint = pt.id;
+  track('paint_bought', { paint: pt.id, cost: pt.cost });
   sfx('levelup'); toast(`Fresh coat of ${pt.name.toLowerCase()}`, 'good'); celebrate(); markBought(pt.id); saveGame();
 }
 function buyBoat(bd: BoatDef): void {
   if (G.owned.includes(bd.id)) {
     if (G.boatId === bd.id) { sfx('deny'); return; }
     switchBoat(bd);
+    track('boat_switched', { boat: bd.id });
     toast(`Now sailing the ${bd.name}`); sfx('select'); markBought(bd.id); saveGame();
     return;
   }
   if (G.coins < bd.cost) { tooPoor(bd.cost); sfx('deny'); return; }
   addCoins(-bd.cost); G.owned.push(bd.id); switchBoat(bd);
+  track('boat_bought', { boat: bd.id, cost: bd.cost });
   sfx('fanfare'); toast(`You bought the ${bd.name}!`, 'good'); celebrate(); markBought(bd.id); saveGame();
 }
 /** Change boats, keeping the hull at least as healthy (as a fraction) and dropping fish that no longer fit. */
@@ -171,11 +179,13 @@ function deliver(c: Contract): void {
   const pay = contractPay(c);
   G.active = G.active.filter(a => a !== c);
   addCoins(pay); G.stats.contracts++;
+  track('contract_completed', { species: SPECIES[c.sp].id, fish: c.n, reward_bucket: bucket(pay) });
   sfx('fanfare'); toast(`Contract done  +$${pay}`, 'good'); celebrate(); saveGame();
 }
 function abandon(c: Contract): void {
   if (!confirmed('abandon:' + c.id, `Press Abandon again to give up the ${SPECIES[c.sp].name} contract`)) return;
   G.active = G.active.filter(a => a !== c);
+  track('contract_abandoned', { species: SPECIES[c.sp].id, fish: c.n, had: have(c.sp) });
   sfx('select'); toast(`You gave up the contract for ${c.toName}`); saveGame();
 }
 /** Fish the active contracts ask for, all together. */
@@ -185,6 +195,7 @@ function take(p: Port, c: Contract): void {
   if (G.active.length >= contractSlots()) { toast(`You can hold ${contractSlots()} contracts at once`, 'bad'); sfx('deny'); return; }
   if (!fits(c)) { toast(`Your hold can't carry ${c.n} more fish for contracts. Finish or abandon one first`, 'bad'); sfx('deny'); return; }
   G.active.push(c);
+  track('contract_taken', { species: SPECIES[c.sp].id, fish: c.n, reward_bucket: bucket(contractPay(c)), same_port: c.to === p.id });
   G.offers[p.id] = G.offers[p.id].filter(o => o !== c);
   G.offers[p.id].push(makeOffer(p));
   sfx('select'); toast(`Contract taken: ${c.n} ${SPECIES[c.sp].name} to ${c.toName}`); saveGame();
@@ -196,6 +207,7 @@ function ferry(from: Port, to: Port): void {
   const cost = ferryCost(from, to);
   if (G.coins < cost) { tooPoor(cost); sfx('deny'); return; }
   addCoins(-cost);
+  track('ferry_used', { cost_bucket: bucket(cost) });
   G.clock += Math.hypot(from.x - to.x, from.y - to.y) / 6;     // the trip still takes time
   placeAtPort(to);
   G.menu.port = to; G.lastPort = to.id; G.menu.tab = 0; G.menu.sel = 1;
@@ -231,6 +243,7 @@ function fundProject(pr: Project): void {
   const gone = new Set(st.pick);
   G.hold = G.hold.filter(f => !gone.has(f));
   addCoins(-pr.cost); G.projects.push(pr.id);
+  track('project_funded', { project: pr.id, done: G.projects.length });
   sfx('fanfare'); celebrate(); toast(`${pr.name}: done! ${pr.gives}`, 'good'); markBought(pr.id);
   if (pr.id === 'lights') {                       // every lighthouse near home goes on the chart
     const hp = homePort();
@@ -269,9 +282,11 @@ function toggleFleet(p: Port, bd: BoatDef): void {
     if (n) addCoins(n);
     delete G.fleet[bd.id];
     toast(`The ${bd.name} is back at the quay${n ? `, with $${n}` : ''}`);
+    track('fleet_changed', { boat: bd.id, action: 'recalled', earned_bucket: bucket(n) });
   } else {
     G.fleet[bd.id] = { port: p.id, portName: p.name, earned: 0 };
     toast(`The ${bd.name} sets out to fish from ${p.name}`, 'good');
+    track('fleet_changed', { boat: bd.id, action: 'sent', earned_bucket: '0' });
   }
   sfx('select'); saveGame();
 }
@@ -442,7 +457,7 @@ async function giveToFund(amt: number): Promise<void> {
   addCoins(-amt); sfx('coin');
   const r = await netGive(amt, G.cheated);
   giving = false;
-  if (r.ok) toast(`You gave ${cash(amt)} to the coastwide fund. Thank you!`, 'good');
+  if (r.ok) { toast(`You gave ${cash(amt)} to the coastwide fund. Thank you!`, 'good'); track('fund_given', { amount_bucket: bucket(amt) }); }
   else { addCoins(amt); toast(`${r.why}. Your coins are back`, 'bad'); }
   saveGame();
 }
@@ -529,6 +544,7 @@ export function dock(p: Port): void {
   const b = G.boat;
   b.vx = b.vy = b.w = 0;
   sfx('dock');
+  track('port_docked', { port: p.name, home: p.id === homePort().id });
   harbourGift(p);
   if (G.active.some(c => c.to === p.id && have(c.sp) >= c.n)) toast('You can deliver a contract here', 'good');
   saveGame();

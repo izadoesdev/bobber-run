@@ -7,6 +7,7 @@ import { talkNext } from './story';
 import { NET, sendEmote, EMOTES } from './net';
 import { TITLE_ITEMS, PAUSE_ITEMS } from './ui/index';
 import { sfx } from './audio';
+import { voyageStarted } from './telemetry';
 import type { Mode } from './types';
 
 type ListKey = 'titleSel' | 'pauseSel' | 'ctlSel' | 'emoteSel';
@@ -18,14 +19,14 @@ function nav(key: ListKey, n: number): void {
 }
 const go = (mode: Mode, sound: 'move' | 'select' = 'move') => { G.mode = mode; sfx(sound); };
 const openSettings = (back: Mode, settings: boolean) => { G.back = back; G.setSel = 1; G.ctlSel = 0; G.mode = settings ? 'settings' : 'controls'; };
-const startVoyage = () => { wipeSave(); newGame(); G.mode = 'play'; };
+const startVoyage = () => { wipeSave(); newGame(); G.mode = 'play'; voyageStarted('new'); };
 
 function title(): void {
   const items = TITLE_ITEMS(); nav('titleSel', items.length);
   if (hit('n', 'N')) { startVoyage(); sfx('select'); return; }
   if (!hit(' ', 'Enter')) return;
   const pick = items[Math.min(G.titleSel, items.length - 1)]; sfx('select');
-  if (pick === 'CONTINUE') { loadGame(); G.mode = 'play'; }
+  if (pick === 'CONTINUE') { loadGame(); G.mode = 'play'; voyageStarted('continue'); }
   else if (pick === 'ONLINE') { G.accountBack = 'title'; G.mode = 'account'; }
   else if (pick === 'NEW VOYAGE') startVoyage();
   else openSettings('title', pick === 'SETTINGS');

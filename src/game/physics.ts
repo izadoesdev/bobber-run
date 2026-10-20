@@ -3,6 +3,7 @@ import { clamp } from '../config';
 import { hBil, poisNear } from '../world';
 import { WX } from '../weather';
 import { sfx } from '../audio';
+import { track, bucket } from '../analytics';
 import { OAR } from '../models';
 import type { Poi, Solid } from '../types';
 import { G, inp } from './state';
@@ -178,6 +179,7 @@ export function sink(): void {
   G.mode = 'sunk'; G.sunkT = 0; sfx('sink');
   const fee = Math.min(G.coins, 5 + Math.min(40, Math.round(G.coins * 0.04)));   // a small tow fee; the catch is kept
   G.coins -= fee; G.fish = null;
+  track('boat_sunk', { boat: G.boatId, tow_cost_bucket: bucket(fee), storm: WX.state === 'storm' });
   G.sunkMsg = `The harbour tug tows you home. Your catch is safe${fee ? `, and the tow cost $${fee}` : ''}`;
   burst('debris', G.boat.x, G.boat.y, 30, 40, () => 2 + Math.random() * 2);
 }

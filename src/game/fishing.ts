@@ -7,9 +7,10 @@ import { favBait } from '../species';
 import { sfx } from '../audio';
 import { SET } from '../prefs';
 import { netCatch } from '../net';
+import { track, bucket } from '../analytics';
 import type { BaitChoice, CatchCard, FightStyle, Fish, FishLine, FishStock, School, Species, TreasureMap } from '../types';
 import { G, hit, held } from './state';
-import { boatDef, cap, crewLvl, env, harpoonLvl, isNight, lineMax } from './rules';
+import { boatDef, cap, crewLvl, env, harpoonLvl, isNight, lineMax, logged } from './rules';
 import { addCoins, burst, jitter, spawn, toast } from './feedback';
 import { saveGame } from './save';
 import { schoolActive, schoolShown, takeFish } from './schools';
@@ -168,6 +169,7 @@ function biteStage(f: FishLine, strike: boolean): void {
       hooked(f, sp);
     } else {
       toast('It got away. Another bite will come soon');
+      track('fish_lost', { species: sp.id, reason: 'missed_strike' });
       f.st = 'wait'; f.t = 0;
       f.wait = (1.5 + Math.random() * 2.5) * Math.max(0.4, 1 - 0.15 * ++G.dry);
     }
@@ -247,6 +249,7 @@ function reelStage(f: FishLine, dt: number, strike: boolean): void {
   if (f.tension >= lineMax()) {
     sfx('snap');
     toast(f.jump ? 'It threw the hook mid-jump!' : 'Line snapped!', 'bad');
+    track('fish_lost', { species: sp.id, reason: f.jump ? 'threw_hook' : 'snapped' });
     G.fish = null;
   } else if (f.prog >= 1 && sp.fight === 'boss' && stage < 2) {
     f.stage = stage + 1; f.prog = 0.12; f.tension = Math.min(f.tension, 0.4); G.shake = 4;
@@ -273,7 +276,7 @@ function rollCatch(spIdx: number, f: FishLine | null): Fish {
 }
 
 /** Put a fish in the hold and update stock, logbook, records and stats. Returns what the card shows. */
-function recordCatch(spIdx: number, stock: FishStock, f: FishLine | null): { fish: Fish; first: boolean; record: boolean; firstTrophy: boolean } {
+function recordCatch(spIdx: number, stock: FishStock, f: FishLine | null, method: 'rod' | 'net' | 'deckhand' | 'pots'): { fish: Fish; first: boolean; record: boolean; firstTrophy: boolean } {
   const sp = SPECIES[spIdx], fish = rollCatch(spIdx, f);
   G.hold.push(fish);
   takeFish(stock);
@@ -283,6 +286,9 @@ function recordCatch(spIdx: number, stock: FishStock, f: FishLine | null): { fis
   G.log[sp.id] = { n: (prev?.n || 0) + 1, best: Math.max(prev?.best || 0, fish.kg), trophy: !!(prev?.trophy || fish.trophy) };
   if (!prev || fish.kg > prev.best) netCatch(sp.id, fish.kg, G.cheated);          // a personal best goes on the world record board
   G.stats.caught++;
+  track('fish_caught', { species: sp.id, method, kg_bucket: bucket(fish.kg), trophy: !!fish.trophy, golden: !!fish.gold, legend: !!sp.legend,
+    first, perfect: !!f?.perfect, rod: G.up.rod });
+  if (first) track('species_logged', { species: sp.id, logged: logged() });
   if (fish.trophy) G.stats.trophies++;
   if (isNight()) G.stats.night++;
   if (f?.frenzy) G.stats.frenzy++;
@@ -310,7 +316,7 @@ function holdFullNote(): void {
 /** The fish on the line is landed: catch card, bonus, and maybe a deckhand's extra catch. */
 function landHooked(f: FishLine): void {
   const spIdx = f.s.sp, sp = SPECIES[spIdx];
-  const { fish, first, record } = recordCatch(spIdx, f.s, f);
+  const { fish, first, record } = recordCatch(spIdx, f.s, f, 'rod');
   if (fish.gold) f.s.gold = false;
   const bonus = bottleBonus(sp);
   const card: CatchCard = { fish, first, record, perfect: f.perfect, bonus, t: 0 };
@@ -328,7 +334,7 @@ export type Catcher = 'NETTED' | 'DECKHAND' | 'POTS';
 /** A catch made without the rod: the drift net, crab pots or the deckhand. */
 export function landNetted(spIdx: number, stock: FishStock, who: Catcher = 'NETTED'): void {
   const sp = SPECIES[spIdx];
-  const { fish, firstTrophy } = recordCatch(spIdx, stock, null);
+  const { fish, firstTrophy } = recordCatch(spIdx, stock, null, who === 'DECKHAND' ? 'deckhand' : who === 'POTS' ? 'pots' : 'net');
   if (firstTrophy) toast(`First ${sp.name} trophy!`, 'good');
   const by = who === 'DECKHAND' ? 'Your deckhand landed' : who === 'POTS' ? 'Your crab pots hauled' : 'Netted';
   toast(`${by} ${sp.name}, ${fmtKg(fish.kg)}`);

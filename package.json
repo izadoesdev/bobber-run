@@ -11,6 +11,7 @@
   "dependencies": {
     "@auth/core": "^0.41.1",
     "@convex-dev/auth": "^0.0.96",
+    "@databuddy/sdk": "^3.2.1",
     "alea": "^1.0.1",
     "convex": "^1.47.0",
     "preact": "^11.0.1",

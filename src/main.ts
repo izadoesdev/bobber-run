@@ -20,13 +20,17 @@ import { updateLife, LIFE } from './life';
 import { WX, setWeather } from './weather';
 import { initInput, pollPad } from './input';
 import { menuInput } from './menus';
+import { initAnalytics } from './analytics';
+import { initTelemetry, watchGame } from './telemetry';
 import { baseScale, targetScale, easeScale, shipZoom } from './camera';
 
 const screen = document.getElementById('screen') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLDivElement;
+initAnalytics();
 initRender(screen); initUI(uiRoot); applySettings();
 initNet(G, SPECIES.map(s => s.id), toast);
 initInput();
+initTelemetry();
 
 // Fill the window: a whole-number screen scale S0 shows the ship's default view (about 320x200 world units for
 // the rowboat, more for bigger ships), and the canvas grows to the window's shape so it just covers it (the stage
@@ -80,6 +84,7 @@ export function tick(dt: number): void {
   update(dt);
   updateStory();
   netTick(dt);
+  watchGame(dt);
   updateLife(dt);
   const bs = boatRenderState(alpha);
   if (G.mode === 'play' || G.mode === 'sunk' || G.mode === 'title') updateCamera(dt, bs.x, bs.y);   // menus freeze the view behind them

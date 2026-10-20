@@ -41,6 +41,10 @@ Convex Auth also needs `JWT_PRIVATE_KEY`, `JWKS` and `SITE_URL` set on the deplo
 
 Keys can be rebound under Controls. Gamepads work too. Settings > Pixel style switches between Chunky, Crisp and Smooth.
 
+### Analytics
+
+Production builds send page views, web vitals, errors and the game events in `src/analytics.ts` to [Databuddy](https://www.databuddy.cc). Development builds send nothing unless `VITE_DATABUDDY_DEV=1`; set `VITE_DATABUDDY_CLIENT_ID` to report to your own site. Nothing personal is sent (see `public/privacy.html`).
+
 ## Code
 
 TypeScript throughout (`bun run typecheck` checks the client and `convex/`).
@@ -51,6 +55,7 @@ TypeScript throughout (`bun run typecheck` checks the client and `convex/`).
 - `src/ui/`: Preact TSX interface, icons, sea chart
 - `src/audio.ts`: synthesized sound effects, ambience and music
 - `src/net.ts`, `src/online.ts`: optional online layer; `convex/`: backend functions and schema
+- `src/analytics.ts`: Databuddy setup and the typed list of game events; `src/telemetry.ts` reports screens, quests, settings and progress from game state
 
 ## Credits
 

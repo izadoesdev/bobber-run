@@ -8,6 +8,7 @@ import { ConvexAuthProvider, useAuthActions, useConvexAuth } from '@convex-dev/a
 import { api } from '../convex/_generated/api';
 import { ONLINE, type Sailor } from './online';
 import type { ToastKind } from './types';
+import { track } from './analytics';
 
 const URL: string | undefined = import.meta.env.VITE_CONVEX_URL;
 export const SAVE_KEY = 'bobber-run-save-v3';
@@ -125,18 +126,25 @@ export async function setName(name: string, auto = false): Promise<Result> {
   if (!NET.authed) return { ok: false, why: 'You are offline' };
   try { return await call(api.profiles.setName, { name, auto }); } catch { return { ok: false, why: 'Could not reach the server' }; } finally { naming = false; }
 }
-export function sendEmote(i: number) { if (NET.authed) call(api.sea.emote, { i }).catch(() => { }); }
+export function sendEmote(i: number) { if (NET.authed) { call(api.sea.emote, { i }).catch(() => { }); track('greeting_sent', { greeting: i }); } }
 
 // ---------- accounts: a guest can make an account (keeping this save), sign into one (loading its save), or sign out ----------
 const waitFor = async (test: () => boolean, ms = 10_000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (test()) return true; await new Promise(r => setTimeout(r, 150)); } return false; };
-/** Human-readable reasons for Convex Auth errors (the raw messages are codes like InvalidSecret). */
-function accountError(m: string, flow: 'signUp' | 'signIn'): string {
-  if (/TooManyFailedAttempts|rate/i.test(m)) return 'Too many tries. Wait a few minutes, then try again';
-  if (/InvalidAccountId/i.test(m)) return flow === 'signIn' ? 'No account uses that email. Make one instead' : 'Could not make the account. Try again';
-  if (/InvalidSecret|Invalid password/i.test(m)) return 'Wrong password for that email';
-  if (/already exists/i.test(m)) return 'That email already has an account. Sign in instead';
-  if (/password/i.test(m)) return 'Use a password of at least 8 characters';
-  return 'Could not reach the server. Check your connection and try again';
+/** Convex Auth's error codes (raw messages are codes like InvalidSecret), the reason analytics records, and what the player reads. */
+const FAILS = [
+  [/TooManyFailedAttempts|rate/i, 'rate_limited', 'Too many tries. Wait a few minutes, then try again'],
+  [/InvalidAccountId/i, 'no_account', 'No account uses that email. Make one instead'],
+  [/InvalidSecret|Invalid password/i, 'wrong_password', 'Wrong password for that email'],
+  [/already exists/i, 'exists', 'That email already has an account. Sign in instead'],
+  [/password/i, 'weak_password', 'Use a password of at least 8 characters'],
+] as const;
+const NETWORK = [/$/, 'network', 'Could not reach the server. Check your connection and try again'] as const;
+/** `m` is the error text, or null when the server never confirmed the sign-in. */
+function failed(flow: 'signUp' | 'signIn', m: string | null): Result {
+  if (m === null) { track('sign_in_failed', { flow, reason: 'timeout' }); return { ok: false, why: 'The server is taking a long time. Check your connection, then try again' }; }
+  const [, reason, why] = FAILS.find(([re]) => re.test(m)) ?? NETWORK;
+  track('sign_in_failed', { flow, reason });
+  return { ok: false, why: reason === 'no_account' && flow === 'signUp' ? 'Could not make the account. Try again' : why };
 }
 export async function account(flow: 'signUp' | 'signIn', rawEmail: string, password: string): Promise<Result> {
   if (!actions || !client) return { ok: false, why: 'You are offline' };
@@ -156,18 +164,20 @@ export async function account(flow: 'signUp' | 'signIn', rawEmail: string, passw
       await actions.signIn('password', { email: typed, password, flow });
     }
     // wait until the server sees the new account (slow connections can take a while)
-    if (!await waitFor(() => !!NET.profile && NET.profile.userId !== oldUser && !NET.profile.guest, 20_000)) return { ok: false, why: 'The server is taking a long time. Check your connection, then try again' };
+    if (!await waitFor(() => !!NET.profile && NET.profile.userId !== oldUser && !NET.profile.guest, 20_000)) return failed(flow, null);
     if (flow === 'signUp') {
       if (keep) await putSave(keep.data, Date.now());
       if (oldName && oldName !== 'Sailor') await setName(oldName);
+      track('account_signed_up', { kept_save: !!keep });
       return { ok: true, msg: `Account made and signed in as ${email}. Your progress is saved to it` };
     }
     const cloud = await client.query(api.saves.load, {});
+    track('account_signed_in', { loaded_cloud_save: !!cloud });
     if (cloud) { localStorage.setItem(SAVE_KEY, cloud.data); NET.skipUnloadSave = true; return { ok: true, reload: true, msg: 'Signed in. Loading your save' }; }   // the reload must not save over it
     if (keep) await putSave(keep.data, Date.now());
     return { ok: true, msg: `Signed in as ${email}` };
   } catch (e) {
-    return { ok: false, why: accountError(errText(e), flow) };
+    return failed(flow, errText(e));
   } finally { NET.busy = false; switching = false; }
 }
 /** Erase this account and its cloud save, name and gifts on the server (world records stay), then sign out. This device keeps its own save. */
@@ -178,11 +188,12 @@ export async function deleteAccount(): Promise<Result> {
     await call(api.cleanup.deleteMe, {});
     try { await actions.signOut(); } catch { /* the session was erased with the account */ }
     NET.profile = null;
+    track('account_deleted', {});
     return { ok: true, msg: 'Your account is deleted. You are sailing as a guest on this device' };
   } catch { return { ok: false, why: 'Could not reach the server. Your account is unchanged' }; }
   finally { NET.busy = false; switching = false; }
 }
-export async function signOut() { if (!actions) return; NET.busy = true; try { await actions.signOut(); NET.profile = null; } finally { NET.busy = false; } }
+export async function signOut() { if (!actions) return; NET.busy = true; try { await actions.signOut(); NET.profile = null; track('signed_out', {}); } finally { NET.busy = false; } }
 /** Test hook: ask the server who we are right now (no tokens exposed). */
 export const whoami = () => client?.query(api.profiles.me, {}) ?? null;
 

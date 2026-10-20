@@ -17,6 +17,7 @@ import { hasOars, oarGeom, BOAT_MODELS, NP, SHIPPED, PLAIN, type Fit } from '../
 import { program, texture, target, msTarget, free, type Program, type Target, type MsTarget } from './glutil';
 import * as SH from './shaders';
 import * as MS from './meshes';
+import { trackFailure } from '../analytics';
 import { minScale } from '../camera';
 import type { BoatId, FishLine, Point, Poi, School, Crate } from '../types';
 
@@ -51,11 +52,11 @@ export function initRender(canvas: HTMLCanvasElement): void {
   // The GPU can drop the context (driver reset, too many tabs). Pause drawing, and rebuild everything when it comes
   // back; if it doesn't, offer a reload.
   canvas.addEventListener('webglcontextlost', e => {
-    e.preventDefault(); lost = true;
+    e.preventDefault(); lost = true; trackFailure('webgl_context_lost');
     setTimeout(() => { if (lost) offerReload(); }, 4000);
   });
   canvas.addEventListener('webglcontextrestored', () => {
-    try { setupGL(); lost = false; } catch (err) { console.error(err); offerReload(); }
+    try { setupGL(); lost = false; } catch (err) { console.error(err); trackFailure('webgl_restore_failed'); offerReload(); }
   });
 }
 let lost = false;
