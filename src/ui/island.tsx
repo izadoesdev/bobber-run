@@ -36,7 +36,7 @@ export function IslandSigns() {
 }
 
 // ---------- the island card ----------
-interface Form { key: string; name: string; url: string; logo: Logo | null; msg: { s: string; bad: boolean } | null; busy: boolean; confirm: boolean }
+interface Form { key: string; name: string; url: string; logo: Logo | null; msg: { s: string; bad: boolean } | null; busy: boolean; confirm: boolean; adult: boolean }
 let form: Form | null = null;
 export function openIsland(key: string, back: 'play' | 'map' | 'port' = 'play'): void {
   G.islandKey = key; G.islandBack = back; G.mode = 'island'; sfx('select');
@@ -52,7 +52,7 @@ export function IslandDialog() {
   const key = G.islandKey;
   if (!key) return null;
   const row = ISLANDS.get(key);
-  if (!form || form.key !== key) form = { key, name: row?.name ?? '', url: row?.url ?? '', logo: null, msg: null, busy: false, confirm: false };
+  if (!form || form.key !== key) form = { key, name: row?.name ?? '', url: row?.url ?? '', logo: null, msg: null, busy: false, confirm: false, adult: false };
   const f = form, [i, j] = key.split(',').map(Number), price = islandPrice(i, j), home = i === 0 && j === 0, admin = !!NET.profile?.admin;
   const say = (s: string, bad = false) => { f.msg = { s, bad }; };
   const run = async (job: () => Promise<{ ok: boolean; why?: string }>, done: string) => {
@@ -113,6 +113,8 @@ export function IslandDialog() {
         </header>
         {(!row || row.mine) && <IslandForm f={f} onPick={pick} />}
         {!row && !admin && <p class="muted small">Real money, paid securely with Stripe. Islands cost less the farther they are from Alderhaven, and you can own up to 3. Your name, flag and link show to every sailor.</p>}
+        {!row && !admin && <label class="row adult"><input data-track="island-adult" type="checkbox" checked={f.adult} onChange={e => { f.adult = e.currentTarget.checked; }} />
+          <span class="small">I'm 18 or older, or a parent or guardian said yes. <a href="/privacy.html#purchases" target="_blank" rel="noopener">About purchases</a></span></label>}
         {!row && NET.profile?.guest && <p class="why left">Sign in to buy islands, so yours stay yours on any device.</p>}
         {f.msg && <p class={f.msg.bad ? 'why left' : 'good'}>{f.msg.s}</p>}
         <footer class="foot">
@@ -121,7 +123,7 @@ export function IslandDialog() {
           {row && !row.mine && <button data-track="island-report" class="btn small-btn" disabled={f.busy} onClick={() => run(() => reportIsland(key), 'Thanks. A moderator will take a look')}>Report</button>}
           <span class="grow" />
           <button data-track="island-close" class="btn" onClick={closeIsland}>Close</button>
-          {!row && <button data-track="island-buy" class="btn primary" disabled={f.busy || !named || !!NET.profile?.guest} onClick={buy}>{f.busy ? 'Working…' : admin ? 'Claim' : `Buy · ${money(price)}`}</button>}
+          {!row && <button data-track="island-buy" class="btn primary" disabled={f.busy || !named || !!NET.profile?.guest || (!admin && !f.adult)} onClick={buy}>{f.busy ? 'Working…' : admin ? 'Claim' : `Buy · ${money(price)}`}</button>}
           {row?.mine && <button data-track="island-save" class="btn primary" disabled={f.busy || !named} onClick={() => save(row)}>Save</button>}
         </footer>
       </div>

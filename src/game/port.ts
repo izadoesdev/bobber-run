@@ -655,6 +655,8 @@ export function dock(p: Port): void {
   track('port_docked', { port: p.name, home: p.id === homePort().id });
   harbourGift(p);
   if (G.active.some(c => c.to === p.id && have(c.sp) >= c.n)) toast('You can deliver a contract here', 'good');
+  // the very first time you dock with fish, the harbour buys them on the spot: one less thing to learn
+  if (!G.stats.sold && saleValue(p).n > 0 && !G.hold.some(f => SPECIES[f.sp].legend)) { sell(p); celebrate(); }
   saveGame();
 }
 export function leavePort(): void {

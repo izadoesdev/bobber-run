@@ -432,3 +432,4 @@ html.touch #ui .screen:has(.chartwrap) .foot { padding-right: 130px; }
 .chip.zone-on { position: absolute; left: 0.6em; top: 0.6em; z-index: 1; gap: 0.5em; color: #f6eedc; pointer-events: auto; max-width: calc(100% - 1.2em); white-space: normal; }
 .chip.zone-on .x { font: inherit; font-size: 1.2em; line-height: 1; color: var(--muted); background: none; border: 0; padding: 0 0.2em; cursor: pointer; }
 .item.helper .btn.on { border-color: var(--good); color: var(--good); }
+.dialog.island .adult { gap: 0.5em; align-items: flex-start; margin: 0.4em 0; } .dialog.island .adult input { margin-top: 0.2em; }

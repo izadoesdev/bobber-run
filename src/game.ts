@@ -14,6 +14,6 @@ export { schoolActive } from './game/schools';
 export {
   priceAt, saleValue, buySupply, have, ferryCost, needStatus, nextProject, fleetTotal, portTabs, portItems, rest, leavePort,
   selectable, setTab, portMenuInput, type PortTab,
-  buyFishChart, fishChartPrice, chartable, dockGrade, dockHand,
+  buyFishChart, fishChartPrice, chartable, dockGrade, dockHand, dock,
 } from './game/port';
 export { petCat, update, updateCamera, shipInput, smallFry, releaseSmallFry, toggleHelper, SMALL_FRY } from './game/sailing';
