@@ -7,6 +7,7 @@ import { G, cap, hpMax, boatDef, isNight, dayNum, dayFrac, windAngle, sailEffici
 import { SPECIES, fmtKg } from '../econ';
 import { WX } from '../weather';
 import { SET } from '../settings';
+import { sfx } from '../audio';
 import { currentQuest, questProgress } from '../story';
 import { guide, guideOn, stepLine, tip, whereText, type Step } from '../game/guide';
 import type { CatchCard as CatchCardState, FishLine, Toast } from '../types';
@@ -65,21 +66,20 @@ function Minimap({ step }: { step: Step }) {
     const b = G.boat;
     drawChart(ctx, w, h, b.x, b.y, 300 / w, { dpr, budget: 4, target, round: true, waypoint: G.waypoint });
     if (!un) return;
-    // an arrow on the rim pointing at the nearest uncharted landmark
-    const a = Math.atan2(un.p.y - b.y, un.p.x - b.x), r = w / 2 - 5 * dpr;
-    ctx.save();
-    ctx.translate(w / 2 + Math.cos(a) * r, h / 2 + Math.sin(a) * r); ctx.rotate(a);
-    Object.assign(ctx, { fillStyle: '#e07a62', strokeStyle: '#1b2a33', lineWidth: dpr });
-    ctx.beginPath(); ctx.moveTo(5 * dpr, 0); ctx.lineTo(-4 * dpr, -4 * dpr); ctx.lineTo(-4 * dpr, 4 * dpr); ctx.closePath();
-    ctx.fill(); ctx.stroke(); ctx.restore();
+    // the nearest uncharted landmark: a grey square on the rim, like uncharted marks on the chart (arrows mean where you're headed)
+    const a = Math.atan2(un.p.y - b.y, un.p.x - b.x), r = w / 2 - 5 * dpr, s = 3 * dpr;
+    const x = w / 2 + Math.cos(a) * r, y = h / 2 + Math.sin(a) * r;
+    ctx.fillStyle = '#1b2a33'; ctx.fillRect(x - s - dpr, y - s - dpr, 2 * (s + dpr), 2 * (s + dpr));
+    ctx.fillStyle = '#b8c0c6'; ctx.fillRect(x - s, y - s, 2 * s, 2 * s);
   };
+  const open = () => { if (G.mode !== 'play') return; G.map.x = G.map.y = 0; G.mode = 'map'; sfx('move'); };
   const night = isNight(), c = dayFrac();
   const sail = boatDef().prop === 'SAIL', eff = sail ? sailEfficiency() : 0;
   const wxIcon = WX.state === 'clear' && night ? 'moon' : WX_ICON[WX.state];
   const part = night ? ', night' : c > 0.55 ? ', dusk' : '';   // the icon already shows it; the words go in the tooltip so the label never grows into the wind dial
   return (
     <div class="mini">
-      <div class="ring"><Canvas draw={draw} /><span class="n">N</span>
+      <div class="ring"><Canvas draw={draw} onClick={open} title="Open the sea chart (M)" data-track="minimap-open" /><span class="n">N</span>
         <div class={'wind' + (sail ? '' : ' quiet')} title={`${windWord()}${sail ? `, sails at ${Math.round(eff * 100)}%` : ''}`}>
           <WindVane sail={sail} eff={eff} />
           {sail && <span class={'pct ' + (eff > 0.9 ? 'good' : eff > 0.6 ? '' : 'bad')}>{Math.round(eff * 100)}%</span>}
@@ -195,7 +195,7 @@ function WaypointChip() {
   const sailing = courseTarget(), there = !!sailing && Math.hypot(sailing.x - w.x, sailing.y - w.y) < 30;
   return (
     <div class="chip waypoint small">
-      <Icon k="map" size="s" /><span class="gold">{waypointMetres()} m</span><span class="muted">{dirTo(b.x, b.y, w.x, w.y)}</span>
+      <i class="wp-glyph" /><span class="gold">{waypointMetres()} m</span><span class="muted">{dirTo(b.x, b.y, w.x, w.y)}</span>
       {there ? <span class="muted">sailing</span> : <button data-track="waypoint-sail" class="go" onClick={sailToWaypoint}>Sail</button>}
       <button data-track="waypoint-clear" class="x" aria-label="Clear waypoint" onClick={clearWaypoint}>×</button>
     </div>

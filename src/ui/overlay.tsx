@@ -51,7 +51,7 @@ function Welcome() {
 
 // the objective on screen: a small bobbing pennant over it when it's in clear view, otherwise an arrow circling
 // the boat that points to it, with the distance. Both keep clear of the HUD panels.
-const TARGET_COL = '#f0cf6a';
+const TARGET_COL = '#f0cf6a', WAYPOINT_COL = '#e6efec';   // gold for the guide's next step, white for your waypoint, as on the charts
 let uiBox: DOMRect | null = null, panels: DOMRect[] = [], em = 16, measuredAt = -1e9;
 function measure(): DOMRect | null {
   const now = performance.now();
@@ -74,7 +74,7 @@ function Marker({ step, force }: { step: Step; force?: boolean }) {
     const [x, y] = viewPct(wx, wy);
     return [box.left + x / 100 * box.width, box.top + y / 100 * box.height];
   };
-  const [tx, ty] = toPx(p.x, p.y);
+  const [tx, ty] = toPx(p.x, p.y), col = force ? WAYPOINT_COL : TARGET_COL;
   const pct = (x: number, y: number) => ({ left: (x - box.left) / box.width * 100 + '%', top: (y - box.top) / box.height * 100 + '%' });
   if (tx > box.left + 2 * em && tx < box.right - 2 * em && ty > box.top + 3 * em && ty < box.bottom - 2 * em && !covered(tx, ty - 1.6 * em, em)) {
     if (force) return null;                         // a waypoint in view has its buoy
@@ -82,7 +82,7 @@ function Marker({ step, force }: { step: Step; force?: boolean }) {
     return (
       <div key="guide-on" aria-hidden="true" style={{ position: 'absolute', ...pct(tx, ty), transform: `translate(-50%, ${-130 - bob * 40}%)`, pointerEvents: 'none', filter: 'drop-shadow(0 0.12em 0 #000a)' }}>
         <svg viewBox="0 0 16 16" width="1.5em" height="1.5em" style={{ display: 'block' }}>
-          <path d="M2.5 3 L13.5 3 L8 12.5 Z" fill={TARGET_COL} stroke="#1b2a33" stroke-width="1.5" stroke-linejoin="round" />
+          <path d="M2.5 3 L13.5 3 L8 12.5 Z" fill={col} stroke="#1b2a33" stroke-width="1.5" stroke-linejoin="round" />
         </svg>
       </div>
     );
@@ -94,7 +94,7 @@ function Marker({ step, force }: { step: Step; force?: boolean }) {
   return (
     <div key="guide-off" aria-hidden="true" style={{ position: 'absolute', ...pct(bx + Math.cos(a) * R, by + Math.sin(a) * R), transform: 'translate(-50%, -50%)', pointerEvents: 'none' }}>
       <svg viewBox="0 0 16 16" width="1.6em" height="1.6em" style={{ display: 'block', transform: `rotate(${a}rad)`, filter: 'drop-shadow(0 0.12em 0 #000a)' }}>
-        <path d="M14.5 8 L2.5 2.5 L5.5 8 L2.5 13.5 Z" fill={TARGET_COL} stroke="#1b2a33" stroke-width="1.4" stroke-linejoin="round" />
+        <path d="M14.5 8 L2.5 2.5 L5.5 8 L2.5 13.5 Z" fill={col} stroke="#1b2a33" stroke-width="1.4" stroke-linejoin="round" />
       </svg>
     </div>
   );

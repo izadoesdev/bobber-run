@@ -1,69 +1,114 @@
 // Full-screen documents and panels: the sea chart, the logbook, the ship and hold, and the story journal.
-import { clamp, money } from '../config';
+import { clamp, dirTo, money } from '../config';
 import { G, logged, cap, boatDef, equipment, fishValue, speedMul, deckLvl, deckBoat, ownedLvl, smallFry, releaseSmallFry, toggleHelper, SMALL_FRY, buyFishChart, fishChartPrice, chartable } from '../game';
 import { track } from '../analytics';
 import { isRunningNow } from '../tides';
 import { SPECIES, UPGRADES, PAINTS, SUPPLIES, fmtKg } from '../econ';
-import { homePort, claimableNear, heightAt } from '../world';
+import { homePort, heightAt } from '../world';
 import { livesAt } from '../species';
-import { setWaypoint, clearWaypoint } from '../waypoint';
+import { setWaypoint, clearWaypoint, sailToWaypoint, waypointMetres } from '../waypoint';
 import { openIsland } from './island';
 import { NET } from '../net';
 import { QUESTS, CHAPTERS, PEOPLE, currentQuest, questProgress, story } from '../story';
 import { guide, guideOn, stepLine } from '../game/guide';
 import type { UpgradeKey } from '../types';
-import { drawChart, compassRose, zoneKnown } from './chart';
+import { drawChart, compassRose, zoneKnown, chartAt, drawn, type Legend } from './chart';
 import { Canvas, Cell, Fish, Hint, HullStat, Icon, Key, Pips, Stat, boatPreview, type DrawFn } from './parts';
 import type { ComponentChildren } from 'preact';
 
 // ---------- chart ----------
+// Drag (or the arrow keys) to look around, Z or the buttons to zoom. Hovering says what a spot is and what a click
+// does there: islands open their card, the waypoint clears, anywhere else gets the waypoint (snapped onto a port's
+// dock or a wreck). On touch the tip shows for a moment after each tap.
 let drag: [number, number] | null = null, moved = 0;
-// a click (not a drag) on the chart: an island opens its card; anywhere else sets the waypoint
-function chartClick(e: PointerEvent, base: number): void {
-  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-  const x = G.boat.x + G.map.x + (e.clientX - r.left - r.width / 2) * base, y = G.boat.y + G.map.y + (e.clientY - r.top - r.height / 2) * base;
-  const isle = claimableNear(x, y, 10).find(c => Math.hypot(c.x - x, c.y - y) < c.R * 0.8);
-  if (isle) openIsland(isle.key, 'map'); else setWaypoint(x, y);
+let tip: { x: number; y: number; cx: number; cy: number; w: number; h: number; until: number } | null = null;   // pointer in wrap and canvas CSS px
+const LEGEND: [Legend, ComponentChildren][] = [
+  ['you', <><i class="lg you" />You</>], ['target', <><i class="lg target" />Next step</>], ['waypoint', <><i class="wp-glyph" />Your waypoint</>],
+  ['port', <><i class="lg port" />Port</>], ['light', <><i class="lg light" />Lighthouse</>], ['wreck', <><i class="lg wreck" />Wreck</>],
+  ['treasure', <><i class="lg treasure" />Treasure</>], ['frenzy', <><Icon k="star" size="s" />Feeding frenzy</>], ['school', <><i class="lg school" />Fish</>],
+  ['sailor', <><i class="lg sailor" />Sailors</>], ['island', <><i class="lg island" />Island for sale</>], ['uncharted', <><i class="lg unknown" />Uncharted</>],
+];
+function pointAt(e: PointerEvent): void {
+  const until = e.pointerType === 'mouse' ? Infinity : performance.now() + 2500, c = (e.currentTarget as HTMLElement).getBoundingClientRect(), w = (e.currentTarget as HTMLElement).parentElement!.getBoundingClientRect();
+  tip = { x: e.clientX - w.left, y: e.clientY - w.top, cx: e.clientX - c.left, cy: e.clientY - c.top, w: c.width, h: c.height, until };
 }
 export function Chart() {
   const m = G.map, base = m.zoom === 1 ? 2.2 : 4.6;           // world units per CSS pixel
-  const step = guide(), target = guideOn() ? step.at : null;
+  const step = guide(), on = guideOn(), target = on ? step.at ?? null : null;
   const draw: DrawFn = (ctx, w, h, dpr) => {
     drawChart(ctx, w, h, G.boat.x + m.x, G.boat.y + m.y, base / dpr, { dpr, labels: true, grid: true, budget: 10, sextant: G.up.sextant, target, waypoint: G.waypoint, islands: true, zone: m.zoneSp });
-    compassRose(ctx, w - 60 * dpr, h - 64 * dpr, 40 * dpr);
+    compassRose(ctx, w - 34 * dpr, 42 * dpr, 20 * dpr);
   };
-  const hp = homePort();
+  if (tip && performance.now() > tip.until) tip = null;
+  // what's under the pointer, worked out again on a click since a tap has no hover before it
+  const pick = () => {
+    if (!tip) return null;
+    const at = { x: G.boat.x + m.x + (tip.cx - tip.w / 2) * base, y: G.boat.y + m.y + (tip.cy - tip.h / 2) * base };
+    return { at, spot: chartAt(at.x, at.y, 12 * base, target && { at: target, text: stepLine(step) }) };
+  };
+  const spot = pick()?.spot;
+  const click = (): void => {
+    const { at, spot } = pick() ?? {};
+    if (!spot || !at) return;
+    if (spot.island) openIsland(spot.island, 'map');
+    else if (spot.clear) clearWaypoint();
+    else if (!spot.none) { const to = spot.snap && heightAt(spot.snap.x, spot.snap.y) < -0.05 ? spot.snap : at; setWaypoint(to.x, to.y); }
+  };
+  const hp = homePort(), flip = tip && tip.x > tip.w * 0.62;
   return (
     <div class="screen paper doc">
       <header class="head">
         <h1>Sea chart</h1>
-        <div class="legend">
-          <span><i class="lg port" />Port</span><span><i class="lg light" />Lighthouse</span><span><i class="lg wreck" />Wreck</span>
-          <span><i class="lg treasure" />Treasure</span><span><Icon k="star" size="s" />Feeding frenzy</span><span><i class="lg unknown" />Uncharted</span>
-          {target && <span><i class="lg" style={{ background: 'none', border: '0.16em solid #f0cf6a', borderRadius: '50%', boxShadow: '0 0 0 0.08em #1b2a33' }} />Next step</span>}
-        </div>
+        <div class="legend">{LEGEND.filter(([k]) => drawn.has(k)).map(([k, el]) => <span key={k}>{el}</span>)}</div>
       </header>
       <div class="chartwrap">
-        {m.zoneSp != null && <ZoneChip sp={m.zoneSp} />}
+        <div class="chart-chips">
+          {G.waypoint && <ChartWaypoint />}
+          {m.zoneSp != null && <ZoneChip sp={m.zoneSp} />}
+        </div>
         <Canvas
           draw={draw}
-          onPointerDown={e => { if (e.button !== 0) return; drag = [e.clientX, e.clientY]; moved = 0; e.currentTarget.setPointerCapture(e.pointerId); }}
+          style={{ cursor: drag && moved > 6 ? 'grabbing' : spot?.island || spot?.clear ? 'pointer' : 'crosshair' }}
+          onPointerDown={e => { if (e.button !== 0) return; drag = [e.clientX, e.clientY]; moved = 0; e.currentTarget.setPointerCapture(e.pointerId); pointAt(e); }}
           onPointerMove={e => {
+            if (e.pointerType === 'mouse' || drag) pointAt(e);
             if (!drag) return;
             m.x -= (e.clientX - drag[0]) * base;
             m.y -= (e.clientY - drag[1]) * base;
             moved += Math.hypot(e.clientX - drag[0], e.clientY - drag[1]);
             drag = [e.clientX, e.clientY];
           }}
-          onPointerUp={e => { if (drag && moved < 6) chartClick(e, base); drag = null; }}
+          onPointerUp={() => { if (drag && moved < 6) click(); drag = null; }}
+          onPointerLeave={e => { if (e.pointerType === 'mouse') tip = null; }}
           onContextMenu={e => { e.preventDefault(); clearWaypoint(); }}
           onWheel={e => { m.zoom = e.deltaY > 0 ? 2 : 1; }}
         />
+        {spot && tip && !(drag && moved > 6) && (
+          <div class="chart-tip" style={{ left: tip.x + (flip ? -14 : 14) + 'px', top: tip.y + 14 + 'px', transform: flip ? 'translateX(-100%)' : undefined }}>
+            <b>{spot.title}</b>{spot.sub && <span class="muted">{spot.sub}</span>}{spot.act && <span class="gold">{spot.act}</span>}
+          </div>
+        )}
+        <div class="chart-ctl">
+          {(m.x || m.y) ? <button data-track="chart-recentre" class="btn small-btn" onClick={() => { m.x = m.y = 0; }}>Recentre</button> : null}
+          <button data-track="chart-zoom-in" class="btn small-btn" aria-label="Zoom in" disabled={m.zoom === 1} onClick={() => { m.zoom = 1; }}>+</button>
+          <button data-track="chart-zoom-out" class="btn small-btn" aria-label="Zoom out" disabled={m.zoom === 2} onClick={() => { m.zoom = 2; }}>−</button>
+        </div>
       </div>
       <footer class="foot">
-        <span>{guideOn() && <><span class="gold">Next:</span> {stepLine(step)}. </>}{hp.name} is {Math.round(Math.hypot(G.boat.x - hp.x, G.boat.y - hp.y) / 10)} m away. Your position: {Math.round(G.boat.x / 10)}, {Math.round(G.boat.y / 10)}.</span>
-        <span class="hints-inline"><span class="hint muted">Click the sea for a waypoint, an island to buy or view it</span>{G.waypoint && <button data-track="chart-waypoint-clear" class="btn small-btn" onClick={clearWaypoint}>Clear waypoint</button>}<Hint k="ArrowUp" pad="Stick">Move, or drag</Hint><Hint k="z">Zoom</Hint><Hint k="m" pad="Y">Close</Hint></span>
+        <span>{on ? <><span class="gold">Next:</span> {stepLine(step)}</> : `${hp.name} is ${Math.round(Math.hypot(G.boat.x - hp.x, G.boat.y - hp.y) / 10)} m away`}</span>
+        <span class="hints-inline"><span class="hint muted">Drag to look around</span><Hint k="z">Zoom</Hint><Hint k="c">Recentre</Hint><Hint k="m" pad="Y">Close</Hint></span>
       </footer>
+    </div>
+  );
+}
+/** The waypoint on the chart: how far and which way, Sail there (the autopilot takes the route), and clear. */
+function ChartWaypoint() {
+  const w = G.waypoint!;
+  return (
+    <div class="chip waypoint">
+      <i class="wp-glyph" /><span>Waypoint</span><span class="gold">{waypointMetres()} m</span><span class="muted">{dirTo(G.boat.x, G.boat.y, w.x, w.y)}</span>
+      <button data-track="chart-waypoint-sail" class="go" onClick={() => { sailToWaypoint(); G.mode = 'play'; }}>Sail there</button>
+      <button data-track="chart-waypoint-clear" class="x" aria-label="Clear waypoint" onClick={clearWaypoint}>×</button>
     </div>
   );
 }

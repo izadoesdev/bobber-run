@@ -142,6 +142,7 @@ function screenInput(dt: number, refit: () => void): void {
     case 'map':
       if (hit('m', 'M', 'Escape')) go('play');
       if (hit('z', 'Z')) { G.map.zoom = G.map.zoom === 1 ? 2 : 1; sfx('move'); }
+      if (hit('c', 'C')) { G.map.x = G.map.y = 0; sfx('move'); }
       return;
     case 'log': return logbook();
     case 'ship': shipInput(); if (hit('Tab', 'i', 'I', 'Escape')) go('play'); return;

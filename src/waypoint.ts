@@ -11,7 +11,7 @@ import type { Point } from './types';
 const ARRIVE = 25;
 let route: Point[] = [], plannedFor: Point | null = null, retryT = -99;
 
-export function setWaypoint(x: number, y: number): void { G.waypoint = { x, y }; plannedFor = null; retryT = -99; sfx('select'); }
+export function setWaypoint(x: number, y: number): void { G.waypoint = { x, y }; route = []; plannedFor = null; retryT = -99; sfx('select'); }
 export function clearWaypoint(): void { G.waypoint = null; route = []; plannedFor = null; }
 /** The corners from the boat to the waypoint, ending at it; empty without a waypoint. */
 export const waypointRoute = (): Point[] => G.waypoint ? route : [];

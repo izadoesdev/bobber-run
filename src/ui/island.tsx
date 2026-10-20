@@ -1,6 +1,6 @@
 // Claimable islands. While sailing, only the owners' signs show (flag, name and a link if they've added one). Buying
 // and managing happen in the island card, opened from a port's Islands tab, from the sea chart, or by clicking a sign.
-import { W, H, clamp, money } from '../config';
+import { W, H, money } from '../config';
 import { G, saveGame } from '../game';
 import { claimableNear } from '../world';
 import { sfx } from '../audio';
@@ -22,8 +22,9 @@ export function IslandSigns() {
   return <>{claimableNear(G.cam.x + W / 2, G.cam.y + H / 2, Math.hypot(W, H) / 2).map(c => {
     const row = ISLANDS.get(c.key);
     if (!row) return null;
-    // over the island's middle, or held at the edge of the view while some of the island is on screen
-    const [cx, cy] = viewPct(c.x, c.y - c.R * 0.35), x = clamp(cx, 10, 90), y = clamp(cy, 30, 85);   // clear of the top HUD
+    // over the island's middle, only while that is in view (and clear of the top HUD), so signs never crowd the edges
+    const [x, y] = viewPct(c.x, c.y - c.R * 0.35);
+    if (x < 8 || x > 92 || y < 26 || y > 88) return null;
     return (
       <div class={'island-sign' + (row.mine ? ' mine' : '')} key={c.key} style={{ left: x + '%', top: y + '%' }}>
         <button data-track="island-sign" class="sign-main" onClick={() => openIsland(c.key, 'play')}>{row.logoUrl && <img src={row.logoUrl} alt="" />}<span>{row.name}</span></button>

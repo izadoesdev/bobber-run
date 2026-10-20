@@ -104,7 +104,7 @@ h2, .title { font-size: var(--fs-xl); }
 @keyframes rise { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-1.2em); opacity: 0; } }
 .mini { position: absolute; right: 0.9em; top: 0.8em; width: 8.4em; }
 .mini .ring { width: 8.4em; height: 8.4em; border-radius: 50%; padding: 0.35em; background: radial-gradient(circle at 35% 30%, #f6dc8a, #a87a2a 55%, #5a3a10); box-shadow: 0 0.25em 0 rgba(0,0,0,0.35), 0 0.5em 1em rgba(0,0,0,0.3); position: relative; }
-.mini canvas { width: 100%; height: 100%; border-radius: 50%; display: block; }
+.mini canvas { width: 100%; height: 100%; border-radius: 50%; display: block; cursor: pointer; pointer-events: auto; }
 .mini .n { position: absolute; top: -0.15em; left: 50%; transform: translateX(-50%); font-family: var(--font-head); color: #2a1f17; background: #f0d27a; border-radius: 0.3em; padding: 0 0.3em; }
 .bottom-stack { position: absolute; left: 50%; bottom: 1.2em; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 0.5em; }
 .prompt { padding: 0.45em 1em; white-space: nowrap; }
@@ -194,13 +194,30 @@ h2, .title { font-size: var(--fs-xl); }
 .facts dt { font-size: var(--fs-s); text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); align-self: center; }
 .facts dd { margin: 0; }
 .chartwrap { flex: 1; min-height: 0; position: relative; padding: 0.4em; }
-.chartwrap canvas { width: 100%; height: 100%; display: block; border-radius: 0.2em; filter: sepia(0.35) saturate(0.85) contrast(1.02); box-shadow: inset 0 0 2em rgba(80,50,20,0.5); cursor: grab; pointer-events: auto; }
+.chartwrap canvas { width: 100%; height: 100%; display: block; border-radius: 0.2em; filter: sepia(0.35) saturate(0.85) contrast(1.02); box-shadow: inset 0 0 2em rgba(80,50,20,0.5); pointer-events: auto; touch-action: none; }
 .legend { display: flex; gap: 1em; font-size: var(--fs-s); flex-wrap: wrap; align-items: center; }
 .legend span { display: inline-flex; align-items: center; gap: 0.35em; }
 .lg { display: inline-block; width: 0.75em; height: 0.75em; box-shadow: 0 0 0 0.1em #1b2a33; }
 .lg.port { background: #f0cf6a; } .lg.light { width: 0.4em; height: 0.9em; background: linear-gradient(#efe9dc 40%, #c0493a 40% 60%, #efe9dc 60%); } .lg.unknown { background: #8a949c; width: 0.5em; height: 0.5em; }
 .lg.wreck, .lg.treasure { box-shadow: none; background: linear-gradient(45deg, transparent 42%, currentColor 42% 58%, transparent 58%), linear-gradient(-45deg, transparent 42%, currentColor 42% 58%, transparent 58%); }
 .lg.wreck { color: #a87a3a; } .lg.treasure { color: #c0493a; }
+.lg.you { width: 0; height: 0; box-shadow: none; border: 0.4em solid transparent; border-left: 0.75em solid #ff9a6b; border-right: 0; filter: drop-shadow(0 0 0.08em #1b2a33); }
+.lg.target { background: none; border: 0.18em solid #f0cf6a; border-radius: 50%; box-shadow: 0 0 0 0.08em #1b2a33; }
+.lg.school, .lg.sailor { border-radius: 50%; width: 0.5em; height: 0.5em; background: #b4d0d8; } .lg.sailor { width: 0.6em; height: 0.6em; background: #e6efec; }
+.lg.island { background: none; box-shadow: none; border: 0.12em dashed rgba(58,42,28,0.7); border-radius: 50%; }
+/* your waypoint everywhere (chart, minimap, sea, chips): a white diamond */
+.wp-glyph { display: inline-block; flex: none; width: 0.55em; height: 0.55em; background: #e6efec; transform: rotate(45deg); box-shadow: 0 0 0 0.1em #1b2a33; margin: 0 0.15em; }
+/* the chart: chips top left, zoom buttons bottom right, and a tip by the pointer saying what's there */
+.chart-chips { position: absolute; left: 1em; top: 1em; z-index: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 0.4em; max-width: calc(100% - 2em); }
+.chart-chips .chip { color: #f6eedc; pointer-events: auto; }
+.chart-ctl { position: absolute; right: 1em; bottom: 1em; z-index: 1; display: flex; gap: 0.3em; align-items: center; }
+.chart-ctl .btn[aria-label] { min-width: 2em; font-size: 1.1em; padding: 0.1em 0.4em; }
+.chart-tip { position: absolute; z-index: 2; pointer-events: none; display: flex; flex-direction: column; gap: 0.1em; max-width: 19em; padding: 0.35em 0.6em; font-size: var(--fs-s);
+  color: #f6eedc; background: rgba(27,42,51,0.92); border: 0.1em solid rgba(240,207,106,0.45); border-radius: 0.35em; box-shadow: 0 0.2em 0.6em rgba(0,0,0,0.35); }
+.chart-tip b { color: #fff6dc; font-weight: 600; }
+.chart-tip, .chart-chips .chip, .chart-ctl { --muted: #c3ced2; --gold: #f0cf6a; }
+.chart-ctl .btn[disabled] { background: rgba(27,42,51,0.55); color: #8a949c; border-style: solid; }
+html.touch .chart-ctl .btn[aria-label] { display: none; }   /* the touch layer has its own Zoom button */
 
 /* ---------- menus and dialogs ---------- */
 .center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.8em; }
@@ -410,7 +427,7 @@ html.touch #ui .screen:has(.chartwrap) .foot { padding-right: 130px; }
 .chip.waypoint .go:hover { background: rgba(240,207,106,0.15); }
 /* the route on the sea: dots that ripple toward the waypoint, and a buoy at it */
 .route { position: absolute; inset: 0; pointer-events: none; }
-.route i { position: absolute; width: 0.3em; height: 0.3em; margin: -0.15em 0 0 -0.15em; background: #fff6dc; border-radius: 1px; box-shadow: 0 0.08em 0 #0007; animation: route-ripple 1.8s ease-in-out infinite; }
+.route i { position: absolute; width: 0.42em; height: 0.42em; margin: -0.21em 0 0 -0.21em; background: #e6efec; border-radius: 50%; box-shadow: 0 0 0 0.09em #1b2a33, 0 0.1em 0 0.05em #0006; animation: route-ripple 1.8s ease-in-out infinite; }
 @keyframes route-ripple { 0%, 100% { opacity: 0.3; transform: scale(0.75); } 45% { opacity: 0.95; transform: scale(1.05); } }
 .route .buoy { position: absolute; width: 1.3em; height: 1.95em; transform: translate(-50%, -88%); filter: drop-shadow(0 0.1em 0 #0008); animation: bob-buoy 2.4s ease-in-out infinite; }
 @keyframes bob-buoy { 0%, 100% { transform: translate(-50%, -88%) rotate(-4deg); } 50% { transform: translate(-50%, -82%) rotate(4deg); } } .chip.waypoint .x { font-size: 1.15em; line-height: 1; color: var(--muted); padding: 0 0.2em; cursor: pointer; pointer-events: auto; }
@@ -431,8 +448,7 @@ html.touch #ui .screen:has(.chartwrap) .foot { padding-right: 130px; }
 .prompt-world .key { font-size: 0.9em; }
 /* the logbook's fish chart row, the chart's "showing" line, the ship screen's helpers */
 .fish-chart { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em; margin-top: 0.6em; }
-.chartwrap { position: relative; }
-.chip.zone-on { position: absolute; left: 0.6em; top: 0.6em; z-index: 1; gap: 0.5em; color: #f6eedc; pointer-events: auto; max-width: calc(100% - 1.2em); white-space: normal; }
+.chip.zone-on { gap: 0.5em; white-space: normal; }
 .chip.zone-on .x { font: inherit; font-size: 1.2em; line-height: 1; color: var(--muted); background: none; border: 0; padding: 0 0.2em; cursor: pointer; }
 .item.helper .btn.on { border-color: var(--good); color: var(--good); }
 .dialog.island .adult { gap: 0.5em; align-items: flex-start; margin: 0.4em 0; } .dialog.island .adult input { margin-top: 0.2em; }
