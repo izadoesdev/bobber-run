@@ -101,11 +101,10 @@ export const claim = action({
 
 /** Start buying an island: hold it, open a Stripe Checkout page, and return its URL for the game to open. */
 /** Buyers confirm they are 18 or older, or have a parent's or guardian's permission (minors can cancel purchases). */
-const ADULT_REQUIRED = false;   // true once every client sends the confirmation
 export const buy = action({
   args: { key: v.string(), name: v.string(), adult: v.optional(v.boolean()) },
   handler: async (ctx, { key, name, adult }): Promise<{ ok: true; url: string; price: number } | { ok: false; why: string }> => {
-    if (ADULT_REQUIRED && adult !== true) return { ok: false, why: 'Ask a parent or guardian before buying an island' };
+    if (adult !== true) return { ok: false, why: 'Ask a parent or guardian before buying an island' };
     const site = envVar('SITE_URL');
     if (!envVar('STRIPE_SECRET_KEY') || !site) return { ok: false, why: 'Buying islands is not available right now' };
     const b = await buyer(ctx, key, name);
