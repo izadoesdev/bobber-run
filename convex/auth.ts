@@ -14,7 +14,7 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
     // guests cost nothing to make, so cap how many the whole coast can create per window; throwing rolls the sign-up back
     async afterUserCreatedOrUpdated(ctx, { existingUserId, provider }) {
       if (existingUserId || provider.id !== 'anonymous') return;
-      if (!await spend(ctx as unknown as MutationCtx, 'guests', GUESTS_PER_WINDOW, GUEST_WINDOW_MS)) throw new Error('The coast is busy. Try again in a few minutes');
+      if (!await spend(ctx as unknown as MutationCtx, 'guests', GUESTS_PER_WINDOW, GUEST_WINDOW_MS)) throw new Error('The server is busy. Try again in a few minutes');
     },
   },
 });

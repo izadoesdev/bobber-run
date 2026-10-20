@@ -125,7 +125,7 @@ export function netCatch(species: string, kg: number, cheated = false) { if (NET
 export async function netGive(amount: number, cheated = false): Promise<Result> {
   if (!NET.authed) return { ok: false, why: 'You are offline' };
   if (cheated) return { ok: false, why: 'Saves that used cheats cannot give to the fund' };
-  try { const r = await call(api.fund.give, { key: FUND_KEY, amount }); return r.ok ? { ok: true } : { ok: false, why: r.why ?? 'Could not give' }; } catch { return { ok: false, why: 'Could not reach the coast' }; }
+  try { const r = await call(api.fund.give, { key: FUND_KEY, amount }); return r.ok ? { ok: true } : { ok: false, why: r.why ?? 'Could not give' }; } catch { return { ok: false, why: 'Could not reach the server' }; }
 }
 export async function setName(name: string, auto = false): Promise<Result> {
   if (!NET.authed) return { ok: false, why: 'You are offline' };
