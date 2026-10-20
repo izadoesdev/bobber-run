@@ -5,8 +5,8 @@ export interface Program {
   p: WebGLProgram;
   u: Record<string, WebGLUniformLocation | null | undefined>;
 }
-/** A colour texture with a framebuffer that renders into it. */
-export interface Target { fb: WebGLFramebuffer; tex: WebGLTexture; w: number; h: number }
+/** A colour texture with a framebuffer that renders into it (and a depth buffer, if asked for). */
+export interface Target { fb: WebGLFramebuffer; tex: WebGLTexture; w: number; h: number; db?: WebGLRenderbuffer }
 /** A multisampled colour + depth framebuffer that resolves (blits) into `resolve`. */
 export interface MsTarget { fb: WebGLFramebuffer; rb: WebGLRenderbuffer; db: WebGLRenderbuffer; w: number; h: number; resolve: Target }
 
@@ -50,12 +50,18 @@ export function texture(gl: GL, w: number, h: number, internal: GLenum, format: 
   return t;
 }
 
-export function target(gl: GL, w: number, h: number, internal: GLenum, format: GLenum, type: GLenum): Target {
+export function target(gl: GL, w: number, h: number, internal: GLenum, format: GLenum, type: GLenum, depth = false): Target {
   const tex = texture(gl, w, h, internal, format, type), fb = gl.createFramebuffer();
   gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const db = depth ? gl.createRenderbuffer() : undefined;
+  if (db) {
+    gl.bindRenderbuffer(gl.RENDERBUFFER, db);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, db);
+  }
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  return { fb, tex, w, h };
+  return { fb, tex, w, h, db };
 }
 
 export function msTarget(gl: GL, w: number, h: number, internal: GLenum, format: GLenum, type: GLenum, samples: number): MsTarget {
@@ -74,7 +80,7 @@ export function msTarget(gl: GL, w: number, h: number, internal: GLenum, format:
 export function free(gl: GL, t: Target | MsTarget | null | undefined): void {
   if (!t) return;
   gl.deleteFramebuffer(t.fb);
-  if ('tex' in t) gl.deleteTexture(t.tex);
+  if ('tex' in t) { gl.deleteTexture(t.tex); if (t.db) gl.deleteRenderbuffer(t.db); }
   else {
     gl.deleteRenderbuffer(t.rb);
     gl.deleteRenderbuffer(t.db);

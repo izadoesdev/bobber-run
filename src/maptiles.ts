@@ -13,7 +13,18 @@ const MAPC_C = ramp(['#465f73', '#556f82', '#8aa2b1', '#c2bba8', '#7f8f6a', '#34
 /** world units per tile, and pixels per tile side */
 export const MT = 128;
 const MTP = 32;
-const mtiles = new Map<number, HTMLCanvasElement>();
+/**
+ * Baked tiles by key, least recently drawn first. Past MAX_TILES (about 4 MB of pixels), the oldest go, except tiles
+ * drawn in the last second: a wide chart keeps every tile it shows, then shrinks back once it closes.
+ */
+const mtiles = new Map<number, { c: HTMLCanvasElement; t: number }>();
+const MAX_TILES = 1024, RECENT_MS = 1000;
+function evictOld(now: number): void {
+  for (const [k, e] of mtiles) {
+    if (mtiles.size <= MAX_TILES || now - e.t < RECENT_MS) return;
+    mtiles.delete(k);
+  }
+}
 
 function band(h: number): number {
   return h < -0.4 ? 0 : h < -0.15 ? 1 : h < 0 ? 2 : h < 0.1 ? 3 : h < 0.36 ? 4 : h < 0.74 ? 5 : 6;
@@ -21,9 +32,10 @@ function band(h: number): number {
 
 /** The chart tile at (tx, ty); with build = false only returns it if it is already cached. */
 export function mapTile(tx: number, ty: number, build = true): HTMLCanvasElement | null {
-  const k = (tx + 50000) * 100000 + (ty + 50000);
+  const k = (tx + 50000) * 100000 + (ty + 50000), now = performance.now();
   const cached = mtiles.get(k);
-  if (cached || !build) return cached || null;
+  if (cached) { mtiles.delete(k); cached.t = now; mtiles.set(k, cached); return cached.c; }
+  if (!build) return null;
   const c = document.createElement('canvas');
   c.width = MTP; c.height = MTP;
   const g = c.getContext('2d')!, im = g.createImageData(MTP, MTP), d = im.data;
@@ -35,6 +47,7 @@ export function mapTile(tx: number, ty: number, build = true): HTMLCanvasElement
     d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = 255;
   }
   g.putImageData(im, 0, 0);
-  mtiles.set(k, c);
+  mtiles.set(k, { c, t: now });
+  evictOld(now);
   return c;
 }

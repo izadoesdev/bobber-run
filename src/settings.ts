@@ -13,6 +13,7 @@ export function applySettings(): void {
   R.quality = SET.quality;
   R.fx.tilt = SET.tilt ? 1 : 0;
   R.fx.bloom = SET.bloom ? 1 : 0;
+  R.fx.horizon = SET.horizon ? 1 : 0;
   const ui = document.getElementById('ui');
   if (ui) {
     ui.classList.toggle('hc', SET.contrast);
@@ -71,6 +72,7 @@ export const ROWS: SettingEntry[] = [
   { label: 'Graphics', ...pick('quality', QUALITIES, ['Auto', 'High', 'Medium', 'Low']), help: 'Only used with the Smooth pixel style. Auto lowers the resolution if the game runs slowly.' },
   { label: 'Edge blur', ...toggle('tilt'), help: 'Blurs the top and bottom of the screen, so the sea looks like a tiny model.' },
   { label: 'Glow', ...toggle('bloom'), help: 'A soft glow around lights and bright water.' },
+  { label: 'Horizon haze', ...toggle('horizon'), help: 'The far edge of the sea fades into haze, glowing toward the sun.' },
   { label: 'Screen shake', ...toggle('shake') },
   { label: 'Reduce flashing', ...toggle('calm'), help: 'Dims lightning and stops pulsing, shaking and bobbing interface animations.' },
   { label: 'High contrast', ...toggle('contrast'), help: 'Solid panels, brighter text and stronger outlines.' },

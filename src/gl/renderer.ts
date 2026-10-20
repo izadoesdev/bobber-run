@@ -29,10 +29,10 @@ export interface RenderOptions {
   /** internal resolution scale for the 'smooth' style (adapted when quality is 'auto') */
   scale: number;
   quality: Quality;
-  /** post effect strengths, 0..1 */
-  fx: { bloom: number; tilt: number; grade: number; ink?: number };
+  /** post effect strengths, 0..1 (horizon: haze and a sun glow at the top of the view) */
+  fx: { bloom: number; tilt: number; grade: number; ink?: number; horizon?: number };
 }
-export const R: RenderOptions = { S0: 1, S: 1, scale: 1, quality: 'auto', fx: { bloom: 1, tilt: 1, grade: 1 } };
+export const R: RenderOptions = { S0: 1, S: 1, scale: 1, quality: 'auto', fx: { bloom: 1, tilt: 1, grade: 1, horizon: 1 } };
 
 type GL = WebGL2RenderingContext;
 let gl: GL, cv: HTMLCanvasElement, hdr = false;
@@ -102,27 +102,30 @@ function setupGL(): void {
 // Every buffer is sized once per window for the widest view the player can zoom out to; each frame draws into the
 // part its view needs, so zooming never reallocates. One art pixel stays one world unit at every zoom: zoomed out,
 // the frame simply spans more render pixels, each smaller on screen.
-// The heightfield, foam and shadow buffers cover the view plus a margin; their origin moves in SNAP-unit steps, so
-// the heights upload (skipped while the field stays put) runs a few times a second while sailing, not every frame.
+// The foam and shadow buffers cover the view plus a margin, their origin moving in SNAP-unit steps. The heights
+// texture wraps around (texel X of the world lands in column X mod TW): it keeps the rows and columns around the
+// view it already holds, and as the view moves only the ones it uncovers are written.
 const PAD = 40, FR = 2, SNAP = 8;               // margin in world units; foam/shadow texels per world unit; origin step
 /** the widest view (world units) this window can show */
 const maxView = () => { const s = minScale(R.S0, cv.width, cv.height); return [cv.width / s, cv.height / s]; };
 interface Field {
   /** texture size in texels */
   TW: number; TH: number;
+  /** scratch for uploads */
   hdata: Float32Array; tex: WebGLTexture; foam: Target; shadow: Target;
-  /** the last upload (x0, y0, step, w, h): heights never change, so an unmoved field skips the upload */
-  last: number[];
+  /** the texels (world units / fs) the heights texture holds: x0, y0, x1, y1 (exclusive); and fs (0 until the first upload) */
+  V: number[]; fs: number;
 }
 let field: Field | null = null;
 function ensureField(): Field {
-  const [vw, vh] = maxView(), tw = Math.ceil(vw) + PAD * 2 + SNAP + 2, th = Math.ceil(vh) + PAD * 2 + SNAP + 2;
+  const [vw, vh] = maxView(), tw = Math.ceil(vw) + PAD * 2 + SNAP * 2 + 8, th = Math.ceil(vh) + PAD * 2 + SNAP * 2 + 8;
   if (field && tw === field.TW && th === field.TH) return field;
   if (field) { gl.deleteTexture(field.tex); free(gl, field.foam); free(gl, field.shadow); }
+  const tex = texture(gl, tw, th, gl.R16F, gl.RED, gl.FLOAT, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
   field = {
-    TW: tw, TH: th, hdata: new Float32Array(tw * th), last: [],
-    tex: texture(gl, tw, th, gl.R16F, gl.RED, gl.FLOAT, gl.LINEAR),
-    foam: target(gl, tw * FR, th * FR, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE),
+    TW: tw, TH: th, hdata: new Float32Array(tw * th), tex, V: [0, 0, 0, 0], fs: 0,
+    foam: target(gl, tw * FR, th * FR, gl.RG8, gl.RG, gl.UNSIGNED_BYTE),
     shadow: target(gl, tw * FR, th * FR, gl.R8, gl.RED, gl.UNSIGNED_BYTE),
   };
   return field;
@@ -135,9 +138,10 @@ interface Frame {
   w: number; h: number;
   /** render pixels per world unit (0 = smooth) */
   px: number;
-  scene: MsTarget;
-  /** bloom chain (half, quarter) and tilt-shift blur (quarter) */
-  half: Target; qa: Target; qb: Target; ta: Target; tb: Target;
+  /** the scene with its depth buffer; 'smooth' draws it multisampled into `ms` and resolves it here */
+  scene: Target; ms: MsTarget | null;
+  /** bloom (quarter size, ping-ponged) and tilt-shift blur (quarter) */
+  qa: Target; qb: Target; ta: Target; tb: Target;
   /** pixel styles composite here, then scale up to the canvas */
   out: Target | null;
 }
@@ -150,13 +154,14 @@ function ensureTargets(): Frame {
     w = Math.ceil(vw * k) + 1; h = Math.ceil(vh * k) + 1;
   } else { const sc = Math.min(1, 1920 / cv.width) * R.scale; w = Math.max(64, Math.round(cv.width * sc)); h = Math.max(40, Math.round(cv.height * sc)); }
   if (frame && w === frame.w && h === frame.h && px === frame.px) return frame;
-  if (frame) for (const t of [frame.scene, frame.half, frame.qa, frame.qb, frame.ta, frame.tb, frame.out]) free(gl, t);
+  if (frame) for (const t of [frame.ms ?? frame.scene, frame.qa, frame.qb, frame.ta, frame.tb, frame.out]) free(gl, t);
   const IF = hdr ? gl.RGBA16F : gl.RGBA8, TY = hdr ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
   const mk = (a: number, b: number) => target(gl, Math.max(1, a), Math.max(1, b), IF, gl.RGBA, TY);
-  const samples: number = px ? 0 : Math.min(4, gl.getParameter(gl.MAX_SAMPLES));
+  // pixel styles draw without MSAA, straight into the texture the post passes read
+  const ms = px ? null : msTarget(gl, w, h, IF, gl.RGBA, TY, Math.min(4, gl.getParameter(gl.MAX_SAMPLES)));
   frame = {
-    w, h, px, scene: msTarget(gl, w, h, IF, gl.RGBA, TY, samples),
-    half: mk(w >> 1, h >> 1), qa: mk(w >> 2, h >> 2), qb: mk(w >> 2, h >> 2), ta: mk(w >> 2, h >> 2), tb: mk(w >> 2, h >> 2),
+    w, h, px, ms, scene: ms ? ms.resolve : target(gl, w, h, IF, gl.RGBA, TY, true),
+    qa: mk(w >> 2, h >> 2), qb: mk(w >> 2, h >> 2), ta: mk(w >> 2, h >> 2), tb: mk(w >> 2, h >> 2),
     out: px ? target(gl, w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE) : null,
   };
   return frame;
@@ -182,24 +187,50 @@ function into(t: { fb: WebGLFramebuffer; w: number; h: number } | null, w?: numb
 function quad(): void { gl.bindVertexArray(quadVao); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); }
 
 // ---------- heightfield around the camera ----------
-// hw x hh heights from world (x0, y0), one every fs units, into the corner of the heights texture
-function uploadHeights(F: Field, x0: number, y0: number, fs: number, hw: number, hh: number): void {
-  const L = F.last;
-  if (L[0] === x0 && L[1] === y0 && L[2] === fs && L[3] === hw && L[4] === hh) return;
-  L[0] = x0; L[1] = y0; L[2] = fs; L[3] = hw; L[4] = hh;
-  const hdata = F.hdata;
+const mod = (a: number, n: number) => ((a % n) + n) % n;
+/**
+ * Make the heights texture (one texel every fs world units) hold world rect [x0, x1) x [y0, y1), plus a SNAP-texel
+ * margin when it has to move, writing only the texels it didn't hold.
+ */
+function holdHeights(F: Field, x0: number, y0: number, x1: number, y1: number, fs: number): void {
+  const V = F.V, X0 = Math.floor(x0 / fs), Y0 = Math.floor(y0 / fs), X1 = Math.ceil(x1 / fs) + 1, Y1 = Math.ceil(y1 / fs) + 1;
+  if (fs === F.fs && X0 >= V[0] && Y0 >= V[1] && X1 <= V[2] && Y1 <= V[3]) return;
+  const N = [X0 - SNAP, Y0 - SNAP, X1 + SNAP, Y1 + SNAP];
+  if (fs !== F.fs || N[0] >= V[2] || N[2] <= V[0] || N[1] >= V[3] || N[3] <= V[1]) {   // nothing to keep
+    F.fs = fs;
+    putHeights(F, N[0], N[1], N[2] - N[0], N[3] - N[1]);
+  } else {                                        // the new columns either side, then new rows above and below
+    if (N[0] < V[0]) putHeights(F, N[0], N[1], V[0] - N[0], N[3] - N[1]);
+    if (N[2] > V[2]) putHeights(F, V[2], N[1], N[2] - V[2], N[3] - N[1]);
+    const a = Math.max(N[0], V[0]), b = Math.min(N[2], V[2]);
+    if (N[1] < V[1]) putHeights(F, a, N[1], b - a, V[1] - N[1]);
+    if (N[3] > V[3]) putHeights(F, a, V[3], b - a, N[3] - V[3]);
+  }
+  V[0] = N[0]; V[1] = N[1]; V[2] = N[2]; V[3] = N[3];
+}
+// w x h texels from texel (X, Y), split where they wrap around the texture's edges
+function putHeights(F: Field, X: number, Y: number, w: number, h: number): void {
+  const c = mod(X, F.TW), r = mod(Y, F.TH), w1 = Math.min(w, F.TW - c), h1 = Math.min(h, F.TH - r);
+  heightsRect(F, X, Y, c, r, w1, h1);
+  if (w1 < w) heightsRect(F, X + w1, Y, 0, r, w - w1, h1);
+  if (h1 < h) heightsRect(F, X, Y + h1, c, 0, w1, h - h1);
+  if (w1 < w && h1 < h) heightsRect(F, X + w1, Y + h1, 0, 0, w - w1, h - h1);
+}
+// w x h heights from texel (X, Y) into column c, row r of the texture
+function heightsRect(F: Field, X: number, Y: number, c: number, r: number, w: number, h: number): void {
+  const fs = F.fs, x0 = X * fs, hdata = F.hdata;
   let i = 0;
-  for (let j = 0; j < hh; j++) {
-    const wy = y0 + j * fs, ty = Math.floor(wy / TS), row = (wy - ty * TS + 1) * TN;
+  for (let j = 0; j < h; j++) {
+    const wy = (Y + j) * fs, ty = Math.floor(wy / TS), row = (wy - ty * TS + 1) * TN;
     let tx = Math.floor(x0 / TS), tile = getTile(tx, ty), base = tx * TS - 1;
-    for (let k = 0; k < hw; k++, i++) {
+    for (let k = 0; k < w; k++, i++) {
       const wx = x0 + k * fs;
       if (wx - base > TS) { tx++; tile = getTile(tx, ty); base = tx * TS - 1; }
       hdata[i] = tile.h[row + wx - base];
     }
   }
   gl.bindTexture(gl.TEXTURE_2D, F.tex);
-  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, hw, hh, gl.RED, gl.FLOAT, hdata);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, c, r, w, h, gl.RED, gl.FLOAT, hdata, 0);
 }
 
 // ---------- trees: deterministic per height tile ----------
@@ -767,8 +798,8 @@ export function prefetch(budgetMs = 4): void {
 }
 
 // ---------- frame ----------
-// per-frame camera and heightfield rectangles, reused: CAM = [x, y, w, h] in world units, HR = [x0, y0, w, h] in texels
-const CAM = [0, 0, 0, 0], HR = [0, 0, 0, 0], SHXY = [0, 0];
+// per-frame rectangles in world units, reused: the camera CAM, the foam/shadow buffers HR and the heights texture HT (x, y, w, h)
+const CAM = [0, 0, 0, 0], HR = [0, 0, 0, 0], HT = [0, 0, 0, 0], SHXY = [0, 0];
 const viewPois: Poi[] = [];
 // NPC ships then other players' boats, gathered once per frame
 const fleet: (Ship | Sailor)[] = [];
@@ -784,7 +815,7 @@ function drawMeshes(mode: 0 | 1, F: Field, E: Env, Lt: Lights): void {
   U4(pg, 'uCam', CAM); U4(pg, 'uHR', HR); U2(pg, 'uShXY', SHXY[0], SHXY[1]); gl.uniform1i(pg.u.uMode ?? null, mode); styleUniforms(pg);
   if (mode === 0) {
     U3(pg, 'uSun', E.sun); U3(pg, 'uSunC', E.sunC); U3(pg, 'uAmb', E.amb); U1(pg, 'uNight', E.dk); U3(pg, 'uWater', E.water);
-    bindTex(pg, 'uH', F.tex, 0);
+    bindTex(pg, 'uH', F.tex, 0); U4(pg, 'uHT', HT);
     gl.uniform1i(pg.u.uNL ?? null, Lt.nl); gl.uniform4fv(pg.u.uL ?? null, Lt.L); gl.uniform3fv(pg.u.uLC ?? null, Lt.LC);
     if (pg.u.uNB) gl.uniform1i(pg.u.uNB, 0);
   }
@@ -833,12 +864,15 @@ export function render(alpha: number): void {
   CAM[0] = camX; CAM[1] = camY; CAM[2] = upx ? w / upx : W; CAM[3] = upx ? h / upx : H;
   // the heightfield around the view (a heights texel spans fs world units, 1 unless a view outgrows the buffers)
   let fs = 1;
-  while ((CAM[2] + PAD * 2 + SNAP) / fs + 2 > F.TW || (CAM[3] + PAD * 2 + SNAP) / fs + 2 > F.TH) fs *= 2;
+  while ((CAM[2] + PAD * 2) / fs + SNAP * 2 + 3 > F.TW || (CAM[3] + PAD * 2) / fs + SNAP * 2 + 3 > F.TH) fs *= 2;
   const x0 = Math.floor(camX / SNAP) * SNAP - PAD, y0 = Math.floor(camY / SNAP) * SNAP - PAD;
-  uploadHeights(F, x0, y0, fs, Math.ceil((CAM[2] + PAD * 2 + SNAP) / fs) + 2, Math.ceil((CAM[3] + PAD * 2 + SNAP) / fs) + 2);
+  holdHeights(F, camX - PAD, camY - PAD, camX + CAM[2] + PAD, camY + CAM[3] + PAD, fs);
   STY.px = upx; STY.org[0] = Math.round(camX * upx); STY.org[1] = Math.round(camY * upx); STY.org[2] = h;
-  // heightfield texture: world position of texel 0's corner and the world size of the whole texture
+  // foam and shadow buffers: world position of texel 0's corner and the world size of the whole buffer
   HR[0] = x0 - fs / 2; HR[1] = y0 - fs / 2; HR[2] = F.TW * fs; HR[3] = F.TH * fs;
+  // heights texture: the same, for a texel 0 placed on a whole number of wraps near the window (so it repeats onto it)
+  HT[2] = F.TW * fs; HT[3] = F.TH * fs;
+  HT[0] = Math.floor(F.V[0] / F.TW) * HT[2] - fs / 2; HT[1] = Math.floor(F.V[1] / F.TH) * HT[3] - fs / 2;
   const E = environment(camY + H / 2);
   gatherFleet();
   const pois = poisNear(camX + W / 2, camY + H / 2, 300, viewPois), Lt = lightsFor(bs, pois, E.dk);
@@ -859,19 +893,23 @@ export function render(alpha: number): void {
   gl.bindVertexArray(foamVao); gl.bindBuffer(gl.ARRAY_BUFFER, foamBuf);
   if (nf) { gl.bufferData(gl.ARRAY_BUFFER, foamArr, gl.STREAM_DRAW, 0, nf * FOAM_STRIDE); gl.drawArrays(gl.POINTS, 0, nf); }
   gl.disable(gl.BLEND);
-  // 3. scene: ground, meshes, particles
-  into(FB.scene, w, h); gl.clearColor(0, 0, 0, 1); gl.clearDepth(1); gl.depthMask(true); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  // 3. scene: meshes, ground, particles. The voxels go first, so the ground (at the far plane, behind them all)
+  // only shades the pixels they leave uncovered. (Alpha 0 past the frame's used edge, where the ink outline looks
+  // for solid voxels.)
+  into(FB.ms ?? FB.scene, w, h); gl.clearColor(0, 0, 0, 0); gl.clearDepth(1); gl.depthMask(true); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
+  drawMeshes(0, F, E, Lt);
+  gl.depthMask(false);
   const pg = PG.ground;
   gl.useProgram(pg.p);
   bindTex(pg, 'uH', F.tex, 0); bindTex(pg, 'uFoam', F.foam.tex, 1); bindTex(pg, 'uShadow', F.shadow.tex, 2);
-  U4(pg, 'uHR', HR); U4(pg, 'uCam', CAM); U1(pg, 'uT', G.t); U1(pg, 'uWT', WX.waveT); U1(pg, 'uWind', WX.wind); U1(pg, 'uRain', WX.rain);
+  U4(pg, 'uHR', HR); U4(pg, 'uHT', HT); U4(pg, 'uCam', CAM); U1(pg, 'uT', G.t); U1(pg, 'uWT', WX.waveT); U1(pg, 'uWind', WX.wind); U1(pg, 'uRain', WX.rain);
   U1(pg, 'uNight', E.dk); U1(pg, 'uCloud', E.cloud); U1(pg, 'uFlash', WX.flash * (SET.calm ? 0.15 : 1)); U2(pg, 'uWD', Math.cos(windAngle()), Math.sin(windAngle()));
   U3(pg, 'uSun', E.sun); U3(pg, 'uSunC', E.sunC); U3(pg, 'uAmb', E.amb); U3(pg, 'uSky', E.sky); styleUniforms(pg);
   gl.uniform1i(pg.u.uNL ?? null, Lt.nl); gl.uniform4fv(pg.u.uL ?? null, Lt.L); gl.uniform3fv(pg.u.uLC ?? null, Lt.LC);
   gl.uniform1i(pg.u.uNB ?? null, Lt.nb); gl.uniform4fv(pg.u.uB ?? null, Lt.B);
   quad();
-  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
-  drawMeshes(0, F, E, Lt);
+  gl.depthMask(true);
   // particles blend over the colour but leave alpha (the solid-voxel mask for the outline) alone; glow adds
   gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
   partPoints();
@@ -882,19 +920,25 @@ export function render(alpha: number): void {
   gl.drawArrays(gl.POINTS, 0, blendN);
   gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE, gl.ZERO, gl.ONE); gl.drawArrays(gl.POINTS, blendN, glowN);
   gl.disable(gl.BLEND);
-  gl.bindFramebuffer(gl.READ_FRAMEBUFFER, FB.scene.fb); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, FB.scene.resolve.fb);
-  gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
-  const scene = FB.scene.resolve;
-  // 4. post: bloom chain, tilt-shift blur, composite
-  begin(PG.bright, FB.half, scene); U1(PG.bright, 'uTh', hdr ? 1.0 : 0.82); quad();
-  begin(PG.copy, FB.qa, FB.half); quad();
-  for (let i = 0; i < 2; i++) {
-    begin(PG.blur, FB.qb, FB.qa); U2(PG.blur, 'uDir', 1 / FB.qa.w, 0); quad();
-    begin(PG.blur, FB.qa, FB.qb); U2(PG.blur, 'uDir', 0, 1 / FB.qa.h); quad();
+  if (FB.ms) {
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, FB.ms.fb); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, FB.scene.fb);
+    gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
   }
-  begin(PG.copy, FB.ta, scene); quad();
-  begin(PG.blur, FB.tb, FB.ta); U2(PG.blur, 'uDir', 1.5 / FB.ta.w, 0); quad();
-  begin(PG.blur, FB.ta, FB.tb); U2(PG.blur, 'uDir', 0, 1.5 / FB.ta.h); quad();
+  const scene = FB.scene;
+  // 4. post: bloom and tilt-shift blur at quarter size, each skipped while its effect is off; then composite
+  const bloomK = (0.5 + E.dk * 0.5) * R.fx.bloom, tilt = (px ? 0.45 : 0.7) * R.fx.tilt;
+  if (bloomK > 0) {
+    begin(PG.bright, FB.qa, scene); U1(PG.bright, 'uTh', hdr ? 1.0 : 0.82); quad();
+    for (let i = 0; i < 2; i++) {
+      begin(PG.blur, FB.qb, FB.qa); U2(PG.blur, 'uDir', 1 / FB.qa.w, 0); quad();
+      begin(PG.blur, FB.qa, FB.qb); U2(PG.blur, 'uDir', 0, 1 / FB.qa.h); quad();
+    }
+  }
+  if (tilt > 0) {
+    begin(PG.copy, FB.ta, scene); quad();
+    begin(PG.blur, FB.tb, FB.ta); U2(PG.blur, 'uDir', 1.5 / FB.ta.w, 0); quad();
+    begin(PG.blur, FB.ta, FB.tb); U2(PG.blur, 'uDir', 0, 1.5 / FB.ta.h); quad();
+  }
   const out = FB.out;
   if (out) intoUsed(out); else into(null, cv.width, cv.height);
   const cp = PG.comp;
@@ -902,13 +946,25 @@ export function render(alpha: number): void {
   bindTex(cp, 'uScene', scene.tex, 0); bindTex(cp, 'uBloom', FB.qa.tex, 1); bindTex(cp, 'uBlur', FB.ta.tex, 2); U2(cp, 'uUVS', UVS[0], UVS[1]);
   // pixel styles: the ink edge replaces film grain; tilt-shift is gentler
   styleUniforms(cp); U1(cp, 'uQ', 0); U1(cp, 'uInk', px ? 0.75 * (R.fx.ink ?? 1) : 0);
-  U1(cp, 'uT', G.t); U1(cp, 'uExp', E.exp); U1(cp, 'uSat', E.sat); U1(cp, 'uVig', 0.42); U1(cp, 'uTilt', (px ? 0.45 : 0.7) * R.fx.tilt); U1(cp, 'uGrain', SET.calm || px ? 0 : 0.01);
+  U1(cp, 'uT', G.t); U1(cp, 'uExp', E.exp); U1(cp, 'uSat', E.sat); U1(cp, 'uVig', 0.42); U1(cp, 'uTilt', tilt); U1(cp, 'uGrain', SET.calm || px ? 0 : 0.01);
   U1(cp, 'uGrade', R.fx.grade ?? 1); U1(cp, 'uDusk', E.dusk);
-  U1(cp, 'uRain', WX.rain); U1(cp, 'uFlash', WX.flash * (SET.calm ? 0.15 : 1)); U1(cp, 'uBloomK', (0.5 + E.dk * 0.5) * R.fx.bloom); U1(cp, 'uSlant', 0.3 + WX.wind * 0.7);
+  horizon(cp, E, R.fx.horizon ?? 0);
+  U1(cp, 'uRain', WX.rain); U1(cp, 'uFlash', WX.flash * (SET.calm ? 0.15 : 1)); U1(cp, 'uBloomK', bloomK); U1(cp, 'uSlant', 0.3 + WX.wind * 0.7);
   U3(cp, 'uTint', E.tint); U2(cp, 'uRes', out ? w : cv.width, out ? h : cv.height);
   quad();
   if (out) present(out, h, (camX0 - camX) * upx, (camY0 - camY) * upx, R.S / upx);
   gl.bindVertexArray(null);
+}
+// The camera looks north, so the far edge of the view is the top of the screen: there the sea fades into the sky's
+// haze, glowing where the sun (or moon) stands beyond the horizon. A warm sun low in the sky glows most.
+const HAZE = [0, 0, 0], GLOW = [0, 0, 0], WHITE = [1, 1, 1];
+function horizon(pg: Program, E: Env, k: number): void {
+  U1(pg, 'uHaze', k);
+  if (!k) return;
+  const az = Math.atan2(E.sun[0], -E.sun[1]);    // 0 due north, negative toward the west
+  U1(pg, 'uGlowX', 0.5 + clamp(az / (Math.PI / 2), -1.2, 1.2) * 0.6);
+  U3(pg, 'uHazeC', scale3(HAZE, mix3(HAZE, E.sky, WHITE, 0.3 * (1 - E.dk)), 0.8));
+  U3(pg, 'uGlowC', scale3(GLOW, E.sunC, (0.45 + 0.5 * E.dusk) * (1.2 - E.sun[2] * 0.6)));
 }
 // Scale the pixel-style frame (its used w x h) up to the canvas: k device pixels per render pixel, sliding by the
 // camera's leftover fraction of a render pixel (dx, dy) rounded to whole device pixels. Whole-number scales give

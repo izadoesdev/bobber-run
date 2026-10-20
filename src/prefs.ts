@@ -12,6 +12,8 @@ export interface Settings {
   quality: Quality;
   pixel: PixelStyle;
   tilt: boolean; bloom: boolean; shake: boolean;
+  /** haze and a sun glow along the top of the view */
+  horizon: boolean;
   /** interface scale */
   ui: number;
   font: FontStyle;
@@ -29,7 +31,7 @@ export interface Settings {
 }
 
 export const SET: Settings = {
-  music: 6, sfx: 8, amb: 8, quality: 'auto', pixel: 'crisp', tilt: true, bloom: true, shake: true,
+  music: 6, sfx: 8, amb: 8, quality: 'auto', pixel: 'crisp', tilt: true, bloom: true, horizon: true, shake: true,
   ui: 1, font: 'pixel', contrast: false, calm: false, captions: false, guide: true, hud: true,
   strike: 'normal', reelAssist: false, reelToggle: false, zoom: 1, binds: {},
 };

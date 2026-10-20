@@ -375,7 +375,7 @@ function far(k: number, size: number, x: number, y: number, keep: number): boole
 }
 /** Drop cached world data far from the view centre (x, y); `view` is the larger side of the view in world units. */
 export function trimWorld(x: number, y: number, view: number): void {
-  const keepTiles = Math.max(900, view * 1.5);
+  const keepTiles = view / 2 + 3 * TS;            // the renderer's prefetch reaches 1.5 tiles past the view; keep 1.5 more for turning back
   for (const k of tiles.keys()) if (far(k, TS, x, y, keepTiles)) tiles.delete(k);
   for (const k of cells.keys()) if (far(k, CELL, x, y, 4000)) cells.delete(k);
   for (const [k, L] of poiCells) if (far(k, CELL, x, y, 4000) && L.every(p => full(p.school))) poiCells.delete(k);

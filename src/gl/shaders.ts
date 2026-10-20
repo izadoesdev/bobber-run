@@ -29,20 +29,21 @@ vec2 worldPix(){ return vec2(uOrg.x + floor(gl_FragCoord.x), uOrg.y + uOrg.z - 1
 float st(float x, float n){ return uPx > 0.0 ? floor(x*n + 0.5)/n : x; }
 vec3 stL(vec3 c, float n){ if (uPx <= 0.0) return c; float l = max(max(c.r, c.g), c.b), q = floor(sqrt(l)*n + 0.3)/n; return l > 1e-4 ? c*(q*q/l) : c; }   // light pools: soft rings that never spread the faint tail
 `;
+// full-screen quad, at the far plane (the ground is drawn behind the meshes; post passes don't depth test)
 export const QUAD_VS = `#version 300 es
 layout(location=0) in vec2 aP; out vec2 vUV;
-void main(){ vUV = aP*0.5 + 0.5; gl_Position = vec4(aP, 0.0, 1.0); }`;
+void main(){ vUV = aP*0.5 + 0.5; gl_Position = vec4(aP, 1.0, 1.0); }`;
 
 export const GROUND_FS = `#version 300 es
 precision highp float; precision highp int;
 in vec2 vUV; out vec4 outC;
 uniform sampler2D uH, uFoam, uShadow;
-uniform vec4 uHR, uCam;
+uniform vec4 uHR, uHT, uCam;
 uniform float uT, uWT, uWind, uRain, uNight, uCloud, uFlash;
 uniform vec2 uWD; uniform vec3 uSun, uSunC, uAmb, uSky;
 ${NOISE}${LIGHTS}${STYLE}
 const float HS = 40.0;
-float H(vec2 w){ return texture(uH, (w - uHR.xy)/uHR.zw).r; }
+float H(vec2 w){ return texture(uH, (w - uHT.xy)/uHT.zw).r; }
 vec2 TUV(vec2 w){ return (w - uHR.xy)/uHR.zw; }
 float warm(float y){ return clamp((y - 1500.0)/1000.0, 0.0, 1.0); }
 float cold(float y){ return clamp((-y - 1300.0)/1000.0, 0.0, 1.0); }
@@ -248,7 +249,7 @@ export const MESH_FS = `#version 300 es
 precision highp float; precision highp int;
 in vec3 vW; in vec3 vN; in vec4 vC; in float vG; in float vK; out vec4 o;
 uniform int uMode; uniform vec3 uSun, uSunC, uAmb, uWater; uniform float uNight;
-uniform sampler2D uH; uniform vec4 uHR;
+uniform sampler2D uH; uniform vec4 uHT;
 ${LIGHTS}${STYLE}
 // vC.a marks glowable voxels (lamps, photophores, jellies); vG is the instance's glow (1 for lamps, 0..1 for sea life);
 // vK is how fast the instance fades into the water below the waterline (1 for hulls, less for big pale sea life)
@@ -260,7 +261,7 @@ void main(){
   float glow = clamp(vC.a*vG, 0.0, 1.0), sub = 0.0;
   col = mix(col, vC.rgb*(1.6 + uNight*2.2), glow);
   if (vW.z < 0.9){                                  // below the waterline: fade into the water colour, darker with depth
-    float h = texture(uH, (vW.xy - uHR.xy)/uHR.zw).r;
+    float h = texture(uH, (vW.xy - uHT.xy)/uHT.zw).r;
     if (h < 0.0){
       sub = st(clamp((0.9 - vW.z)*0.32*vK, 0.0, 0.88), 4.0);
       vec3 wcol = uWater*mix(vec3(1.0), vec3(0.41, 0.51, 0.64), st(smoothstep(0.12, 0.55, -h), 3.0));   // the ground's mid/deep bands
@@ -316,9 +317,13 @@ void main(){
 // ---- post ----
 // A frame uses the bottom-left uUVS share of its buffers (the view can be smaller than the buffers), so post passes
 // read at vUV*uUVS; the blur stays inside that share.
+// The bright parts of the scene, straight to quarter size: the threshold is taken at the four half-size points a
+// quarter pixel covers (each a bilinear average of the scene), then averaged.
 export const BRIGHT_FS = `#version 300 es
 precision highp float; precision highp int; in vec2 vUV; out vec4 o; uniform sampler2D uT; uniform float uTh; uniform vec2 uUVS;
-void main(){ vec3 c = texture(uT, vUV*uUVS).rgb; float l = max(max(c.r, c.g), c.b); o = vec4(c*smoothstep(uTh, uTh + 0.5, l), 1.0); }`;
+vec3 bright(vec2 uv){ vec3 c = texture(uT, uv*uUVS).rgb; float l = max(max(c.r, c.g), c.b); return c*smoothstep(uTh, uTh + 0.5, l); }
+void main(){ vec2 d = 0.25*vec2(dFdx(vUV.x), dFdy(vUV.y));
+  o = vec4((bright(vUV - d) + bright(vUV + d) + bright(vUV + vec2(d.x, -d.y)) + bright(vUV + vec2(-d.x, d.y)))*0.25, 1.0); }`;
 export const BLUR_FS = `#version 300 es
 precision highp float; precision highp int; in vec2 vUV; out vec4 o; uniform sampler2D uT; uniform vec2 uDir, uUVS;
 vec3 tap(vec2 uv, vec2 lim){ return texture(uT, min(uv, lim)).rgb; }
@@ -331,6 +336,7 @@ precision highp float; precision highp int; in vec2 vUV; out vec4 o;
 uniform sampler2D uScene, uBloom, uBlur;
 uniform float uT, uExp, uSat, uVig, uTilt, uGrain, uRain, uFlash, uBloomK, uSlant, uGrade, uDusk;
 uniform vec3 uTint; uniform vec2 uRes, uUVS; uniform float uQ, uInk;
+uniform float uHaze, uGlowX; uniform vec3 uHazeC, uGlowC;
 ${STYLE}
 float hash(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x*p.y); }
 vec3 aces(vec3 x){ return clamp((x*(2.51*x + 0.03))/(x*(2.43*x + 0.59) + 0.14), 0.0, 1.0); }
@@ -351,14 +357,19 @@ void main(){
   vec2 uv = vUV, tuv = vUV*uUVS;                                        // uv: position on screen; tuv: in the buffers
   vec4 s0 = texture(uScene, tuv); vec3 c = s0.rgb;
   float tb = smoothstep(0.2, 0.5, abs(uv.y - 0.5))*uTilt;               // miniature tilt-shift
-  c = mix(c, texture(uBlur, tuv).rgb, tb);
+  if (tb > 0.0) c = mix(c, textureLod(uBlur, tuv, 0.0).rgb, tb);
   if (uInk > 0.0){                                                      // a one-pixel ink edge where solid voxels meet the ground or water
     vec2 tx = 1.0/vec2(textureSize(uScene, 0));
     float nb = max(max(texture(uScene, tuv + vec2(tx.x, 0)).a, texture(uScene, tuv - vec2(tx.x, 0)).a), max(texture(uScene, tuv + vec2(0, tx.y)).a, texture(uScene, tuv - vec2(0, tx.y)).a));
     float edge = step(0.5, nb)*step(s0.a, 0.35)*smoothstep(0.5, 1.0, nb);
     c = mix(c, c*vec3(0.36, 0.42, 0.48), edge*uInk);
   }
-  c += texture(uBloom, tuv).rgb*uBloomK;
+  if (uBloomK > 0.0) c += texture(uBloom, tuv).rgb*uBloomK;
+  if (uHaze > 0.0){                                                      // the far sea fades into haze at the top, glowing toward the sun
+    float t = smoothstep(0.8, 1.0, uv.y);
+    vec2 g = (uv - vec2(uGlowX, 1.06))*vec2(uRes.x/uRes.y*0.45, 1.0);
+    c = mix(c, uHazeC, t*t*0.45*uHaze) + uGlowC*exp(-dot(g, g)*10.0)*(0.4 + 0.6*t)*uHaze;
+  }
   if (uRain > 0.01){
     vec2 q = vec2(uv.x*170.0 + uv.y*uSlant*40.0, uv.y*9.0 + uT*7.0); vec2 id = floor(q); float r = hash(id);
     float f = fract(q.y), x = fract(q.x);
