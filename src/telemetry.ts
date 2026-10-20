@@ -15,13 +15,20 @@ const SCREENS: Partial<Record<Mode, Screen>> = {
 const WATCHED = ['pixel', 'quality', 'tilt', 'bloom', 'shake', 'ui', 'font', 'contrast', 'calm', 'captions', 'guide', 'strike', 'reelAssist', 'reelToggle'] as const;
 const snapshot = () => Object.fromEntries(WATCHED.map(k => [k, String(SET[k])]));
 const PROGRESS_EVERY = 600;                     // seconds of play between progress snapshots
+// play time of this device's save, kept across reloads so progress.minutes is the save's total (a new voyage resets it)
+const PLAYED_KEY = 'bobber-run-played';
+const readPlayed = (): number => { try { return Number(localStorage.getItem(PLAYED_KEY)) || 0; } catch { return 0; } };
+let sailing = false;                            // a voyage has started this page load (before that, playTime isn't the save's)
+const keepPlayed = (): void => { if (sailing) try { localStorage.setItem(PLAYED_KEY, String(Math.round(playTime))); } catch { /* private mode */ } };
 
 let mode: Mode | null = null, quest = -1, settingsSeen = snapshot(), zoomSeen = SET.zoom, zoomAt = 0;
 let profileSeen = '', contextSeen = '', playTime = 0, nextProgress = PROGRESS_EVERY, acc = 0;
 
 export function voyageStarted(kind: 'new' | 'continue'): void {
   track('voyage_started', { kind, day: dayNum() });
-  quest = G.story?.i ?? -1; playTime = 0; nextProgress = PROGRESS_EVERY;
+  quest = G.story?.i ?? -1; playTime = kind === 'new' ? 0 : readPlayed();
+  nextProgress = (Math.floor(playTime / PROGRESS_EVERY) + 1) * PROGRESS_EVERY;
+  sailing = true; keepPlayed();
 }
 /** Push the global properties again whenever one of them has changed. */
 function syncContext(): void {
@@ -67,6 +74,7 @@ export function watchGame(dt: number): void {
     else if (profileSeen) forgetAccount();
     profileSeen = who;
   }
+  keepPlayed();
   if (playTime >= nextProgress) { nextProgress += PROGRESS_EVERY; progress('interval'); }
 }
 
