@@ -9,13 +9,14 @@ import { SPECIES, SUPPLIES, PROJECTS, fmtKg } from '../econ';
 import { favBait } from '../species';
 import { schoolInReach } from '../game/fishing';
 import { schoolMood } from '../game/schools';
-import { schoolsNear, cellPois } from '../world';
+import { schoolsNear } from '../world';
 import { WX } from '../weather';
 import { SET } from '../settings';
 import { NET, EMOTES } from '../net';
 import { ONLINE } from '../online';
 import { currentQuest, questProgress } from '../story';
-import type { CatchCard as CatchCardState, FishLine, Poi, School, Toast } from '../types';
+import { guide, guideOn, markerTarget, nearestPort, tip, whereText, type Step } from '../game/guide';
+import type { CatchCard as CatchCardState, FishLine, School, Toast } from '../types';
 import { drawChart, nearestUncharted } from './chart';
 import { fishIcon } from './icons';
 import { Bar, Canvas, Fish, Hint, Icon, Key, keyed, money, type DrawFn } from './parts';
@@ -47,6 +48,7 @@ function Captions() {
   return G.captions.length > 0 && <div class="captions">{G.captions.map(c => <div class="caption">[{c.s}]</div>)}</div>;
 }
 
+const GOLD_SLOT = { boxShadow: 'inset 0 0 0 0.09em #f0cf6a' };
 function Status() {
   const b = G.boat, cp = cap(), k = clamp(b.hp / hpMax(), 0, 1), bait = G.baitSel;
   return (
@@ -60,7 +62,7 @@ function Status() {
         <span class={'num' + (G.hold.length >= cp ? ' bad' : '')}>{G.hold.length}/{cp}</span>
       </div>
       {cp <= 18
-        ? <div class="slots">{Array.from({ length: cp }, (_, i) => <div class="slot">{G.hold[i] && <img src={fishIcon(G.hold[i].sp)} alt="" />}</div>)}</div>
+        ? <div class="slots">{Array.from({ length: cp }, (_, i) => <div class="slot" style={G.hold[i]?.gold ? GOLD_SLOT : undefined}>{G.hold[i] && <img src={fishIcon(G.hold[i].sp)} alt="" />}</div>)}</div>
         : <div class="gap-t"><Bar k={G.hold.length / cp} tone="gold" /></div>}
       <div class="row gap-t">
         <Icon k="hull" size="s" /><span class="caps">Hull</span>
@@ -77,29 +79,14 @@ function Status() {
   );
 }
 
-// the nearest charted port, from the ids of everything found so far
-function nearestKnownPort(): { p: Poi; d: number } | null {
-  const b = G.boat;
-  let best: Poi | null = null, bd = 1e9;
-  for (const id of G.found) {
-    const m = /^port:(-?\d+),(-?\d+)$/.exec(id);
-    if (!m) continue;
-    const p = cellPois(+m[1], +m[2]).find(q => q.id === id);
-    if (!p) continue;
-    const d = Math.hypot(p.x - b.x, p.y - b.y);
-    if (d < bd) { bd = d; best = p; }
-  }
-  return best ? { p: best, d: bd } : null;
-}
-
 const WX_CHIP_ICON = { storm: 'storm', rain: 'rain', cloudy: 'cloud' } as const;
 const clockText = (secs: number) => `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, '0')}`;
 
-function Minimap() {
-  const un = G.up.sextant > 0 ? nearestUncharted() : null;
+function Minimap({ step }: { step: Step }) {
+  const un = G.up.sextant > 0 ? nearestUncharted() : null, target = guideOn() ? step.at : null;
   const draw: DrawFn = (ctx, w, h, dpr) => {
     const b = G.boat;
-    drawChart(ctx, w, h, b.x, b.y, 300 / w, { dpr, budget: 4, sonar: sonarLvl() });
+    drawChart(ctx, w, h, b.x, b.y, 300 / w, { dpr, budget: 4, sonar: sonarLvl(), target, round: true });
     if (!un) return;
     // an arrow on the rim pointing at the nearest uncharted landmark
     const a = Math.atan2(un.p.y - b.y, un.p.x - b.x), r = w / 2 - 5 * dpr;
@@ -118,7 +105,7 @@ function Minimap() {
     ctx.stroke();
     ctx.restore();
   };
-  const port = nearestKnownPort();
+  const np = nearestPort(), port = { p: np, d: Math.hypot(np.x - G.boat.x, np.y - G.boat.y) };
   const night = isNight(), c = dayFrac();
   const sail = boatDef().prop === 'SAIL', eff = sail ? sailEfficiency() : 0;
   const wxIcon = WX.state === 'clear' ? (night ? 'moon' : 'sun') : WX_CHIP_ICON[WX.state];
@@ -201,27 +188,107 @@ function CatchCard({ c }: { c: CatchCardState }) {
 
 type Quest = NonNullable<ReturnType<typeof currentQuest>>;
 // the story quest in progress, with its objective
-function QuestChip({ q }: { q: Quest }) {
+// title, progress and the concrete next action ("Sell your 4 fish at Alderhaven, 120 m north-east")
+function QuestChip({ q, step }: { q: Quest; step: Step }) {
   const pr = questProgress(q);
   return (
-    <div class="chip quest">
-      <Icon k={q.by} size="s" /><span class="gold">{q.title}</span><span>{q.goal}</span>
-      {pr && pr.want > 1 ? <span class="muted">{pr.have}/{pr.want}</span> : ''}
-      <Key k="j" />
+    <div class="chip quest" style={CHIP_COL}>
+      <div class="row" style={{ gap: '0.45em' }}>
+        <Icon k={q.by} size="s" /><span class="gold">{q.title}</span>
+        {pr && pr.want > 1 ? <span class="muted">{pr.have}/{pr.want}</span> : ''}
+        <span class="grow" /><Key k="j" />
+      </div>
+      <NextLine step={step} />
+    </div>
+  );
+}
+const CHIP_COL = { flexDirection: 'column', alignItems: 'flex-start', gap: '0.15em', whiteSpace: 'normal', maxWidth: '22em' } as const;
+function NextLine({ step }: { step: Step }) {
+  const w = whereText(step);
+  return (
+    <div class="row" style={{ gap: '0.4em', alignItems: 'flex-start' }}>
+      <Icon k={step.icon} size="s" />
+      <span>{step.text}{w && <>, <span class="gold" style={{ whiteSpace: 'nowrap' }}>{w}</span></>}</span>
     </div>
   );
 }
 
 // the long goal once the story is done: the next Alderhaven project and how close you are
-function HarbourChip() {
-  const pr = nextProject();
-  if (!pr || G.stats.caught < 1) return null;
-  const st = needStatus(pr.need), done = PROJECTS.indexOf(pr);
+function HarbourChip({ step }: { step: Step }) {
+  const pr = G.stats.caught > 0 ? nextProject() : null;
+  const st = pr && needStatus(pr.need), done = pr ? PROJECTS.indexOf(pr) : PROJECTS.length;
   return (
-    <div class="chip harbour">
-      <Icon k="anchor" size="s" /><span class="muted">Alderhaven {done}/{PROJECTS.length}</span>{pr.name}
-      <span class={st.have >= st.want ? 'good' : ''}>{st.have}/{st.want}</span>
-      <span class={G.coins >= pr.cost ? 'good' : 'gold'}>{money(pr.cost)}</span>
+    <div class="chip harbour" style={CHIP_COL}>
+      {pr && st && (
+        <div class="row" style={{ gap: '0.45em' }}>
+          <Icon k="anchor" size="s" /><span class="muted">Alderhaven {done}/{PROJECTS.length}</span>{pr.name}
+          <span class={st.have >= st.want ? 'good' : ''}>{st.have}/{st.want}</span>
+          <span class={G.coins >= pr.cost ? 'good' : 'gold'}>{money(pr.cost)}</span>
+        </div>
+      )}
+      <NextLine step={step} />
+    </div>
+  );
+}
+
+// the objective on screen: a small bobbing pennant over it when it's in clear view, otherwise an arrow circling
+// the boat that points to it, with the distance. Both keep clear of the HUD panels.
+const TARGET_COL = '#f0cf6a';
+let uiBox: DOMRect | null = null, panels: DOMRect[] = [], em = 16, measuredAt = -1e9;
+function measure(): DOMRect | null {
+  const now = performance.now();
+  if (now - measuredAt > 400 || !uiBox) {
+    measuredAt = now;
+    const root = document.getElementById('ui');
+    uiBox = root?.getBoundingClientRect() ?? null;
+    em = root ? parseFloat(getComputedStyle(root).fontSize) || 16 : 16;
+    panels = root ? [...root.querySelectorAll('.hud-left, .mini, .hints, .net-chip, .toast')].map(e => e.getBoundingClientRect()) : [];
+  }
+  return uiBox;
+}
+const covered = (x: number, y: number, pad: number): boolean =>
+  panels.some(r => x > r.left - pad && x < r.right + pad && y > r.top - pad && y < r.bottom + pad);
+function Marker({ step }: { step: Step }) {
+  const p = markerTarget(step), box = p && measure();
+  if (!p || !box) return null;
+  const toPx = (wx: number, wy: number): [number, number] => {
+    const [x, y] = viewPct(wx, wy);
+    return [box.left + x / 100 * box.width, box.top + y / 100 * box.height];
+  };
+  const [tx, ty] = toPx(p.x, p.y);
+  const pct = (x: number, y: number) => ({ left: (x - box.left) / box.width * 100 + '%', top: (y - box.top) / box.height * 100 + '%' });
+  if (tx > box.left + 2 * em && tx < box.right - 2 * em && ty > box.top + 3 * em && ty < box.bottom - 2 * em && !covered(tx, ty - 1.6 * em, em)) {
+    const bob = SET.calm ? 0 : Math.sin(G.t * 3) * 0.3;
+    return (
+      <div key="guide-on" aria-hidden="true" style={{ position: 'absolute', ...pct(tx, ty), transform: `translate(-50%, ${-130 - bob * 40}%)`, pointerEvents: 'none', filter: 'drop-shadow(0 0.12em 0 #000a)' }}>
+        <svg viewBox="0 0 16 16" width="1.5em" height="1.5em" style={{ display: 'block' }}>
+          <path d="M2.5 3 L13.5 3 L8 12.5 Z" fill={TARGET_COL} stroke="#1b2a33" stroke-width="1.5" stroke-linejoin="round" />
+        </svg>
+      </div>
+    );
+  }
+  // off screen (or under a panel): an arrow on a ring around the boat, pointing the way
+  const [bx, by] = toPx(G.boat.x, G.boat.y), a = Math.atan2(ty - by, tx - bx);
+  let R = Math.min(box.width, box.height) * 0.3;
+  while (R > 4 * em && covered(bx + Math.cos(a) * R, by + Math.sin(a) * R, 1.5 * em)) R -= em;   // pulled in past a panel
+  const w = whereText(step);
+  return (
+    <div key="guide-off" aria-hidden="true" style={{ position: 'absolute', ...pct(bx + Math.cos(a) * R, by + Math.sin(a) * R), transform: 'translate(-50%, -50%)', pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <svg viewBox="0 0 16 16" width="1.6em" height="1.6em" style={{ display: 'block', transform: `rotate(${a}rad)`, filter: 'drop-shadow(0 0.12em 0 #000a)' }}>
+        <path d="M14.5 8 L2.5 2.5 L5.5 8 L2.5 13.5 Z" fill={TARGET_COL} stroke="#1b2a33" stroke-width="1.4" stroke-linejoin="round" />
+      </svg>
+      {w && <span class="chip" style={{ position: 'absolute', top: '100%', marginTop: '0.15em', fontSize: 'var(--fs-s)', padding: '0 0.4em', whiteSpace: 'nowrap' }}><Icon k={step.icon} size="s" />{w.split(' ').slice(0, 2).join(' ')}</span>}
+    </div>
+  );
+}
+
+// a gentle first-session tip, once each
+function Tip() {
+  const t = tip();
+  if (!t) return null;
+  return (
+    <div class="chip" role="status" style={{ fontSize: '0.85em', maxWidth: '22em', whiteSpace: 'normal', borderColor: 'rgba(143,184,216,0.7)', opacity: t.fade ? 0 : 1, transition: 'opacity 0.6s' }}>
+      <Icon k="map" size="s" /><span>{keyed(t.text)}</span>
     </div>
   );
 }
@@ -300,10 +367,11 @@ function netText(): string {
 }
 
 export function Hud() {
-  const gl = currentGoal(), quest = currentQuest();
+  const gl = currentGoal(), quest = currentQuest(), step = guide();
   return (
     <div>
       {worldLabels()}
+      <Marker step={step} />
       <div class="hud-left">
         <Status />
         {!quest && (
@@ -313,7 +381,7 @@ export function Hud() {
             {gl.reward ? <span class="gold">{money(gl.reward)}</span> : ''}
           </div>
         )}
-        {quest ? <QuestChip q={quest} /> : <HarbourChip />}
+        {quest ? <QuestChip q={quest} step={step} /> : <HarbourChip step={step} />}
         {G.active.map(c => {
           const n = G.hold.filter(f => f.sp === c.sp).length;
           return (
@@ -323,8 +391,9 @@ export function Hud() {
             </div>
           );
         })}
+        <Tip />
       </div>
-      <Minimap />
+      <Minimap step={step} />
       {NET.on && <div class="net-chip chip"><span class={'dot ' + NET.status} />{netText()}</div>}
       {G.card && <CatchCard c={G.card} />}
       <div class="bottom-stack">

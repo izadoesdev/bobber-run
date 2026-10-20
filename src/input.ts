@@ -52,18 +52,20 @@ function onKeyDown(e: KeyboardEvent): void {
   if (!e.repeat) G.pressed.add(k);
 }
 
-/** Zoom the sea view: mouse wheel or - and + (=) while sailing. */
-function zoom(dir: 1 | -1): void {
-  const z = stepZoom(dir);
-  if (z === null) { sfx('deny'); return; }
-  sfx('move');
+/** Zoom the sea view: mouse wheel or - and + (=) while sailing. A wheel event zooms by its scroll distance in pixels. */
+let zoomSfxAt = -1e9;
+function zoom(dir: 1 | -1, wheelPx = 0): void {
+  const z = stepZoom(dir, wheelPx), now = performance.now(), quiet = now - zoomSfxAt < 180;   // a trackpad sends dozens of events a second
+  if (!quiet) zoomSfxAt = now;
+  if (z === null) { if (!quiet) sfx('deny'); return; }
+  if (!quiet) sfx('move');
   G.toasts = G.toasts.filter(t => !t.s.startsWith('Zoom '));          // one zoom notice, updated in place
   toast(`Zoom ${Math.round(z * 100)}%`);
 }
 const canZoom = () => G.mode === 'play' || G.mode === 'sunk';
 
 export function initInput(): void {
-  addEventListener('wheel', e => { if (!canZoom() || (e.target instanceof Element && e.target.closest('.screen, .dialog, .panel'))) return; zoom(e.deltaY < 0 ? 1 : -1); }, { passive: true });
+  addEventListener('wheel', e => { if (!canZoom() || (e.target instanceof Element && e.target.closest('.screen, .dialog, .panel'))) return; zoom(e.deltaY < 0 ? 1 : -1, Math.abs(e.deltaY) * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 600 : 1)); }, { passive: true });
   addEventListener('keydown', onKeyDown);
   addEventListener('keyup', e => { const k = norm(e.key); G.keys[remap(k)] = false; G.keys[k] = false; });
   // browsers only allow sound after a user gesture: a click or tap counts, not just a key

@@ -1,9 +1,10 @@
 // Chart drawing for the minimap and the full sea chart (crisp canvas, real font labels).
-import { G, schoolActive, sonarLvl, logged } from '../game';
+import { G, sonarLvl, logged } from '../game';
+import { schoolShown, schoolMood } from '../game/schools';
 import { SPECIES } from '../econ';
 import { poisNear, schoolsNear, LAIR } from '../world';
 import { mapTile, MT } from '../maptiles';
-import type { Poi } from '../types';
+import type { Point, Poi } from '../types';
 
 const COL = { port: '#f0cf6a', light: '#efe9dc', wreck: '#dcb074', dim: '#8a949c', ink: '#1b2a33', red: '#c0493a', green: '#8fd48a' };
 
@@ -18,6 +19,9 @@ export interface ChartOptions {
   sonar?: number;
   /** sextant level: 2 marks uncharted landmarks */
   sextant?: number;
+  /** the guide's objective: a flag on it, or an arrow at the edge pointing to it ('round' for the minimap's circle) */
+  target?: Point | null;
+  round?: boolean;
 }
 
 type Ctx = CanvasRenderingContext2D;
@@ -46,13 +50,45 @@ export function drawChart(ctx: Ctx, w: number, h: number, cx: number, cy: number
     star(ctx, x, y, 5 * u, Math.floor(G.t * 4) % 2 ? '#f0cf6a' : '#fff6d6');
   }
   if (son >= 3) for (const p of pois) {
-    if (p.school && schoolActive(p.school) && SPECIES[p.school.sp].legend) {
+    if (p.school && schoolShown(p.school) && SPECIES[p.school.sp].legend) {
       const [x, y] = S(p.school.x, p.school.y);
       star(ctx, x, y, 4 * u, '#f0cf6a');
     }
   }
   if (opt.labels) drawLabels(ctx, pois, S, u, showUncharted);
+  if (opt.target) drawTarget(ctx, w, h, S(opt.target.x, opt.target.y), u, !!opt.round);
   drawBoat(ctx, S, u);
+}
+
+const GOLD = '#f0cf6a';
+/** The objective: a gold ring and pennant on the spot, or a gold arrow on the rim (circle or box) pointing at it. */
+function drawTarget(ctx: Ctx, w: number, h: number, [x, y]: [number, number], u: number, round: boolean): void {
+  const cx = w / 2, cy = h / 2, dx = x - cx, dy = y - cy, pad = 7 * u;
+  const inside = round ? Math.hypot(dx, dy) < w / 2 - pad : x > pad && x < w - pad && y > pad && y < h - pad;
+  ctx.lineJoin = 'round';
+  if (!round) u *= 1.8;                     // bigger on the full chart, where it must stand out among the marks
+  if (inside) {
+    ctx.beginPath(); ctx.arc(x, y, 5 * u, 0, 7);
+    ctx.lineWidth = 3.4 * u; ctx.strokeStyle = COL.ink; ctx.stroke();
+    ctx.lineWidth = 1.8 * u; ctx.strokeStyle = GOLD; ctx.stroke();
+    // a pennant on a pole above the ring, flying left so it clears the place labels on the right
+    ctx.fillStyle = COL.ink;
+    ctx.fillRect(x - 0.8 * u, y - 15 * u, 1.6 * u, 10 * u);
+    ctx.beginPath(); ctx.moveTo(x - u, y - 15.5 * u); ctx.lineTo(x - 9 * u, y - 12.25 * u); ctx.lineTo(x - u, y - 9 * u); ctx.closePath();
+    ctx.lineWidth = 1.2 * u; ctx.strokeStyle = COL.ink; ctx.stroke(); ctx.fillStyle = GOLD; ctx.fill();
+    return;
+  }
+  const a = Math.atan2(dy, dx);
+  let ex: number, ey: number;
+  if (round) { const r = w / 2 - 6 * u; ex = cx + Math.cos(a) * r; ey = cy + Math.sin(a) * r; } else {
+    const k = Math.min((w / 2 - pad) / Math.abs(Math.cos(a) || 1e-6), (h / 2 - pad) / Math.abs(Math.sin(a) || 1e-6));
+    ex = cx + Math.cos(a) * k; ey = cy + Math.sin(a) * k;
+  }
+  ctx.save();
+  ctx.translate(ex, ey); ctx.rotate(a);
+  ctx.beginPath(); ctx.moveTo(6 * u, 0); ctx.lineTo(-4.5 * u, -5 * u); ctx.lineTo(-2 * u, 0); ctx.lineTo(-4.5 * u, 5 * u); ctx.closePath();
+  ctx.lineWidth = 1.4 * u; ctx.strokeStyle = COL.ink; ctx.fillStyle = GOLD; ctx.fill(); ctx.stroke();
+  ctx.restore();
 }
 
 // the baked map tiles; tiles not built yet are built while `inBudget()` holds and skipped otherwise
@@ -82,8 +118,10 @@ function drawGrid(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp:
 
 function drawSchools(ctx: Ctx, cx: number, cy: number, rad: number, S: Project, u: number, son: number): void {
   for (const s of schoolsNear(cx, cy, rad)) {
-    if (!schoolActive(s) || s.boss) continue;
+    // scattered and fished-out schools stay on the sonar, faded, so they don't blink out of sight
+    if (!schoolShown(s) || s.boss) continue;
     const [x, y] = S(s.x, s.y), colour = son >= 2 ? SPECIES[s.sp].c[1] : '#b4d0d8';
+    ctx.globalAlpha = schoolMood(s) === 'biting' ? 1 : 0.45;
     // shape as well as colour: a filled dot you can catch, a hollow ring your rod can't handle yet
     const weak = SPECIES[s.sp].rod > G.up.rod;
     ctx.beginPath();
@@ -102,6 +140,7 @@ function drawSchools(ctx: Ctx, cx: number, cy: number, rad: number, S: Project, 
       ctx.stroke();
     }
   }
+  ctx.globalAlpha = 1;
 }
 
 // an outlined square marker

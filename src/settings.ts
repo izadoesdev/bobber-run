@@ -1,5 +1,6 @@
 // Settings screen model, key bindings, and applying preferences to audio, renderer and UI.
 import { setVolumes } from './audio';
+import { stepZoom } from './camera';
 import { R } from './gl/renderer';
 import { SET, savePrefs, type Quality, type Settings } from './prefs';
 export { SET };
@@ -74,8 +75,9 @@ export const ROWS: SettingEntry[] = [
   { label: 'Reduce flashing', ...toggle('calm'), help: 'Dims lightning and stops pulsing, shaking and bobbing interface animations.' },
   { label: 'High contrast', ...toggle('contrast'), help: 'Solid panels, brighter text and stronger outlines.' },
   { label: 'Interface size', ...pick('ui', UI_SIZES, ['85%', '100%', '115%', '130%', '150%']) },
-  { label: 'Sea zoom', ...pick('zoom', [0.5, 0.625, 0.75, 0.875, 1, 1.25, 1.5, 2], ['50%', '63%', '75%', '88%', '100%', '125%', '150%', '200%']), help: 'How much of the sea you see. Bigger ships already see further. You can also use the mouse wheel or - and + while sailing.' },
+  { label: 'Sea zoom', get: () => `${Math.round(SET.zoom * 100)}%`, change: d => { stepZoom(d > 0 ? 1 : -1); }, help: 'How much of the sea you see. Bigger ships already see further. You can also use the mouse wheel or - and + while sailing.' },
   { label: 'Font', ...pick('font', ['pixel', 'plain'], ['Pixel', 'Plain']), help: 'Plain uses a smooth system font that is easier to read.' },
+  { label: 'Objective marker', ...toggle('guide'), help: 'Shows where to go next: an arrow on screen and a flag on the minimap and chart.' },
   { head: 'Fishing' },
   { label: 'Strike timing', ...pick('strike', ['normal', 'relaxed', 'auto'], ['Normal', 'Relaxed', 'Automatic']), help: 'Relaxed gives you more time to strike. Automatic sets the hook for you.' },
   { label: 'Reel assist', ...toggle('reelAssist'), help: 'Fish pull less hard, and your reel lets go by itself while a fish jumps.' },

@@ -5,6 +5,7 @@ import { SPECIES, UPGRADES, PAINTS, SUPPLIES, fmtKg } from '../econ';
 import { homePort } from '../world';
 import { NET } from '../net';
 import { QUESTS, CHAPTERS, PEOPLE, currentQuest, questProgress, story } from '../story';
+import { guide, guideOn, stepLine } from '../game/guide';
 import type { UpgradeKey } from '../types';
 import { drawChart, compassRose } from './chart';
 import { Bar, Canvas, Cell, Fish, Hint, Icon, Key, Pips, boatPreview, money, type DrawFn } from './parts';
@@ -13,8 +14,9 @@ import { Bar, Canvas, Cell, Fish, Hint, Icon, Key, Pips, boatPreview, money, typ
 let drag: [number, number] | null = null;
 export function Chart() {
   const m = G.map, base = m.zoom === 1 ? 2.2 : 4.6;           // world units per CSS pixel
+  const step = guide(), target = guideOn() ? step.at : null;
   const draw: DrawFn = (ctx, w, h, dpr) => {
-    drawChart(ctx, w, h, G.boat.x + m.x, G.boat.y + m.y, base / dpr, { dpr, labels: true, grid: true, budget: 10, sextant: G.up.sextant });
+    drawChart(ctx, w, h, G.boat.x + m.x, G.boat.y + m.y, base / dpr, { dpr, labels: true, grid: true, budget: 10, sextant: G.up.sextant, target });
     compassRose(ctx, w - 60 * dpr, h - 64 * dpr, 40 * dpr);
   };
   const hp = homePort();
@@ -25,6 +27,7 @@ export function Chart() {
         <div class="legend">
           <span><i class="lg port" />Port</span><span><i class="lg light" />Lighthouse</span><span><i class="lg wreck" />Wreck</span>
           <span><i class="lg treasure" />Treasure</span><span><Icon k="star" size="s" />Frenzy</span><span><i class="lg unknown" />Uncharted</span>
+          {target && <span><i class="lg" style={{ background: 'none', border: '0.16em solid #f0cf6a', borderRadius: '50%', boxShadow: '0 0 0 0.08em #1b2a33' }} />Next step</span>}
         </div>
       </header>
       <div class="chartwrap">
@@ -42,7 +45,7 @@ export function Chart() {
         />
       </div>
       <footer class="foot">
-        <span>Home is {Math.round(Math.hypot(G.boat.x - hp.x, G.boat.y - hp.y) / 10)} m away. Position {Math.round(G.boat.x / 10)}, {Math.round(G.boat.y / 10)}.</span>
+        <span>{guideOn() && <><span class="gold">Next:</span> {stepLine(step)}. </>}Home is {Math.round(Math.hypot(G.boat.x - hp.x, G.boat.y - hp.y) / 10)} m away. Position {Math.round(G.boat.x / 10)}, {Math.round(G.boat.y / 10)}.</span>
         <span class="hints-inline"><Hint k="ArrowUp" pad="Stick">Pan or drag</Hint><Hint k="z">Zoom or scroll</Hint><Hint k="m" pad="Y">Close</Hint></span>
       </footer>
     </div>
@@ -92,6 +95,8 @@ export function Logbook() {
 }
 
 // ---------- ship + hold ----------
+// a golden fish (always a trophy too) gets a small gold coin badge in place of the trophy star
+const GOLD_DOT = { display: 'inline-block', width: '0.75em', height: '0.75em', borderRadius: '50%', background: 'radial-gradient(circle at 35% 35%, #fff6d6, #f0cf6a 45%, #b0832a)', boxShadow: '0 0 0 0.1em #1b2a33', verticalAlign: 'middle' } as const;
 const BAITS = ['shrimp', 'glow', 'chum'] as const;
 export function Ship() {
   const bd = boatDef(), cp = cap(), sel = G.hold[G.shipSel];
@@ -126,14 +131,14 @@ export function Ship() {
             return (
               <Cell cls="fcard" sel={i === G.shipSel} onClick={() => { G.shipSel = i; }}>
                 <Fish sp={f.sp} size="l" /><div><div>{fmtKg(f.kg)}</div><div class="gold">{money(fishValue(f))}</div></div>
-                <span class="badges">{f.trophy && <Icon k="star" size="s" />}{need.get(f.sp) && <Icon k="map" size="s" />}</span>
+                <span class="badges">{f.gold ? <i style={GOLD_DOT} title="Golden" /> : f.trophy && <Icon k="star" size="s" />}{need.get(f.sp) && <Icon k="map" size="s" />}</span>
               </Cell>
             );
           })}</div>
           <div class="well pad row">{sel
             ? <>
               <Fish sp={sel.sp} size="s" /><span class="gold">{SPECIES[sel.sp].name}</span>
-              <span>{fmtKg(sel.kg)}{sel.trophy ? ', trophy' : ''}{need.get(sel.sp) ? ', wanted for a contract' : ''}</span><span class="grow" />
+              <span>{fmtKg(sel.kg)}{sel.gold ? ', golden' : ''}{sel.trophy ? ', trophy' : ''}{need.get(sel.sp) ? ', wanted for a contract' : ''}</span><span class="grow" />
               <button class="btn" onClick={() => { G.pressed.add('x'); }}>Release<Key k="x" /></button>
             </>
             : <span class="muted">Your hold is empty. Go fishing!</span>}</div>
@@ -183,12 +188,15 @@ export function Journal() {
             );
           })}
           {!cur && <p class="gold">The story is complete. Nell is home.</p>}
+          {!cur && <p><span class="caps">Next step</span> {stepLine()}</p>}
         </div>
         {cur && (
           <aside class="detail paper">
             <div class="d-icon"><Icon k={cur.by} size="xl" /></div><h2>{cur.title}</h2>
             <p class="muted">{PEOPLE[cur.by].name}, {PEOPLE[cur.by].role}</p>{cur.intro.map(([, line]) => <p>{line}</p>)}
             <p><span class="caps">Goal</span> {cur.goal}{pr && pr.want > 1 ? ` (${pr.have}/${pr.want})` : ''}</p>
+            <p><span class="caps">Next step</span> {stepLine()}</p>
+            {cur.hint && <p class="muted">{cur.hint}</p>}
           </aside>
         )}
       </div>

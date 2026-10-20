@@ -42,8 +42,8 @@ uniform float uT, uWT, uWind, uRain, uNight, uCloud, uFlash;
 uniform vec2 uWD; uniform vec3 uSun, uSunC, uAmb, uSky;
 ${NOISE}${LIGHTS}${STYLE}
 const float HS = 40.0;
-float H(vec2 w){ return texture(uH, (w - uHR.xy + 0.5)/uHR.zw).r; }
-vec2 TUV(vec2 w){ return (w - uHR.xy + 0.5)/uHR.zw; }
+float H(vec2 w){ return texture(uH, (w - uHR.xy)/uHR.zw).r; }
+vec2 TUV(vec2 w){ return (w - uHR.xy)/uHR.zw; }
 float warm(float y){ return clamp((y - 1500.0)/1000.0, 0.0, 1.0); }
 float cold(float y){ return clamp((-y - 1300.0)/1000.0, 0.0, 1.0); }
 float waveH(vec2 p){
@@ -73,12 +73,49 @@ float glintPix(vec2 pc){                       // pc: world pixel index; twinkle
   vec2 c = floor((pc + 0.5)/uPx/2.6); float r = hash(c), r2 = hash(c + 11.3);
   vec2 gp = floor((c + vec2(hash(c + 3.7), hash(c + 8.1))*0.7 + 0.15)*2.6*uPx);
   float tw = pow(max(0.0, sin(uT*(2.0 + r*3.0) + r2*40.0)), 14.0);
-  return all(equal(gp, pc)) ? step(0.885, r)*tw : 0.0; }
+  return all(equal(gp, pc)) ? step(1.0 - 0.115*min(1.0, uPx*uPx), r)*tw : 0.0; }   // zoomed out, fewer glints per pixel
 float glints(vec2 p, float pw){
   if (uPx <= 0.0) return sparkle(p, pw);
   vec2 pc = worldPix(); float g = glintPix(pc);
   float arm = max(max(glintPix(pc + vec2(1, 0)), glintPix(pc - vec2(1, 0))), max(glintPix(pc + vec2(0, 1)), glintPix(pc - vec2(0, 1))));
   return (g + step(0.995, arm)*0.25)*0.8; }
+// The sea floor where the water is clear, one detail per world pixel: rippled sand, rocks, seagrass or kelp that
+// sways with the swell, and clumps of coral in warm water. Alpha: how much more it shows through the water than sand
+// (coral and weed reach up toward the light).
+const vec3 CORAL[5] = vec3[5](vec3(.96,.46,.56), vec3(.98,.62,.32), vec3(.66,.44,.84), vec3(.96,.86,.38), vec3(.32,.82,.74));
+vec4 seabed(vec2 p, float depth, float wm, float cd){
+  vec2 q = floor(p) + 0.5;
+  vec3 sand = mix(mix(vec3(.80,.73,.54), vec3(.94,.90,.75), wm), vec3(.6,.6,.56), cd);
+  float rip = sin(dot(q, vec2(0.55, 0.83))*1.3 + noise(q*0.06)*5.0);
+  vec3 c = sand*(0.93 + 0.12*st(rip*0.5 + 0.5, 2.0)); float up = 0.0;
+  float rk = noise(q*0.11 + 7.0)*0.65 + noise(q*0.37)*0.35;
+  if (rk > 0.7) c = mix(vec3(.40,.42,.40), vec3(.58,.57,.52), st(noise(q*0.45 + 3.0), 2.0))*(rk > 0.74 ? 1.0 : 0.82);
+  float patchv = noise(q*0.045 + 19.0);
+  if (patchv > 0.6 && depth > 0.04){                                   // seagrass, kelp where it's cold
+    float sway = sin(uT*1.3 + q.y*0.35 + q.x*0.1);
+    if (hash(floor(vec2(q.x + sway*0.8, q.y*0.5))) > 0.42){
+      c = mix(mix(vec3(.30,.54,.30), vec3(.42,.60,.27), wm), vec3(.36,.36,.20), cd)*(0.75 + 0.35*hash(q + 3.0)); up = 0.12; }
+  } else if (wm > 0.1 && patchv < 0.42 && depth > 0.03 && depth < 0.32){  // coral
+    vec2 cc = floor(q/4.0), f = fract(q/4.0) - 0.5 - (vec2(hash(cc + 2.0), hash(cc + 4.0)) - 0.5)*0.3;
+    if (hash(cc + 11.0) < wm*0.6*smoothstep(0.42, 0.25, patchv) + 0.05 && length(f) < 0.3 + 0.2*hash(cc + 6.0))
+      { c = CORAL[int(hash(cc + 8.0)*4.99)]*(0.82 + 0.3*step(0.55, hash(q))); up = 0.35; }
+  }
+  return vec4(c, up); }
+// Seabed shape the heightfield is too coarse for: deep basins and gullies in open water, and now and then
+// a blue hole in the shallows. Returns the depth to colour by, from the true depth.
+float seaDepth(vec2 p, float depth){
+  float open = smoothstep(0.3, 0.5, depth);
+  float vd = depth + ((noise(p*0.0016 + 8.0) - 0.4)*0.5 + (noise(p*0.006 + noise(p*0.02)*1.5) - 0.5)*0.25)*open;
+  vec2 c = floor(p/240.0);
+  if (hash(c + 5.3) > 0.6 && depth > 0.03 && depth < 0.45){                 // only holes that land in shallows show
+    vec2 o = (c + 0.25 + 0.5*vec2(hash(c + 1.7), hash(c + 2.9)))*240.0;
+    float d = length(p - o)/(9.0 + 12.0*hash(c + 4.1)) + (noise(p*0.15) - 0.5)*0.25;
+    vd = mix(1.2, vd, smoothstep(0.75, 1.0, d));
+  }
+  return vd; }
+// slanting shafts of sunlight under the surface
+float sunShafts(vec2 p){ vec2 sd = normalize(uSun.xy + 1e-4); float u = dot(p, vec2(-sd.y, sd.x)), v = dot(p, sd);
+  return smoothstep(0.65, 0.9, noise(vec2(u*0.06, uT*0.1)))*smoothstep(0.5, 0.8, noise(vec2(u*0.03, v*0.04 - uT*0.05))); }
 float terrainShadow(vec2 p, float h0){
   vec2 sd = normalize(uSun.xy + 1e-4); float tanE = uSun.z/max(length(uSun.xy), 1e-3), s = 0.0;
   for (int i = 1; i <= 10; i++){ float d = float(i)*3.0; if (H(p + sd*d)*HS > h0*HS + d*tanE + 0.4) s += 0.11; }
@@ -105,12 +142,23 @@ void main(){
     vec3 forest= mix(mix(vec3(.24,.38,.21), vec3(.16,.40,.21), wm), vec3(.21,.28,.23), cd);
     vec3 rock = vec3(.52,.55,.58), snow = vec3(.93,.95,.97), peak = mix(vec3(.68,.70,.72), snow, cd);
     float tex2 = st(det2, 3.0);                                   // grass/forest speckle on the pixel grid
+    vec2 q = floor(p) + 0.5;
+    float region = noise(p*0.016 + 40.0);                         // shores and meadows change character along the coast
+    float pebbles = st(smoothstep(0.66, 0.76, region), 2.0);      // stony beaches
+    sand = mix(sand, mix(vec3(.58,.54,.48), vec3(.76,.72,.64), step(0.45, hash(q))), pebbles);
+    wet = mix(wet, vec3(.42,.42,.40), pebbles);
+    grass = mix(grass, mix(vec3(.66,.64,.36), vec3(.36,.52,.30), cd), smoothstep(0.55, 0.75, noise(p*0.03 + 9.0))*0.6);   // dry or mossy patches
+    float beach = 0.07 + 0.07*region;                             // wide beaches here, narrow there
     col = mix(wet, sand, st(smoothstep(0.02, 0.045, hh), 2.0));
-    col = mix(col, grass*(0.85 + tex2*0.3), st(smoothstep(0.09, 0.13, hh), 2.0));
+    col = mix(col, grass*(0.85 + tex2*0.3), st(smoothstep(beach, beach + 0.04, hh), 2.0));
+    float flower = step(0.985, hash(q + 17.0))*step(beach + 0.05, hh)*step(hh, 0.34);   // meadow flowers
+    col = mix(col, mix(mix(vec3(.96,.92,.80), vec3(.98,.82,.30), step(0.5, hash(q + 5.0))), vec3(.92,.52,.66), step(0.8, hash(q + 9.0))), flower);
     col = mix(col, forest*(0.8 + tex2*0.35), st(smoothstep(0.33, 0.40, hh), 2.0));
     col = mix(col, rock*(0.85 + det*0.3), st(smoothstep(mix(0.72, 0.6, cd), mix(0.78, 0.66, cd), hh), 2.0));
     col = mix(col, peak, st(smoothstep(mix(0.88, 0.74, cd), mix(0.92, 0.78, cd), hh), 2.0));
     col = mix(col, snow, st(cd*smoothstep(0.42, 0.58, hh)*smoothstep(0.75, 0.95, n.z)*0.85, 2.0));
+    float cliff = st(smoothstep(0.8, 0.66, n.z)*smoothstep(0.05, 0.1, hh), 2.0);    // steep faces show bare, banded rock
+    col = mix(col, mix(vec3(.50,.47,.43), vec3(.62,.58,.52), st(fract(hh*28.0 + det*0.6), 2.0))*(0.9 + 0.2*hash(q)), cliff);
     float avg = (H(p + vec2(5, 0)) + H(p - vec2(5, 0)) + H(p + vec2(0, 5)) + H(p - vec2(0, 5)))*0.25;
     float ao = 0.62 + 0.38*st(clamp(1.0 - (avg - h)*6.0, 0.62, 1.0)*2.63 - 1.63, 3.0);
     float diff = st(max(dot(n, uSun), 0.0), 4.0), tsh = st(terrainShadow(p, h)/0.8, 3.0)*0.8;   // stepped like the voxel faces
@@ -136,12 +184,16 @@ void main(){
     vec3 shallowC = mix(mix(vec3(.34,.66,.70), vec3(.24,.80,.78), wm), vec3(.40,.56,.62), cd);
     vec3 midC     = mix(mix(vec3(.17,.43,.55), vec3(.07,.53,.62), wm), vec3(.22,.36,.46), cd);
     vec3 deepC    = mix(mix(vec3(.07,.22,.35), vec3(.03,.27,.42), wm), vec3(.10,.18,.27), cd);
-    // depth reads as a few flat bands of colour (dithered where they meet), like a hand-painted chart
-    vec3 wc = mix(midC, shallowC, st(smoothstep(0.2, 0.0, depth), 3.0));
-    wc = mix(deepC, wc, st(smoothstep(0.55, 0.12, depth), 3.0));
-    vec3 bed = mix(mix(vec3(.80,.73,.54), vec3(.94,.90,.75), wm), vec3(.6,.6,.56), cd)*(0.72 + 0.6*st(caustic(p + n.xy*4.0), 2.0)*(1.0 - uNight)*(1.0 - cloud*0.5));
-    float clarity = st(exp(-depth*7.5), 4.0)*mix(0.72, 0.9, wm);
-    wc = mix(wc, bed*vec3(0.78, 0.96, 0.96), clarity);
+    // depth reads as a few flat bands of colour, like a hand-painted chart; trenches and holes go darker still
+    float vd = seaDepth(p, depth);
+    vec3 wc = mix(midC, shallowC, st(smoothstep(0.2, 0.0, vd), 3.0));
+    wc = mix(deepC, wc, st(smoothstep(0.55, 0.12, vd), 3.0));
+    wc *= mix(1.0, 0.6, st(smoothstep(0.6, 1.15, vd), 3.0));
+    float clarity = st(exp(-vd*mix(7.5, 5.5, wm)), 4.0)*mix(0.72, 0.9, wm);   // tropical water is clearer
+    if (clarity > 0.0){
+      vec4 bed = seabed(p, depth, wm, cd);
+      wc = mix(wc, bed.rgb*(0.72 + 0.6*st(caustic(p + n.xy*4.0), 2.0)*(1.0 - uNight)*(1.0 - cloud*0.5))*vec3(0.78, 0.96, 0.96), min(0.92, clarity + bed.a));
+    }
     wc *= 0.9 + 0.2*st(fbm(p*0.018 + vec2(uT*0.01, 0.0)), 3.0);        // broad blotches of lighter and darker water
     vec3 V = normalize(vec3(0.0, 0.55, 0.85));
     vec3 Rv = reflect(-V, n);
@@ -151,6 +203,7 @@ void main(){
     vec3 light = uAmb + uSunC*(0.55 + 0.32*st(max(dot(nS, uSun), 0.0), 3.0) + 0.13*max(dot(n, uSun), 0.0))*sunVis + Lp*0.3 + vec3(1.0, .84, .58)*st(beams(p), 3.0)*(0.12 + uNight*0.9);
     float tsh = depth < 0.22 ? st(terrainShadow(p, 0.0)/0.8, 3.0)*0.64 : 0.0;
     col = wc*light*(1.0 - tsh*0.7) + skyR*fres*0.7*(1.0 - cloud*0.35);
+    col += uSunC*st(sunShafts(p), 2.0)*0.045*smoothstep(0.08, 0.3, vd)*smoothstep(1.1, 0.4, vd)*sunVis*(1.0 - uNight);
     col *= mix(vec3(1.0), vec3(1.0, 0.86, 0.62), clamp(Lp.r*0.7, 0.0, 1.0));   // lamplight outshines the cold night base
     col += Lp*(0.3 + 0.1*fres);                                         // and glows amber on the surface
     float sd = max(dot(reflect(-uSun, nS), V), 0.0);
@@ -188,7 +241,7 @@ void main(){
   float c = cos(aI0.z), s = sin(aI0.z);
   vec3 w = vec3(aI0.x + q.x*c - q.y*s, aI0.y + q.x*s + q.y*c, q.z + aI1.x);
   vN = vec3(nn.x*c - nn.y*s, nn.x*s + nn.y*c, nn.z); vW = w; vC = vec4(aCol.rgb*aIT.rgb, aCol.a);
-  if (uMode == 1){ vec2 g = w.xy - uShXY*max(w.z, 0.0); gl_Position = vec4(((g - uHR.xy + 0.5)/uHR.zw)*2.0 - 1.0, 0.0, 1.0); }
+  if (uMode == 1){ vec2 g = w.xy - uShXY*max(w.z, 0.0); gl_Position = vec4(((g - uHR.xy)/uHR.zw)*2.0 - 1.0, 0.0, 1.0); }
   else gl_Position = vec4((w.x - uCam.x)/uCam.z*2.0 - 1.0, 1.0 - (w.y - w.z - uCam.y)/uCam.w*2.0, 1.0 - ((w.y - uCam.y) + w.z + 90.0)/(uCam.w + 280.0)*2.0, 1.0);
 }`;
 export const MESH_FS = `#version 300 es
@@ -207,7 +260,7 @@ void main(){
   float glow = clamp(vC.a*vG, 0.0, 1.0), sub = 0.0;
   col = mix(col, vC.rgb*(1.6 + uNight*2.2), glow);
   if (vW.z < 0.9){                                  // below the waterline: fade into the water colour, darker with depth
-    float h = texture(uH, (vW.xy - uHR.xy + 0.5)/uHR.zw).r;
+    float h = texture(uH, (vW.xy - uHR.xy)/uHR.zw).r;
     if (h < 0.0){
       sub = st(clamp((0.9 - vW.z)*0.32*vK, 0.0, 0.88), 4.0);
       vec3 wcol = uWater*mix(vec3(1.0), vec3(0.41, 0.51, 0.64), st(smoothstep(0.12, 0.55, -h), 3.0));   // the ground's mid/deep bands
@@ -224,7 +277,7 @@ layout(location=0) in vec4 aP;   // x, y, size (long axis), alpha
 layout(location=1) in vec4 aQ;   // kind (0 disc, 1 ring), heading, aspect (short/long), foam share
 uniform vec4 uHR; uniform float uPx;
 out float vA; flat out vec4 vQ;
-void main(){ vA = aP.w; vQ = aQ; gl_Position = vec4(((aP.xy - uHR.xy + 0.5)/uHR.zw)*2.0 - 1.0, 0.0, 1.0); gl_PointSize = aP.z*uPx; }`;
+void main(){ vA = aP.w; vQ = aQ; gl_Position = vec4(((aP.xy - uHR.xy)/uHR.zw)*2.0 - 1.0, 0.0, 1.0); gl_PointSize = aP.z*uPx; }`;
 export const FOAM_FS = `#version 300 es
 precision mediump float; precision highp int;
 in float vA; flat in vec4 vQ; out vec4 o;
@@ -261,20 +314,23 @@ void main(){
   o = vec4(vC.rgb, a); }`;
 
 // ---- post ----
+// A frame uses the bottom-left uUVS share of its buffers (the view can be smaller than the buffers), so post passes
+// read at vUV*uUVS; the blur stays inside that share.
 export const BRIGHT_FS = `#version 300 es
-precision highp float; precision highp int; in vec2 vUV; out vec4 o; uniform sampler2D uT; uniform float uTh;
-void main(){ vec3 c = texture(uT, vUV).rgb; float l = max(max(c.r, c.g), c.b); o = vec4(c*smoothstep(uTh, uTh + 0.5, l), 1.0); }`;
+precision highp float; precision highp int; in vec2 vUV; out vec4 o; uniform sampler2D uT; uniform float uTh; uniform vec2 uUVS;
+void main(){ vec3 c = texture(uT, vUV*uUVS).rgb; float l = max(max(c.r, c.g), c.b); o = vec4(c*smoothstep(uTh, uTh + 0.5, l), 1.0); }`;
 export const BLUR_FS = `#version 300 es
-precision highp float; precision highp int; in vec2 vUV; out vec4 o; uniform sampler2D uT; uniform vec2 uDir;
-void main(){ vec3 c = texture(uT, vUV).rgb*0.227;
-  c += (texture(uT, vUV + uDir*1.385).rgb + texture(uT, vUV - uDir*1.385).rgb)*0.316;
-  c += (texture(uT, vUV + uDir*3.231).rgb + texture(uT, vUV - uDir*3.231).rgb)*0.070;
+precision highp float; precision highp int; in vec2 vUV; out vec4 o; uniform sampler2D uT; uniform vec2 uDir, uUVS;
+vec3 tap(vec2 uv, vec2 lim){ return texture(uT, min(uv, lim)).rgb; }
+void main(){ vec2 uv = vUV*uUVS, lim = uUVS - 0.5/vec2(textureSize(uT, 0)); vec3 c = tap(uv, lim)*0.227;
+  c += (tap(uv + uDir*1.385, lim) + tap(uv - uDir*1.385, lim))*0.316;
+  c += (tap(uv + uDir*3.231, lim) + tap(uv - uDir*3.231, lim))*0.070;
   o = vec4(c, 1.0); }`;
 export const COMPOSITE_FS = `#version 300 es
 precision highp float; precision highp int; in vec2 vUV; out vec4 o;
 uniform sampler2D uScene, uBloom, uBlur;
 uniform float uT, uExp, uSat, uVig, uTilt, uGrain, uRain, uFlash, uBloomK, uSlant, uGrade, uDusk;
-uniform vec3 uTint; uniform vec2 uRes; uniform float uQ, uInk;
+uniform vec3 uTint; uniform vec2 uRes, uUVS; uniform float uQ, uInk;
 ${STYLE}
 float hash(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x*p.y); }
 vec3 aces(vec3 x){ return clamp((x*(2.51*x + 0.03))/(x*(2.43*x + 0.59) + 0.14), 0.0, 1.0); }
@@ -292,17 +348,17 @@ vec3 grade(vec3 c, float k){
   l = dot(g, vec3(0.2126, 0.7152, 0.0722)); g = mix(g, vec3(l), roll);
   return mix(c, clamp(g, 0.0, 1.0), k); }
 void main(){
-  vec2 uv = vUV;
-  vec4 s0 = texture(uScene, uv); vec3 c = s0.rgb;
+  vec2 uv = vUV, tuv = vUV*uUVS;                                        // uv: position on screen; tuv: in the buffers
+  vec4 s0 = texture(uScene, tuv); vec3 c = s0.rgb;
   float tb = smoothstep(0.2, 0.5, abs(uv.y - 0.5))*uTilt;               // miniature tilt-shift
-  c = mix(c, texture(uBlur, uv).rgb, tb);
+  c = mix(c, texture(uBlur, tuv).rgb, tb);
   if (uInk > 0.0){                                                      // a one-pixel ink edge where solid voxels meet the ground or water
     vec2 tx = 1.0/vec2(textureSize(uScene, 0));
-    float nb = max(max(texture(uScene, uv + vec2(tx.x, 0)).a, texture(uScene, uv - vec2(tx.x, 0)).a), max(texture(uScene, uv + vec2(0, tx.y)).a, texture(uScene, uv - vec2(0, tx.y)).a));
+    float nb = max(max(texture(uScene, tuv + vec2(tx.x, 0)).a, texture(uScene, tuv - vec2(tx.x, 0)).a), max(texture(uScene, tuv + vec2(0, tx.y)).a, texture(uScene, tuv - vec2(0, tx.y)).a));
     float edge = step(0.5, nb)*step(s0.a, 0.35)*smoothstep(0.5, 1.0, nb);
     c = mix(c, c*vec3(0.36, 0.42, 0.48), edge*uInk);
   }
-  c += texture(uBloom, uv).rgb*uBloomK;
+  c += texture(uBloom, tuv).rgb*uBloomK;
   if (uRain > 0.01){
     vec2 q = vec2(uv.x*170.0 + uv.y*uSlant*40.0, uv.y*9.0 + uT*7.0); vec2 id = floor(q); float r = hash(id);
     float f = fract(q.y), x = fract(q.x);
@@ -319,5 +375,13 @@ void main(){
   o = vec4(c, 1.0);
 }`;
 export const COPY_FS = `#version 300 es
-precision highp float; precision highp int; in vec2 vUV; out vec4 o; uniform sampler2D uT;
-void main(){ o = texture(uT, vUV); }`;
+precision highp float; precision highp int; in vec2 vUV; out vec4 o; uniform sampler2D uT; uniform vec2 uUVS;
+void main(){ o = texture(uT, vUV*uUVS); }`;
+// The pixel-style frame scaled up to the canvas. uMap: device position (y up) of the frame's corner, and device pixels
+// per frame pixel. Each device pixel samples its frame pixel's centre, except within half a device pixel of a pixel
+// edge, where the linear filter blends the two: hard pixels at whole-number scales, even ones in between.
+export const PRESENT_FS = `#version 300 es
+precision highp float; precision highp int; out vec4 o; uniform sampler2D uT; uniform vec4 uMap;
+void main(){
+  vec2 t = (gl_FragCoord.xy - uMap.xy)/uMap.z, fl = floor(t), d = t - fl - 0.5, r = vec2(0.5 - 0.5/uMap.z);
+  o = texture(uT, (fl + 0.5 + (d - clamp(d, -r, r))*uMap.z)/vec2(textureSize(uT, 0))); }`;

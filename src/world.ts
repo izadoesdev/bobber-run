@@ -362,3 +362,28 @@ export function cratesNear(x: number, y: number, rad: number, out: Crate[] = [])
     for (let i = Math.floor((x - rad) / FC); i <= Math.floor((x + rad) / FC); i++) for (const c of fishCell(i, j).crates) out.push(c);
   return out;
 }
+
+// ---------- keeping the caches bounded ----------
+// Everything above regenerates identically from the seed, so data far from the view is dropped and rebuilt on the
+// way back. Fish cells and landmarks only go while untouched (every school full, every crate in place): a fished-out
+// school or a taken crate keeps its state until it has refilled.
+const full = (s: School | undefined) => !s || s.stock >= s.max;
+/** whether cache key k's square (side `size`) lies more than `keep` from (x, y) */
+function far(k: number, size: number, x: number, y: number, keep: number): boolean {
+  const i = Math.floor(k / 100000) - 50000, j = (k % 100000) - 50000;
+  return Math.max(Math.abs((i + 0.5) * size - x), Math.abs((j + 0.5) * size - y)) > keep + size / 2;
+}
+/** Drop cached world data far from the view centre (x, y); `view` is the larger side of the view in world units. */
+export function trimWorld(x: number, y: number, view: number): void {
+  const keepTiles = Math.max(900, view * 1.5);
+  for (const k of tiles.keys()) if (far(k, TS, x, y, keepTiles)) tiles.delete(k);
+  for (const k of cells.keys()) if (far(k, CELL, x, y, 4000)) cells.delete(k);
+  for (const [k, L] of poiCells) if (far(k, CELL, x, y, 4000) && L.every(p => full(p.school))) poiCells.delete(k);
+  for (const [k, c] of fishCells) {
+    if (!far(k, FC, x, y, 1500)) continue;
+    if (c.schools.every(full) && c.crates.every(cr => !cr.taken)) fishCells.delete(k);
+    else for (const s of c.schools) s.swim = undefined;     // kept for its state; its fish respawn on the way back
+  }
+}
+/** Sizes of the world caches (for tests and the memory budget). */
+export const worldCaches = () => ({ tiles: tiles.size, cells: cells.size, pois: poiCells.size, fish: fishCells.size });

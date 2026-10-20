@@ -3,6 +3,7 @@ import '../styles/base.css';
 import '../styles/ui.css';
 import { W, H, STEP, setView } from './config';
 import * as GAME from './game';
+import { guide } from './game/guide';
 import * as MODELS from './models';
 import * as NETAPI from './net';
 import { SPECIES } from './econ';
@@ -14,12 +15,12 @@ import { updateStory } from './story';
 import { initNet, netTick, NET } from './net';
 import { ONLINE } from './online';
 import { renderOffline, SFX_NAMES } from './audio';
-import { homePort, schoolsNear, poisNear, hAt, LAIR, BOSS } from './world';
+import { homePort, schoolsNear, poisNear, hAt, LAIR, BOSS, trimWorld, worldCaches } from './world';
 import { updateLife, LIFE } from './life';
 import { WX, setWeather } from './weather';
 import { initInput, pollPad } from './input';
 import { menuInput } from './menus';
-import { screenScale, zoomLevel } from './camera';
+import { baseScale, targetScale, easeScale, shipZoom } from './camera';
 
 const screen = document.getElementById('screen') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLDivElement;
@@ -27,25 +28,34 @@ initRender(screen); initUI(uiRoot); applySettings();
 initNet(G, SPECIES.map(s => s.id), toast);
 initInput();
 
-// Fill the window: an integer screen scale S keeps the ship's view in sight (about 320x200 world
-// units for the rowboat, more for bigger ships or when zoomed out), and the view grows to the
-// window's shape so W*S x H*S just covers it (the stage crops the last few pixels).
-let fittedZoom = 0;
-function fit(): void {
+// Fill the window: a whole-number screen scale S0 shows the ship's default view (about 320x200 world units for
+// the rowboat, more for bigger ships), and the canvas grows to the window's shape so it just covers it (the stage
+// crops the last few pixels). The canvas keeps that size; zooming changes the shown scale R.S, and with it how
+// many world units (W x H) the view covers.
+let fittedShip = 0;
+function fit(glide = false): void {
   const dpr = window.devicePixelRatio || 1, iw = innerWidth * dpr, ih = innerHeight * dpr;
-  const S = screenScale(iw, ih); fittedZoom = zoomLevel();
-  setView(Math.ceil(iw / S), Math.ceil(ih / S));
-  R.S = S; screen.width = W * S; screen.height = H * S;
-  const cw = W * S / dpr, ch = H * S / dpr;
-  screen.style.width = cw + 'px'; screen.style.height = ch + 'px';
-  uiRoot.style.width = cw + 'px'; uiRoot.style.height = ch + 'px';
-  uiRoot.style.fontSize = (Math.min(cw / 64, ch / 40) * SET.ui).toFixed(2) + 'px';
+  const S0 = baseScale(iw, ih), cw = Math.ceil(iw / S0) * S0, ch = Math.ceil(ih / S0) * S0;
+  fittedShip = shipZoom(); R.S0 = S0;
+  if (screen.width !== cw || screen.height !== ch) { screen.width = cw; screen.height = ch; }   // (resizing clears the canvas)
+  const cssW = cw / dpr + 'px', cssH = ch / dpr + 'px';
+  screen.style.width = uiRoot.style.width = cssW; screen.style.height = uiRoot.style.height = cssH;
+  uiRoot.style.fontSize = (Math.min(cw / dpr / 64, ch / dpr / 40) * SET.ui).toFixed(2) + 'px';
+  if (!glide) R.S = targetScale(S0, cw, ch);            // a new ship glides out to its wider view; a resized window just fits
+  zoomView(0);
 }
-addEventListener('resize', fit); fit();
+addEventListener('resize', () => fit()); fit();
+/** Ease the shown scale toward the zoom target, keeping the view centred as it grows or shrinks. */
+function zoomView(dt: number): void {
+  const S = easeScale(R.S, targetScale(R.S0, screen.width, screen.height), dt), w = screen.width / S, h = screen.height / S;
+  if (w === W && h === H) return;
+  G.cam.x += (W - w) / 2; G.cam.y += (H - h) / 2;
+  R.S = S; setView(w, h);
+}
 
 // ---------- the loop ----------
 newGame(); G.mode = 'title';                           // the title screen shows the home harbour
-let acc = 0, last = performance.now(), noRender = false;
+let acc = 0, last = performance.now(), noRender = false, trimT = 0;
 
 function panChart(dt: number): void {
   const s = 220 * dt * G.map.zoom, k = G.keys;
@@ -55,9 +65,10 @@ function panChart(dt: number): void {
   if (k.ArrowDown || k.s) G.map.y += s;
 }
 export function tick(dt: number): void {
-  if (zoomLevel() !== fittedZoom) fit();               // a new ship or a zoom step changes the view
+  if (shipZoom() !== fittedShip) fit(true);             // a new ship has its own default view
+  zoomView(dt);
   pollPad();
-  menuInput(dt, fit);
+  menuInput(dt, () => fit());
   let alpha = 1;
   if (G.mode === 'play') {                             // physics runs in fixed steps; rendering interpolates between them
     refreshSolids();
@@ -73,6 +84,7 @@ export function tick(dt: number): void {
   const bs = boatRenderState(alpha);
   if (G.mode === 'play' || G.mode === 'sunk' || G.mode === 'title') updateCamera(dt, bs.x, bs.y);   // menus freeze the view behind them
   G.pressed.clear();
+  if (G.mode === 'play' && (trimT -= dt) <= 0) { trimT = 2; trimWorld(G.cam.x + W / 2, G.cam.y + H / 2, Math.max(W, H)); }   // forget the sea far behind (not while the chart looks far afield)
   if (noRender) return;
   if (!SET.shake) { G.shakeX = 0; G.shakeY = 0; }
   render(alpha);
@@ -90,7 +102,7 @@ addEventListener('beforeunload', () => { if (G.mode !== 'title' && !NET.skipUnlo
 declare global { interface Window { BR: Record<string, unknown> } }
 window.BR = {
   NET, NETAPI, ONLINE, render, SET, apply: () => { applySettings(); fit(); }, AUDIO: { renderOffline, SFX_NAMES },
-  WX, setWeather, LIFE, LAIR, BOSS, MODELS, GAME, TUNE, G, tick, sim: (dt: number) => { noRender = true; tick(dt); noRender = false; },
-  homePort, schoolsNear, poisNear, hAt, SPECIES, R,
+  WX, setWeather, LIFE, LAIR, BOSS, MODELS, GAME, TUNE, G, guide, tick, sim: (dt: number) => { noRender = true; tick(dt); noRender = false; },
+  homePort, schoolsNear, poisNear, hAt, SPECIES, R, worldCaches,
 };
 requestAnimationFrame(frame);

@@ -17,10 +17,13 @@ import { hasOars, oarGeom, BOAT_MODELS, NP, SHIPPED, PLAIN, type Fit } from '../
 import { program, texture, target, msTarget, free, type Program, type Target, type MsTarget } from './glutil';
 import * as SH from './shaders';
 import * as MS from './meshes';
+import { minScale } from '../camera';
 import type { BoatId, FishLine, Point, Poi, School, Crate } from '../types';
 
 export interface RenderOptions {
-  /** device pixels per world unit (main.ts sets it when fitting the canvas) */
+  /** whole device pixels per world unit at the ship's default view: fixes the canvas and render-target sizes (main.ts) */
+  S0: number;
+  /** device pixels per world unit shown now; eases toward S0 x the player's zoom (main.ts) */
   S: number;
   /** internal resolution scale for the 'smooth' style (adapted when quality is 'auto') */
   scale: number;
@@ -28,12 +31,12 @@ export interface RenderOptions {
   /** post effect strengths, 0..1 */
   fx: { bloom: number; tilt: number; grade: number; ink?: number };
 }
-export const R: RenderOptions = { S: 1, scale: 1, quality: 'auto', fx: { bloom: 1, tilt: 1, grade: 1 } };
+export const R: RenderOptions = { S0: 1, S: 1, scale: 1, quality: 'auto', fx: { bloom: 1, tilt: 1, grade: 1 } };
 
 type GL = WebGL2RenderingContext;
 let gl: GL, cv: HTMLCanvasElement, hdr = false;
 let quadVao: WebGLVertexArrayObject, foamVao: WebGLVertexArrayObject, foamBuf: WebGLBuffer, partVao: WebGLVertexArrayObject, partBuf: WebGLBuffer;
-interface Programs { ground: Program; mesh: Program; foam: Program; part: Program; bright: Program; blur: Program; comp: Program; copy: Program }
+interface Programs { ground: Program; mesh: Program; foam: Program; part: Program; bright: Program; blur: Program; comp: Program; copy: Program; present: Program }
 let PG: Programs;
 
 export function initRender(canvas: HTMLCanvasElement): void {
@@ -44,12 +47,34 @@ export function initRender(canvas: HTMLCanvasElement): void {
     throw new Error('WebGL2 unavailable');
   }
   gl = ctx;
+  setupGL();
+  // The GPU can drop the context (driver reset, too many tabs). Pause drawing, and rebuild everything when it comes
+  // back; if it doesn't, offer a reload.
+  canvas.addEventListener('webglcontextlost', e => {
+    e.preventDefault(); lost = true;
+    setTimeout(() => { if (lost) offerReload(); }, 4000);
+  });
+  canvas.addEventListener('webglcontextrestored', () => {
+    try { setupGL(); lost = false; } catch (err) { console.error(err); offerReload(); }
+  });
+}
+let lost = false;
+function offerReload(): void {
+  if (document.getElementById('gl-reset')) return;
+  const b = document.createElement('button');
+  b.id = 'gl-reset'; b.textContent = 'Graphics were reset. Click to reload.';
+  b.style.cssText = 'position:fixed;inset:0;margin:auto;width:max-content;height:max-content;padding:1em 1.6em;font:16px monospace;color:#efe9dc;background:#1b2a33;border:2px solid #efe9dc;cursor:pointer;z-index:99';
+  b.onclick = () => location.reload();
+  document.body.append(b);
+}
+// programs, buffers and vertex arrays; every target and mesh is (re)built on demand afterwards
+function setupGL(): void {
   hdr = !!gl.getExtension('EXT_color_buffer_float');
   PG = {
     ground: program(gl, SH.QUAD_VS, SH.GROUND_FS), mesh: program(gl, SH.MESH_VS, SH.MESH_FS),
     foam: program(gl, SH.FOAM_VS, SH.FOAM_FS), part: program(gl, SH.PART_VS, SH.PART_FS),
     bright: program(gl, SH.QUAD_VS, SH.BRIGHT_FS), blur: program(gl, SH.QUAD_VS, SH.BLUR_FS),
-    comp: program(gl, SH.QUAD_VS, SH.COMPOSITE_FS), copy: program(gl, SH.QUAD_VS, SH.COPY_FS),
+    comp: program(gl, SH.QUAD_VS, SH.COMPOSITE_FS), copy: program(gl, SH.QUAD_VS, SH.COPY_FS), present: program(gl, SH.QUAD_VS, SH.PRESENT_FS),
   };
   // full-screen quad
   quadVao = gl.createVertexArray(); gl.bindVertexArray(quadVao);
@@ -68,45 +93,61 @@ export function initRender(canvas: HTMLCanvasElement): void {
   gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, PART_STRIDE * 4, 16);
   gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, PART_STRIDE * 4, 32);
   gl.bindVertexArray(null);
-  MS.init(gl, gl.createBuffer());
+  MS.init(gl, gl.createBuffer()); MS.reset();
+  field = null; frame = null;
 }
 
 // ---------- render targets ----------
-// heightfield, foam and shadow buffers cover the view plus a margin, so they follow the view size
-const PAD = 40, FR = 2;                          // margin in world units; foam/shadow texels per world unit
-interface Field { HW: number; HH: number; hdata: Float32Array; tex: WebGLTexture; foam: Target; shadow: Target }
+// Every buffer is sized once per window for the widest view the player can zoom out to; each frame draws into the
+// part its view needs, so zooming never reallocates. One art pixel stays one world unit at every zoom: zoomed out,
+// the frame simply spans more render pixels, each smaller on screen.
+// The heightfield, foam and shadow buffers cover the view plus a margin; their origin moves in SNAP-unit steps, so
+// the heights upload (skipped while the field stays put) runs a few times a second while sailing, not every frame.
+const PAD = 40, FR = 2, SNAP = 8;               // margin in world units; foam/shadow texels per world unit; origin step
+/** the widest view (world units) this window can show */
+const maxView = () => { const s = minScale(R.S0, cv.width, cv.height); return [cv.width / s, cv.height / s]; };
+interface Field {
+  /** texture size in texels */
+  TW: number; TH: number;
+  hdata: Float32Array; tex: WebGLTexture; foam: Target; shadow: Target;
+  /** the last upload (x0, y0, step, w, h): heights never change, so an unmoved field skips the upload */
+  last: number[];
+}
 let field: Field | null = null;
 function ensureField(): Field {
-  const hw = W + PAD * 2 + 2, hh = H + PAD * 2 + 2;
-  if (field && hw === field.HW && hh === field.HH) return field;
+  const [vw, vh] = maxView(), tw = Math.ceil(vw) + PAD * 2 + SNAP + 2, th = Math.ceil(vh) + PAD * 2 + SNAP + 2;
+  if (field && tw === field.TW && th === field.TH) return field;
   if (field) { gl.deleteTexture(field.tex); free(gl, field.foam); free(gl, field.shadow); }
   field = {
-    HW: hw, HH: hh, hdata: new Float32Array(hw * hh),
-    tex: texture(gl, hw, hh, gl.R16F, gl.RED, gl.FLOAT, gl.LINEAR),
-    foam: target(gl, hw * FR, hh * FR, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE),
-    shadow: target(gl, hw * FR, hh * FR, gl.R8, gl.RED, gl.UNSIGNED_BYTE),
+    TW: tw, TH: th, hdata: new Float32Array(tw * th), last: [],
+    tex: texture(gl, tw, th, gl.R16F, gl.RED, gl.FLOAT, gl.LINEAR),
+    foam: target(gl, tw * FR, th * FR, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE),
+    shadow: target(gl, tw * FR, th * FR, gl.R8, gl.RED, gl.UNSIGNED_BYTE),
   };
   return field;
 }
-// pixel styles draw the scene at a fixed number of pixels per world unit, without MSAA,
-// then upscale to the canvas with hard edges; 'smooth' draws at canvas resolution
+// pixel styles draw the scene at a fixed number of pixels per world unit, without MSAA, then scale up to the canvas
+// with hard edges; 'smooth' draws at canvas resolution
 const PIXEL: Partial<Record<PixelStyle, number>> = { chunky: 1, crisp: 2 };
 interface Frame {
+  /** allocated size; a frame uses the part its view needs */
   w: number; h: number;
   /** render pixels per world unit (0 = smooth) */
   px: number;
   scene: MsTarget;
   /** bloom chain (half, quarter) and tilt-shift blur (quarter) */
   half: Target; qa: Target; qb: Target; ta: Target; tb: Target;
-  /** pixel styles composite here, then blit to the canvas */
+  /** pixel styles composite here, then scale up to the canvas */
   out: Target | null;
 }
 let frame: Frame | null = null;
 function ensureTargets(): Frame {
   const px = PIXEL[SET.pixel] || 0;
   let w, h;
-  if (px) { w = Math.ceil(W * px) + 1; h = Math.ceil(H * px) + 1; }   // one spare pixel so the snapped frame can slide
-  else { const sc = Math.min(1, 1920 / cv.width) * R.scale; w = Math.max(64, Math.round(cv.width * sc)); h = Math.max(40, Math.round(cv.height * sc)); }
+  if (px) {                                       // the widest view at px per world unit (never more than the canvas), plus a spare pixel to slide
+    const [vw, vh] = maxView(), k = Math.min(px, cv.width / vw);
+    w = Math.ceil(vw * k) + 1; h = Math.ceil(vh * k) + 1;
+  } else { const sc = Math.min(1, 1920 / cv.width) * R.scale; w = Math.max(64, Math.round(cv.width * sc)); h = Math.max(40, Math.round(cv.height * sc)); }
   if (frame && w === frame.w && h === frame.h && px === frame.px) return frame;
   if (frame) for (const t of [frame.scene, frame.half, frame.qa, frame.qb, frame.ta, frame.tb, frame.out]) free(gl, t);
   const IF = hdr ? gl.RGBA16F : gl.RGBA8, TY = hdr ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
@@ -140,20 +181,24 @@ function into(t: { fb: WebGLFramebuffer; w: number; h: number } | null, w?: numb
 function quad(): void { gl.bindVertexArray(quadVao); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); }
 
 // ---------- heightfield around the camera ----------
-function uploadHeights(F: Field, x0: number, y0: number): void {
-  const { HW, HH, hdata } = F;
+// hw x hh heights from world (x0, y0), one every fs units, into the corner of the heights texture
+function uploadHeights(F: Field, x0: number, y0: number, fs: number, hw: number, hh: number): void {
+  const L = F.last;
+  if (L[0] === x0 && L[1] === y0 && L[2] === fs && L[3] === hw && L[4] === hh) return;
+  L[0] = x0; L[1] = y0; L[2] = fs; L[3] = hw; L[4] = hh;
+  const hdata = F.hdata;
   let i = 0;
-  for (let j = 0; j < HH; j++) {
-    const wy = y0 + j, ty = Math.floor(wy / TS), row = (wy - ty * TS + 1) * TN;
+  for (let j = 0; j < hh; j++) {
+    const wy = y0 + j * fs, ty = Math.floor(wy / TS), row = (wy - ty * TS + 1) * TN;
     let tx = Math.floor(x0 / TS), tile = getTile(tx, ty), base = tx * TS - 1;
-    for (let k = 0; k < HW; k++, i++) {
-      const wx = x0 + k;
+    for (let k = 0; k < hw; k++, i++) {
+      const wx = x0 + k * fs;
       if (wx - base > TS) { tx++; tile = getTile(tx, ty); base = tx * TS - 1; }
       hdata[i] = tile.h[row + wx - base];
     }
   }
   gl.bindTexture(gl.TEXTURE_2D, F.tex);
-  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, HW, HH, gl.RED, gl.FLOAT, hdata);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, hw, hh, gl.RED, gl.FLOAT, hdata);
 }
 
 // ---------- trees: deterministic per height tile ----------
@@ -167,17 +212,19 @@ function tileTrees(t: HeightTile): number[] {
     const r = hash01(gx, gy, 41), px = gx * GS + Math.floor(hash01(gx, gy, 42) * GS), py = gy * GS + Math.floor(hash01(gx, gy, 43) * GS);
     if (px < x0 || px >= x0 + TS || py < y0 || py >= y0 + TS) continue;
     const v = t.h[(py - y0 + 1) * TN + px - x0 + 1];
-    if (v < 0.12) continue;
+    if (v < 0.03) continue;
     let kind: string | null = null;
-    if (v >= 0.36 && v < 0.76) { if (r < 0.72) kind = v > 0.5 || r < 0.25 ? 'pine' : 'round'; }
-    else if (v < 0.36) { if (r < 0.06) kind = 'round'; else if (r < 0.08) kind = 'rock'; }
-    else if (r < 0.06) kind = 'rock';
+    if (v < 0.12) { if (r < 0.025) kind = 'boulders'; }                     // the odd heap of stones on the beach
+    else if (v >= 0.36 && v < 0.76) { if (r < 0.72) kind = v > 0.5 || r < 0.25 ? 'pine' : 'round'; }
+    else if (v < 0.36) { if (r < 0.06) kind = 'round'; else if (r < 0.08) kind = 'rock'; else if (r < 0.17) kind = r < 0.13 ? 'bush' : 'berrybush'; }
+    else if (r < 0.06) kind = r < 0.025 ? 'boulders' : 'rock';
     const wm = warmth(py), cd = coldness(py), rr = hash01(gx, gy, 45);
-    if (wm > rr && v < 0.24 && r < 0.14) kind = 'palm';
-    else if (kind && kind !== 'rock' && cd > rr) kind = 'snowpine';
+    const stony = kind === 'rock' || kind === 'boulders', shrub = kind === 'bush' || kind === 'berrybush';
+    if (wm > rr && v >= 0.12 && v < 0.24 && r < 0.14) kind = 'palm';
+    else if (kind && !stony && !shrub && cd > rr) kind = 'snowpine';
     else if (kind === 'pine' && wm > rr) kind = 'round';
     if (!kind) continue;
-    if (kind !== 'rock' && kind !== 'palm' && hash01(gx, gy, 44) < 0.3) kind += 'B';   // big variant
+    if (kind === 'pine' || kind === 'round' || kind === 'snowpine') { if (hash01(gx, gy, 44) < 0.3) kind += 'B'; }   // big variant
     L.push(px + 0.5, py + 0.5, KI[kind], 0.85 + hash01(gx, gy, 46) * 0.35, hash01(gx, gy, 47) * 6.283);
   }
   return (t.trees = L);
@@ -701,8 +748,8 @@ function partPoints(): void {
 
 // ---------- prefetch heights (and tree lists) so new terrain never hitches ----------
 export function prefetch(budgetMs = 4): void {
-  const t0 = performance.now(), cx = G.cam.x + W / 2, cy = G.cam.y + H / 2;
-  for (let ty = Math.floor((cy - H) / TS); ty <= Math.floor((cy + H) / TS); ty++) for (let tx = Math.floor((cx - W) / TS); tx <= Math.floor((cx + W) / TS); tx++) {
+  const t0 = performance.now(), cx = G.cam.x + W / 2, cy = G.cam.y + H / 2, mx = W / 2 + TS * 1.5, my = H / 2 + TS * 1.5;
+  for (let ty = Math.floor((cy - my) / TS); ty <= Math.floor((cy + my) / TS); ty++) for (let tx = Math.floor((cx - mx) / TS); tx <= Math.floor((cx + mx) / TS); tx++) {
     if (performance.now() - t0 > budgetMs) return;
     if (!hasTile(tx, ty)) getTile(tx, ty);
     else { const t = getTile(tx, ty); if (t.land && !t.trees) tileTrees(t); }
@@ -735,10 +782,14 @@ function drawMeshes(mode: 0 | 1, F: Field, E: Env, Lt: Lights): void {
   if (mode === 0) POOLS[1].forEach(drawPool);       // sea life and other no-shadow meshes skip the shadow pass
   MS.drawInstances(MS.dynMesh(DYN[0], DYN[1]), DYN, 1);
 }
+// the share of each frame buffer this frame uses (its view can be smaller than the buffers)
+const UVS = [1, 1];
+// draw into the used part of dst
+function intoUsed(dst: Target): void { into(dst, Math.ceil(dst.w * UVS[0]), Math.ceil(dst.h * UVS[1])); }
 // a full-screen post pass: bind dst, the program and src (as uT); the caller sets extra uniforms and calls quad()
 function begin(pg: Program, dst: Target, src: Target): void {
-  into(dst); gl.useProgram(pg.p);
-  bindTex(pg, 'uT', src.tex, 0);
+  intoUsed(dst); gl.useProgram(pg.p);
+  bindTex(pg, 'uT', src.tex, 0); U2(pg, 'uUVS', UVS[0], UVS[1]);
 }
 // dynamic resolution: keep frames under ~20ms by trading internal resolution
 const QUALITY_SCALE: Record<Quality, number> = { auto: 1, high: 1, medium: 0.75, low: 0.5 };
@@ -757,33 +808,44 @@ function adaptScale(): void {
   else if (avg < 13 && R.scale < 1) R.scale = Math.min(1, R.scale + 0.125);
 }
 export function render(alpha: number): void {
+  if (lost) return;
   adaptScale();
-  const F = ensureField(), FB = ensureTargets();
-  const { w, h, px } = FB, bs = boatRenderState(alpha);
-  // Pixel styles draw the world with the camera snapped to whole pixels, so static things (lighthouses, glints,
-  // ripples) sit still on the pixel grid instead of shimmering as the camera glides. The leftover fraction is
-  // applied when the frame is scaled up to the screen (the blit at the end), which keeps scrolling smooth.
+  const F = ensureField(), FB = ensureTargets(), px = FB.px, bs = boatRenderState(alpha);
+  // Pixel styles draw upx render pixels per world unit: one per art pixel (two for crisp), but never more than the
+  // screen shows. The world is drawn with the camera snapped to whole render pixels, so static things (lighthouses,
+  // glints, ripples) sit still on the pixel grid instead of shimmering as the camera glides; the leftover fraction
+  // is applied when the frame is scaled up to the screen (present, at the end).
+  const upx = px && Math.min(px, R.S, (FB.w - 1) / W, (FB.h - 1) / H);
+  const w = px ? Math.min(FB.w, Math.ceil(W * upx - 1e-6) + 1) : FB.w, h = px ? Math.min(FB.h, Math.ceil(H * upx - 1e-6) + 1) : FB.h;
+  UVS[0] = w / FB.w; UVS[1] = h / FB.h;
   const camX0 = G.cam.x + G.shakeX, camY0 = G.cam.y + G.shakeY;
-  const camX = px ? Math.floor(camX0 * px) / px : camX0, camY = px ? Math.floor(camY0 * px) / px : camY0;
-  const x0 = Math.floor(camX) - PAD, y0 = Math.floor(camY) - PAD;
-  uploadHeights(F, x0, y0);
-  STY.px = px; STY.org[0] = Math.round(camX * px); STY.org[1] = Math.round(camY * px); STY.org[2] = h;
-  HR[0] = x0; HR[1] = y0; HR[2] = F.HW; HR[3] = F.HH;
-  CAM[0] = camX; CAM[1] = camY; CAM[2] = px ? w / px : W; CAM[3] = px ? h / px : H;
+  const camX = upx ? Math.floor(camX0 * upx) / upx : camX0, camY = upx ? Math.floor(camY0 * upx) / upx : camY0;
+  CAM[0] = camX; CAM[1] = camY; CAM[2] = upx ? w / upx : W; CAM[3] = upx ? h / upx : H;
+  // the heightfield around the view (a heights texel spans fs world units, 1 unless a view outgrows the buffers)
+  let fs = 1;
+  while ((CAM[2] + PAD * 2 + SNAP) / fs + 2 > F.TW || (CAM[3] + PAD * 2 + SNAP) / fs + 2 > F.TH) fs *= 2;
+  const x0 = Math.floor(camX / SNAP) * SNAP - PAD, y0 = Math.floor(camY / SNAP) * SNAP - PAD;
+  uploadHeights(F, x0, y0, fs, Math.ceil((CAM[2] + PAD * 2 + SNAP) / fs) + 2, Math.ceil((CAM[3] + PAD * 2 + SNAP) / fs) + 2);
+  STY.px = upx; STY.org[0] = Math.round(camX * upx); STY.org[1] = Math.round(camY * upx); STY.org[2] = h;
+  // heightfield texture: world position of texel 0's corner and the world size of the whole texture
+  HR[0] = x0 - fs / 2; HR[1] = y0 - fs / 2; HR[2] = F.TW * fs; HR[3] = F.TH * fs;
   const E = environment(camY + H / 2);
   gatherFleet();
   const pois = poisNear(camX + W / 2, camY + H / 2, 300, viewPois), Lt = lightsFor(bs, pois, E.dk);
   buildScene(bs, pois, camX, camY);
   SHXY[0] = E.sun[0] / Math.max(0.25, E.sun[2]); SHXY[1] = E.sun[1] / Math.max(0.25, E.sun[2]);   // shadow offset per unit height
   gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
-  // 1. object shadows projected onto the ground plane
+  // 1. object shadows projected onto the ground plane (only the part of the field in use is cleared)
+  const fw = Math.ceil(((CAM[2] + PAD * 2 + SNAP) / fs + 2) * FR), fh = Math.ceil(((CAM[3] + PAD * 2 + SNAP) / fs + 2) * FR);
+  gl.enable(gl.SCISSOR_TEST); gl.scissor(0, 0, fw, fh);
   into(F.shadow); gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
   drawMeshes(1, F, E, Lt);
   // 2. foam / ripple stamps
   into(F.foam); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.disable(gl.SCISSOR_TEST);
   const nf = foamPoints(bs);
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
-  gl.useProgram(PG.foam.p); U4(PG.foam, 'uHR', HR); U1(PG.foam, 'uPx', FR);
+  gl.useProgram(PG.foam.p); U4(PG.foam, 'uHR', HR); U1(PG.foam, 'uPx', FR / fs);
   gl.bindVertexArray(foamVao); gl.bindBuffer(gl.ARRAY_BUFFER, foamBuf);
   if (nf) { gl.bufferData(gl.ARRAY_BUFFER, foamArr, gl.STREAM_DRAW, 0, nf * FOAM_STRIDE); gl.drawArrays(gl.POINTS, 0, nf); }
   gl.disable(gl.BLEND);
@@ -824,23 +886,30 @@ export function render(alpha: number): void {
   begin(PG.blur, FB.tb, FB.ta); U2(PG.blur, 'uDir', 1.5 / FB.ta.w, 0); quad();
   begin(PG.blur, FB.ta, FB.tb); U2(PG.blur, 'uDir', 0, 1.5 / FB.ta.h); quad();
   const out = FB.out;
-  if (out) into(out); else into(null, cv.width, cv.height);
+  if (out) intoUsed(out); else into(null, cv.width, cv.height);
   const cp = PG.comp;
   gl.useProgram(cp.p);
-  bindTex(cp, 'uScene', scene.tex, 0); bindTex(cp, 'uBloom', FB.qa.tex, 1); bindTex(cp, 'uBlur', FB.ta.tex, 2);
+  bindTex(cp, 'uScene', scene.tex, 0); bindTex(cp, 'uBloom', FB.qa.tex, 1); bindTex(cp, 'uBlur', FB.ta.tex, 2); U2(cp, 'uUVS', UVS[0], UVS[1]);
   // pixel styles: the ink edge replaces film grain; tilt-shift is gentler
   styleUniforms(cp); U1(cp, 'uQ', 0); U1(cp, 'uInk', px ? 0.75 * (R.fx.ink ?? 1) : 0);
   U1(cp, 'uT', G.t); U1(cp, 'uExp', E.exp); U1(cp, 'uSat', E.sat); U1(cp, 'uVig', 0.42); U1(cp, 'uTilt', (px ? 0.45 : 0.7) * R.fx.tilt); U1(cp, 'uGrain', SET.calm || px ? 0 : 0.01);
   U1(cp, 'uGrade', R.fx.grade ?? 1); U1(cp, 'uDusk', E.dusk);
   U1(cp, 'uRain', WX.rain); U1(cp, 'uFlash', WX.flash * (SET.calm ? 0.15 : 1)); U1(cp, 'uBloomK', (0.5 + E.dk * 0.5) * R.fx.bloom); U1(cp, 'uSlant', 0.3 + WX.wind * 0.7);
-  U3(cp, 'uTint', E.tint); U2(cp, 'uRes', out ? out.w : cv.width, out ? out.h : cv.height);
+  U3(cp, 'uTint', E.tint); U2(cp, 'uRes', out ? w : cv.width, out ? h : cv.height);
   quad();
-  if (out) {
-    // k device pixels per render pixel; slide by the sub-pixel camera remainder (y is up in GL)
-    const k = cv.width / (W * px), ox = Math.round((camX0 - camX) * px * k), oy = Math.round((camY0 - camY) * px * k);
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, out.fb); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
-    gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.blitFramebuffer(0, 0, out.w, out.h, -ox, cv.height + oy - Math.round(out.h * k), -ox + Math.round(out.w * k), cv.height + oy, gl.COLOR_BUFFER_BIT, gl.NEAREST);
-  }
+  if (out) present(out, h, (camX0 - camX) * upx, (camY0 - camY) * upx, R.S / upx);
   gl.bindVertexArray(null);
+}
+// Scale the pixel-style frame (its used w x h) up to the canvas: k device pixels per render pixel, sliding by the
+// camera's leftover fraction of a render pixel (dx, dy) rounded to whole device pixels. Whole-number scales give
+// hard nearest-neighbour pixels; in between, pixel edges get one device pixel of blend instead of uneven widths.
+const PMAP = [0, 0, 0, 0];
+function present(out: Target, h: number, dx: number, dy: number, k: number): void {
+  into(null, cv.width, cv.height);
+  const pg = PG.present;
+  gl.useProgram(pg.p); bindTex(pg, 'uT', out.tex, 0);
+  PMAP[0] = -Math.round(dx * k); PMAP[1] = cv.height + Math.round(dy * k) - h * k; PMAP[2] = k;   // device position of the frame's corner (y up), scale
+  U4(pg, 'uMap', PMAP);
+  quad();
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER, out.fb);    // reads (the test suites) see the internal frame, as before
 }

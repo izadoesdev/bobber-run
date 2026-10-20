@@ -13,17 +13,21 @@ import type { BoatId } from '../types';
 const VERT = 10;
 /** Instance layout (12 floats, 48 bytes), shared by every mesh: x, y, yaw, scale | z, pitch, roll, glow | r, g, b, clear. */
 export const INST = 12;
-export interface Mesh { vao: WebGLVertexArrayObject; vbo: WebGLBuffer; count: number }
+/** Voxel models are indexed (4 vertices per face, shared by its two triangles); the per-frame dynamic mesh is not. */
+export interface Mesh { vao: WebGLVertexArrayObject; vbo: WebGLBuffer; ibo: WebGLBuffer | null; count: number; itype: GLenum }
+interface Geometry { verts: Float32Array; idx: Uint16Array | Uint32Array }
 
 let gl: WebGL2RenderingContext, instBuf: WebGLBuffer;
 const AOL = [0.52, 0.7, 0.86, 1.0];              // brightness by number of open neighbours at a corner
 const FACES: Vec3[] = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
-function voxGeometry(V: Vox): Float32Array {
-  const out: number[] = [], solid = (u: number, v: number, z: number) => V.get(u, v, z) ? 1 : 0;
+// noBottom: skip downward faces, which the camera (looking down from the south) never sees on a model that only
+// turns about the vertical, and which never catch the sun for its shadow
+function voxGeometry(V: Vox, noBottom = false): Geometry {
+  const out: number[] = [], idx: number[] = [], solid = (u: number, v: number, z: number) => V.get(u, v, z) ? 1 : 0;
   V.each((u, v, z, m) => {
     const rgb = RGB[m][1], em = EMISSIVE.has(m) ? 1 : 0;
     for (const n of FACES) {
-      if (solid(u + n[0], v + n[1], z + n[2])) continue;
+      if (solid(u + n[0], v + n[1], z + n[2]) || (noBottom && n[2] < 0)) continue;
       const t1 = n[0] ? [0, 1, 0] : [1, 0, 0], t2 = n[2] ? [0, 1, 0] : [0, 0, 1];
       const cx = u + n[0] * 0.5, cy = v + n[1] * 0.5, cz = z + 0.5 + n[2] * 0.5, cs: number[][] = [];
       for (const [s1, s2] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
@@ -35,18 +39,21 @@ function voxGeometry(V: Vox): Float32Array {
         cs.push([cx + (s1 * t1[0] + s2 * t2[0]) * 0.5, cy + (s1 * t1[1] + s2 * t2[1]) * 0.5, cz + (s1 * t1[2] + s2 * t2[2]) * 0.5, AOL[ao]]);
       }
       // split the quad along the diagonal that keeps the AO gradient smooth
-      const tri = cs[0][3] + cs[2][3] > cs[1][3] + cs[3][3] ? [0, 1, 2, 0, 2, 3] : [1, 2, 3, 1, 3, 0];
-      for (const i of tri) { const c = cs[i]; out.push(c[0], c[1], c[2], n[0], n[1], n[2], rgb[0] / 255 * c[3], rgb[1] / 255 * c[3], rgb[2] / 255 * c[3], em); }
+      const tri = cs[0][3] + cs[2][3] > cs[1][3] + cs[3][3] ? [0, 1, 2, 0, 2, 3] : [1, 2, 3, 1, 3, 0], base = out.length / VERT;
+      for (const c of cs) out.push(c[0], c[1], c[2], n[0], n[1], n[2], rgb[0] / 255 * c[3], rgb[1] / 255 * c[3], rgb[2] / 255 * c[3], em);
+      for (const i of tri) idx.push(base + i);
     }
   });
-  return new Float32Array(out);
+  return { verts: new Float32Array(out), idx: out.length / VERT > 65535 ? new Uint32Array(idx) : new Uint16Array(idx) };
 }
 
 // ---------- GPU plumbing ----------
 export function init(g: WebGL2RenderingContext, ib: WebGLBuffer): void { gl = g; instBuf = ib; }
-function upload(data: Float32Array, dynamic = false): Mesh {
-  const vao = gl.createVertexArray(), vbo = gl.createBuffer();
+// vertices, with triangle indices (voxel models) or without (the dynamic mesh: plain triangles)
+function upload(data: Float32Array, idx: Uint16Array | Uint32Array | null, dynamic = false): Mesh {
+  const vao = gl.createVertexArray(), vbo = gl.createBuffer(), ibo = idx && gl.createBuffer();
   gl.bindVertexArray(vao);
+  if (idx) { gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW); }
   gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
   gl.bufferData(gl.ARRAY_BUFFER, data, dynamic ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW);
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, VERT * 4, 0);
@@ -59,7 +66,7 @@ function upload(data: Float32Array, dynamic = false): Mesh {
     gl.vertexAttribDivisor(3 + k, 1);
   }
   gl.bindVertexArray(null);
-  return { vao, vbo, count: data.length / VERT };
+  return { vao, vbo, ibo, count: idx ? idx.length : data.length / VERT, itype: idx instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT };
 }
 // replace a dynamic mesh's vertices with the first n floats of data
 function refill(mesh: Mesh, data: Float32Array, n: number): void {
@@ -73,17 +80,19 @@ export function drawInstances(mesh: Mesh, inst: Float32Array, n: number): void {
   gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
   gl.bufferData(gl.ARRAY_BUFFER, inst, gl.STREAM_DRAW, 0, n * INST);
   gl.bindVertexArray(mesh.vao);
-  gl.drawArraysInstanced(gl.TRIANGLES, 0, mesh.count, n);
+  if (mesh.ibo) gl.drawElementsInstanced(gl.TRIANGLES, mesh.count, mesh.itype, 0, n);
+  else gl.drawArraysInstanced(gl.TRIANGLES, 0, mesh.count, n);
   gl.bindVertexArray(null);
 }
 const cache = new Map<string, Mesh>();
+let gen = 0;                                      // bumped when a lost GL context comes back and every mesh must rebuild
 // dz lowers the geometry so a creature pivots (pitch/roll) about its spine instead of its belly
-function cached(key: string, build: () => Vox, dz = 0): Mesh {
+function cached(key: string, build: () => Vox, dz = 0, noBottom = false): Mesh {
   let m = cache.get(key);
   if (m) return m;
-  const g = voxGeometry(build());
-  if (dz) for (let i = 2; i < g.length; i += VERT) g[i] -= dz;
-  m = upload(g);
+  const g = voxGeometry(build(), noBottom);
+  if (dz) for (let i = 2; i < g.verts.length; i += VERT) g.verts[i] -= dz;
+  m = upload(g.verts, g.idx);
   cache.set(key, m);
   return m;
 }
@@ -95,18 +104,19 @@ export function boatMesh(id: BoatId, eq: Fit): Mesh {
   const sig = eqSig(id, eq);
   let m = boatCache.get(sig);
   if (m) { boatCache.delete(sig); boatCache.set(sig, m); return m; }
-  m = upload(voxGeometry(decorate(id, eq)));
+  const g = voxGeometry(decorate(id, eq));
+  m = upload(g.verts, g.idx);
   boatCache.set(sig, m);
   while (boatCache.size > 12) {
     const [k, old] = boatCache.entries().next().value!;
-    gl.deleteBuffer(old.vbo); gl.deleteVertexArray(old.vao); boatCache.delete(k);
+    gl.deleteBuffer(old.vbo); gl.deleteBuffer(old.ibo); gl.deleteVertexArray(old.vao); boatCache.delete(k);
   }
   return m;
 }
 // a mesh built on first use and kept: the accessor allocates nothing per call
 function lazy(key: string, build: () => Vox, dz = 0): () => Mesh {
-  let m: Mesh | null = null;
-  return () => m ??= cached(key, build, dz);
+  let m: Mesh | null = null, g = -1;
+  return () => { if (g !== gen) { m = cached(key, build, dz); g = gen; } return m!; };
 }
 export const lighthouseMesh = lazy('lighthouse', () => LIGHTHOUSE);
 export const harbourMesh = lazy('harbour', () => HARBOUR);
@@ -118,6 +128,7 @@ const TM = {
   needle: mat(['#24382a', '#33503a', '#4a6a48']), needle2: mat(['#2c4430', '#3f5f3a', '#577a48']), leaf: mat(['#3f6034', '#5a8040', '#78a050']),
   leaf2: mat(['#4a7038', '#6a9446', '#8ab45a']), palm: mat(['#3f6a28', '#5e8e34', '#80b048']), trunk: mat(['#3e2c1e', '#5a4028', '#765638']),
   ptrunk: mat(['#7a5e3a', '#a2804e', '#c4a06a']), snow: mat(['#c8d2d6', '#eef2f4', '#ffffff']), coco: mat(['#3a2818', '#5e4024', '#7a5530']),
+  berry: mat(['#7e2c3a', '#c0405a', '#e8708a']), bloom: mat(['#a08a30', '#e8c84a', '#fff0a0']), moss: mat(['#3a5230', '#527040', '#6e8c50']),
 };
 function sphere(V: Vox, cx: number, cy: number, cz: number, r: number, m1: number, m2: number, seed: number): void {
   for (let z = Math.floor(cz - r); z <= cz + r; z++) for (let v = Math.floor(cy - r); v <= cy + r; v++) for (let u = Math.floor(cx - r); u <= cx + r; u++) {
@@ -150,11 +161,26 @@ function palm(): Vox {
   return V.finalize();
 }
 function rock(): Vox { const V = new Vox(-3, 3, -3, 3, 4); sphere(V, 0, 0, 1, 2.4, M.stone, M.ironp, 7); return V.finalize(); }
-export const TREE_KINDS = ['pine', 'pineB', 'round', 'roundB', 'palm', 'snowpine', 'snowpineB', 'rock'] as const;
+// a low shrub, flowering or in berry
+function bush(fruit: number): Vox {
+  const V = new Vox(-3, 3, -3, 3, 5); sphere(V, 0, 0, 1.6, 2.3, TM.leaf2, TM.leaf, 11);
+  V.each((u, v, z) => { if (!V.get(u, v, z + 1) && hash01(u * 5 + 3, v + z * 7, 13) < 0.22) V.set(u, v, z, fruit); });
+  return V.finalize();
+}
+// a few weathered stones heaped together, moss on top
+function boulders(): Vox {
+  const V = new Vox(-5, 5, -5, 5, 6);
+  sphere(V, -1, 0, 1.5, 2.9, M.stone, M.ironp, 3); sphere(V, 2.2, 1.4, 0.8, 1.9, M.stone, M.ironp, 5); sphere(V, 0.6, -2.4, 0.6, 1.6, M.ironp, M.stone, 9);
+  V.each((u, v, z) => { if (!V.get(u, v, z + 1) && z >= 3 && hash01(u, v * 3, 17) < 0.5) V.set(u, v, z, TM.moss); });
+  return V.finalize();
+}
+// (append new kinds: tiles cache trees by index into this list)
+export const TREE_KINDS = ['pine', 'pineB', 'round', 'roundB', 'palm', 'snowpine', 'snowpineB', 'rock', 'bush', 'berrybush', 'boulders'] as const;
 export type TreeKind = typeof TREE_KINDS[number];
-const TREE_BUILD: Record<TreeKind, () => Vox> = { pine: () => pine(false, false), pineB: () => pine(true, false), round: () => round(false), roundB: () => round(true), palm, snowpine: () => pine(false, true), snowpineB: () => pine(true, true), rock };
+const TREE_BUILD: Record<TreeKind, () => Vox> = { pine: () => pine(false, false), pineB: () => pine(true, false), round: () => round(false), roundB: () => round(true), palm, snowpine: () => pine(false, true), snowpineB: () => pine(true, true), rock,
+  bush: () => bush(TM.bloom), berrybush: () => bush(TM.berry), boulders };
 const treeMeshes: Partial<Record<TreeKind, Mesh>> = {};
-export const treeMesh = (k: TreeKind): Mesh => treeMeshes[k] ??= cached('tree:' + k, TREE_BUILD[k]);
+export const treeMesh = (k: TreeKind): Mesh => treeMeshes[k] ??= cached('tree:' + k, TREE_BUILD[k], 0, true);   // trees only turn about the vertical
 
 // ---------- fish: each species' sprite extruded into a two-voxel-thick slab ----------
 const matCache = new Map<string, number>();
@@ -340,6 +366,13 @@ export const leviMesh = lazy('levi', () => { const V = new Vox(-22, 22, -8, 8, 7
 export const bobberMesh = lazy('bobber', () => { const V = new Vox(-1, 1, -1, 1, 4); V.box(-1, 1, -1, 1, 0, 0, M.white); V.box(-1, 1, -1, 1, 1, 1, M.redp); V.set(0, 0, 2, M.redp); V.set(0, 0, 3, M.iron); return V.finalize(); });
 export const buoyMesh = lazy('buoy', () => { const V = new Vox(-2, 3, -2, 2, 10); V.box(-1, 1, -1, 1, 0, 1, M.redp); V.box(-1, 1, -1, 1, 2, 2, M.white); V.box(0, 0, 0, 0, 3, 8, M.iron); V.box(1, 2, 0, 0, 7, 8, M.redp); V.set(0, 0, 9, M.lamp); return V.finalize(); });
 
+/** After a lost WebGL context is restored: forget every mesh (their buffers died with the context); each rebuilds on next use. */
+export function reset(): void {
+  gen++; cache.clear(); boatCache.clear(); dyn = null; dynReady = false;
+  for (const memo of [treeMeshes, eelMeshes] as Record<string, Mesh>[]) for (const k in memo) delete memo[k];
+  for (const memo of [fishMeshes, goldMeshes, mantaMeshes, jellyMeshes, gullMeshes]) memo.length = 0;
+}
+
 // ---------- dynamic thin parts, built in world space every frame ----------
 // Boxes are written straight into a reused buffer (no per-frame garbage); each box is 6 faces x 2 triangles.
 const BOX_FLOATS = 36 * VERT;
@@ -389,7 +422,7 @@ export function dynBox(a: readonly number[], b: readonly number[], w: number, rg
 export function dynMesh(ox = 0, oy = 0): Mesh {
   if (dyn && dynReady) return dyn;
   for (let i = 0; i < dynN; i += VERT) { dynBuf[i] -= ox; dynBuf[i + 1] -= oy; }
-  if (!dyn) dyn = upload(dynBuf.subarray(0, dynN), true); else refill(dyn, dynBuf, dynN);
+  if (!dyn) dyn = upload(dynBuf.subarray(0, dynN), null, true); else refill(dyn, dynBuf, dynN);
   dynReady = true;
   return dyn;
 }
