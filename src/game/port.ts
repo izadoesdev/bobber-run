@@ -4,6 +4,7 @@ import { homePort, poisNear, claimableNear } from '../world';
 import { ISLANDS, watchExtra, islandPrice } from '../islands';
 import { ISLAND_CELL } from '../../convex/islandRules';
 import { isRegional } from '../species';
+import { isRunningNow, RUNNING_PRICE } from '../tides';
 import { SPECIES, SP, BOATS, UPGRADES, UPGRADE_KEYS, UP_CATS, PAINTS, SUPPLIES, BAIT_KINDS, PROJECTS, FLEET_PER_MIN, FLEET_HOLD_MIN } from '../econ';
 import { sfx } from '../audio';
 import { NET, netGive } from '../net';
@@ -21,7 +22,7 @@ import { dirTo, money } from '../config';
 /** Price multiplier for a species at a port, lowered by recent sales there (`extra` = fish sold ahead in this batch). */
 export function priceAt(p: Port, spIdx: number, extra = 0): number {
   const s = (G.sat[p.id]?.[spIdx] || 0) + extra;
-  return p.mult[spIdx] * Math.max(0.5, 1 - s * 0.07);
+  return p.mult[spIdx] * Math.max(0.5, 1 - s * 0.07) * (isRunningNow(SPECIES[spIdx].id) ? RUNNING_PRICE : 1);   // this week's running fish sell for more
 }
 /** Fish set aside for active contracts (the most valuable of each species). Contracts bigger than the hold can't be met, so they keep nothing. */
 function contractFish(): Set<Fish> {

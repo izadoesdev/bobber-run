@@ -63,3 +63,10 @@ html.touch .dock-btn { min-height: 36px; }
 
 /* the dock stays small: the dot, who's online and Sign in; Chat shows on hover (and always on touch screens) */
 html:not(.touch) #ui .dock:not(:hover):not(:focus-within) .dock-btn:not(.cta-link) { display: none; }
+/* the weekly boards: a card per running fish */
+.week-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(16em, 1fr)); gap: 0.8em; margin-top: 0.6em; }
+.week-card { padding: 0.5em 0.6em; border-radius: var(--r, 0.3em); background: rgba(90, 70, 40, 0.08); }
+.week-card .row { gap: 0.4em; margin-bottom: 0.3em; }
+.week-card .board li { padding: 0.15em 0.3em; }
+/* logbook: a small blue dot on fish that are running this week */
+.lcell .running-dot { position: absolute; left: 0.3em; top: 0.3em; width: 0.55em; height: 0.55em; border-radius: 50%; background: #5b9bd5; box-shadow: 0 0 0 0.1em #fff8; }

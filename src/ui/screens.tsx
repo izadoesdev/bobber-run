@@ -2,6 +2,7 @@
 import { clamp, money } from '../config';
 import { G, logged, cap, hpMax, boatDef, equipment, fishValue, speedMul, deckLvl, deckBoat, ownedLvl, smallFry, releaseSmallFry, toggleHelper, SMALL_FRY, buyFishChart, fishChartPrice, chartable } from '../game';
 import { track } from '../analytics';
+import { isRunningNow } from '../tides';
 import { SPECIES, UPGRADES, PAINTS, SUPPLIES, fmtKg } from '../econ';
 import { homePort, claimableNear, heightAt } from '../world';
 import { livesAt } from '../species';
@@ -125,13 +126,14 @@ export function Logbook() {
           <div class="lgrid">{SPECIES.map((sp, i) => (
             <Cell cls="lcell" sel={i === sel} onClick={() => { G.logSel = i; }}>
               <Fish sp={i} size="l" cls={G.log[sp.id] ? '' : 'sil'} />{G.log[sp.id]?.trophy && <Icon k="star" size="s" cls="corner" />}
+              {isRunningNow(sp.id) && <span class="running-dot" title="Running this week" />}
             </Cell>
           ))}</div>
         </div>
         <div class="page">
           <div class="hero"><Fish sp={sel} cls={'huge' + (e ? '' : ' sil')} /></div>
           <h2 class={'center-t' + (s.legend ? ' gold' : '')}>{e ? s.name : 'Unknown species'}</h2>
-          <div class="center-t">{s.legend && <span class="stamp gold">Legend</span>}{e?.trophy && <span class="stamp bad">Trophy caught</span>}</div>
+          <div class="center-t">{isRunningNow(s.id) && <span class="stamp good" title="Sells for a quarter more this week, and has its own weekly board">Running this week</span>}{s.legend && <span class="stamp gold">Legend</span>}{e?.trophy && <span class="stamp bad">Trophy caught</span>}</div>
           <dl class="facts">
             <dt>Where</dt><dd>{s.where}</dd>
             <dt>When</dt><dd>{WHEN[s.time]}{WX_TXT[s.weather]}</dd>

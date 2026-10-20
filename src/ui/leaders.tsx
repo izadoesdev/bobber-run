@@ -1,12 +1,16 @@
 // The leaderboard: the coast's top captains by species logged, world records, heaviest fish, fish caught and coins
 // earned, with your own rank underneath. Each tab is fetched once when shown and kept for half a minute.
 import { G } from '../game';
-import { NET, leaders, type LeaderBy, type Leaders } from '../net';
+import { NET, leaders, weeklyBoard, type LeaderBy, type Leaders, type WeeklyBoard } from '../net';
+import { tideEndsIn } from '../tides';
+import { Fish } from './parts';
+import { SP } from '../econ';
 import { fmtKg } from '../econ';
 import { Hint } from './parts';
 import { money } from '../config';
 
-export const BOARDS: { by: LeaderBy; label: string; what: string }[] = [
+export const BOARDS: { by: LeaderBy | 'week'; label: string; what: string }[] = [
+  { by: 'week', label: 'This week', what: 'Heaviest catch of each running fish' },
   { by: 'species', label: 'Species', what: 'Most species logged' },
   { by: 'records', label: 'Records', what: 'Most world records held' },
   { by: 'heaviest', label: 'Heaviest', what: 'Heaviest single fish' },
@@ -26,8 +30,35 @@ function board(by: LeaderBy): { data: Leaders | null; loading: boolean } {
 }
 const show = (by: LeaderBy, v: number): string => by === 'heaviest' ? fmtKg(v) : by === 'earned' ? money(v) : String(v);
 
+// the weekly boards: fetched once when shown, kept like the others
+let week: { at: number; data: WeeklyBoard | null; loading: boolean } | null = null;
+function weekBoard(): { data: WeeklyBoard | null; loading: boolean } {
+  if (!week || (!week.loading && Date.now() - week.at > KEEP_MS)) {
+    const entry = { at: Date.now(), data: week?.data ?? null, loading: true };
+    week = entry;
+    void weeklyBoard().then(d => { entry.data = d; entry.loading = false; entry.at = Date.now(); });
+  }
+  return week;
+}
+function ThisWeek() {
+  const { data, loading } = weekBoard();
+  if (!data) return <p class="muted">{loading ? 'Loading…' : 'The weekly boards could not be loaded. Try again in a moment.'}</p>;
+  return (
+    <>
+      <p>These fish are running this week: they sell for a quarter more, and the heaviest catch of each tops its board. A new tide table comes in {tideEndsIn()}.</p>
+      <div class="week-grid">{data.species.map(s => (
+        <div class="week-card">
+          <div class="row"><Fish sp={SP[s.id]} size="s" /><b>{s.name}</b>{s.mine != null && <span class="muted small">yours {fmtKg(s.mine)}</span>}</div>
+          {s.top.length ? <ol class="board">{s.top.map((r, i) => (
+            <li class={r.name === NET.profile?.name ? 'me' : ''}><span class="rank">{i + 1}</span><span class="grow">{r.admin && <b class="gold" title="Admin">★ </b>}{r.name}</span><span class="num">{fmtKg(r.value)}</span></li>
+          ))}</ol> : <p class="muted small">No catches yet this week.</p>}
+        </div>
+      ))}</div>
+    </>
+  );
+}
 export function Leaderboard() {
-  const tab = G.leaderTab % BOARDS.length, b = BOARDS[tab], { data, loading } = board(b.by);
+  const tab = G.leaderTab % BOARDS.length, b = BOARDS[tab], { data, loading } = b.by === 'week' ? { data: null, loading: false } : board(b.by);
   return (
     <div class="screen paper doc leaders">
       <header class="head"><h1>Leaderboard</h1><span class="muted">{b.what}</span></header>
@@ -36,6 +67,7 @@ export function Leaderboard() {
       </nav>
       <div class="body">
         {!NET.on ? <p>The leaderboard needs an internet connection.</p>
+          : b.by === 'week' ? <ThisWeek />
           : !data ? <p class="muted">{loading ? 'Loading…' : 'The leaderboard could not be loaded. Try again in a moment.'}</p>
           : data.rows.length === 0 ? <p class="muted">No captains on this board yet. Be the first.</p>
           : (
@@ -45,12 +77,12 @@ export function Leaderboard() {
                   <span class="rank">{i + 1}</span>
                   <span class="grow">{r.admin && <b class="gold" title="Admin">★ </b>}{r.name}</span>
                   {r.label && <span class="muted">{r.label}</span>}
-                  <span class="num">{show(b.by, r.value)}</span>
+                  <span class="num">{show(b.by as LeaderBy, r.value)}</span>
                 </li>
               ))}
             </ol>
           )}
-        {data?.me && data.me.rank > 0 && <p class="mine">You are <b>#{data.me.rank}</b> with {show(b.by, data.me.value)}.</p>}
+        {data?.me && data.me.rank > 0 && <p class="mine">You are <b>#{data.me.rank}</b> with {show(b.by as LeaderBy, data.me.value)}.</p>}
         {data && !(data.me && data.me.rank > 0) && NET.profile?.guest && <p class="muted small">Guests join the boards after sailing for 15 minutes. Sign in to keep your place.</p>}
       </div>
       <footer class="foot">
