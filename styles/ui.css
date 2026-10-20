@@ -411,3 +411,8 @@ html.touch #ui .screen:has(.chartwrap) .foot { padding-right: 130px; }
 @keyframes route-ripple { 0%, 100% { opacity: 0.3; transform: scale(0.75); } 45% { opacity: 0.95; transform: scale(1.05); } }
 .route .buoy { position: absolute; width: 1.3em; height: 1.95em; transform: translate(-50%, -88%); filter: drop-shadow(0 0.1em 0 #0008); animation: bob-buoy 2.4s ease-in-out infinite; }
 @keyframes bob-buoy { 0%, 100% { transform: translate(-50%, -88%) rotate(-4deg); } 50% { transform: translate(-50%, -82%) rotate(4deg); } } .chip.waypoint .x { font-size: 1.15em; line-height: 1; color: var(--muted); padding: 0 0.2em; cursor: pointer; pointer-events: auto; }
+
+/* a region's name as you sail into it */
+.region-title { position: absolute; left: 50%; top: 14%; transform: translateX(-50%); font-family: var(--font-head); font-size: 2.1em; letter-spacing: 0.06em; color: #fff6dc; text-shadow: 0 0.06em 0 #2a1f17, 0 0.12em 0.4em #000a; pointer-events: none; white-space: nowrap; animation: region-in 0.9s ease-out; transition: opacity 0.9s; }
+.region-title.out { opacity: 0; }
+@keyframes region-in { from { opacity: 0; transform: translate(-50%, 0.3em); } }

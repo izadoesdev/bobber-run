@@ -21,6 +21,7 @@ import { drawChart, nearestUncharted } from './chart';
 import { IslandSigns } from './island';
 import { clearWaypoint, sailToWaypoint, tickWaypoint, waypointRoute } from '../waypoint';
 import { courseTarget, coursePath } from '../game/autopilot';
+import { BIOME_NAME, biomeAt, type BiomeId } from '../biome';
 import { tickIslands } from '../islands';
 import { Bar, Canvas, Fish, Hint, Icon, Key, WX_ICON, cap1, clockText, keyed, viewPct, type DrawFn } from './parts';
 
@@ -242,6 +243,23 @@ function Marker({ step, force }: { step: Step; force?: boolean }) {
   );
 }
 
+// the name of a region as you sail into it, once, like an area title; it waits until you've stayed a few seconds
+// so a wiggle along a border doesn't flash it
+let region: BiomeId | null = null, entering: BiomeId | null = null, enterT = 0, titleT = -99, checkT = -1;
+function RegionTitle() {
+  if (G.t - checkT > 0.5) {
+    checkT = G.t;
+    const here = biomeAt(G.boat.x, G.boat.y);
+    if (region === null) region = here;                          // where you start is never announced
+    else if (here === region) entering = null;
+    else if (here !== entering) { entering = here; enterT = G.t; }
+    else if (G.t - enterT > 3) { region = here; entering = null; titleT = G.t; }
+  }
+  const age = G.t - titleT;
+  if (age > 4.5 || !region || G.mode !== 'play') return null;
+  return <div class={'region-title' + (age > 3.6 ? ' out' : '')} aria-live="polite">{BIOME_NAME[region]}</div>;
+}
+
 // the waypoint: how far by the route and which way it lies, a Sail button that lets the autopilot take the route,
 // and a clear button
 function WaypointChip() {
@@ -389,6 +407,7 @@ export function Hud() {
   return (
     <div>
       <RouteDots />
+      <RegionTitle />
       {worldLabels()}
       <IslandSigns />
       <Marker step={wp ?? step} force={!!wp} />

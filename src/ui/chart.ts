@@ -1,14 +1,14 @@
 // Chart drawing for the minimap and the full sea chart (crisp canvas, real font labels).
 import { G, sonarLvl, logged, canLand } from '../game';
 import { schoolShown, schoolMood } from '../game/schools';
-import { SPECIES } from '../econ';
-import { poisNear, schoolsNear, LAIR } from '../world';
+import { SPECIES, PAINTS } from '../econ';
+import { poisNear, schoolsNear, claimableNear, LAIR } from '../world';
 import { mapTile, MT } from '../maptiles';
 import { ONLINE } from '../online';
-import { claimableNear } from '../world';
 import { ISLANDS, watchExtra } from '../islands';
-import { PAINTS } from '../econ';
 import type { Point, Poi } from '../types';
+import { waypointRoute } from '../waypoint';
+import { dirTo } from '../config';
 
 const COL = { port: '#f0cf6a', light: '#efe9dc', wreck: '#dcb074', dim: '#8a949c', ink: '#1b2a33', red: '#c0493a', green: '#8fd48a' };
 
@@ -24,7 +24,7 @@ export interface ChartOptions {
   /** the guide's objective: a flag on it, or an arrow at the edge pointing to it ('round' for the minimap's circle) */
   target?: Point | null;
   round?: boolean;
-  /** the player's waypoint: a dashed line from the boat, and a marker (or a rim arrow on the minimap) */
+  /** the player's waypoint: its water route from the boat as a dashed line, and a marker (or a rim arrow on the minimap) */
   waypoint?: Point | null;
   /** mark unclaimed islands too (the full chart) */
   islands?: boolean;
@@ -262,17 +262,24 @@ function drawIslandNames(ctx: Ctx, cx: number, cy: number, rad: number, S: Proje
   }
   ctx.textAlign = 'start';
 }
-/** The waypoint: a dashed line from the boat to a white diamond, or on the minimap an arrow on the rim when it's outside. */
+/** The waypoint: its water route from the boat as a dashed line to a white diamond, or on the minimap an arrow on the rim
+ *  when it's outside (the line is clipped to the dial). */
 const WP = '#e6efec';
 function drawWaypoint(ctx: Ctx, w: number, h: number, S: Project, [x, y]: [number, number], u: number, round: boolean, label: Point | null): void {
   const [bx, by] = S(G.boat.x, G.boat.y), r = w / 2 - 6 * u;
   const inside = round ? Math.hypot(x - w / 2, y - h / 2) < r : x > 0 && x < w && y > 0 && y < h;
   let ex = x, ey = y;
   if (!inside && round) { const a = Math.atan2(y - h / 2, x - w / 2); ex = w / 2 + Math.cos(a) * r; ey = h / 2 + Math.sin(a) * r; }
+  const route = waypointRoute();
   ctx.save();
+  if (round) { ctx.beginPath(); ctx.arc(w / 2, h / 2, r, 0, Math.PI * 2); ctx.clip(); }
   ctx.setLineDash([4 * u, 3 * u]); ctx.lineWidth = 3 * u; ctx.strokeStyle = 'rgba(27,42,51,0.6)';
-  ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ex, ey); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(bx, by);
+  if (route.length) for (const p of route) ctx.lineTo(...S(p.x, p.y)); else ctx.lineTo(x, y);
+  ctx.stroke();
   ctx.lineWidth = 1.5 * u; ctx.strokeStyle = WP; ctx.stroke();
+  ctx.restore();
+  ctx.save();
   ctx.setLineDash([]);
   ctx.translate(ex, ey);
   if (inside) {
@@ -284,8 +291,9 @@ function drawWaypoint(ctx: Ctx, w: number, h: number, S: Project, [x, y]: [numbe
   ctx.fillStyle = WP; ctx.fill(); ctx.lineWidth = 1.2 * u; ctx.strokeStyle = COL.ink; ctx.stroke();
   ctx.restore();
   if (label && inside) {                                   // the full chart says how far and which way
-    const d = Math.hypot(label.x - G.boat.x, label.y - G.boat.y), dir = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'][(Math.round(Math.atan2(label.y - G.boat.y, label.x - G.boat.x) / (Math.PI / 4)) + 8) % 8];
-    const s = `${Math.max(1, Math.round(d / 10))} m ${dir}`;
+    let d = 0, ax = G.boat.x, ay = G.boat.y;
+    for (const p of route.length ? route : [label]) { d += Math.hypot(p.x - ax, p.y - ay); ax = p.x; ay = p.y; }
+    const s = `${Math.max(1, Math.round(d / 10))} m ${dirTo(G.boat.x, G.boat.y, label.x, label.y)}`;
     ctx.font = `600 ${Math.round(12 * u)}px Pixelify, monospace`; ctx.textAlign = 'center';
     ctx.lineWidth = 3 * u; ctx.strokeStyle = 'rgba(27,42,51,0.85)'; ctx.strokeText(s, x, y - 9 * u);
     ctx.fillStyle = WP; ctx.fillText(s, x, y - 9 * u); ctx.textAlign = 'start';
