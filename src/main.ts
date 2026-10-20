@@ -118,7 +118,7 @@ function frame(ts: number): void {
 }
 addEventListener('beforeunload', () => { if (G.mode !== 'title') saveGame(); });
 
-// debug and test hooks (the Playwright suites drive the game through these)
+// debug and test hooks (the Playwright suites, kept outside the repo, drive the game through these)
 declare global { interface Window { BR: Record<string, unknown> } }
 window.BR = {
   NET, NETAPI, ONLINE, render, SET, apply: () => { applySettings(); fit(); }, AUDIO: { renderOffline, SFX_NAMES },

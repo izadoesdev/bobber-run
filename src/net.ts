@@ -14,8 +14,8 @@ import { relayKeep, relayLive, relayBoats, relaySend, relayEmote, relayRenamed }
 import { FORCED_OFFLINE } from './offline';
 export { FORCED_OFFLINE };
 const URL: string | undefined = FORCED_OFFLINE ? undefined : import.meta.env.VITE_CONVEX_URL;
-export const SAVE_KEY = 'bobber-run-save-v3';
-export const FUND_KEY = 'grand-harbour';
+const SAVE_KEY = 'bobber-run-save-v3';
+const FUND_KEY = 'grand-harbour';
 
 /** Just what this module needs from the game state. */
 interface Game { mode: string; boat: { x: number; y: number; a: number; vx: number; vy: number; w: number }; boatId: string; paint: string }
@@ -274,8 +274,6 @@ export const releaseIsland = (key: string) => islandCall(() => client!.mutation(
 export const reportIsland = (key: string) => islandCall(() => client!.mutation(api.islands.report, { key }));
 /** Set the link on your island's sign (https only, checked on the server); '' removes it. */
 export const setIslandUrl = (key: string, url: string) => islandCall(() => client!.action(api.islands.setUrl, { key, url }));
-/** Admins only: clear an island's name, logo and link, or the whole claim. */
-export const clearIsland = (key: string, all = false) => islandCall(() => client!.mutation(api.islands.clear, { key, all }));
 /** Upload an already downscaled PNG (16 KB at most) as an island's logo. */
 export async function uploadIslandLogo(key: string, png: Blob): Promise<Result> {
   return islandCall(async () => {
