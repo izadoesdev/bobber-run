@@ -36,7 +36,7 @@ export default defineSchema({
   islands: defineTable({ key: v.string(), ownerId: v.id('users'), ownerName: v.string(), name: v.string(), logo: v.optional(v.id('_storage')), logoOk: v.optional(v.boolean()), price: v.number(),
     claimedAt: v.number(), updatedAt: v.number(), seenAt: v.number(), status: v.optional(v.union(v.literal('owned'), v.literal('pending'))),
     holdUntil: v.optional(v.number()), sessionId: v.optional(v.string()), paymentIntent: v.optional(v.string()), paidCents: v.optional(v.number()),
-    url: v.optional(v.string()) })
+    url: v.optional(v.string()), linkFails: v.optional(v.number()) })
     .index('by_key', ['key']).index('by_owner', ['ownerId']).index('by_seen', ['seenAt']).index('by_payment', ['paymentIntent']),
   // every Stripe Checkout session the webhook has handled, so a redelivered event never grants an island twice
   payments: defineTable({ sessionId: v.string(), key: v.string(), outcome: v.string(), at: v.number() }).index('by_session', ['sessionId']),

@@ -1,5 +1,5 @@
 import { v } from 'convex/values';
-import { query, mutation, action, internalMutation, internalQuery, httpAction, type QueryCtx, type MutationCtx, type ActionCtx } from './_generated/server';
+import { query, mutation, action, internalAction, internalMutation, internalQuery, httpAction, type QueryCtx, type MutationCtx, type ActionCtx } from './_generated/server';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { getAuthUserId } from '@convex-dev/auth/server';
@@ -20,6 +20,8 @@ const byKey = (ctx: QueryCtx | MutationCtx, key: string) => ctx.db.query('island
 /** Owned, or held by someone who is still paying; an expired hold counts as free. */
 const taken = (isl: Doc<'islands'> | null, now = Date.now()) => !!isl && (isl.status !== 'pending' || (isl.holdUntil ?? 0) > now);
 const owned = (isl: Doc<'islands'> | null): isl is Doc<'islands'> => !!isl && isl.status !== 'pending';
+const LINK_FAILS_HIDE = 3;   // daily checks in a row a link may fail before its sign stops showing it
+const linkShown = (isl: Doc<'islands'>): boolean => !!isl.url && (isl.linkFails ?? 0) < LINK_FAILS_HIDE;
 
 /** Islands for these cells, as other sailors see them. */
 export const near = query({
@@ -31,7 +33,7 @@ export const near = query({
       if (!owned(isl)) continue;
       // a logo shows to others only once an admin has approved it; its owner sees it straight away, marked as waiting
       const mine = isl.ownerId === me, showLogo = !!isl.logo && (isl.logoOk || mine);
-      out.push({ key, name: isl.name, owner: isl.ownerName, logoUrl: showLogo ? await ctx.storage.getUrl(isl.logo!) : null, logoPending: mine && !!isl.logo && !isl.logoOk, url: isl.url ?? null, mine });
+      out.push({ key, name: isl.name, owner: isl.ownerName, logoUrl: showLogo ? await ctx.storage.getUrl(isl.logo!) : null, logoPending: mine && !!isl.logo && !isl.logoOk, url: linkShown(isl) ? isl.url! : null, mine });
     }
     return out;
   },
@@ -246,8 +248,46 @@ export const applyUrl = internalMutation({
   handler: async (ctx, { userId, key, url }): Promise<Result> => {
     const isl = await byKey(ctx, key);
     if (!owned(isl) || isl.ownerId !== userId) return { ok: false, why: "That isn't your island" };
-    await ctx.db.patch(isl._id, { url, updatedAt: Date.now() });
+    await ctx.db.patch(isl._id, { url, linkFails: undefined, updatedAt: Date.now() });
     return { ok: true };
+  },
+});
+
+// ---------- links are checked again every day: dead links fade from the sign, and a link that now leads somewhere
+// unsafe (a lapsed domain, a new redirect) is removed ----------
+export const linksToCheck = internalQuery({
+  args: {},
+  handler: async ctx => (await ctx.db.query('islands').collect()).filter(i => owned(i) && i.url).map(i => ({ key: i.key, url: i.url! })),
+});
+export const linkChecked = internalMutation({
+  args: { key: v.string(), url: v.string(), result: v.union(v.literal('ok'), v.literal('dead'), v.literal('unsafe')) },
+  handler: async (ctx, { key, url, result }) => {
+    const isl = await byKey(ctx, key);
+    if (!isl || isl.url !== url) return;                                   // changed since the check started
+    if (result === 'unsafe') await ctx.db.patch(isl._id, { url: undefined, linkFails: undefined });
+    else await ctx.db.patch(isl._id, { linkFails: result === 'ok' ? undefined : (isl.linkFails ?? 0) + 1 });
+  },
+});
+/** Where a link ends up now, or null when it doesn't answer (a GET, since some sites refuse HEAD). */
+async function landing(url: string): Promise<string | null> {
+  try {
+    const r = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'BobberRun-LinkCheck/1.0' } });
+    await r.body?.cancel();
+    return r.status < 400 ? r.url || url : null;
+  } catch { return null; }
+}
+export const recheckLinks = internalAction({
+  args: {},
+  handler: async ctx => {
+    for (const { key, url } of await ctx.runQuery(internal.islands.linksToCheck, {})) {
+      const end = await landing(url);
+      let result: 'ok' | 'dead' | 'unsafe' = end ? 'ok' : 'dead';
+      if (end && new URL(end).host !== new URL(url).host) {               // it now leads elsewhere: check where
+        const c = cleanUrl(end), allowed = c.ok ? await jevAllowsLink(c.url) : false;
+        if (allowed === false) result = 'unsafe';
+      }
+      await ctx.runMutation(internal.islands.linkChecked, { key, url, result });
+    }
   },
 });
 
