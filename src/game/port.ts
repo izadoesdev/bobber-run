@@ -3,6 +3,7 @@
 import { homePort, poisNear, claimableNear } from '../world';
 import { ISLANDS, watchExtra, islandPrice } from '../islands';
 import { ISLAND_CELL } from '../../convex/islandRules';
+import { isRegional } from '../species';
 import { SPECIES, SP, BOATS, UPGRADES, UPGRADE_KEYS, UP_CATS, PAINTS, SUPPLIES, BAIT_KINDS, PROJECTS, FLEET_PER_MIN, FLEET_HOLD_MIN } from '../econ';
 import { sfx } from '../audio';
 import { NET, netGive } from '../net';
@@ -160,8 +161,8 @@ const chartedPorts = (except: string): Port[] => [...G.found].filter(id => id.st
 function makeOffer(p: Port): Contract {
   const ports = chartedPorts(p.id);
   const dest = ports.length ? ports[Math.floor(Math.random() * ports.length)] : p;
-  // only fish you can already catch, and never legends
-  const cands = SPECIES.filter((s, i) => s.w > 0 && canLand(i) && !s.legend);
+  // only fish you can already catch, never legends, and fish from far-off waters only once you've logged them
+  const cands = SPECIES.filter((s, i) => s.w > 0 && canLand(i) && !s.legend && (!isRegional(s) || !!G.log[s.id]));
   let total = 0;
   for (const s of cands) total += s.w;
   let v = Math.random() * total, sp = cands[0];

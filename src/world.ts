@@ -135,13 +135,19 @@ function openWater(p: Point, a: number): boolean {
   }
   return true;
 }
+/** How many species existed when port prices were first drawn; never change this. */
+const LEGACY_SPECIES = 43;
+const idSalt = (id: string): number => { let h = 2166136261; for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619); return h >>> 0; };
 function makePort(i: number, j: number, home: boolean, r: Rng, s: Point, di: number, a: number): Port {
   const c = Math.cos(a), sn = Math.sin(a);
   const ax = s.x - c * 3, ay = s.y - sn * 3;
+  // the first species' prices and the shipyard come off one sequence, as they always have; species added since then
+  // get their price from their own hash, so appending a species never reshuffles a port
   const pr = mulberry(hash(i, j, 5));
   const mult: Record<number, number> = {};
-  for (let k = 0; k < SPECIES.length; k++) mult[k] = 0.75 + pr() * 0.7;
+  for (let k = 0; k < LEGACY_SPECIES; k++) mult[k] = 0.75 + pr() * 0.7;
   const shipyard = home || pr() < 0.45;
+  for (let k = LEGACY_SPECIES; k < SPECIES.length; k++) mult[k] = 0.75 + hash01(i, j, idSalt(SPECIES[k].id)) * 0.7;
   return {
     id: `port:${i},${j}`, type: 'port', name: home ? 'Alderhaven' : placeName(r), x: ax, y: ay, dir: di, ang: a,
     end: { x: ax + c * 26, y: ay + sn * 26 }, dock: { x: ax + c * 44, y: ay + sn * 44 }, mult, shipyard,

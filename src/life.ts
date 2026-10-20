@@ -10,6 +10,7 @@ import { BOATS } from './econ';
 import { hash, mulberry } from './noise';
 import { OAR } from './models';
 import { sfx } from './audio';
+import { biomeAt, type BiomeId } from './biome';
 
 // ---------------------------------------------------------------- shapes
 export type WhalePhase = 'swim' | 'surface' | 'breach' | 'dive' | 'slap';
@@ -361,17 +362,26 @@ const GIANT: Record<GiantKind, { len: [number, number]; z: number; v: [number, n
   eel: { len: [22, 34], z: -4, v: [14, 18] },
 };
 // a giant crossing under where the boat is about to be, along a line of deep water; false if none fits
+// which giants pass where: rays glide over coral, eels and squid haunt the kelp and the ember isles
+function giantKind(night: boolean, r: number): GiantKind {
+  switch (biomeAt(G.boat.x, G.boat.y)) {
+    case 'reef': return night ? (r < 0.5 ? 'ray' : r < 0.8 ? 'eel' : 'shadow') : (r < 0.75 ? 'ray' : 'shadow');
+    case 'kelp': return night ? (r < 0.45 ? 'eel' : r < 0.8 ? 'squid' : 'shadow') : (r < 0.45 ? 'eel' : r < 0.85 ? 'shadow' : 'ray');
+    case 'volcanic': return night ? (r < 0.55 ? 'squid' : r < 0.9 ? 'eel' : 'shadow') : (r < 0.5 ? 'eel' : 'shadow');
+    default: return night ? (r < 0.4 ? 'squid' : r < 0.65 ? 'eel' : r < 0.82 ? 'ray' : 'shadow') : (r < 0.55 ? 'shadow' : 'ray');
+  }
+}
 function spawnGiant(): boolean {
-  const b = G.boat, night = dark > 0.5, r = Math.random();
-  const kind: GiantKind = night ? (r < 0.4 ? 'squid' : r < 0.65 ? 'eel' : r < 0.82 ? 'ray' : 'shadow') : (r < 0.55 ? 'shadow' : 'ray');
+  const b = G.boat, kind = giantKind(dark > 0.5, Math.random());
   const D = GIANT[kind], v = D.v[0] + Math.random() * (D.v[1] - D.v[0]), dur = 16 + Math.random() * 6;
+  const floor = kind === 'ray' ? -0.18 : -0.32;                       // rays cross the shallows too
   const px = b.x + b.vx * 4, py = b.y + b.vy * 4;
   for (let k = 0; k < 6; k++) {
     // along the boat's line (either way) or across it
     const a = Math.random() < 0.5 ? b.a + rnd() * 1.2 + (Math.random() < 0.5 ? 0 : Math.PI) : b.a + (Math.random() < 0.5 ? 1 : -1) * Math.PI / 2 + rnd() * 0.8;
     const half = v * dur / 2, sx = px - Math.cos(a) * half, sy = py - Math.sin(a) * half;
     let ok = true;
-    for (let q = 0; q <= 8 && ok; q++) { const f = q / 8 * half * 2; ok = depth(sx + Math.cos(a) * f, sy + Math.sin(a) * f) < -0.32; }
+    for (let q = 0; q <= 8 && ok; q++) { const f = q / 8 * half * 2; ok = depth(sx + Math.cos(a) * f, sy + Math.sin(a) * f) < floor; }
     if (!ok) continue;
     LIFE.giants.push({
       x: sx, y: sy, a, a0: a, z: -14, len: D.len[0] + Math.random() * (D.len[1] - D.len[0]), kind, glow: 0, ph: Math.random() * TAU,
@@ -408,18 +418,28 @@ function giants(dt: number): void {
 // ---------------------------------------------------------------- jellyfish swarms
 // swarms live at fixed places (one possible per JC-sized cell, decided by a hash) in deep water
 const JC = 420;
-const JCOL: [number, number, number][] = [[0.3, 0.95, 0.85], [1, 0.45, 0.75], [0.66, 0.45, 1]];
+type RGB3 = [number, number, number];
+// three colours per region, and how likely a cell is to hold a swarm there
+const JELLY: Record<BiomeId, { p: number; col: [RGB3, RGB3, RGB3] }> = {
+  home: { p: 0.42, col: [[0.3, 0.95, 0.85], [1, 0.45, 0.75], [0.66, 0.45, 1]] },
+  open: { p: 0.42, col: [[0.3, 0.95, 0.85], [1, 0.45, 0.75], [0.66, 0.45, 1]] },
+  warm: { p: 0.5, col: [[0.3, 0.95, 0.85], [1, 0.45, 0.75], [1, 0.8, 0.35]] },
+  reef: { p: 0.6, col: [[1, 0.4, 0.8], [0.75, 0.4, 1], [1, 0.6, 0.5]] },        // bright pinks and violets
+  kelp: { p: 0.45, col: [[1, 0.72, 0.35], [0.95, 0.85, 0.55], [0.85, 0.55, 0.3]] }, // amber moon jellies
+  volcanic: { p: 0.3, col: [[1, 0.3, 0.2], [0.85, 0.15, 0.25], [1, 0.55, 0.2]] },  // deep reds
+  cold: { p: 0.4, col: [[0.65, 0.85, 1], [0.85, 0.95, 1], [0.5, 0.7, 1]] },        // pale ice blues
+};
 function makeSwarm(i: number, j: number): Swarm {
-  const r = mulberry(hash(i, j, 4242)), has = r() < 0.42;
-  const cx = (i + 0.2 + 0.6 * r()) * JC, cy = (j + 0.2 + 0.6 * r()) * JC, m: Jelly[] = [];
-  if (!has || depth(cx, cy) > -0.32) return { cx, cy, m };
+  const r = mulberry(hash(i, j, 4242)), roll = r();
+  const cx = (i + 0.2 + 0.6 * r()) * JC, cy = (j + 0.2 + 0.6 * r()) * JC, m: Jelly[] = [], kind = JELLY[biomeAt(cx, cy)];
+  if (roll >= kind.p || depth(cx, cy) > -0.32) return { cx, cy, m };
   // two colours per swarm, mostly the first
   const n = 10 + Math.floor(r() * 21), R = 28 + r() * 40, c0 = Math.floor(r() * 3), c1 = (c0 + 1 + Math.floor(r() * 2)) % 3;
   for (let q = 0; q < n; q++) {
     const a = r() * TAU, d = Math.sqrt(r()) * R, x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d;
     if (depth(x, y) > -0.22) continue;
     m.push({
-      x, y, z: -3, ph: r() * TAU, col: JCOL[r() < 0.75 ? c0 : c1], glow: 0, size: 0.6 + r() * 0.7,
+      x, y, z: -3, ph: r() * TAU, col: kind.col[r() < 0.75 ? c0 : c1], glow: 0, size: 0.6 + r() * 0.7,
       hx: x, hy: y, A: 4 + r() * 8, w1: 0.04 + r() * 0.05, w2: 0.03 + r() * 0.05, s1: r() * TAU, rate: 1.3 + r() * 0.9, bright: 0.7 + r() * 0.3, day: r() < 0.25, px: 0, py: 0,
     });
   }

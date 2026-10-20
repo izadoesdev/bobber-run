@@ -1,7 +1,8 @@
 // Boats, harbour projects, upgrades, supplies and paints (pure data). Fish species live in ./species.
 import type { BaitKind, BoatDef, BoatId, Paint, Project, Supply, Upgrade, UpgradeCategory, UpgradeKey } from './types';
 
-export { SPECIES, SP, warmth, coldness, pickSpecies, activeAt, fmtKg } from './species';
+export { SPECIES, SP, pickSpecies, activeAt, fmtKg } from './species';
+export { warmth, coldness } from './biome';
 
 export const BOATS: BoatDef[] = [
   { id: 'row',     name: 'Rowboat',      cost: 0,    speed: 1.0,  accel: 1.0, turn: 1.0,  hold: 4,  hp: 100, L: 13.5, B: 5.8, prop: 'OARS',   sonar: 0, net: 0, what: 'Quiet oars give you 60% more time for a perfect strike' },

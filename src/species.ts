@@ -1,7 +1,7 @@
 // Fish species: the catalogue, where and when each one bites, and how hard it fights.
 import type { Env, FightStyle, FishShape, Landmark, Region, Species, TimeOfDay, WeatherNeed } from './types';
 import { FISH_T } from './fishart';
-import { clamp } from './config';
+import { biomeMix, coldness, warmth, type BiomeMix } from './biome';
 
 type Zone = Species['zone'];
 type Extra = { region?: Region; weather?: WeatherNeed; special?: Landmark | null; legend?: boolean; deck?: number };
@@ -70,15 +70,42 @@ export const SPECIES: Species[] = [
   S('goliath', 'Goliath Grouper', 135, [80, 360], 3, 1.5, 'any', 'perch', ['#4a3a2a', '#6e5f40', '#c8b47c', '#33281c'], 'steady', 'Around wrecks, from a Trawler or bigger', () => false, { special: 'wreck', deck: 1 }),
   S('gsquid', 'Giant Squid', 250, [100, 275], 4, 0.6, 'night', 'squid', ['#5e1f1a', '#a23d33', '#f2c8b8', '#7e2c25'], 'erratic', 'Deep ocean far from home at night, from the Flagship', deep(-0.42, 2800), { deck: 2 }),
   S('sunfish', 'Ocean Sunfish', 230, [250, 1000], 4, 0.6, 'day', 'round', ['#5c6670', '#8a949c', '#e6efec', '#b3bbc0'], 'steady', 'Far warm ocean by day, from the Flagship', deep(-0.4, 2400), { region: 'warm', deck: 2 }),
+  // ---- biome dwellers (HABITAT below): coral shallows, kelp coasts and the ember isles ----
+  S('clown', 'Clownfish', 16, [0.05, 0.25], 0, 4, 'day', 'perch', ['#c0491f', '#f08a3a', '#efe9dc', '#1b2a33'], 'darter', 'Coral shallows by day', shallow(-0.24)),
+  S('tang', 'Blue Tang', 24, [0.2, 0.8], 1, 4, 'day', 'angel', ['#1f3f8a', '#3f6fd8', '#e2c46a', '#14213a'], 'darter', 'Coral shallows by day', shallow(-0.26)),
+  S('lionfish', 'Lionfish', 42, [0.3, 1.3], 1, 2.5, 'night', 'puffer', ['#7e2c25', '#d8665a', '#efe9dc', '#a23d33'], 'erratic', 'Coral shallows at night', shallow(-0.28)),
+  S('octopus', 'Reef Octopus', 52, [1, 8], 2, 3, 'night', 'squid', ['#8a3a52', '#c06a7a', '#f2c8b8', '#5e1f3a'], 'erratic', 'Coral shallows at night', shallow(-0.3)),
+  S('reefshark', 'Reef Shark', 125, [15, 60], 3, 0.4, 'any', 'tuna', ['#4f5a62', '#7f8a92', '#e6efec', '#33454f'], 'jumper', 'Deeper water off the coral shallows', deep(-0.15)),
+  S('rockfish', 'Kelp Rockfish', 15, [0.3, 2], 0, 4, 'any', 'perch', ['#5e4a2a', '#8f7a4a', '#d6c38c', '#4a3a20'], 'steady', 'Kelp coasts', shallow(-0.3)),
+  S('opaleye', 'Opaleye', 19, [0.4, 2.5], 1, 3, 'day', 'round', ['#2f4f3a', '#4f7a5a', '#b4c8a8', '#26392c'], 'steady', 'Kelp coasts by day', shallow(-0.26)),
+  S('kelpbass', 'Kelp Bass', 22, [0.5, 3], 1, 1.8, 'day', 'perch', ['#3a4a2a', '#6e7a3a', '#d6c38c', '#4a5a2a'], 'generic', 'Kelp coasts by day', deep(-0.08)),
+  S('lingcod', 'Lingcod', 44, [3, 30], 2, 2, 'any', 'long', ['#3a4a3a', '#6e7a5a', '#c8c89a', '#2f3a2a'], 'steady', 'Deeper water off kelp coasts', deep(-0.2)),
+  S('seabassgiant', 'Giant Sea Bass', 165, [40, 250], 3, 0.6, 'night', 'perch', ['#1b2a33', '#33454f', '#8a949c', '#14212a'], 'steady', 'Kelp coasts at night, from a Trawler or bigger', deep(-0.25), { deck: 1 }),
+  S('embersnap', 'Ember Snapper', 32, [1, 6], 1, 6, 'any', 'perch', ['#7e1f1a', '#c0392b', '#f2a07a', '#5e1f1a'], 'generic', 'Around the ember isles', shallow(-0.3)),
+  S('ventcrab', 'Vent Crab', 30, [0.3, 1.5], 1, 5, 'any', 'crab', ['#2a1f1f', '#5e2a22', '#e2945a', '#c0392b'], 'steady', 'Warm vents by the ember isles', shallow(-0.28)),
+  S('blackgrouper', 'Black Grouper', 58, [5, 40], 2, 1.4, 'day', 'perch', ['#14141a', '#2a2a33', '#6d6d78', '#1b1b22'], 'steady', 'Dark water by the ember isles, by day', deep(-0.15)),
+  S('cindereel', 'Cinder Eel', 95, [3, 15], 3, 1.5, 'night', 'eel', ['#1b1414', '#3a1f1a', '#f08a3a', '#c0391f'], 'erratic', 'Ember isles at night', deep(-0.2)),
 ];
+/** Fish that only live in one biome, and how strong it must be: they appear where it is, and nowhere else. */
+const HABITAT: Partial<Record<string, keyof BiomeMix>> = {
+  clown: 'reef', tang: 'reef', lionfish: 'reef', octopus: 'reef', reefshark: 'reef',
+  rockfish: 'kelp', opaleye: 'kelp', kelpbass: 'kelp', lingcod: 'kelp', seabassgiant: 'kelp',
+  embersnap: 'volcanic', ventcrab: 'volcanic', blackgrouper: 'volcanic', cindereel: 'volcanic',
+};
+const HABITAT_MIN = 0.35;
+/** Fish that only live in one part of the sea (a biome, the far north or the far south). */
+export const isRegional = (s: Species): boolean => !!HABITAT[s.id] || s.region === 'warm' || s.region === 'cold';
 /** species id -> index into SPECIES */
 export const SP: Record<string, number> = Object.fromEntries(SPECIES.map((s, i) => [s.id, i]));
 
-// regions by latitude: home waters are temperate, the far north is cold, the far south warm
-export const warmth = (y: number): number => clamp((y - 1500) / 1000, 0, 1);
-export const coldness = (y: number): number => clamp((-y - 1300) / 1000, 0, 1);
-function regionWeight(s: Species, y: number): number {
-  const wm = warmth(y), cd = coldness(y);
+function regionWeight(s: Species, x: number, y: number): number {
+  const wm = warmth(y), cd = coldness(y), mix = biomeMix(x, y), hab = HABITAT[s.id];
+  if (hab) return mix[hab] < HABITAT_MIN ? 0 : mix[hab] * 3;
+  // in a strong biome its own fish crowd out the everyday ones; home waters (no biome) are untouched
+  const thin = 1 - 0.6 * Math.max(mix.reef, mix.kelp, mix.volcanic);
+  return thin * climateWeight(s, wm, cd);
+}
+function climateWeight(s: Species, wm: number, cd: number): number {
   switch (s.region) {
     case 'warm': return wm > 0.4 ? 1 : 0;
     case 'cold': return cd > 0.4 ? 1 : 0;
@@ -86,15 +113,15 @@ function regionWeight(s: Species, y: number): number {
     default: return 1;
   }
 }
-/** Weighted random species index for a school at height h, distance d from home (or at a landmark).
- *  Only latitude (y) matters for regions; x is accepted so callers can pass a position. */
-export function pickSpecies(h: number, d: number, r: () => number, _x = 0, y = 0, special: Landmark | null = null): number {
+/** Weighted random species index for a school at height h, distance d from home (or at a landmark), at (x, y):
+ *  latitude sets warm and cold water, and the biome there brings its own fish. */
+export function pickSpecies(h: number, d: number, r: () => number, x = 0, y = 0, special: Landmark | null = null): number {
   const candidates: [Species, number][] = [];
   let total = 0;
   for (const s of SPECIES) {
     if (s.special !== special || (!special && !s.zone(h, d))) continue;
     if (special === 'wreck' && s.id === 'ghost' && d < 1500) continue;   // the Ghost Carp keeps to far-off wrecks
-    const w = s.w * regionWeight(s, y);
+    const w = s.w * (special ? climateWeight(s, warmth(y), coldness(y)) : regionWeight(s, x, y));
     if (w > 0) { candidates.push([s, w]); total += w; }
   }
   let v = r() * total;
@@ -115,7 +142,7 @@ export const fmtKg = (kg: number): string => kg < 10 ? kg.toFixed(1) + ' kg' : M
 /** The bait a species takes most readily: night, glowing and eel-like fish go for glow lures, the rest for shrimp. */
 export const favBait = (s: Species): 'shrimp' | 'glow' =>
   s.time === 'night' || s.time === 'twilight' || s.shape === 'glow' || s.shape === 'squid' || s.shape === 'eel' ? 'glow' : 'shrimp';
-const BOTTOM = new Set(['flounder', 'halibut', 'monkfish', 'crab', 'cod', 'grouper', 'wolffish']);
+const BOTTOM = new Set(['flounder', 'halibut', 'monkfish', 'crab', 'cod', 'grouper', 'wolffish', 'octopus', 'rockfish', 'lingcod', 'ventcrab', 'blackgrouper']);
 export interface SchoolLook {
   /** fish shown in a full school, their mesh scale, the room each keeps from its neighbours, and how far they mill from the centre */
   count: number; size: number; space: number; radius: number;
@@ -136,7 +163,7 @@ export function schoolLook(spIdx: number): SchoolLook {
     return {
       count, size, space, radius: 3 + space * Math.sqrt(count) * 0.9,
       z: bottom ? -4.2 : s.shape === 'glow' ? -2 : -1.3, fade: bottom ? 0.7 : 0.4, bottom,
-      glow: s.shape === 'glow' || s.shape === 'squid' || s.id === 'stormeel' || s.id === 'beacon',
+      glow: s.shape === 'glow' || s.shape === 'squid' || s.id === 'stormeel' || s.id === 'beacon' || s.id === 'cindereel',
     };
   })();
 }
