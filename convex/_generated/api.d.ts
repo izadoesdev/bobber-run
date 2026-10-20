@@ -23,6 +23,7 @@ import type * as limits from "../limits.js";
 import type * as names from "../names.js";
 import type * as profiles from "../profiles.js";
 import type * as records from "../records.js";
+import type * as rotation from "../rotation.js";
 import type * as saves from "../saves.js";
 import type * as sea from "../sea.js";
 import type * as stats from "../stats.js";
@@ -49,6 +50,7 @@ declare const fullApi: ApiFromModules<{
   names: typeof names;
   profiles: typeof profiles;
   records: typeof records;
+  rotation: typeof rotation;
   saves: typeof saves;
   sea: typeof sea;
   stats: typeof stats;

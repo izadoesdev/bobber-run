@@ -3,6 +3,7 @@ import { query, mutation } from './_generated/server';
 import { requireUser, nameOf, profileOf, trusted } from './lib';
 import { statsOf } from './stats';
 import { MAX_KG, LEGENDS, SPECIES_NAMES, CATCH_MIN_MS, GUEST_TRUST_MS, NEWS_MIN_MS } from './limits';
+import { runningSpecies, weekOf } from './rotation';
 
 const valid = (species: string, kg: number) => kg > 0 && kg <= (MAX_KG[species] ?? 0);
 // keeps each player's best per species; announces legends and new world records to the coast
@@ -16,6 +17,11 @@ export const submit = mutation({
     if (prof?.catchAt && now - prof.catchAt < CATCH_MIN_MS) return;     // at most one record a few seconds apart
     if (prof) await ctx.db.patch(prof._id, { catchAt: now });
     else await ctx.db.insert('profiles', { userId, name: 'Sailor', catchAt: now });   // so the throttle applies to everyone
+    const week = weekOf(now);
+    if (runningSpecies(week).includes(species)) {                              // this week's board for a running species
+      const best = await ctx.db.query('weekly').withIndex('by_week_user_species', q => q.eq('week', week).eq('userId', userId).eq('species', species)).unique();
+      if (!best) await ctx.db.insert('weekly', { week, species, userId, kg, at: now }); else if (kg > best.kg) await ctx.db.patch(best._id, { kg, at: now });
+    }
     const mine = await ctx.db.query('records').withIndex('by_user_species', q => q.eq('userId', userId).eq('species', species)).unique();
     if (mine && mine.kg >= kg) return;
     const top = await ctx.db.query('records').withIndex('by_species_kg', q => q.eq('species', species)).order('desc').first();

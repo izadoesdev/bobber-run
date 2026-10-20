@@ -1,10 +1,11 @@
 import { v } from 'convex/values';
-import { query, type QueryCtx } from './_generated/server';
+import { query, internalMutation, type QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { getAuthUserId } from '@convex-dev/auth/server';
 import { isAdminEmail } from './profiles';
 import { profileOf } from './lib';
 import { MAX_KG, SPECIES_NAMES } from './limits';
+import { runningSpecies, weekOf, weekBounds } from './rotation';
 
 const TOP = 20;
 type Row = { name: string; value: number; label?: string; admin?: boolean };
@@ -44,6 +45,28 @@ export const top = query({
       me = { rank: value > 0 ? ahead + 1 : 0, value };
     }
     return { rows, me };
+  },
+});
+
+/** This week's running species, each with its five heaviest catches this week and the caller's own best. */
+export const weekly = query({
+  args: {},
+  handler: async ctx => {
+    const userId = await getAuthUserId(ctx), week = weekOf(Date.now()), { start, end } = weekBounds(week);
+    const species = await Promise.all(runningSpecies(week).map(async id => {
+      const best = await ctx.db.query('weekly').withIndex('by_week_species_kg', q => q.eq('week', week).eq('species', id)).order('desc').take(5);
+      const top = await Promise.all(best.map(async b => ({ ...(await rowFor(ctx, b.userId, b.kg)), at: b.at })));
+      const mine = userId ? await ctx.db.query('weekly').withIndex('by_week_user_species', q => q.eq('week', week).eq('userId', userId).eq('species', id)).unique() : null;
+      return { id, name: SPECIES_NAMES[id] ?? id, top, mine: mine?.kg ?? null };
+    }));
+    return { week, start, end, species };
+  },
+});
+/** Daily: forget weekly boards older than twelve weeks. */
+export const pruneWeeks = internalMutation({
+  args: {},
+  handler: async ctx => {
+    for (const r of await ctx.db.query('weekly').withIndex('by_week', q => q.lt('week', weekOf(Date.now()) - 12)).take(500)) await ctx.db.delete(r._id);
   },
 });
 

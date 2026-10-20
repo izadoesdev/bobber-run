@@ -9,6 +9,7 @@ import { api } from '../convex/_generated/api';
 import { ONLINE, type Sailor } from './online';
 import type { ToastKind } from './types';
 import { track } from './analytics';
+import { celebrate } from './game/feedback';
 import { relayKeep, relayLive, relayBoats, relaySend, relayEmote, relayRenamed } from './relay';
 
 import { FORCED_OFFLINE } from './offline';
@@ -89,7 +90,10 @@ async function onSignedIn() {
     if (p && p.name === 'Sailor' && !naming && !switching) { naming = true; void setName('', true); }   // the server picks a guest name
   });
   watch('records', api.records.world, { species: speciesIds }, r => { NET.records = r as typeof NET.records; });
-  watch('fund', api.fund.get, { key: FUND_KEY }, f => { NET.fund = f as Fund; });
+  watch<Fund>('fund', api.fund.get, { key: FUND_KEY }, f => {
+    const prev = NET.fund; NET.fund = f;
+    if (prev && f.round > prev.round) celebrate();                     // the coast filled a round: fireworks for everyone sailing
+  });
   watch<News[]>('news', api.sea.news, { since: pageStart - 60_000 }, onNews);
   try { await call(api.sea.join, {}); } catch { /* stays in its last sea */ }
   if (!switching) await syncSave();   // during an account switch, account() decides which save wins

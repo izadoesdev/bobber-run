@@ -9,6 +9,9 @@ export default defineSchema({
   profiles: defineTable({ userId: v.id('users'), name: v.string(), nameAt: v.optional(v.number()), sea: v.optional(v.number()), catchAt: v.optional(v.number()) }).index('by_user', ['userId']),
   saves: defineTable({ userId: v.id('users'), data: v.string(), updatedAt: v.number(), putAt: v.optional(v.number()) }).index('by_user', ['userId']),
   // best catch per player per species
+  // each sailor's heaviest catch of a running species in a week (see rotation.ts), for the weekly boards
+  weekly: defineTable({ week: v.number(), species: v.string(), userId: v.id('users'), kg: v.number(), at: v.number() })
+    .index('by_week_species_kg', ['week', 'species', 'kg']).index('by_week_user_species', ['week', 'userId', 'species']).index('by_week', ['week']),
   records: defineTable({ species: v.string(), userId: v.id('users'), name: v.string(), kg: v.number(), at: v.number() })
     .index('by_species_kg', ['species', 'kg']).index('by_user_species', ['userId', 'species']),
   // the coastwide fund everyone gives to; gifts track each player's total and today's giving
