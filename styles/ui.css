@@ -363,6 +363,7 @@ html.touch #ui .screen:has(.chartwrap) .foot { padding-right: 130px; }
   html.touch #ui .bottom-stack { bottom: 250px; width: calc(100vw - 1.6em); }
   html.touch #ui .chat-float .fade:not(:last-child) { display: none; }
   html.touch #ui .toasts { top: 32%; }
+  #ui .chip.objective { max-width: calc(100vw - 11.5em); }
   html.touch #ui :is(.head, .tabs) { flex-wrap: wrap; }
   html.touch #ui .tab { border-radius: var(--r); border-bottom: 0.12em solid var(--wood-hi); }
   html.touch #ui .body { flex-direction: column; overflow-y: auto; }
@@ -374,3 +375,25 @@ html.touch #ui .screen:has(.chartwrap) .foot { padding-right: 130px; }
   html.touch #ui .journal .page + .page { border-left: 0; border-top: 0.15em solid rgba(120, 80, 30, 0.35); box-shadow: none; }
   html.touch #ui .lgrid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
+
+/* ---------- the quiet HUD: one status bar, one objective line, the minimap with wind and day on its ring ---------- */
+.hud-bar { gap: 0.9em; padding: 0.3em 0.7em; font-size: 1em; }
+.hud-bar .seg { display: inline-flex; align-items: center; gap: 0.35em; position: relative; }
+.hud-bar .seg.bad { color: var(--bad); }
+.hud-bar .coins { font-size: 1.25em; line-height: 1; }
+.hud-bar .mini-bar { width: 4em; display: inline-block; }
+.hud-bar .key { font-size: 0.8em; }
+.chip.objective { font: inherit; color: inherit; text-align: left; cursor: pointer; pointer-events: auto; max-width: 24em; white-space: normal; gap: 0.45em; align-items: flex-start; }
+.chip.objective:hover { border-color: var(--gold); }
+.chip.objective .row { gap: 0.4em; }
+.chip.contracts { gap: 0.7em; } .chip.contracts span { display: inline-flex; align-items: center; gap: 0.2em; }
+.mini { width: 8.4em; }
+.mini .ring { width: 8.4em; height: 8.4em; }
+.mini .wind { position: absolute; left: -0.6em; bottom: -0.4em; display: flex; flex-direction: column; align-items: center; }
+.mini .wind .vane { width: 2.8em; height: 2.8em; filter: drop-shadow(0 0.1em 0 rgba(0,0,0,0.35)); }
+.mini .wind.quiet .vane { width: 2.2em; height: 2.2em; opacity: 0.85; }
+.mini .wind .pct { font-size: 0.7em; margin-top: -0.3em; padding: 0 0.3em; border-radius: 0.3em; background: var(--chip); }
+.mini .day { position: absolute; left: 50%; bottom: -0.55em; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 0.25em;
+  font-size: 0.72em; padding: 0.05em 0.45em; border-radius: 0.4em; background: var(--chip); white-space: nowrap; }
+.mini .forecast { margin-top: 0.9em; font-size: 0.75em; }
+.hud-bar { width: max-content; max-width: calc(100vw - 1.6em); }

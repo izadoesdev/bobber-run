@@ -185,11 +185,13 @@ function PlayControls() {
         <Btn k="m" label="Chart"><Icon k="map" /></Btn>
         <Btn k="Tab" label="Ship" badge={G.hold.length || undefined}><Icon k="hold" /></Btn>
         <Btn k="l" label="Log"><Fish sp={0} /></Btn>
-        <Btn k="b" label="Bait" badge={bait === 'none' ? undefined : G.bait[bait]}>{bait === 'none' ? <Icon k="shrimp" cls="sil" /> : <Icon k={bait} />}</Btn>
-        <Btn k="c" label="Chum" off={!G.bait.chum} badge={G.bait.chum}><Icon k="chum" /></Btn>
+        {(G.fish || G.nearSchool) && <>   {/* bait and chum only matter by a school */}
+          <Btn k="b" label="Bait" badge={bait === 'none' ? undefined : G.bait[bait]}>{bait === 'none' ? <Icon k="shrimp" cls="sil" /> : <Icon k={bait} />}</Btn>
+          <Btn k="c" label="Chum" off={!G.bait.chum} badge={G.bait.chum}><Icon k="chum" /></Btn>
+        </>}
       </div>
       <div class="tact">
-        {NET.authed && <Btn k="g" label="Greet"><span class="tglyph text">Hi</span></Btn>}
+        {NET.authed && ONLINE.sailors.length > 0 && <Btn k="g" label="Greet"><span class="tglyph text">Hi</span></Btn>}
         {G.pet && !G.fish && <Btn k="p" label="Pet"><span class="cat-dot" /></Btn>}
         {use && <Btn k="e" label={use.label} cls="use" off={!offered('E')}><Icon k={use.icon} /></Btn>}
         <Btn k=" " label={main.label} cls="main" off={main.off}><Icon k={main.icon} /></Btn>

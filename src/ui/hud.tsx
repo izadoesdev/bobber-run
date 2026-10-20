@@ -1,11 +1,13 @@
-// The sailing HUD: status panel, minimap and chips, the reel gauge, catch card, toasts and world labels.
+// The sailing HUD, kept quiet: one slim status bar and one objective line top left, the minimap (with the wind and
+// the day on its ring) top right, and the rest only when it matters: hull when damaged, bait by a school, contracts
+// while you hold some, key hints for new captains. The reel gauge, catch card, toasts and world labels sit over the sea.
 import type { JSX } from 'preact';
 import { W, H, clamp } from '../config';
 import {
   G, cap, hpMax, boatDef, sonarLvl, isNight, dayNum, dayFrac, windAngle, sailEfficiency, schoolActive,
-  lineMax, nextProject, needStatus, currentGoal, catchNeed,
+  lineMax, catchNeed,
 } from '../game';
-import { SPECIES, SUPPLIES, PROJECTS, fmtKg } from '../econ';
+import { SPECIES, fmtKg } from '../econ';
 import { favBait } from '../species';
 import { schoolInReach } from '../game/fishing';
 import { schoolMood } from '../game/schools';
@@ -15,10 +17,9 @@ import { SET } from '../settings';
 import { EMOTES } from '../net';
 import { ONLINE } from '../online';
 import { currentQuest, questProgress } from '../story';
-import { guide, guideOn, markerTarget, nearestPort, tip, whereText, type Step } from '../game/guide';
+import { guide, guideOn, markerTarget, tip, whereText, type Step } from '../game/guide';
 import type { CatchCard as CatchCardState, FishLine, School, Toast } from '../types';
 import { drawChart, nearestUncharted } from './chart';
-import { fishIcon } from './icons';
 import { Bar, Canvas, Fish, Hint, Icon, Key, keyed, money, type DrawFn } from './parts';
 
 // stable keys so a toast keeps its element (and its fade) as older ones leave
@@ -48,33 +49,17 @@ function Captions() {
   return G.captions.length > 0 && <div class="captions">{G.captions.map(c => <div class="caption">[{c.s}]</div>)}</div>;
 }
 
-const GOLD_SLOT = { boxShadow: 'inset 0 0 0 0.09em #f0cf6a' };
 function Status() {
-  const b = G.boat, cp = cap(), k = clamp(b.hp / hpMax(), 0, 1), bait = G.baitSel;
+  const b = G.boat, cp = cap(), k = clamp(b.hp / hpMax(), 0, 1), bait = G.baitSel, full = G.hold.length >= cp;
+  const fishing = !!G.fish || !!G.nearSchool;               // bait and chum only matter by a school
   return (
-    <div class="hud-status panel">
-      <div class="row">
-        <Icon k="coin" /><span class="coins">{money(G.coinsShown)}</span>
-        {G.floaters.map((f, i) => <span key={i} class={'floater ' + f.kind}>{f.s}</span>)}
-      </div>
-      <div class="row gap-t">
-        <Icon k="hold" size="s" /><span class="caps">Hold</span>
-        <span class={'num' + (G.hold.length >= cp ? ' bad' : '')}>{G.hold.length}/{cp}</span>
-      </div>
-      {cp <= 18
-        ? <div class="slots">{Array.from({ length: cp }, (_, i) => <div class="slot" style={G.hold[i]?.gold ? GOLD_SLOT : undefined}>{G.hold[i] && <img src={fishIcon(G.hold[i].sp)} alt="" />}</div>)}</div>
-        : <div class="gap-t"><Bar k={G.hold.length / cp} tone="gold" /></div>}
-      <div class="row gap-t">
-        <Icon k="hull" size="s" /><span class="caps">Hull</span>
-        <div class="grow"><Bar k={k} tone={k > 0.5 ? '' : k > 0.25 ? 'warn' : 'bad'} /></div>
-        <span class="num">{Math.max(0, Math.ceil(b.hp))}</span>
-      </div>
-      <div class="row gap-t small">
-        <Icon k={bait === 'none' ? 'rod' : bait} size="s" />
-        <span>{bait === 'none' ? 'No bait' : `${SUPPLIES[bait].name} ×${G.bait[bait] || 0}`}</span>
-        <Key k="b" pad="RB" />
-        <span class="grow" /><Icon k="chum" size="s" />{G.bait.chum || 0}<Key k="c" />
-      </div>
+    <div class="hud-bar chip">
+      <span class="seg"><Icon k="coin" size="s" /><span class="coins">{money(G.coinsShown)}</span>
+        {G.floaters.map((f, i) => <span key={i} class={'floater ' + f.kind}>{f.s}</span>)}</span>
+      <span class={'seg' + (full ? ' bad' : '')} title="Fish in your hold"><Icon k="hold" size="s" />{G.hold.length}/{cp}{G.hold.some(f => f.gold) && <span class="gold"> ★</span>}</span>
+      {k < 1 && <span class="seg" title="Hull"><Icon k="hull" size="s" /><span class="mini-bar"><Bar k={k} tone={k > 0.5 ? '' : k > 0.25 ? 'warn' : 'bad'} /></span></span>}
+      {fishing && <span class="seg small" title="Bait (B to switch)"><Icon k={bait === 'none' ? 'rod' : bait} size="s" />{bait === 'none' ? 'No bait' : `×${G.bait[bait] || 0}`}<Key k="b" pad="RB" /></span>}
+      {fishing && (G.bait.chum || 0) > 0 && <span class="seg small" title="Chum (C)"><Icon k="chum" size="s" />{G.bait.chum}<Key k="c" /></span>}
     </div>
   );
 }
@@ -105,29 +90,20 @@ function Minimap({ step }: { step: Step }) {
     ctx.stroke();
     ctx.restore();
   };
-  const np = nearestPort(), port = { p: np, d: Math.hypot(np.x - G.boat.x, np.y - G.boat.y) };
   const night = isNight(), c = dayFrac();
   const sail = boatDef().prop === 'SAIL', eff = sail ? sailEfficiency() : 0;
   const wxIcon = WX.state === 'clear' ? (night ? 'moon' : 'sun') : WX_CHIP_ICON[WX.state];
   const part = night ? ', night' : c > 0.55 ? ', dusk' : '';
   return (
     <div class="mini">
-      <div class="ring"><Canvas draw={draw} /><span class="n">N</span></div>
-      <div class="chips">
-        {port && <div class="chip"><Icon k="anchor" size="s" />{port.p.name}<span class="gold">{Math.round(port.d / 10)} m</span></div>}
-        {/* conditions in one chip: the wind vane, then the day and weather over the wind */}
-        <div class={'chip wind' + (sail ? '' : ' quiet')}>
+      <div class="ring"><Canvas draw={draw} /><span class="n">N</span>
+        <div class={'wind' + (sail ? '' : ' quiet')} title={`${windWord()}${sail ? `, sails at ${Math.round(eff * 100)}%` : ''}`}>
           <WindVane sail={sail} eff={eff} />
-          <span class="stack">
-            <span><Icon k={wxIcon} size="s" />Day {dayNum()}{part}{WX.state !== 'clear' ? `, ${WX.state}` : ''}</span>
-            <span class="muted">{windWord()}{sail && <> <span class={eff > 0.9 ? 'good' : eff > 0.6 ? '' : 'bad'}>{Math.round(eff * 100)}%</span></>}</span>
-          </span>
+          {sail && <span class={'pct ' + (eff > 0.9 ? 'good' : eff > 0.6 ? '' : 'bad')}>{Math.round(eff * 100)}%</span>}
         </div>
-        {G.up.radio >= 2 && (
-          <div class="chip muted"><Icon k="radio" size="s" />{WX.upcoming[0].toUpperCase() + WX.upcoming.slice(1)} in {clockText(WX.next)}</div>
-        )}
-        {un && <div class="chip"><Icon k="sextant" size="s" />Uncharted <span class="gold">{Math.round(un.d / 10)} m</span></div>}
+        <span class="day"><Icon k={wxIcon} size="s" />Day {dayNum()}{part}</span>
       </div>
+      {G.up.radio >= 2 && <div class="chip muted forecast"><Icon k="radio" size="s" />{WX.upcoming[0].toUpperCase() + WX.upcoming.slice(1)} in {clockText(WX.next)}</div>}
     </div>
   );
 }
@@ -206,23 +182,6 @@ function CatchCard({ c }: { c: CatchCardState }) {
   );
 }
 
-type Quest = NonNullable<ReturnType<typeof currentQuest>>;
-// the story quest in progress, with its objective
-// title, progress and the concrete next action ("Sell your 4 fish at Alderhaven, 120 m north-east")
-function QuestChip({ q, step }: { q: Quest; step: Step }) {
-  const pr = questProgress(q);
-  return (
-    <div class="chip quest" style={CHIP_COL}>
-      <div class="row" style={{ gap: '0.45em' }}>
-        <Icon k={q.by} size="s" /><span class="gold">{q.title}</span>
-        {pr && pr.want > 1 ? <span class="muted">{pr.have}/{pr.want}</span> : ''}
-        <span class="grow" /><Key k="j" />
-      </div>
-      <NextLine step={step} />
-    </div>
-  );
-}
-const CHIP_COL = { flexDirection: 'column', alignItems: 'flex-start', gap: '0.15em', whiteSpace: 'normal', maxWidth: '22em' } as const;
 function NextLine({ step }: { step: Step }) {
   const w = whereText(step);
   return (
@@ -233,23 +192,6 @@ function NextLine({ step }: { step: Step }) {
   );
 }
 
-// the long goal once the story is done: the next Alderhaven project and how close you are
-function HarbourChip({ step }: { step: Step }) {
-  const pr = G.stats.caught > 0 ? nextProject() : null;
-  const st = pr && needStatus(pr.need), done = pr ? PROJECTS.indexOf(pr) : PROJECTS.length;
-  return (
-    <div class="chip harbour" style={CHIP_COL}>
-      {pr && st && (
-        <div class="row" style={{ gap: '0.45em' }}>
-          <Icon k="anchor" size="s" /><span class="muted">Alderhaven {done}/{PROJECTS.length}</span>{pr.name}
-          <span class={st.have >= st.want ? 'good' : ''}>{st.have}/{st.want}</span>
-          <span class={G.coins >= pr.cost ? 'good' : 'gold'}>{money(pr.cost)}</span>
-        </div>
-      )}
-      <NextLine step={step} />
-    </div>
-  );
-}
 
 // the objective on screen: a small bobbing pennant over it when it's in clear view, otherwise an arrow circling
 // the boat that points to it, with the distance. Both keep clear of the HUD panels.
@@ -413,30 +355,23 @@ function QuietHud() {
 }
 export function Hud() {
   if (!SET.hud) return <QuietHud />;
-  const gl = currentGoal(), quest = currentQuest(), step = guide();
+  const quest = currentQuest(), step = guide();
   return (
     <div>
       {worldLabels()}
       <Marker step={step} />
       <div class="hud-left">
         <Status />
-        {!quest && (
-          <div class="goal chip">
-            <Icon k="star" size="s" />
-            <span>{gl.text}{gl.prog ? <> <span class="muted">{gl.prog[0]}/{gl.prog[1]}</span></> : ''}</span>
-            {gl.reward ? <span class="gold">{money(gl.reward)}</span> : ''}
+        <button class="chip objective" onClick={() => { G.journalBack = 'play'; G.mode = 'journal'; }} title="Open the journal (J)">
+          <NextLine step={step} />
+          {quest && (() => { const pr = questProgress(quest); return pr && pr.want > 1 ? <span class="muted">{pr.have}/{pr.want}</span> : null; })()}
+        </button>
+        {G.active.length > 0 && (
+          <div class="chip contracts small">
+            {G.active.map(c => { const n = Math.min(G.hold.filter(f => f.sp === c.sp).length, c.n);
+              return <span class={n >= c.n ? 'good' : ''}><Fish sp={c.sp} size="s" />{n}/{c.n}</span>; })}
           </div>
         )}
-        {quest ? <QuestChip q={quest} step={step} /> : <HarbourChip step={step} />}
-        {G.active.map(c => {
-          const n = G.hold.filter(f => f.sp === c.sp).length;
-          return (
-            <div class="chip">
-              <Fish sp={c.sp} size="s" />{c.n} {SPECIES[c.sp].name}<span class="muted">to {c.toName}</span>
-              <span class={n >= c.n ? 'good' : ''}>{Math.min(n, c.n)}/{c.n}</span>
-            </div>
-          );
-        })}
         <Tip />
       </div>
       <Minimap step={step} />
@@ -449,10 +384,10 @@ export function Hud() {
           <div class={'prompt panel' + (G.fish?.st === 'bite' || G.fish?.warn ? ' hot' : '')}>{keyed(G.prompt)}</div>
         )}
       </div>
-      <div class="hints">
+      {G.stats.caught < 5 && <div class="hints">
         <Hint k="Tab" pad="View">Ship</Hint><Hint k="m" pad="Y">Chart</Hint><Hint k="l" pad="LB">Log</Hint>
         <Hint k="Escape" pad="Start">Menu</Hint>{G.pet && <Hint k="p">Pet</Hint>}
-      </div>
+      </div>}
     </div>
   );
 }
