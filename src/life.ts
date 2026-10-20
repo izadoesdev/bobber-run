@@ -362,12 +362,15 @@ const GIANT: Record<GiantKind, { len: [number, number]; z: number; v: [number, n
   eel: { len: [22, 34], z: -4, v: [14, 18] },
 };
 // a giant crossing under where the boat is about to be, along a line of deep water; false if none fits
-// which giants pass where: rays glide over coral, eels and squid haunt the kelp and the ember isles
+// which giants pass where: rays glide over coral and mangrove channels, eels and squid haunt the kelp and the ember
+// isles, and big shadows keep to the cold north
 function giantKind(night: boolean, r: number): GiantKind {
   switch (biomeAt(G.boat.x, G.boat.y)) {
     case 'reef': return night ? (r < 0.5 ? 'ray' : r < 0.8 ? 'eel' : 'shadow') : (r < 0.75 ? 'ray' : 'shadow');
     case 'kelp': return night ? (r < 0.45 ? 'eel' : r < 0.8 ? 'squid' : 'shadow') : (r < 0.45 ? 'eel' : r < 0.85 ? 'shadow' : 'ray');
     case 'volcanic': return night ? (r < 0.55 ? 'squid' : r < 0.9 ? 'eel' : 'shadow') : (r < 0.5 ? 'eel' : 'shadow');
+    case 'mangrove': return night ? (r < 0.5 ? 'ray' : r < 0.8 ? 'eel' : 'shadow') : (r < 0.7 ? 'ray' : 'shadow');   // stingrays in the channels
+    case 'cold': return night ? (r < 0.5 ? 'squid' : 'shadow') : (r < 0.8 ? 'shadow' : 'squid');
     default: return night ? (r < 0.4 ? 'squid' : r < 0.65 ? 'eel' : r < 0.82 ? 'ray' : 'shadow') : (r < 0.55 ? 'shadow' : 'ray');
   }
 }
@@ -427,6 +430,7 @@ const JELLY: Record<BiomeId, { p: number; col: [RGB3, RGB3, RGB3] }> = {
   reef: { p: 0.6, col: [[1, 0.4, 0.8], [0.75, 0.4, 1], [1, 0.6, 0.5]] },        // bright pinks and violets
   kelp: { p: 0.45, col: [[1, 0.72, 0.35], [0.95, 0.85, 0.55], [0.85, 0.55, 0.3]] }, // amber moon jellies
   volcanic: { p: 0.3, col: [[1, 0.3, 0.2], [0.85, 0.15, 0.25], [1, 0.55, 0.2]] },  // deep reds
+  mangrove: { p: 0.35, col: [[0.6, 1, 0.55], [0.8, 0.95, 0.5], [0.45, 0.85, 0.7]] },  // pale greens
   cold: { p: 0.4, col: [[0.65, 0.85, 1], [0.85, 0.95, 1], [0.5, 0.7, 1]] },        // pale ice blues
 };
 function makeSwarm(i: number, j: number): Swarm {

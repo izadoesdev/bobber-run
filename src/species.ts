@@ -85,12 +85,22 @@ export const SPECIES: Species[] = [
   S('ventcrab', 'Vent Crab', 30, [0.3, 1.5], 1, 5, 'any', 'crab', ['#2a1f1f', '#5e2a22', '#e2945a', '#c0392b'], 'steady', 'Warm vents by the ember isles', shallow(-0.28)),
   S('blackgrouper', 'Black Grouper', 58, [5, 40], 2, 1.4, 'day', 'perch', ['#14141a', '#2a2a33', '#6d6d78', '#1b1b22'], 'steady', 'Dark water by the ember isles, by day', deep(-0.15)),
   S('cindereel', 'Cinder Eel', 95, [3, 15], 3, 1.5, 'night', 'eel', ['#1b1414', '#3a1f1a', '#f08a3a', '#c0391f'], 'erratic', 'Ember isles at night', deep(-0.2)),
+  // ---- mangrove channels (HABITAT) and the ice floes of the far north ----
+  S('mangsnap', 'Mangrove Snapper', 20, [0.4, 4], 0, 5, 'any', 'perch', ['#5e3a2a', '#a8664a', '#e6c8a6', '#7e2c25'], 'steady', 'Among mangrove roots', shallow(-0.3)),
+  S('snook', 'Snook', 28, [1, 10], 1, 4, 'any', 'long', ['#4f5a52', '#b3bbc0', '#efe9dc', '#1b2a33'], 'jumper', 'Mangrove channels', shallow(-0.28)),
+  S('mudcrab', 'Mud Crab', 26, [0.5, 3], 1, 3, 'night', 'crab', ['#3a3a2a', '#5e5a3a', '#c8b47c', '#2a2a1f'], 'steady', 'Mangrove mud at night', shallow(-0.24)),
+  S('tarpon', 'Tarpon', 110, [15, 80], 3, 0.8, 'any', 'tuna', ['#5c6670', '#d3d8da', '#f4f2ea', '#3d4c56'], 'jumper', 'Deeper channels off the mangroves', deep(-0.08)),
+  S('polarcod', 'Polar Cod', 14, [0.1, 0.5], 0, 5, 'any', 'slim', ['#5c6670', '#b3bbc0', '#e6efec', '#8a949c'], 'darter', 'Under the ice floes', shallow(-0.3), { region: 'cold' }),
+  S('lumpsucker', 'Lumpsucker', 22, [0.5, 5], 1, 2.5, 'day', 'round', ['#3a5a3a', '#6e9a5a', '#c8d8a8', '#2f4a2f'], 'steady', 'Icy northern shallows by day', shallow(-0.3), { region: 'cold' }),
+  S('snowcrab', 'Snow Crab', 34, [0.4, 1.6], 1, 3, 'night', 'crab', ['#c0592b', '#e2945a', '#f2e6c8', '#8a3a22'], 'steady', 'Cold northern seabed at night', deep(-0.15), { region: 'cold' }),
+  S('ghalibut', 'Greenland Halibut', 46, [2, 20], 2, 2, 'any', 'flat', ['#33281c', '#4a3a2a', '#8f7a5a', '#26394a'], 'steady', 'Deep water among the ice floes', deep(-0.32), { region: 'cold' }),
 ];
 /** Fish that only live in one biome, and how strong it must be: they appear where it is, and nowhere else. */
 const HABITAT: Partial<Record<string, keyof BiomeMix>> = {
   clown: 'reef', tang: 'reef', lionfish: 'reef', octopus: 'reef', reefshark: 'reef',
   rockfish: 'kelp', opaleye: 'kelp', kelpbass: 'kelp', lingcod: 'kelp', seabassgiant: 'kelp',
   embersnap: 'volcanic', ventcrab: 'volcanic', blackgrouper: 'volcanic', cindereel: 'volcanic',
+  mangsnap: 'mangrove', snook: 'mangrove', mudcrab: 'mangrove', tarpon: 'mangrove',
 };
 const HABITAT_MIN = 0.35;
 /** Fish that only live in one part of the sea (a biome, the far north or the far south). */
@@ -102,7 +112,7 @@ function regionWeight(s: Species, x: number, y: number): number {
   const wm = warmth(y), cd = coldness(y), mix = biomeMix(x, y), hab = HABITAT[s.id];
   if (hab) return mix[hab] < HABITAT_MIN ? 0 : mix[hab] * 3;
   // in a strong biome its own fish crowd out the everyday ones; home waters (no biome) are untouched
-  const thin = 1 - 0.6 * Math.max(mix.reef, mix.kelp, mix.volcanic);
+  const thin = 1 - 0.6 * Math.max(mix.reef, mix.kelp, mix.volcanic, mix.mangrove);
   return thin * climateWeight(s, wm, cd);
 }
 function climateWeight(s: Species, wm: number, cd: number): number {
@@ -142,7 +152,7 @@ export const fmtKg = (kg: number): string => kg < 10 ? kg.toFixed(1) + ' kg' : M
 /** The bait a species takes most readily: night, glowing and eel-like fish go for glow lures, the rest for shrimp. */
 export const favBait = (s: Species): 'shrimp' | 'glow' =>
   s.time === 'night' || s.time === 'twilight' || s.shape === 'glow' || s.shape === 'squid' || s.shape === 'eel' ? 'glow' : 'shrimp';
-const BOTTOM = new Set(['flounder', 'halibut', 'monkfish', 'crab', 'cod', 'grouper', 'wolffish', 'octopus', 'rockfish', 'lingcod', 'ventcrab', 'blackgrouper']);
+const BOTTOM = new Set(['flounder', 'halibut', 'monkfish', 'crab', 'cod', 'grouper', 'wolffish', 'octopus', 'rockfish', 'lingcod', 'ventcrab', 'blackgrouper', 'mudcrab', 'snowcrab', 'ghalibut']);
 export interface SchoolLook {
   /** fish shown in a full school, their mesh scale, the room each keeps from its neighbours, and how far they mill from the centre */
   count: number; size: number; space: number; radius: number;

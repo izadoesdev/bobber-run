@@ -8,21 +8,26 @@ const ORIGINAL = ['anchovy', 'sardine', 'mullet', 'flounder', 'mackerel', 'herri
   'stormeel', 'tuna', 'opah', 'marlin', 'swordfish', 'perch', 'bass', 'halibut', 'salmon', 'char', 'pollock', 'wolffish', 'monkfish', 'puffer',
   'parrot', 'angel', 'barracuda', 'mahi', 'sailfish', 'moray', 'grouper', 'beacon', 'ghost', 'oarfish', 'crystal', 'goldmahi', 'oldone', 'manta',
   'goliath', 'gsquid', 'sunfish'];
-const HABITAT: Record<string, 'reef' | 'kelp' | 'volcanic'> = {
+// the biome fish from the first biome release, appended after them in this order
+const BIOME_V1 = ['clown', 'tang', 'lionfish', 'octopus', 'reefshark', 'rockfish', 'opaleye', 'kelpbass', 'lingcod', 'seabassgiant', 'embersnap',
+  'ventcrab', 'blackgrouper', 'cindereel'];
+const HABITAT: Record<string, 'reef' | 'kelp' | 'volcanic' | 'mangrove'> = {
   clown: 'reef', tang: 'reef', lionfish: 'reef', octopus: 'reef', reefshark: 'reef',
   rockfish: 'kelp', opaleye: 'kelp', kelpbass: 'kelp', lingcod: 'kelp', seabassgiant: 'kelp',
   embersnap: 'volcanic', ventcrab: 'volcanic', blackgrouper: 'volcanic', cindereel: 'volcanic',
+  mangsnap: 'mangrove', snook: 'mangrove', mudcrab: 'mangrove', tarpon: 'mangrove',
 };
+const ICE = ['polarcod', 'lumpsucker', 'snowcrab', 'ghalibut'];
 
 describe('species catalogue', () => {
   test('ids are unique and the original species keep their places', () => {
     expect(new Set(SPECIES.map(s => s.id)).size).toBe(SPECIES.length);
-    expect(SPECIES.slice(0, ORIGINAL.length).map(s => s.id)).toEqual(ORIGINAL);
+    expect(SPECIES.slice(0, ORIGINAL.length + BIOME_V1.length).map(s => s.id)).toEqual([...ORIGINAL, ...BIOME_V1]);
   });
   test('home waters keep their everyday fish and no biome fish', () => {
     const ids = new Set(schoolsNear(280, 280, 450).map(s => SPECIES[s.sp].id));
     for (const id of ['anchovy', 'mackerel', 'perch', 'flounder']) expect(ids.has(id)).toBe(true);
-    for (const id of Object.keys(HABITAT)) expect(ids.has(id)).toBe(false);
+    for (const id of [...Object.keys(HABITAT), ...ICE]) expect(ids.has(id)).toBe(false);
   });
   test('biome fish only swim where their biome is strong', () => {
     // a school settles a few steps from where it was picked, so one right on a border may end up just outside it
@@ -38,6 +43,19 @@ describe('species catalogue', () => {
     expect(seen).toBeGreaterThan(20);
     expect(inside / seen).toBeGreaterThan(0.95);
   });
+  test('each biome has its own fish somewhere, and ice-floe fish stay up north', () => {
+    const found = new Set<string>(), ice: number[] = [];
+    for (let x = -3600; x <= 3600; x += 400) for (let y = -4000; y <= 3600; y += 400) {
+      for (const s of schoolsNear(x, y, 200)) {
+        const id = SPECIES[s.sp].id, hab = HABITAT[id];
+        if (hab) found.add(hab);
+        if (ICE.includes(id)) ice.push(s.y);
+      }
+    }
+    expect([...found].sort()).toEqual(['kelp', 'mangrove', 'reef', 'volcanic']);
+    expect(ice.length).toBeGreaterThan(5);
+    for (const y of ice) expect(y).toBeLessThan(-1500);       // coldness > 0.4 starts at y = -1700
+  });
 });
 
 describe('ports', () => {
@@ -52,6 +70,7 @@ describe('ports', () => {
     expect(pen.name).toBe('Penstead');
     expect(pen.shipyard).toBe(false);
     expect(pen.mult[SP.anchovy]).toBeCloseTo(0.815735, 5);
+    expect(home.mult[SP.clown]).toBeCloseTo(1.304904, 5);         // species added later price from a per-port hash
     for (const id of Object.keys(HABITAT)) { expect(home.mult[SP[id]]).toBeGreaterThanOrEqual(0.75); expect(home.mult[SP[id]]).toBeLessThan(1.45); }
   });
 });
