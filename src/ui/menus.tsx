@@ -9,7 +9,7 @@ const focusOnce = (el: HTMLInputElement | null) => {
   if (!focusedForm) { focusedForm = true; el.focus(); }
 };
 import { CHEATS_ENABLED } from '../input';
-import { G, hasSave, dayNum, logged, loadGame, newGame } from '../game';
+import { G, hasSave, dayNum, logged, loadGame, newGame, toast } from '../game';
 import { SPECIES } from '../econ';
 import { ROWS, ACTIONS, SET } from '../settings';
 import { CHEATS } from '../cheats';
@@ -189,6 +189,7 @@ export function Online() {
     if (!r.ok) { say(r.why, true); return; }
     f.pass = ''; G.netMsg = null;
     enterGame(!!r.loaded);
+    if (r.msg) toast(r.msg, 'good');                    // the screen closes, so say how it went out on the water
   };
   // deleting takes two presses within a few seconds
   const arming = !!f.delAt && Date.now() - f.delAt < 5000;
@@ -239,15 +240,15 @@ export function Online() {
           </div>
         </form>
       )}
-      {NET.authed && !p?.guest && !NET.busy && (
+      {NET.authed && p && !p.guest && !NET.busy && (
         <p class="row">
-          <button class="btn" disabled={NET.busy} onClick={async () => { await signOut(); say('Signed out. You are sailing as a guest again'); }}>Sign out</button>
+          <button class="btn" disabled={NET.busy} onClick={async () => { const r = await signOut(); if (r.ok) say('Signed out. You are sailing as a guest again'); else say(r.why, true); }}>Sign out</button>
           <button class={'btn' + (arming ? ' danger' : '')} disabled={NET.busy} onClick={removeAccount}>{arming ? 'Press again to delete' : 'Delete account'}</button>
         </p>
       )}
       {G.netMsg && <p class={G.netMsg.bad ? 'why left' : 'good'}>{G.netMsg.msg}</p>}
-      <p class="help">Online you share a sea with up to 30 sailors. Greet them (G), compare world records in the logbook, and give to the coastwide fund in Alderhaven's Harbour tab. <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a></p>
-      {!G.needName && <footer class="foot"><span /><button class="btn" onClick={() => { G.mode = G.accountBack || 'play'; }}>Back<Key k="Escape" pad="B" /></button></footer>}
+      <p class="help">Online you share the sea with every other sailor. Greet them (G), chat (/), compare world records in the logbook, and give to the coastwide fund in Alderhaven's Harbour tab. <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a></p>
+      {!(G.needName && NET.authed) && <footer class="foot"><span /><button class="btn" onClick={() => { G.needName = false; G.mode = G.accountBack || 'play'; }}>Back<Key k="Escape" pad="B" /></button></footer>}
     </div></div>
   );
 }

@@ -108,7 +108,9 @@ function screenInput(dt: number, refit: () => void): void {
     case 'controls': return controls();
     case 'talk': if (hit(' ', 'Enter', 'e')) talkNext(); else if (hit('Escape')) talkNext(true); return;
     case 'emote': return emote();
-    case 'account': if (hit('Escape') && !G.needName) go(G.accountBack); return;   // a name must be picked first
+    case 'account':                                   // a name must be picked first, unless the connection is gone
+      if (hit('Escape') && !(G.needName && NET.authed)) { G.needName = false; go(G.accountBack); }
+      return;
     case 'journal': if (hit('j', 'Escape', 'Enter', ' ')) go(G.journalBack); return;
     case 'island': if (hit('Escape')) closeIsland(); return;
     case 'leaders':
