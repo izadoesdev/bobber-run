@@ -21,11 +21,11 @@ import { WX, setWeather } from './weather';
 import { initInput, pollPad } from './input';
 import { menuInput } from './menus';
 import { initAnalytics, trackFailure } from './analytics';
-let netFailed = false;
 import { initTelemetry, watchGame } from './telemetry';
 import { forceName } from './ui/menus';
 import { baseScale, targetScale, easeScale, shipZoom } from './camera';
 
+let netFailed = false;                                // reported once: a network error must not flood analytics
 const screen = document.getElementById('screen') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLDivElement;
 initAnalytics();

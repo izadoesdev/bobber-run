@@ -8,7 +8,7 @@ export interface Sailor {
 /** A chat line as everyone sees it (already filtered by the relay). `id` is the sailor's uid, or 'me'. */
 export interface ChatLine { id: string; name: string; text: string; at: number; admin?: boolean }
 /** Everyone else in the world for the map, about once a second from the relay. */
-export interface FarSailor { uid: string; name: string; x: number; y: number }
+interface FarSailor { uid: string; name: string; x: number; y: number }
 export const ONLINE: { sailors: Sailor[]; chat: Map<string, { text: string; at: number }>; log: ChatLine[]; note: string | null; roster: string[]; total: number; far: FarSailor[] } = {
   sailors: [], chat: new Map(), log: [], note: null, roster: [], total: 0, far: [],
 };

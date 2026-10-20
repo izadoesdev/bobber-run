@@ -10,7 +10,7 @@ import { ONLINE, type Sailor } from './online';
 import type { ToastKind } from './types';
 import { track } from './analytics';
 import { celebrate } from './game/feedback';
-import { relayKeep, relayLive, relayBoats, relaySend, relayEmote, relayRenamed } from './relay';
+import { relayKeep, relayLive, relayBoats, relaySend, relayEmote, relayRenamed, type RelayBoat } from './relay';
 
 import { FORCED_OFFLINE } from './offline';
 export { FORCED_OFFLINE };
@@ -304,7 +304,7 @@ const cellsAround = (sea: number, x: number, y: number) => {
   for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) out.push(`${sea}|${cx + i},${cy + j}`);
   return out;
 };
-type Raw = { id: string; x: number; y: number; a: number; vx: number; vy: number; w: number; boat: string; paint: string; name: string; at: number; emote: number | null; emoteAt: number };
+type Raw = RelayBoat;   // the relay and the Convex fallback (sea.near) send boats in the same shape
 let lastSent: { x: number; y: number; a: number } | null = null, sendT = 0, inFlight = false, raw: Raw[] = [];
 /**
  * Other boats are drawn a little in the past, between two real reports, so they move smoothly however unevenly

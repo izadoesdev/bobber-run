@@ -35,7 +35,7 @@ const NOUN = ['Gull', 'Tern', 'Otter', 'Cod', 'Puffin', 'Heron', 'Seal', 'Skippe
 /** A friendly guest name, chosen here so a client can't pass off its own text as a generated name. */
 export const guestName = (): string => `${ADJ[Math.floor(Math.random() * ADJ.length)]} ${NOUN[Math.floor(Math.random() * NOUN.length)]}`;
 
-export type NameCheck = { ok: true; name: string } | { ok: false; why: string };
+type NameCheck = { ok: true; name: string } | { ok: false; why: string };
 export function cleanName(raw: string, max = 18): NameCheck {
   const name = raw.normalize('NFKC').replace(/\s+/g, ' ').trim();
   if (name.length < 2 || name.length > max) return { ok: false, why: `Use 2 to ${max} characters` };
