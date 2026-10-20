@@ -45,6 +45,8 @@ type Events = {
   fund_given: { amount_bucket: string };
   greeting_sent: { greeting: number };
   chat_sent: { length_bucket: 'short' | 'medium' | 'long' };
+  sailor_card_opened: Record<string, never>;
+  sailor_followed: Record<string, never>;
   progress: { minutes: number; day: number; coins_bucket: string; species_logged: number; quest: number; projects: number; reason: 'interval' | 'hidden' };
 };
 

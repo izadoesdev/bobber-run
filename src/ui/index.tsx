@@ -2,6 +2,7 @@
 // Design system: wood panels frame and navigate, parchment holds documents and details,
 // one focus colour, one icon style (voxel renders), sentence case for anything longer than a label.
 import { Chat } from './chat';
+import { SailorCard } from './sailorcard';
 import { render } from 'preact';
 import { G } from '../game';
 import { Hud, Toasts } from './hud';
@@ -21,7 +22,7 @@ function App() {
     <div class="app">
       {m === 'title' && <Title />}
       {(m === 'play' || m === 'sunk') && <Hud />}
-      {m === 'play' && <Chat />}
+      {m === 'play' && <><Chat /><SailorCard /></>}
       {m === 'port' && G.menu.port && <Port p={G.menu.port} />}
       {m === 'map' && <Chart />}
       {m === 'log' && <Logbook />}

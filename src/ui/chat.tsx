@@ -19,6 +19,9 @@ addEventListener('keydown', e => {
   open = true; focusNext = true;
 }, { capture: true });
 
+/** Open the chat box with some text already typed (e.g. "@Name " from a sailor's card). */
+export function openChatWith(text: string): void { if (!canChat()) return; draft = text; open = true; focusNext = true; }
+
 function send(): void {
   const text = draft.trim().slice(0, MAX_LEN);
   if (text && relayLive()) { relayChat(text); track('chat_sent', { length_bucket: text.length < 20 ? 'short' : text.length < 60 ? 'medium' : 'long' }); }
