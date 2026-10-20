@@ -1,5 +1,6 @@
 import { v } from 'convex/values';
-import { query, action, internalMutation, internalQuery } from './_generated/server';
+import { query, action, internalMutation, internalQuery, type QueryCtx, type MutationCtx } from './_generated/server';
+import type { Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
 import { getAuthUserId } from '@convex-dev/auth/server';
 import { profileOf } from './lib';
@@ -21,7 +22,7 @@ export const me = query({
 const NAME_QUESTION = 'Would Roblox reject `name.text` as a display name? Reject profanity or slurs (including misspellings, spacing, '
   + 'symbols or leetspeak), sexual innuendo or dating, hard drug references, hate, violence, personal information, or pretending to be staff.';
 type NameResult = { ok: true; name: string } | { ok: false; why: string };
-async function jevAllowsName(name: string): Promise<boolean> {
+export async function jevAllowsName(name: string): Promise<boolean> {
   // read through globalThis: the browser build also type-checks this file (via convex/_generated), without Node's types
   const key = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.AI_GATEWAY_API_KEY;
   if (!key) return true;                                                   // no key configured: the local filter alone decides
@@ -55,9 +56,13 @@ export const setName = action({
 /** Admins are the accounts whose email is listed in ADMIN_EMAILS (comma-separated); their chat and names aren't filtered. */
 export const adminEmails = (): string[] => ((globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.ADMIN_EMAILS ?? '')
   .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+export async function isAdminUser(ctx: QueryCtx | MutationCtx, userId: Id<'users'>): Promise<boolean> {
+  const u = await ctx.db.get(userId);
+  return !!u?.email && adminEmails().includes(u.email.toLowerCase());
+}
 export const isAdmin = internalQuery({
   args: { userId: v.id('users') },
-  handler: async (ctx, { userId }): Promise<boolean> => { const u = await ctx.db.get(userId); return !!u?.email && adminEmails().includes(u.email.toLowerCase()); },
+  handler: async (ctx, { userId }): Promise<boolean> => isAdminUser(ctx, userId),
 });
 export const applyName = internalMutation({
   args: { userId: v.id('users'), name: v.string(), auto: v.boolean() },

@@ -2,6 +2,7 @@ import { v } from 'convex/values';
 import { query, mutation, internalMutation } from './_generated/server';
 import { getAuthUserId } from '@convex-dev/auth/server';
 import { requireUser, profileOf, cellOf, finite } from './lib';
+import { touchIslands } from './islands';
 import { NEAR_MAX, SEAS, MOVE_MIN_MS, EMOTE_MIN_MS } from './limits';
 
 const ACTIVE_MS = 60_000;
@@ -11,6 +12,7 @@ export const join = mutation({
   args: {},
   handler: async ctx => {
     const userId = await requireUser(ctx), p = await profileOf(ctx, userId);
+    await touchIslands(ctx, userId);                                      // their islands count as visited
     if (p?.sea === 0) return 0;
     if (p) await ctx.db.patch(p._id, { sea: 0 }); else await ctx.db.insert('profiles', { userId, name: 'Sailor', sea: 0 });
     return 0;

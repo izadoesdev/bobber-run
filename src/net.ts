@@ -223,6 +223,34 @@ export function reportStats(caught: number, earned: number, cheated = false): vo
   statsAt = Date.now();
   call(api.stats.report, { caught, earned }).catch(() => { statsAt = 0; });
 }
+// ---------- islands ----------
+export interface IslandRow { key: string; name: string; owner: string; logoUrl: string | null; mine: boolean }
+/** Keep `cb` up to date with the claimed islands among these cell keys (one subscription; a new key list replaces it). */
+export function watchIslands(keys: string[], cb: (list: IslandRow[]) => void): void {
+  if (client) watch<IslandRow[]>('islands', api.islands.near, { keys: keys.slice(0, 150) }, cb);
+}
+const islandCall = async (fn: () => Promise<{ ok: boolean; why?: string; price?: number }>): Promise<Result & { price?: number }> => {
+  if (!NET.authed) return { ok: false, why: 'Sign in to claim islands' };
+  try { const r = await fn(); return r.ok ? { ok: true, ...(r.price ? { price: r.price } : {}) } : { ok: false, why: r.why ?? 'Something went wrong' }; }
+  catch { return { ok: false, why: 'Could not reach the server' }; }
+};
+export const claimIsland = (key: string, name: string, cheated = false) => islandCall(() => client!.action(api.islands.claim, { key, name, cheated }));
+export const renameIsland = (key: string, name: string) => islandCall(() => client!.action(api.islands.rename, { key, name }));
+export const releaseIsland = (key: string) => islandCall(() => client!.mutation(api.islands.release, { key }));
+export const reportIsland = (key: string) => islandCall(() => client!.mutation(api.islands.report, { key }));
+/** Admins only: clear an island's name and logo, or the whole claim. */
+export const clearIsland = (key: string, all = false) => islandCall(() => client!.mutation(api.islands.clear, { key, all }));
+/** Upload an already downscaled PNG (16 KB at most) as an island's logo. */
+export async function uploadIslandLogo(key: string, png: Blob): Promise<Result> {
+  return islandCall(async () => {
+    const u = await client!.mutation(api.islands.uploadUrl, { key });
+    if (!u.ok) return u;
+    const r = await fetch(u.url, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: png });
+    if (!r.ok) return { ok: false, why: 'The upload failed. Try again' };
+    const { storageId } = await r.json();
+    return client!.mutation(api.islands.setLogo, { key, storageId });
+  });
+}
 /** Test hook: ask the server who we are right now (no tokens exposed). */
 export const whoami = () => client?.query(api.profiles.me, {}) ?? null;
 

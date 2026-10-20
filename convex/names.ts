@@ -36,9 +36,9 @@ const NOUN = ['Gull', 'Tern', 'Otter', 'Cod', 'Puffin', 'Heron', 'Seal', 'Skippe
 export const guestName = (): string => `${ADJ[Math.floor(Math.random() * ADJ.length)]} ${NOUN[Math.floor(Math.random() * NOUN.length)]}`;
 
 export type NameCheck = { ok: true; name: string } | { ok: false; why: string };
-export function cleanName(raw: string): NameCheck {
+export function cleanName(raw: string, max = 18): NameCheck {
   const name = raw.normalize('NFKC').replace(/\s+/g, ' ').trim();
-  if (name.length < 2 || name.length > 18) return { ok: false, why: 'Use 2 to 18 characters' };
+  if (name.length < 2 || name.length > max) return { ok: false, why: `Use 2 to ${max} characters` };
   if (!/^[A-Za-z0-9][A-Za-z0-9 '_-]*$/.test(name)) return { ok: false, why: 'Use letters, numbers, spaces, - and _ only' };
   if ((name.match(/[0-9]/g) ?? []).length > 4) return { ok: false, why: 'Use fewer numbers' };
   const words = name.split(/[\s'_-]+/).map(fold).filter(Boolean);
