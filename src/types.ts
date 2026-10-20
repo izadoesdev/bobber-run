@@ -249,6 +249,8 @@ export interface Contract {
   id: string; from: string; to: string; toName: string; sp: number; n: number; reward: number;
   /** the game day it was offered; unclaimed offers are replaced each new day */
   day?: number;
+  /** a big order: many of a common fish, for a big hold (from a Grade IV dock hand) */
+  bulk?: boolean;
 }
 export interface TreasureMap { id: string; x: number; y: number; reward: number }
 export interface LogEntry {
@@ -358,6 +360,10 @@ export interface Progress {
   gearOff: Partial<Record<Helper, true>>;
   /** species ids whose fish chart you bought: the chart shades where they live */
   zones: Record<string, true>;
+  /** contracts delivered at each port (port id -> count): its dock hand's grade grows with them */
+  docks: Record<string, number>;
+  /** contracts delivered in a row (0-5): each adds 5% to contract pay; abandoning one only drops a step */
+  streak: number;
   musicOn: boolean;
   /** port id -> contracts on offer there */
   offers: Record<string, Contract[]>;

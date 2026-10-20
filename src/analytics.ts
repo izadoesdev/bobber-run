@@ -57,6 +57,8 @@ type Events = {
   fleet_collected: { earned_bucket: string };
   fish_chart_bought: { species: string; price_bucket: string; logged: boolean };
   fish_chart_opened: { species: string; how: 'logbook' | 'chart' };
+  dock_grade_up: { grade: number };
+  first_minutes: { shown_s: string; input_s: string; cast_s: string; catch_s: string; returning: boolean; ended: 'caught' | 'left' };
   progress: { minutes: number; day: number; coins_bucket: string; earned_bucket?: string; species_logged: number; quest: number; projects: number; reason: 'interval' | 'hidden' };
 };
 

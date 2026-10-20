@@ -109,9 +109,12 @@ function sell(p: Port): void {
   toast(`Sold ${n} fish for $${tot}`, 'good'); saveGame();
 }
 const REPAIR_PER_HP = 0.3;
-const repairCost = (): number => Math.ceil((hpMax() - G.boat.hp) * REPAIR_PER_HP);
+/** Repairs are free at a port whose dock hand is Grade V. */
+const freeRepairs = (): boolean => !!G.menu.port && dockGrade(G.menu.port.id) >= 5;
+const repairCost = (): number => freeRepairs() ? 0 : Math.ceil((hpMax() - G.boat.hp) * REPAIR_PER_HP);
 function repair(): void {
   const m = hpMax(), miss = m - G.boat.hp;
+  if (miss > 0 && freeRepairs()) { G.boat.hp = m; sfx('select'); toast(`${dockHand(G.menu.port!)} patches your hull for free`); saveGame(); return; }
   if (miss <= 0 || G.coins <= 0) { sfx('deny'); return; }
   const pay = Math.min(Math.ceil(miss * REPAIR_PER_HP), G.coins);   // short of coin: patch what you can afford
   addCoins(-pay);
@@ -187,10 +190,12 @@ function makeOffer(p: Port): Contract {
   for (const s of cands) total += want(s);
   let v = Math.random() * total, sp = cands[0];
   for (const s of cands) { v -= want(s); if (v <= 0) { sp = s; break; } }
-  const n = Math.min(cap(), sp.base < 12 ? 3 + Math.floor(Math.random() * 3) : sp.base < 40 ? 2 + Math.floor(Math.random() * 2) : 1);   // never more than the hold carries
+  // a Grade IV dock hand also passes on big orders: a big hold's worth of a common fish, for a bigger premium
+  const bulk = dockGrade(p.id) >= 4 && cap() >= 20 && sp.base < 40 && Math.random() < 0.4;
+  const n = bulk ? Math.floor(cap() * 0.4) : Math.min(cap(), sp.base < 12 ? 3 + Math.floor(Math.random() * 3) : sp.base < 40 ? 2 + Math.floor(Math.random() * 2) : 1);   // never more than the hold carries
   const dist = Math.hypot(dest.x - p.x, dest.y - p.y);
-  return { id: Math.random().toString(36).slice(2, 8), from: p.id, to: dest.id, toName: dest.name, sp: SP[sp.id], n, day: dayNum(),
-    reward: Math.round(n * sp.base * (1.7 + Math.random() * 0.6) + dist / 20 + contractPremium() * (0.75 + Math.random() * 0.5)) };
+  return { id: Math.random().toString(36).slice(2, 8), from: p.id, to: dest.id, toName: dest.name, sp: SP[sp.id], n, day: dayNum(), ...(bulk ? { bulk } : {}),
+    reward: Math.round(n * sp.base * (1.7 + Math.random() * 0.6) + dist / 20 + contractPremium() * (bulk ? 1.5 : 1) * (0.75 + Math.random() * 0.5)) };
 }
 /**
  * What a contract adds on top of the fish and the trip, so it stays worth a detour as you grow: about 3-4 minutes of
@@ -200,32 +205,74 @@ function contractPremium(): number {
   const best = Math.max(...G.owned.map(id => FLEET_PER_MIN[id]));
   return Math.max(0, best - FLEET_PER_MIN.row) * 20;
 }
-/** Two offers per port, replaced each new day if nobody took them. */
+const offerCount = (p: Port): number => dockGrade(p.id) >= 4 ? 3 : 2;
+/** Two offers per port (three for a Grade IV dock hand), replaced each new day if nobody took them. */
 function offersAt(p: Port): Contract[] {
   const today = dayNum(), was = G.offers[p.id];
   const fresh = (was ?? []).filter(c => c.day === today);
-  if (!was || fresh.length < was.length || fresh.length < 2) {
+  if (!was || fresh.length < was.length || fresh.length < offerCount(p)) {
     if (was && fresh.length < was.length) track('contract_offers_refreshed', { port: p.id === homePort().id ? 'home' : 'away' });
-    while (fresh.length < 2) fresh.push(makeOffer(p));
+    while (fresh.length < offerCount(p)) fresh.push(makeOffer(p));
     G.offers[p.id] = fresh;
   }
   return G.offers[p.id];
 }
 /** How many fish of a species are in the hold. */
 export const have = (sp: number): number => G.hold.filter(f => f.sp === sp).length;
-const contractPay = (c: Contract): number => Math.round(c.reward * (1 + 0.15 * G.up.quarter));
+// ---------- dock hands ----------
+// Every port has a dock hand who gets to know you through the contracts you deliver there. Their grade (I-V) adds to
+// contract pay at that port and brings gifts that aren't coins: bait, a fish chart, bigger orders, free repairs.
+// A delivery streak adds 5% a step (up to five); abandoning a contract only drops a step, and nothing else breaks it.
+const HANDS = ['Tomas', 'Ada', 'Bram', 'Lio', 'Kesi', 'Moss', 'Pip', 'Rhea', 'Sol', 'Juno', 'Otto', 'Fen'];
+const GRADES = [0, 2, 5, 9, 14];                       // deliveries at a port to reach grades I..V
+const ROMAN = ['I', 'II', 'III', 'IV', 'V'];
+const GRADE_GIFT = ['', 'Shrimp bait and glow lures', 'A fish chart: where a valuable fish lives', 'A third offer, and big orders for big holds', 'Free hull repairs at this port'];
+export const dockHand = (p: Port): string => HANDS[[...p.id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7) % HANDS.length];
+/** A port's dock-hand grade, 1..5. */
+export const dockGrade = (portId: string): number => GRADES.filter(n => (G.docks[portId] ?? 0) >= n).length;
+const gradeBonus = (portId: string): number => (dockGrade(portId) - 1) * 0.1;
+const streakBonus = (): number => 0.05 * G.streak;
+const contractPay = (c: Contract): number => Math.round(c.reward * (1 + 0.15 * G.up.quarter) * (1 + gradeBonus(c.to) + streakBonus()));
+/** A delivery at port `id`: the streak grows, and a new grade brings its gift. */
+function dockDelivered(id: string): void {
+  const before = dockGrade(id);
+  G.docks[id] = (G.docks[id] ?? 0) + 1;
+  G.streak = Math.min(5, G.streak + 1);
+  const g = dockGrade(id);
+  if (g === before) return;
+  const p = portById(id), who = dockHand(p);
+  if (g === 2) { G.bait.shrimp = (G.bait.shrimp || 0) + 5; G.bait.glow = (G.bait.glow || 0) + 2; }
+  if (g === 3) {
+    const sp = SPECIES.map((_, i) => i).filter(i => chartable(i) && canLand(i) && !G.zones[SPECIES[i].id] && (G.log[SPECIES[i].id]?.n ?? 0) < 5).sort((a, b) => SPECIES[b].base - SPECIES[a].base)[0];
+    if (sp !== undefined) { G.zones[SPECIES[sp].id] = true; toast(`${who} marks where ${G.log[SPECIES[sp].id] ? SPECIES[sp].name : 'a valuable fish'} lives on your chart`, 'good'); }
+  }
+  toast(`${who} at ${p.name} trusts you more: Grade ${ROMAN[g - 1]}. ${GRADE_GIFT[g - 1]}`, 'good');
+  celebrate(); track('dock_grade_up', { grade: g });
+}
+/** The dock hand's row at the top of a port's contracts: who, grade, streak, and what the next grade brings. */
+function dockRow(p: Port, items: Rows): void {
+  const g = dockGrade(p.id), d = G.docks[p.id] ?? 0, next = GRADES[g];
+  items.push({
+    kind: 'note', icon: 'anchor', label: `${dockHand(p)}, dock hand · Grade ${ROMAN[g - 1]}`, pips: [g, 5], ok: true, act: () => {},
+    sub: `${next !== undefined ? `${next - d} more ${next - d === 1 ? 'delivery' : 'deliveries'} here for Grade ${ROMAN[g]}: ${GRADE_GIFT[g].toLowerCase()}` : 'Your best friend on the coast'}`
+      + `${G.streak ? `. Delivery streak ${G.streak}: +${G.streak * 5}%` : ''}`,
+    right: `+${Math.round((gradeBonus(p.id) + streakBonus()) * 100)}%`,
+  });
+}
 function deliver(c: Contract): void {
   let n = c.n;
   G.hold = G.hold.filter(f => !(f.sp === c.sp && n-- > 0));
   const pay = contractPay(c);
   G.active = G.active.filter(a => a !== c);
   addCoins(pay); G.stats.contracts++;
+  dockDelivered(c.to);
   track('contract_completed', { species: SPECIES[c.sp].id, fish: c.n, reward_bucket: bucket(pay) });
   sfx('fanfare'); toast(`Contract complete  +$${pay}`, 'good'); celebrate(); saveGame();
 }
 function abandon(c: Contract): void {
   if (!confirmed('abandon:' + c.id, `Press Abandon again to give up the ${SPECIES[c.sp].name} contract`)) return;
   G.active = G.active.filter(a => a !== c);
+  G.streak = Math.max(0, G.streak - 1);                 // a step back, never a reset
   track('contract_abandoned', { species: SPECIES[c.sp].id, fish: c.n, had: have(c.sp) });
   sfx('select'); toast(`You gave up the contract for ${c.toName}`); saveGame();
 }
@@ -363,6 +410,7 @@ function marketItems(p: Port, items: Rows): void {
     action: 'Sell all', act: () => sell(p),
   });
   header(items, 'CONTRACTS');
+  dockRow(p, items);
   for (const c of G.active) if (c.to === p.id) {
     const n = have(c.sp), name = SPECIES[c.sp].name;
     items.push({
@@ -383,7 +431,7 @@ function marketItems(p: Port, items: Rows): void {
   for (const c of offersAt(p)) {
     const full = G.active.length >= contractSlots(), room = fits(c), name = SPECIES[c.sp].name, need = catchNeed(c.sp);
     items.push({
-      kind: 'take', fish: c.sp, label: `${c.n} ${name}`, sub: `Bring them to ${c.toName}`, right: money(contractPay(c)), ok: !full && room,
+      kind: 'take', fish: c.sp, label: `${c.bulk ? 'Big order: ' : ''}${c.n} ${name}`, sub: `Bring them to ${c.toName}`, right: money(contractPay(c)), ok: !full && room,
       why: full ? `You already have ${contractSlots()} contracts, the most you can take. A Quartermaster (Outfitter tab) lets you take more` : room ? '' : `Your hold has no room for these and your other contracts`,
       action: 'Take contract', act: () => take(p, c),
       what: `Catch ${c.n} ${name} (${SPECIES[c.sp].where.toLowerCase()}) and bring them to ${c.toName} to earn ${money(contractPay(c))}.`
@@ -400,7 +448,7 @@ function marketItems(p: Port, items: Rows): void {
   header(items, 'SUPPLIES');
   const miss = hpMax() - G.boat.hp, rc = repairCost();
   items.push({
-    kind: 'repair', icon: 'repair', label: 'Repair hull', sub: `${G.boat.hp} of ${hpMax()} hull`, cost: rc, right: miss > 0 ? money(rc) : 'Full', ok: miss > 0 && G.coins > 0,
+    kind: 'repair', icon: 'repair', label: 'Repair hull', sub: `${G.boat.hp} of ${hpMax()} hull`, cost: rc, right: miss <= 0 ? 'Full' : rc === 0 ? 'Free' : money(rc), ok: miss > 0 && (G.coins > 0 || rc === 0),
     why: miss <= 0 ? 'Your hull is not damaged' : G.coins <= 0 ? 'You have no coins' : '', action: 'Repair', act: repair,
     what: `Repairs your hull for ${money(REPAIR_PER_HP * 100)} per 100 points. If you can't afford it all, you get a partial repair. If your hull reaches 0, your boat sinks and a tug tows you back to port for a small fee.`,
   });
