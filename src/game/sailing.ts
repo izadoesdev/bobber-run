@@ -99,7 +99,8 @@ function tickFeedback(dt: number): void {
   if (G.catchAnim && (G.catchAnim.t += dt) > 0.7) G.catchAnim = null;
   if (G.card) {
     G.card.t += dt;
-    if (G.card.t > 3.2 || (G.card.t > 0.4 && hit(' ', 'Enter'))) { G.card = null; G.pressed.delete(' '); }
+    const life = G.stats.caught === 1 ? 7 : 3.2;          // the very first catch gets a longer look
+    if (G.card.t > life || (G.card.t > 0.6 && hit(' ', 'Enter'))) { G.card = null; G.pressed.delete(' '); }
   }
 }
 // soundscape follows the boat: speed wash, nearby surf, weather, engine, luffing sails, and the deep ocean far out

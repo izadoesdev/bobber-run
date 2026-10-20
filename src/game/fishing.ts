@@ -1,6 +1,6 @@
 // Fishing: casting, bites, strikes, the reel fight, landing a catch, nets/pots/deckhand catches, frenzies and chum.
 import { nA } from '../noise';
-import { heightAt, schoolsNear } from '../world';
+import { heightAt, homePort, schoolsNear } from '../world';
 import { WX, biteMul, trophyBonus } from '../weather';
 import { SPECIES, activeAt, fmtKg } from '../econ';
 import { favBait } from '../species';
@@ -12,7 +12,7 @@ import type { BaitChoice, CatchCard, FightStyle, Fish, FishLine, FishStock, Scho
 import { G, hit, held } from './state';
 import { boatDef, canLand, cap, catchNeed, crewLvl, env, harpoonLvl, isNight, lineMax, logged } from './rules';
 import { addCoins, burst, jitter, spawn, toast } from './feedback';
-import { saveGame } from './save';
+import { placeAtPort, saveGame } from './save';
 import { schoolActive, takeFish } from './schools';
 
 /** Fight tuning: how hard tension climbs while reeling, and how much surges add. Exposed on BR for tweaking. */
@@ -24,6 +24,25 @@ const GOLD_BITE = 0.4, GOLD_VALUE = 2.5;
 export const idleOk = (sp: Species): boolean => !sp.legend && sp.diff < 0.45;
 
 export const castRange = (): number => 50 + boatDef().L * 0.5;
+/** A new captain's first few fish can't get away: they hook themselves and the line never snaps. */
+export const learning = (): boolean => G.stats.caught < 3;
+
+/**
+ * A new voyage starts a few boat lengths from a school that bites now, bow pointing at it, so the first cast comes
+ * within seconds (no school in reach: at the pier, as before).
+ */
+export function placeByStarterSchool(): void {
+  const hp = homePort(), b = G.boat, r = castRange() * 0.5;
+  const starter = (s: School): boolean => schoolActive(s) && !s.boss && SPECIES[s.sp].rod === 0 && !SPECIES[s.sp].legend;
+  const near = [...schoolsNear(hp.x, hp.y, 700)].filter(starter).sort((p, q) => Math.hypot(p.x - hp.x, p.y - hp.y) - Math.hypot(q.x - hp.x, q.y - hp.y));
+  for (const s of near) for (let k = 0; k < 8; k++) {
+    const a = Math.atan2(hp.y - s.y, hp.x - s.x) + k * Math.PI / 4, x = s.x + Math.cos(a) * r, y = s.y + Math.sin(a) * r;
+    if (heightAt(x, y) > -0.12) continue;                       // open water, clear of the shore
+    Object.assign(b, { x, y, px: x, py: y, a: Math.atan2(s.y - y, s.x - x), vx: 0, vy: 0, w: 0 });
+    return;
+  }
+  placeAtPort(hp);
+}
 function nearestWhere(ok: (s: School) => boolean, range: number): School | null {
   const b = G.boat;
   let best: School | null = null, bestD = range;
@@ -153,7 +172,7 @@ function strikeWindows(): [number, number] {
 function biteStage(f: FishLine, strike: boolean): void {
   const sp = SPECIES[f.s.sp];
   const [perfectWin, biteWin] = f.win ??= strikeWindows();
-  const auto = (crewLvl() >= 2 && f.t > 0.42) || (SET.strike === 'auto' && f.t > 0.3);
+  const auto = (crewLvl() >= 2 && f.t > 0.42) || (SET.strike === 'auto' && f.t > 0.3) || (learning() && f.t > Math.min(0.6, biteWin * 0.6));
   if (strike || auto) {
     f.st = 'reel'; f.perfect = f.t < perfectWin; f.t = 0;
     f.tension = f.perfect ? 0.1 : 0.25; f.prog = f.perfect ? 0.25 : 0.08; f.reeling = true; G.dry = 0;
@@ -239,6 +258,7 @@ function reelStage(f: FishLine, dt: number, strike: boolean): void {
     else f.prog = Math.max(0, f.prog - 0.035 * dt);
   }
   f.tension = Math.max(0, f.tension);
+  if (learning()) f.tension = Math.min(f.tension, lineMax() * 0.9);   // the first fish strain the line but never snap it
   if (surge > 1) G.shake = Math.max(G.shake, 0.6);
   if (Math.random() < dt * (3 + surge * 10)) spawn({ kind: 'dot', x: (f.fx ?? f.tx) + jitter(4), y: (f.fy ?? f.ty) + jitter(3), vx: jitter(18), vy: jitter(18), life: 0.35 });
   if (f.tension >= lineMax()) {

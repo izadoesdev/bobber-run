@@ -90,7 +90,18 @@ export const Hint = ({ k, k2, pad, children }: { k: string; k2?: string; pad?: s
 
 // "[E] Dock at X" -> keycap + text
 const PROMPT_KEYS: Record<string, [string, string]> = { SPACE: [' ', 'A'], E: ['e', 'X'] };
-export const keyed = (s: string) => s.split(/(\[[^\]]+\])/).map(part => {
+/**
+ * On touch screens the controls are buttons, not keys: "[SPACE] Cast for Perch" reads "Cast for Perch", "Hold [SPACE]
+ * to reel" reads "Hold the button to reel", and "press Space to cast" in dialogue reads "tap Cast".
+ */
+export function forTouch(s: string): string {
+  if (typeof document === 'undefined' || !document.documentElement.classList.contains('touch')) return s;
+  return s
+    .replace(/press (?:\[SPACE\]|Space) to cast/gi, 'tap Cast').replace(/press (?:\[E\]|E) to dock/gi, 'tap Dock')
+    .replace(/press (?:\[SPACE\]|Space) again/gi, 'tap again').replace(/press (?:\[\w+\]|Space|E)/gi, 'tap')
+    .replace(/Hold \[SPACE\]/g, 'Hold the button').replace(/\s*\[[A-Z]+\]\s*/g, ' ').trim();
+}
+export const keyed = (s: string) => forTouch(s).split(/(\[[^\]]+\])/).map(part => {
   if (!part.startsWith('[')) return part;
   const name = part.slice(1, -1), [k, pad] = PROMPT_KEYS[name] || [name.toLowerCase()];
   return <Key k={k} pad={pad} />;

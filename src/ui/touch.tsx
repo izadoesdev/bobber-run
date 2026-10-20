@@ -194,7 +194,7 @@ function PlayControls() {
         {NET.authed && ONLINE.sailors.length > 0 && <Btn k="g" label="Greet"><span class="tglyph text">Hi</span></Btn>}
         {G.pet && !G.fish && <Btn k="p" label="Pet"><span class="cat-dot" /></Btn>}
         {use && <Btn k="e" label={use.label} cls="use" off={!offered('E')}><Icon k={use.icon} /></Btn>}
-        <Btn k=" " label={main.label} cls="main" off={main.off}><Icon k={main.icon} /></Btn>
+        <Btn k=" " label={main.label} cls={'main' + (G.stats.caught === 0 && !G.fish && !main.off ? ' pulse' : '')} off={main.off}><Icon k={main.icon} /></Btn>
       </div>
     </>
   );

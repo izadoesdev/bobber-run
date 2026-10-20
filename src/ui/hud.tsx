@@ -14,7 +14,7 @@ import { WX } from '../weather';
 import { SET } from '../settings';
 import { EMOTES } from '../net';
 import { ONLINE } from '../online';
-import { currentQuest, questProgress } from '../story';
+import { PEOPLE, currentQuest, questProgress, speech, voyage } from '../story';
 import { guide, guideOn, markerTarget, stepLine, tip, whereText, type Step } from '../game/guide';
 import type { CatchCard as CatchCardState, FishLine, Toast } from '../types';
 import { drawChart, nearestUncharted } from './chart';
@@ -23,7 +23,7 @@ import { clearWaypoint, sailToWaypoint, tickWaypoint, waypointRoute } from '../w
 import { courseTarget, coursePath } from '../game/autopilot';
 import { BIOME_NAME, biomeAt, type BiomeId } from '../biome';
 import { tickIslands } from '../islands';
-import { Bar, Canvas, Fish, Hint, Icon, Key, WX_ICON, cap1, clockText, keyed, viewPct, type DrawFn } from './parts';
+import { Bar, Canvas, Fish, Hint, Icon, Key, WX_ICON, cap1, clockText, forTouch, keyed, viewPct, type DrawFn } from './parts';
 
 // stable keys so a toast keeps its element (and its fade) as older ones leave
 const toastIds = new WeakMap<Toast, number>();
@@ -161,13 +161,13 @@ function Reel({ f }: { f: FishLine }) {
 }
 
 function CatchCard({ c }: { c: CatchCardState }) {
-  const f = c.fish, sp = SPECIES[f.sp];
+  const f = c.fish, sp = SPECIES[f.sp], firstEver = G.stats.caught === 1 && !G.stats.sold;
   return (
-    <div class="card paper">
+    <div class={'card paper' + (firstEver ? ' first' : '')}>
       <Fish sp={f.sp} size="xl" />
       <div class="grow">
         <div class={'title' + (sp.legend ? ' gold' : '')}>{sp.name}</div>
-        <div class="row">{fmtKg(f.kg)}<span class="gold">{money(f.value)}</span></div>
+        <div class="row">{fmtKg(f.kg)}{!firstEver && <span class="gold">{money(f.value)}</span>}</div>
         <div>
           {c.first && <span class="stamp bad">New species</span>}
           {c.record && <span class="stamp good">New best</span>}
@@ -176,9 +176,27 @@ function CatchCard({ c }: { c: CatchCardState }) {
           {f.gold && <span class="stamp gold">Golden</span>}
         </div>
         {c.bonus && <div class="small gold">{c.bonus}</div>}
+        {firstEver && <div class="small">Your first catch! Worth <span class="gold">{money(f.value)}</span> at the market</div>}
       </div>
     </div>
   );
+}
+
+// a line said while you sail (the first quest's), with who says it; it never pauses the game
+function Speech() {
+  const s = speech();
+  if (!s || G.fish || G.card || G.t - voyage.startedAt < 3.6) return null;   // after the welcome title has faded
+  return (
+    <div class="speech chip" role="status" aria-live="polite">
+      <Icon k={s.who} size="l" /><span><b class="gold">{PEOPLE[s.who].name}</b> {forTouch(s.text)}</span>
+    </div>
+  );
+}
+// the game's name over the water for a moment when a first voyage starts there instead of on a title screen
+function Welcome() {
+  const age = G.t - voyage.startedAt;
+  if (age > 4 || age < 0) return null;
+  return <div class={'region-title welcome' + (age > 3 ? ' out' : '')}>Bobber Run</div>;
 }
 
 // past the opening quests the objective folds to its icon and distance; it opens for a few seconds when it
@@ -415,7 +433,7 @@ function Fishing() {
 // what you can do right here (cast, dock, salvage) as a small label under the boat instead of a panel; the
 // fishing prompts stay at the bottom, where a warning has to be loud
 function BoatPrompt() {
-  if (!G.prompt || G.fish || G.mode !== 'play') return null;
+  if (!G.prompt || G.fish || G.card || G.mode !== 'play') return null;
   const [x, y] = viewPct(G.boat.x, G.boat.y + 16);
   return <div class="prompt-world" style={{ left: x + '%', top: y + '%' }}>{keyed(G.prompt)}</div>;
 }
@@ -429,7 +447,9 @@ export function Hud() {
   return (
     <div>
       <RouteDots />
+      <Welcome />
       <RegionTitle />
+      <Speech />
       <BoatPrompt />
       {worldLabels()}
       <IslandSigns />

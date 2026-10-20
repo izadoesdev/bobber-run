@@ -17,7 +17,7 @@ import { NET, EMOTES, HAD_ACCOUNT_KEY, account, deleteAccount, onlineCount, sign
 import { voyageStarted } from '../telemetry';
 import { PEOPLE, currentQuest } from '../story';
 import type { NetForm, Talk as TalkState } from '../types';
-import { Cell, Hint, Icon, Key, byPointer, keyLabel } from './parts';
+import { Cell, Hint, Icon, Key, byPointer, keyLabel, forTouch } from './parts';
 import { track } from '../analytics';
 import { money } from '../config';
 
@@ -296,7 +296,7 @@ export function Talk({ t }: { t: TalkState }) {
         <div class="portrait"><Icon k={who} size="xl" /></div>
         <div class="grow">
           <div class="row"><span class="title gold">{person.name}</span><span class="muted small">{person.role}</span></div>
-          <p class="line">{text}</p>
+          <p class="line">{forTouch(text)}</p>
         </div>
         <div class="talk-foot"><span class="muted small">{t.i + 1}/{t.lines.length}</span><Hint k=" " pad="A">Next</Hint><Hint k="Escape" pad="B">Skip</Hint></div>
       </div>

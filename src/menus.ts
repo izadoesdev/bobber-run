@@ -4,7 +4,6 @@ import { G, hit, portMenuInput, shipInput, newGame, loadGame, wipeSave, saveGame
 import { SET, savePrefs } from './prefs';
 import { SPECIES } from './econ';
 import { ROWS, ACTIONS, applySettings, resetBinds } from './settings';
-import { talkNext } from './story';
 import { NET, sendEmote, EMOTES } from './net';
 import { TITLE_ITEMS, PAUSE_ITEMS } from './ui/menus';
 import { BOARDS } from './ui/leaders';
@@ -12,6 +11,8 @@ import { closeIsland } from './ui/island';
 import { sfx } from './audio';
 import { voyageStarted } from './telemetry';
 import type { Mode } from './types';
+import { placeByStarterSchool } from './game/fishing';
+import { talkNext, voyage } from './story';
 
 type ListKey = 'titleSel' | 'pauseSel' | 'ctlSel' | 'emoteSel';
 const up = () => hit('ArrowUp', 'w', 'W'), down = () => hit('ArrowDown', 's', 'S');
@@ -22,7 +23,10 @@ function nav(key: ListKey, n: number): void {
 }
 const go = (mode: Mode, sound: 'move' | 'select' = 'move') => { G.mode = mode; sfx(sound); };
 const openSettings = (back: Mode, settings: boolean) => { G.back = back; G.setSel = 1; G.ctlSel = 0; G.mode = settings ? 'settings' : 'controls'; };
-const startVoyage = () => { G.newConfirm = -1; wipeSave(); newGame(); G.mode = 'play'; voyageStarted('new'); };
+const startVoyage = () => {
+  G.newConfirm = -1; wipeSave(); newGame(); placeByStarterSchool();
+  G.mode = 'play'; voyage.startedAt = G.t; voyageStarted('new');
+};
 /** A new voyage erases the save, so with one on this device it asks first. */
 const askNewVoyage = () => { if (hasSave()) G.newConfirm = 0; else startVoyage(); };
 
@@ -35,7 +39,10 @@ function confirmNew(): void {
   if (G.newConfirm === 1) startVoyage(); else G.newConfirm = -1;
 }
 
+// a first visit (no save) skips the title and starts on the water; the title is for coming back
+let firstFrame = true;
 function title(): void {
+  if (firstFrame) { firstFrame = false; if (!hasSave()) { startVoyage(); return; } }
   if (G.newConfirm >= 0) return confirmNew();
   const items = TITLE_ITEMS(); nav('titleSel', items.length);
   if (hit('n', 'N')) { askNewVoyage(); sfx('select'); return; }

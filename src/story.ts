@@ -47,8 +47,8 @@ const ports = (): number => [...G.found].filter(id => id.startsWith('port:')).le
 export const CHAPTERS = ['A borrowed boat', 'The chartmaker', 'Night waters', 'The naturalist', 'The Old One'];
 export const QUESTS: Quest[] = [
   { id: 'first-cast', ch: 0, by: 'maren', title: 'First cast', goal: 'Catch a fish', obj: (g, b) => [Math.min(1, g.stats.caught - b.caught), 1], target: 'school', hint: 'Stop over the ripples and press Space to cast. When the bobber dips, press Space again.', reward: { coins: 20 },
-    intro: [['maren', 'So you are Nell\'s grandchild. Welcome to Alderhaven. Her old rowboat is yours now, and she would want you to use it.'], ['maren', 'See the ripples just off the pier? That is a school of fish. Stop over it, press Space to cast, and catch one.']],
-    outro: [['maren', 'Well done. You fish just like Nell did.']] },
+    intro: [['maren', 'See those ripples? That is a school of fish. Stop over them and press Space to cast.']],
+    outro: [['maren', 'Well done! So you are Nell\'s grandchild. Welcome to Alderhaven. Her old rowboat is yours now, and you fish just like she did.']] },
   { id: 'market-day', ch: 0, by: 'maren', title: 'Market day', goal: 'Sell fish at a port', obj: (g, b) => [Math.min(1, g.stats.sold - b.sold), 1], target: 'sell', hint: 'Slow down next to a pier, press E to dock, then choose "Sell your catch" in the Market tab.', reward: { shrimp: 5 },
     intro: [['maren', 'Now sell your fish for coins. Sail up to the pier, press E to dock, and sell them at the market.']],
     outro: [['maren', 'Good. Spend your coins on bait, repairs and better gear, and you will catch more.']] },
@@ -123,14 +123,35 @@ export function talkNext(skip = false): void {
   G.mode = t.back === 'talk' ? 'play' : t.back;
   t.then?.();
 }
+// The first quest's line doesn't stop the game: it shows as a speech line while you sail, so a new captain is
+// fishing within seconds. Later quests talk as before.
+let said: { lines: TalkLine[]; at: number } | null = null;
+const LINE_S = 7;
+/** The line being said without pausing, if any. */
+export function speech(): { who: Speaker; text: string } | null {
+  if (!said) return null;
+  const i = Math.floor((G.t - said.at) / LINE_S);
+  if (i >= said.lines.length || G.mode !== 'play') { if (i >= said.lines.length) said = null; return null; }
+  const [who, text] = said.lines[i];
+  return { who, text };
+}
+/** When the current voyage started from the water, for the welcome title. */
+export const voyage = { startedAt: -99 };
+
 // called every frame from the main loop while sailing or in port
 export function updateStory(): void {
   if (G.mode !== 'play' && G.mode !== 'port') return;
   const st = story(), q = currentQuest();
   if (!q) return;
-  if (!st.shown) { st.shown = true; talk(q.intro); return; }
+  if (!st.shown) {
+    st.shown = true;
+    if (q.id === 'first-cast') said = { lines: q.intro, at: G.t }; else talk(q.intro);
+    return;
+  }
+  if (G.card) return;                                   // let the catch card have its moment first
   const pr = questProgress(q);
   if (!pr || pr.have < pr.want) return;
+  said = null;
   give(q.reward);
   st.i++; st.base = snap(); st.shown = true;
   const next = currentQuest(), coins = q.reward.coins;
