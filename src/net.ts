@@ -174,7 +174,7 @@ export async function account(flow: 'signUp' | 'signIn', rawEmail: string, passw
     try { localStorage.setItem(HAD_ACCOUNT_KEY, '1'); } catch { /* private mode */ }
     if (flow === 'signUp') {
       if (keep) await putSave(keep.data, Date.now());
-      if (oldName && oldName !== 'Sailor') await setName(oldName, true);   // carrying the guest's name over isn't a rename
+      if (oldName && oldName !== 'Sailor') await setName(oldName);   // keep the guest's name (auto would make the server pick a new one)
       track('account_signed_up', { kept_save: !!keep });
       return { ok: true, msg: `Account made and signed in as ${email}. Your progress is saved to it` };
     }
