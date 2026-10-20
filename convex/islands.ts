@@ -275,6 +275,19 @@ export const clear = mutation({
   },
 });
 
+/**
+ * For a world reset (the map regenerates, so a cell may hold a different island or none): every claim, hold, logo and
+ * report goes. Payment records stay. Command line only: `bunx convex run --prod islands:resetAll '{"confirm":"reset islands"}'`.
+ */
+export const resetAll = internalMutation({
+  args: { confirm: v.literal('reset islands') },
+  handler: async ctx => {
+    let n = 0;
+    for (const isl of await ctx.db.query('islands').collect()) { if (isl.logo) await ctx.storage.delete(isl.logo); await ctx.db.delete(isl._id); n++; }
+    for (const r of await ctx.db.query('islandReports').collect()) await ctx.db.delete(r._id);
+    return n;
+  },
+});
 /** Called when a sailor joins: their islands count as visited. */
 export async function touchIslands(ctx: MutationCtx, userId: Id<'users'>): Promise<void> {
   for (const isl of await ctx.db.query('islands').withIndex('by_owner', q => q.eq('ownerId', userId)).take(MAX_ISLANDS + 2)) if (owned(isl)) await ctx.db.patch(isl._id, { seenAt: Date.now() });
