@@ -1,6 +1,6 @@
 // Full-screen documents and panels: the sea chart, the logbook, the ship and hold, and the story journal.
 import { clamp } from '../config';
-import { G, logged, cap, hpMax, boatDef, equipment, fishValue, speedMul } from '../game';
+import { G, logged, cap, hpMax, boatDef, equipment, fishValue, speedMul, deckLvl, deckBoat } from '../game';
 import { SPECIES, UPGRADES, PAINTS, SUPPLIES, fmtKg } from '../econ';
 import { homePort } from '../world';
 import { NET } from '../net';
@@ -79,6 +79,7 @@ export function Logbook() {
             <dt>Where</dt><dd>{s.where}</dd>
             <dt>When</dt><dd>{WHEN[s.time]}{WX_TXT[s.weather]}</dd>
             <dt>Rod</dt><dd class={s.rod > G.up.rod ? 'bad' : 'good'}>Level {s.rod + 1}{s.rod > G.up.rod ? '. Yours is too weak' : ''}</dd>
+            {s.deck > 0 && <><dt>Boat</dt><dd class={s.deck > deckLvl() ? 'bad' : 'good'}>{deckBoat(sel).name}{s.deck < 2 ? ' or larger' : ''}{s.deck > deckLvl() ? '. Yours is too small' : ''}</dd></>}
             <dt>Worth</dt><dd class="gold">About {money(s.base)}</dd>
             <dt>Fights</dt><dd>{FIGHTS[s.fight]}</dd>
             {e && <><dt>Caught</dt><dd>{e.n}</dd><dt>Record</dt><dd>{fmtKg(e.best)}</dd></>}

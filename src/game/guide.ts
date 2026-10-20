@@ -8,7 +8,7 @@ import { SET } from '../prefs';
 import { currentQuest, type Quest, type QuestTarget } from '../story';
 import type { Point, Port, Project, ProjectId, School, UpgradeKey } from '../types';
 import { G } from './state';
-import { boatDef, cap, hpMax, isNight, dayFrac, DAYLEN, logged } from './rules';
+import { boatDef, canLand, cap, hpMax, isNight, dayFrac, DAYLEN, logged } from './rules';
 import { needStatus, nextProject } from './port';
 import { schoolActive, schoolShown } from './schools';
 import { schoolInReach } from './fishing';
@@ -51,7 +51,7 @@ export function nearestPort(): Port {
 const SEARCH = 2600;
 const castRange = (): number => 50 + boatDef().L * 0.5;
 const dockNear = (): number => 30 + boatDef().L;
-const canCatch = (s: School): boolean => !s.boss && SPECIES[s.sp].rod <= G.up.rod;
+const canCatch = (s: School): boolean => !s.boss && canLand(s.sp);
 /** The nearest school that will bite now and that your rod can land, optionally of a kind. */
 function nearestSchool(ok: (s: School) => boolean = () => true, rad = 700): School | null {
   return nearest(schoolsNear(G.boat.x, G.boat.y, rad), s => canCatch(s) && schoolActive(s) && ok(s));

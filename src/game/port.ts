@@ -9,7 +9,7 @@ import { CREW_RANGE, ONLINE, crewBonus } from '../online';
 import { BOAT_MODELS } from '../models';
 import type { BaitKind, BoatDef, BoatId, Contract, Fish, NeedStatus, Paint, Point, Port, PortItem, PortRow, Project, ProjectNeed, UpgradeKey } from '../types';
 import { G, hit } from './state';
-import { boatDef, boatStats, cap, contractSlots, DAYLEN, dayFrac, dayNum, fishValue, hpMax, projDone } from './rules';
+import { boatDef, boatStats, canLand, cap, catchNeed, contractSlots, DAYLEN, dayFrac, dayNum, fishValue, hpMax, projDone } from './rules';
 import { addCoins, celebrate, markBought, toast, tooPoor } from './feedback';
 import { placeAtPort, portById, saveGame } from './save';
 
@@ -158,7 +158,7 @@ function makeOffer(p: Port): Contract {
   const ports = chartedPorts(p.id);
   const dest = ports.length ? ports[Math.floor(Math.random() * ports.length)] : p;
   // only fish you can already catch, and never legends
-  const cands = SPECIES.filter(s => s.w > 0 && s.rod <= G.up.rod && !s.legend);
+  const cands = SPECIES.filter((s, i) => s.w > 0 && canLand(i) && !s.legend);
   let total = 0;
   for (const s of cands) total += s.w;
   let v = Math.random() * total, sp = cands[0];
@@ -345,13 +345,13 @@ function marketItems(p: Port, items: Rows): void {
     });
   }
   for (const c of offersAt(p)) {
-    const full = G.active.length >= contractSlots(), room = fits(c), name = SPECIES[c.sp].name, weak = SPECIES[c.sp].rod > G.up.rod;
+    const full = G.active.length >= contractSlots(), room = fits(c), name = SPECIES[c.sp].name, need = catchNeed(c.sp);
     items.push({
       kind: 'take', c, fish: c.sp, label: `${c.n} ${name}`, sub: `Bring them to ${c.toName}`, right: cash(contractPay(c)), ok: !full && room,
       why: full ? `You already hold ${contractSlots()} contracts. The Quartermaster adds more` : room ? '' : `Your hold can't carry these alongside your other contracts`,
       action: 'Take contract', act: () => take(p, c),
       what: `Catch ${c.n} ${name} (${SPECIES[c.sp].where.toLowerCase()}) and bring them to ${c.toName} for ${cash(contractPay(c))}.`
-        + `${weak ? ` You need a level ${SPECIES[c.sp].rod + 1} rod for them.` : ''} The best ${name} in your hold are kept back from sale. You hold ${G.active.length} of ${contractSlots()} contracts.`,
+        + `${need ? ` Landing them ${need}.` : ''} The best ${name} in your hold are kept back from sale. You hold ${G.active.length} of ${contractSlots()} contracts.`,
     });
   }
   header(items, 'INN');

@@ -77,6 +77,7 @@ export const ROWS: SettingEntry[] = [
   { label: 'Interface size', ...pick('ui', UI_SIZES, ['85%', '100%', '115%', '130%', '150%']) },
   { label: 'Sea zoom', get: () => `${Math.round(SET.zoom * 100)}%`, change: d => { stepZoom(d > 0 ? 1 : -1); }, help: 'How much of the sea you see. Bigger ships already see further. You can also use the mouse wheel or - and + while sailing.' },
   { label: 'Font', ...pick('font', ['pixel', 'plain'], ['Pixel', 'Plain']), help: 'Plain uses a smooth system font that is easier to read.' },
+  { label: 'Interface while sailing', ...toggle('hud', 'Shown', 'Hidden'), help: 'Press H while sailing to hide the status panel, minimap, quest and hints, for clean screenshots or calm sailing. Toasts and the fishing gauge stay.' },
   { label: 'Objective marker', ...toggle('guide'), help: 'Shows where to go next: an arrow on screen and a flag on the minimap and chart.' },
   { head: 'Fishing' },
   { label: 'Strike timing', ...pick('strike', ['normal', 'relaxed', 'auto'], ['Normal', 'Relaxed', 'Automatic']), help: 'Relaxed gives you more time to strike. Automatic sets the hook for you.' },
@@ -94,6 +95,7 @@ export const ACTIONS: Action[] = [
   { id: 'cast', label: 'Cast, strike and reel', key: ' ' }, { id: 'use', label: 'Dock, salvage, haul', key: 'e' },
   { id: 'bait', label: 'Switch bait', key: 'b' }, { id: 'chum', label: 'Throw chum', key: 'c' }, { id: 'pet', label: 'Pet the cat', key: 'p' },
   { id: 'ship', label: 'Ship and hold', key: 'Tab' }, { id: 'chart', label: 'Sea chart', key: 'm' }, { id: 'log', label: 'Logbook', key: 'l' },
+  { id: 'hud', label: 'Hide or show the interface', key: 'h' },
 ];
 const sameKey = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 

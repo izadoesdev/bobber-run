@@ -18,6 +18,8 @@ export interface Settings {
   contrast: boolean; calm: boolean; captions: boolean;
   /** the objective marker: an arrow on screen and a flag on the minimap and chart */
   guide: boolean;
+  /** the sailing interface (status, minimap, quest, hints); H hides it for screenshots or calm sailing */
+  hud: boolean;
   strike: StrikeTiming;
   reelAssist: boolean; reelToggle: boolean;
   /** camera zoom chosen by the player; 1 = the default view for your ship */
@@ -27,8 +29,8 @@ export interface Settings {
 }
 
 export const SET: Settings = {
-  music: 6, sfx: 8, amb: 8, quality: 'auto', pixel: 'chunky', tilt: true, bloom: true, shake: true,
-  ui: 1, font: 'pixel', contrast: false, calm: false, captions: false, guide: true,
+  music: 6, sfx: 8, amb: 8, quality: 'auto', pixel: 'crisp', tilt: true, bloom: true, shake: true,
+  ui: 1, font: 'pixel', contrast: false, calm: false, captions: false, guide: true, hud: true,
   strike: 'normal', reelAssist: false, reelToggle: false, zoom: 1, binds: {},
 };
 // storage may be unavailable (private mode) or hold junk; defaults stand in either case

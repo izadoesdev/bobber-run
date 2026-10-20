@@ -3,7 +3,7 @@ import type { JSX } from 'preact';
 import { W, H, clamp } from '../config';
 import {
   G, cap, hpMax, boatDef, sonarLvl, isNight, dayNum, dayFrac, windAngle, sailEfficiency, schoolActive,
-  lineMax, nextProject, needStatus, currentGoal,
+  lineMax, nextProject, needStatus, currentGoal, catchNeed,
 } from '../game';
 import { SPECIES, SUPPLIES, PROJECTS, fmtKg } from '../econ';
 import { favBait } from '../species';
@@ -317,7 +317,7 @@ const MOOD_NOTE = { biting: '', scattered: 'regrouping', empty: 'fished out' } a
 function SchoolTag({ s }: { s: School }) {
   const sp = SPECIES[s.sp], mood = schoolMood(s), fav = favBait(sp), [x, y] = viewPct(s.x, s.y - 9);
   if (x < 3 || x > 97 || y < 8 || y > 94) return null;
-  const note = MOOD_NOTE[mood] || (sp.rod > G.up.rod ? `needs rod ${sp.rod + 1}` : '');
+  const need = catchNeed(s.sp), note = MOOD_NOTE[mood] || (need ? (sp.rod > G.up.rod ? `needs rod ${sp.rod + 1}` : 'needs a bigger boat') : '');
   return (
     <div class={'label-world chip row' + (sp.legend ? ' gold' : '')} key="school-tag" style={{ left: x + '%', top: y + '%', gap: '0.3em' }}>
       <Fish sp={s.sp} size="s" />
@@ -366,7 +366,24 @@ function netText(): string {
   return n ? n + ' sailor' + (n > 1 ? 's' : '') + ' nearby' : 'Online';
 }
 
+// With the interface hidden (H): only what a catch needs, the catch card and captions; toasts stay above everything.
+function QuietHud() {
+  return (
+    <div>
+      {G.card && <CatchCard c={G.card} />}
+      <div class="bottom-stack">
+        <Captions />
+        {G.fish?.st === 'reel' && <Reel f={G.fish} />}
+        {G.fish?.st === 'bite' && SET.strike !== 'auto' && <StrikeMeter f={G.fish} />}
+        {G.fish && G.prompt && G.mode === 'play' && (
+          <div class={'prompt panel' + (G.fish.st === 'bite' || G.fish.warn ? ' hot' : '')}>{keyed(G.prompt)}</div>
+        )}
+      </div>
+    </div>
+  );
+}
 export function Hud() {
+  if (!SET.hud) return <QuietHud />;
   const gl = currentGoal(), quest = currentQuest(), step = guide();
   return (
     <div>
@@ -406,7 +423,7 @@ export function Hud() {
       </div>
       <div class="hints">
         <Hint k="Tab" pad="View">Ship</Hint><Hint k="m" pad="Y">Chart</Hint><Hint k="l" pad="LB">Log</Hint>
-        <Hint k="Escape" pad="Start">Menu</Hint>{G.pet && <Hint k="p">Pet {G.pet.name}</Hint>}
+        <Hint k="Escape" pad="Start">Menu</Hint><Hint k="h">Hide</Hint>{G.pet && <Hint k="p">Pet {G.pet.name}</Hint>}
       </div>
     </div>
   );

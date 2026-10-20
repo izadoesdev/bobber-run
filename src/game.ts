@@ -3,7 +3,7 @@
 export { G, inp, hit } from './game/state';
 export {
   boatDef, cap, hpMax, crewLvl, keelLvl, harpoonLvl, projDone, speedMul, sonarLvl, lightR, netLvl, lineMax, contractSlots,
-  fishValue, env, equipment, logged, DAYLEN, dayFrac, dayNum, darkness, isNight, windAngle, sailEfficiency, boatSpeed, toWorld,
+  fishValue, env, equipment, logged, canLand, catchNeed, deckLvl, deckBoat, DAYLEN, dayFrac, dayNum, darkness, isNight, windAngle, sailEfficiency, boatSpeed, toWorld,
   type Equipment,
 } from './game/rules';
 export { caption, toast, spawn } from './game/feedback';

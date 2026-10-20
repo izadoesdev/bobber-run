@@ -35,6 +35,8 @@ export interface Species {
   kg: [number, number];
   /** rod upgrade level needed (0 = starting rod) */
   rod: number;
+  /** deck size needed to land it (0 = any boat; see BoatDef.deck) */
+  deck: number;
   /** spawn weight */
   w: number;
   time: TimeOfDay;
@@ -76,6 +78,8 @@ export interface BoatDef {
   crew?: number;
   keel?: number;
   harpoon?: number;
+  /** deck size: 1 lands the sea giants (Trawler and up), 2 the very largest (Flagship) */
+  deck?: number;
   what: string;
   /** project that unlocks it at the shipyard */
   req?: ProjectId;
@@ -263,6 +267,8 @@ export interface PortMenu { tab: number; sel: number; port: Port | null }
 export interface MapView { x: number; y: number; zoom: number }
 export interface NetForm {
   name: string | null; email: string; pass: string; show: boolean; mode: 'signUp' | 'signIn';
+  /** the account the form was last shown for; a change clears a half-typed name */
+  uid?: string | null;
   /** when "Delete account" was first pressed (ms); a second press within a few seconds deletes */
   delAt?: number;
 }

@@ -130,6 +130,7 @@ const GEAR_NAMES: [keyof BoatDef, string][] = [['net', 'net'], ['sonar', 'sonar'
 function BoatCompare({ b }: { b: BoatDef }) {
   const cur = boatDef(), mine = boatStats(cur), it = boatStats(b), same = cur.id === b.id;
   const gear = GEAR_NAMES.filter(([k]) => (b[k] as number | undefined ?? 0) > 0).map(([k, n]) => `level ${b[k]} ${n}`);
+  const giants = SPECIES.filter(s => s.deck > 0 && s.deck <= (b.deck ?? 0)).map(s => s.name);   // sea giants this deck can land
   return (
     <>
       <div class="ledger">
@@ -141,6 +142,7 @@ function BoatCompare({ b }: { b: BoatDef }) {
         ))}
       </div>
       <p>{b.what}.{gear.length > 0 && ` Built in: ${gear.join(', ')}.`}</p>
+      {giants.length > 0 && <p>Its deck can land sea giants: {giants.join(', ')}.</p>}
     </>
   );
 }

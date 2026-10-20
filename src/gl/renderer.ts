@@ -9,7 +9,7 @@ import { TS, TN, getTile, hasTile, poisNear, schoolsNear, cratesNear, type Heigh
 import { hash01 } from '../noise';
 import { SPECIES, BOATS, warmth, coldness, activeAt } from '../econ';
 import { schoolLook } from '../species';
-import { DIVE_S, SCATTER_S } from '../game/schools';
+import { DIVE_S, SCATTER_S, schoolDrawR } from '../game/schools';
 import { G, darkness, lightR, schoolActive, isNight, dayFrac, equipment, windAngle, boatDef, env } from '../game';
 import { WX } from '../weather';
 import { LIFE, type Whale, type Giant, type Ship } from '../life';
@@ -308,6 +308,11 @@ const shipDef = (id: string) => BOATS.find(b => b.id === id) || BOATS[0];
 const FX_RING = 0, FX_GOLD = 1, FX_GLOW = 2, FX_SPRAY = 3;
 const schoolFx: number[] = [];
 const shownCount = new WeakMap<School, number>();   // eased number of fish on show, so they come and go smoothly
+// eased presence (0..1): schools rise into view and sink away instead of popping, whether their species comes and goes
+// with the hour or weather, or they come into sight in the dark. Schools are drawn from beyond the view's edge, so
+// new ones never appear on screen; ones already on screen rise from the deep.
+const shownVis = new WeakMap<School, number>();
+let visEase = 0;
 let sceneT = 0, schoolEase = 0;
 const GOLD_TINT = 1.2;
 const smooth01 = (x: number) => { const t = clamp(x, 0, 1); return t * t * (3 - 2 * t); };
@@ -318,8 +323,8 @@ function sunk(s: School): number {
   return G.t < end ? smooth01((G.t - (end - DIVE_S)) / 1.6) : 1 - smooth01((G.t - end) / 1.6);
 }
 // Fish come from the school's swim simulation (game/schools); here they get depth, colour, glow and their tricks.
-function drawSchool(s: School, night: boolean, lit: boolean): void {
-  const fish = s.swim, dive = sunk(s);
+function drawSchool(s: School, night: boolean, lit: boolean, vis: number): void {
+  const fish = s.swim, dive = Math.max(sunk(s), 1 - smooth01(vis));
   if (!fish || dive >= 1) { shownCount.delete(s); return; }
   const sp = SPECIES[s.sp], look = schoolLook(s.sp), m = MS.fishMesh(s.sp);
   const full = look.count + (G.frenzy?.s === s ? 2 : 0), straggler = s.stock <= 0;
@@ -408,15 +413,19 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
   // fish schools swim under the surface; at night glowing fish and the ones in your light show clearly, others as dim shapes nearby
   const night = isNight(), lr = lightR() + 14;
   schoolFx.length = 0;
-  schoolEase = 1 - Math.exp(-2.5 * clamp(G.t - sceneT, 0, 0.1)); sceneT = G.t;
-  for (const s of schoolsNear(cx, cy, 240, sceneSchools)) {
+  const step = clamp(G.t - sceneT, 0, 0.1); sceneT = G.t;
+  schoolEase = 1 - Math.exp(-2.5 * step); visEase = 1 - Math.exp(-1.6 * step);
+  for (const s of schoolsNear(cx, cy, schoolDrawR(), sceneSchools)) {
     if (s.boss) {
       if (schoolActive(s)) { const a = G.t * 0.35; inst(MS.leviMesh(), s.x + Math.cos(a) * 18, s.y + Math.sin(a) * 12, a + Math.PI / 2, 1, -5.5, 0, 0, true, 1); }
       continue;
     }
     const d = Math.hypot(s.x - G.boat.x, s.y - G.boat.y);
     const lit = !night || G.frenzy?.s === s || schoolLook(s.sp).glow || d < lr;
-    if ((lit || d < 90) && activeAt(s.sp, env())) drawSchool(s, night, lit);
+    const want = activeAt(s.sp, env()) ? (lit ? 1 : clamp((110 - d) / 30, 0, 1)) : 0;   // unlit schools at night fade with distance
+    const was = shownVis.get(s) ?? 0, vis = was + (want - was) * visEase;
+    shownVis.set(s, vis);
+    if (vis > 0.01) drawSchool(s, night, lit, vis);
     else shownCount.delete(s);
   }
   // whales, giants, jellies, NPC ships, dolphins

@@ -10,7 +10,7 @@ import { netCatch } from '../net';
 import { track, bucket } from '../analytics';
 import type { BaitChoice, CatchCard, FightStyle, Fish, FishLine, FishStock, School, Species, TreasureMap } from '../types';
 import { G, hit, held } from './state';
-import { boatDef, cap, crewLvl, env, harpoonLvl, isNight, lineMax, logged } from './rules';
+import { boatDef, canLand, cap, catchNeed, crewLvl, env, harpoonLvl, isNight, lineMax, logged } from './rules';
 import { addCoins, burst, jitter, spawn, toast } from './feedback';
 import { saveGame } from './save';
 import { schoolActive, schoolShown, takeFish } from './schools';
@@ -47,7 +47,8 @@ export function cancelFishing(msg?: string): void {
 export function tryCast(s: School): void {
   const sp = SPECIES[s.sp];
   if (G.hold.length >= cap()) { toast('Hold full. Sell at a port', 'bad'); sfx('deny'); return; }
-  if (sp.rod > G.up.rod) { toast(`${sp.name} needs a level ${sp.rod + 1} rod`, 'bad'); sfx('deny'); return; }
+  const need = catchNeed(s.sp);
+  if (need) { toast(`${sp.name} ${need}`, 'bad'); sfx('deny'); return; }
   const bait = G.baitSel !== 'none' && G.bait[G.baitSel] > 0 ? G.baitSel : null;
   if (bait) G.bait[bait]--;
   G.fish = {
@@ -386,7 +387,7 @@ export function updateFrenzy(dt: number): void {
     const b = G.boat;
     const cands = schoolsNear(b.x, b.y, 420).filter(s => {
       const d = Math.hypot(s.x - b.x, s.y - b.y);
-      return d > 120 && d < 420 && activeAt(s.sp, env()) && SPECIES[s.sp].rod <= G.up.rod && frenzyOk(s);
+      return d > 120 && d < 420 && activeAt(s.sp, env()) && canLand(s.sp) && frenzyOk(s);
     });
     if (cands.length) {
       const s = cands[Math.floor(Math.random() * cands.length)];

@@ -12,6 +12,19 @@ const frac = (x: number): number => x - Math.floor(x);
 const PROP_STEP = 0.12, HULL_STEP = 0.25, HOLD_STEP = 2, LINE_STEP = 0.12, ICE_STEP = 0.05;
 // boatId always names a BOATS entry (saves only ever store ids from that list)
 export const boatDef = (): BoatDef => BOATS.find(b => b.id === G.boatId)!;
+/** Deck size of the boat you sail: sea giants need 1 (Trawler and up), the very largest 2 (Flagship). */
+export const deckLvl = (): number => boatDef().deck ?? 0;
+/** The smallest boat whose deck can land species `sp`. */
+export const deckBoat = (sp: number): BoatDef => BOATS.find(b => (b.deck ?? 0) >= SPECIES[sp].deck)!;
+/** Why you can't land species `sp` with your rod and boat, or null if you can. */
+export function catchNeed(sp: number): string | null {
+  const s = SPECIES[sp];
+  if (s.rod > G.up.rod) return `needs a level ${s.rod + 1} rod`;
+  if (s.deck > deckLvl()) return `needs a bigger boat: the ${deckBoat(sp).name}${s.deck < 2 ? ' or larger' : ''}`;
+  return null;
+}
+/** Your rod and boat can land species `sp`. */
+export const canLand = (sp: number): boolean => catchNeed(sp) === null;
 /** A boat's numbers with your upgrades fitted (any boat, so the shipyard can compare). */
 export function boatStats(bd: BoatDef = boatDef()): { speed: number; hold: number; hp: number; turn: number; accel: number } {
   const keel = Math.max(G.up.keel, bd.keel ?? 0);
@@ -51,7 +64,7 @@ const UPGRADE_STAT: Record<UpgradeKey, [string, (l: number) => string]> = {
   bilge: ['Pump', l => ['off', '1 hull point / 4 s', '1 hull point / 1.4 s'][l]],
   anchor: ['Anchor', l => l ? 'holds you still' : 'none'],
   net: ['Drift net', l => ['none', '1 fish / 3.6 s', '1 fish / 2.9 s', '1 fish / 2.2 s'][l]],
-  rod: ['Species you can catch', l => `${SPECIES.filter(s => s.rod <= l).length} of ${SPECIES.length}`],
+  rod: ['Species you can catch', l => `${SPECIES.filter(s => s.rod <= l && s.deck <= deckLvl()).length} of ${SPECIES.length}`],
   reel: ['Reeling speed', l => pct(1 + 0.12 * l)],
   line: ['Line strength', l => pct(1 + LINE_STEP * l)],
   tackle: ['Wait for a bite', l => pct(1 - 0.12 * l)],

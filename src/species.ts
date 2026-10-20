@@ -3,7 +3,7 @@ import type { Env, FightStyle, FishShape, Landmark, Region, Species, TimeOfDay, 
 import { FISH_T } from './fishart';
 
 type Zone = Species['zone'];
-type Extra = { region?: Region; weather?: WeatherNeed; special?: Landmark | null; legend?: boolean };
+type Extra = { region?: Region; weather?: WeatherNeed; special?: Landmark | null; legend?: boolean; deck?: number };
 type Palette = Species['c'];
 
 // fight difficulty: tougher with the rod level a species needs, and a little with its value
@@ -14,7 +14,7 @@ const difficulty = (rod: number, base: number): number => Math.min(0.95, 0.12 + 
 // special: wreck/light schools only spawn at those landmarks
 const S = (id: string, name: string, base: number, kg: [number, number], rod: number, w: number, time: TimeOfDay, shape: FishShape,
   c: Palette, fight: FightStyle, where: string, zone: Zone, extra: Extra = {}): Species =>
-  ({ id, name, base, kg, rod, w, time, shape, c, fight, where, zone, region: 'any', weather: 'any', special: null, diff: difficulty(rod, base), ...extra });
+  ({ id, name, base, kg, rod, w, time, shape, c, fight, where, zone, region: 'any', weather: 'any', special: null, deck: 0, diff: difficulty(rod, base), ...extra });
 const shallow = (t: number): Zone => h => h > t;
 const deep = (t: number, minDist = 0): Zone => (h, d) => h < t && d > minDist;
 export const SPECIES: Species[] = [
@@ -63,6 +63,12 @@ export const SPECIES: Species[] = [
   S('crystal', 'Crystal Squid', 360, [5, 30], 4, 0.35, 'night', 'squid', ['#86b0bf', '#b4d0d8', '#e6efec', '#efe9dc'], 'erratic', 'Far cold ocean at night', deep(-0.42, 2400), { region: 'cold', legend: true }),
   S('goldmahi', 'Golden Mahi', 380, [15, 40], 4, 0.35, 'day', 'tuna', ['#a47f22', '#f0cf6a', '#fff6d6', '#e2b94a'], 'jumper', 'Far warm ocean, rarely', deep(-0.4, 2400), { region: 'warm', legend: true }),
   S('oldone', 'The Old One', 2400, [400, 900], 4, 0, 'night', 'levi', ['#14212a', '#33454f', '#8a949c', '#a23d33'], 'boss', 'Its lair, at night', () => false, { legend: true }),
+  // ---- sea giants: too heavy for a small boat's deck; the Trawler and bigger ships can land them ----
+  // (appended last: the hold stores species by index, so existing saves keep their fish)
+  S('manta', 'Manta Ray', 150, [300, 1300], 3, 0.8, 'day', 'flat', ['#1b2a33', '#33454f', '#e6efec', '#14212a'], 'generic', 'Open ocean by day, from a Trawler or bigger', deep(-0.4, 1800), { deck: 1 }),
+  S('goliath', 'Goliath Grouper', 135, [80, 360], 3, 1.5, 'any', 'perch', ['#4a3a2a', '#6e5f40', '#c8b47c', '#33281c'], 'steady', 'Around wrecks, from a Trawler or bigger', () => false, { special: 'wreck', deck: 1 }),
+  S('gsquid', 'Giant Squid', 250, [100, 275], 4, 0.6, 'night', 'squid', ['#5e1f1a', '#a23d33', '#f2c8b8', '#7e2c25'], 'erratic', 'The far deep at night, from the Flagship', deep(-0.42, 2800), { deck: 2 }),
+  S('sunfish', 'Ocean Sunfish', 230, [250, 1000], 4, 0.6, 'day', 'round', ['#5c6670', '#8a949c', '#e6efec', '#b3bbc0'], 'steady', 'Far warm ocean by day, from the Flagship', deep(-0.4, 2400), { region: 'warm', deck: 2 }),
 ];
 /** species id -> index into SPECIES */
 export const SP: Record<string, number> = Object.fromEntries(SPECIES.map((s, i) => [s.id, i]));

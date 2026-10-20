@@ -6,6 +6,7 @@ import { SPECIES, activeAt } from '../econ';
 import { schoolLook } from '../species';
 import { sfx } from '../audio';
 import type { FightStyle, School } from '../types';
+import { W, H } from '../config';
 import { G } from './state';
 import { boatDef, env } from './rules';
 import { burst, spawn, toast } from './feedback';
@@ -28,9 +29,11 @@ export type SchoolMood = 'biting' | 'scattered' | 'empty';
 export const schoolMood = (s: School): SchoolMood => scattered(s) ? 'scattered' : s.stock > 0 ? 'biting' : 'empty';
 
 const nearScratch: School[] = [];
-/** Fish swim in every school near the boat (whatever the screen, so the sea stays alive behind menus). */
+/** Schools are drawn out to just past the corners of the view, so new ones always come in from off screen. */
+export const schoolDrawR = (): number => Math.max(240, Math.hypot(W, H) / 2 + 30);
+/** Fish swim in every school near the boat (whatever the screen, so the sea stays alive behind menus), a margin past where they are drawn. */
 export function swimSchools(dt: number): void {
-  for (const s of schoolsNear(G.boat.x, G.boat.y, 320, nearScratch)) if (!s.boss) swim(s, dt);
+  for (const s of schoolsNear(G.boat.x, G.boat.y, Math.max(320, schoolDrawR() + 80), nearScratch)) if (!s.boss) swim(s, dt);
 }
 /** While sailing: fished schools refill, and a fast engine passing over one scatters it. */
 export function updateSchools(speed: number, dt: number): void {

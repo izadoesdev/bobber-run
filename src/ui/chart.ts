@@ -1,5 +1,5 @@
 // Chart drawing for the minimap and the full sea chart (crisp canvas, real font labels).
-import { G, sonarLvl, logged } from '../game';
+import { G, sonarLvl, logged, canLand } from '../game';
 import { schoolShown, schoolMood } from '../game/schools';
 import { SPECIES } from '../econ';
 import { poisNear, schoolsNear, LAIR } from '../world';
@@ -123,7 +123,7 @@ function drawSchools(ctx: Ctx, cx: number, cy: number, rad: number, S: Project, 
     const [x, y] = S(s.x, s.y), colour = son >= 2 ? SPECIES[s.sp].c[1] : '#b4d0d8';
     ctx.globalAlpha = schoolMood(s) === 'biting' ? 1 : 0.45;
     // shape as well as colour: a filled dot you can catch, a hollow ring your rod can't handle yet
-    const weak = SPECIES[s.sp].rod > G.up.rod;
+    const weak = !canLand(s.sp);
     ctx.beginPath();
     ctx.arc(x, y, 2.2 * u, 0, 7);
     ctx.strokeStyle = COL.ink;

@@ -1,6 +1,7 @@
 // What a press does on each screen. Called once per frame before the simulation;
 // a press that changes screens is consumed, so it can't also act on the new screen.
-import { G, hit, portMenuInput, shipInput, newGame, loadGame, wipeSave, saveGame } from './game';
+import { G, hit, portMenuInput, shipInput, newGame, loadGame, wipeSave, saveGame, toast } from './game';
+import { SET, savePrefs } from './prefs';
 import { SPECIES } from './econ';
 import { ROWS, ACTIONS, applySettings, resetBinds } from './settings';
 import { talkNext } from './story';
@@ -87,6 +88,13 @@ function sailing(): void {
   else if (hit('g') && NET.authed) go('emote', 'select');
   else if (hit('Tab', 'i', 'I')) { G.shipSel = 0; go('ship'); }
   else if (hit('Escape') && !G.fish) { G.pauseSel = 0; go('pause'); }
+  else if (hit('h', 'H')) toggleHud();
+}
+/** H: hide the sailing interface for screenshots or calm sailing, or bring it back. */
+function toggleHud(): void {
+  SET.hud = !SET.hud; savePrefs(); sfx('select');
+  G.toasts = G.toasts.filter(t => !t.s.startsWith('Interface '));
+  toast(SET.hud ? 'Interface shown' : 'Interface hidden. Press H to bring it back');
 }
 
 function screenInput(dt: number, refit: () => void): void {

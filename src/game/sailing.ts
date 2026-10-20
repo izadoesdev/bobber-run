@@ -9,7 +9,7 @@ import { SET } from '../prefs';
 import { FUNNEL } from '../models';
 import type { BaitChoice, Crate, Poi, School, TreasureMap, WeatherState, Wreck } from '../types';
 import { G, hit } from './state';
-import { boatDef, boatSpeed, cap, dayNum, hpMax, isNight, logged, netLvl, sailEff, toWorld, windAngle } from './rules';
+import { boatDef, boatSpeed, cap, catchNeed, dayNum, hpMax, isNight, logged, netLvl, sailEff, toWorld, windAngle } from './rules';
 import { addCoins, burst, celebrate, jitter, spawn, toast } from './feedback';
 import { checkGoals } from './goals';
 import { placeAtPort, portById, saveGame } from './save';
@@ -203,7 +203,8 @@ function promptFor(speed: number): string | null {
   if (G.nearWreck) return speed < 12 ? `[E] Salvage the ${G.nearWreck.name.replace('Wreck of the ', '')}` : 'Slow down to salvage';
   if (G.nearSchool) {
     const s = SPECIES[G.nearSchool.sp];
-    return speed < 10 ? `[SPACE] Cast for ${s.name}${s.rod > G.up.rod ? `, needs a level ${s.rod + 1} rod` : ''}` : 'Stop to fish';
+    const need = catchNeed(G.nearSchool.sp);
+    return speed < 10 ? `[SPACE] Cast for ${s.name}${need ? `, ${need}` : ''}` : 'Stop to fish';
   }
   return null;
 }
