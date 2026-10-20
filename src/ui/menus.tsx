@@ -86,6 +86,8 @@ export function AccountCta({ from }: { from: 'title' | 'play' }) {
 /** Online players with a generated name are sent to pick their own before sailing on (once per session if they skip offline). */
 export function forceName(): void {
   const p = NET.profile;
+  // a new captain fishes first: the name is asked once the first catch's card and Maren's welcome are done
+  if (G.stats.caught < 1 || G.card) return;
   if (G.mode !== 'play' || G.needName || !NET.authed || !p || p.chosen || p.admin || NET.busy) return;
   G.needName = true; G.accountBack = 'play'; G.mode = 'account';
 }
@@ -228,16 +230,16 @@ export function Online() {
     <div class="center dim-bg"><div class="panel rivets dialog online">
       <h1>{G.needName ? 'Choose your captain name' : 'Online'}</h1>
       {G.needName && <p class="good">Other sailors see this name over your boat and in chat. Pick your own to start sailing.</p>}
-      <p class="row"><span class={'dot ' + NET.status} />{status}</p>
+      {!G.needName && <p class="row"><span class={'dot ' + NET.status} />{status}</p>}
       {NET.authed && (
         <div class="form-row">
           <label class="caps" for="net-name">Captain</label>
-          <input id="net-name" maxlength={18} autocomplete="off" value={f.name ?? p?.name ?? ''}
+          <input id="net-name" maxlength={18} autocomplete="off" value={f.name ?? p?.name ?? ''} ref={G.needName ? focusOnce : undefined}
             onInput={e => { f.name = e.currentTarget.value; }} onKeyDown={onEnter(saveName)} />
           <button data-track="name-save" class="btn" disabled={f.name === null || f.name === p?.name} onClick={saveName}>Save name</button>
         </div>
       )}
-      {(NET.busy || (NET.authed && p?.guest)) && (
+      {!G.needName && (NET.busy || (NET.authed && p?.guest)) && (   /* choosing a name shows just the name; the account can wait */
         <form class="account-box" onSubmit={submit}>
           <div class="seg">
             <button data-track="mode-sign-up" type="button" class={'seg-btn' + (f.mode === 'signUp' ? ' on' : '')} onClick={setMode('signUp')}>Make an account</button>
@@ -266,7 +268,7 @@ export function Online() {
         </p>
       )}
       {G.netMsg && <p class={G.netMsg.bad ? 'why left' : 'good'}>{G.netMsg.msg}</p>}
-      <p class="help">Online you share the sea with every other sailor. Greet them (G), chat (/), compare world records in the logbook, and give to the coastwide fund in Alderhaven's Harbour tab. <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a></p>
+      {!G.needName && <p class="help">Online you share the sea with every other sailor. Greet them (G), chat (/), compare world records in the logbook, and give to the coastwide fund in Alderhaven's Harbour tab. <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a></p>}
       {!(G.needName && NET.authed) && <footer class="foot"><span /><button data-track="account-back" class="btn" onClick={() => { G.needName = false; G.mode = G.accountBack || 'play'; }}>Back<Key k="Escape" pad="B" /></button></footer>}
     </div></div>
   );
