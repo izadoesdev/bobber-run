@@ -9,6 +9,7 @@ bun install
 bun run dev       # dev server with hot reload
 bun run build     # production build in dist/
 bun run preview   # serve the production build
+bun run typecheck # TypeScript, client and backend
 ```
 
 Needs a browser with WebGL2.
@@ -41,12 +42,14 @@ Keys can be rebound under Controls. Gamepads work too. Settings > Pixel style sw
 
 ## Code
 
-- `src/main.js`: entry point, input, fixed-step loop, window fitting
-- `src/game.js`: simulation, physics, saves; `econ.js` species, boats, upgrades; `world.js` procedural world; `story.js` quests
+TypeScript throughout (`bun run typecheck` checks the client and `convex/`).
+
+- `src/main.ts`: entry point, fixed-step loop, window fitting; `input.ts` keyboard and gamepad; `menus.ts` per-screen input
+- `src/game.ts` and `src/game/`: simulation, physics, fishing, ports, saves; `econ.ts` species, boats, upgrades; `world.ts` procedural world; `story.ts` quests
 - `src/gl/`: WebGL2 renderer, shaders, voxel meshes
-- `src/ui/`: Preact + htm interface, icons, sea chart
-- `src/audio.js`: synthesized sound effects, ambience and music
-- `src/net.ts`, `src/online.js`: optional online layer; `convex/`: backend functions and schema
+- `src/ui/`: Preact TSX interface, icons, sea chart
+- `src/audio.ts`: synthesized sound effects, ambience and music
+- `src/net.ts`, `src/online.ts`: optional online layer; `convex/`: backend functions and schema
 
 ## Credits
 
