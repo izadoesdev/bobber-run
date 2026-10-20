@@ -1,7 +1,8 @@
 import { v } from 'convex/values';
-import { query, mutation } from './_generated/server';
+import { query, mutation, internalMutation } from './_generated/server';
 import { getAuthUserId } from '@convex-dev/auth/server';
 import { requireUser } from './lib';
+import { isAdminEmail } from './profiles';
 import { SAVE_MIN_MS, MAX_SAVE_CHARS } from './limits';
 
 // one cloud save per player; a write never replaces a newer save
@@ -24,5 +25,23 @@ export const put = mutation({
     if (s?.putAt && now - s.putAt < SAVE_MIN_MS) return { ok: false, busy: true };
     if (s) await ctx.db.patch(s._id, { data, updatedAt: at, putAt: now }); else await ctx.db.insert('saves', { userId, data, updatedAt: at, putAt: now });
     return { ok: true };
+  },
+});
+
+/**
+ * Admins only, from the command line: set the coins in an admin's cloud save (lifetime earnings and the leaderboards
+ * are left alone). The game loads it from the title screen. `bunx convex run --prod saves:setAdminCoins '{"email":"…","coins":999999999}'`
+ */
+export const setAdminCoins = internalMutation({
+  args: { email: v.string(), coins: v.number() },
+  handler: async (ctx, { email, coins }) => {
+    if (!isAdminEmail(email)) throw new Error('Not an admin email');
+    const acct = await ctx.db.query('authAccounts').withIndex('providerAndAccountId', q => q.eq('provider', 'password').eq('providerAccountId', email.toLowerCase())).unique();
+    const s = acct && await ctx.db.query('saves').withIndex('by_user', q => q.eq('userId', acct.userId)).unique();
+    if (!s) throw new Error('No cloud save for that account yet');
+    const now = Date.now(), data = JSON.parse(s.data);
+    Object.assign(data, { coins: Math.floor(coins), savedAt: now });
+    await ctx.db.patch(s._id, { data: JSON.stringify(data), updatedAt: now });
+    return { coins: data.coins };
   },
 });
