@@ -1,0 +1,13 @@
+/* Chat log and input: bottom left, above the key hints; translucent so the sea shows through. */
+.chat { position: absolute; left: 0.8em; bottom: 3.2em; width: min(30em, 42%); display: flex; flex-direction: column; gap: 0.2em; pointer-events: none; }
+.chat > * { pointer-events: auto; }
+.chat-line { margin: 0; padding: 0.15em 0.5em; border-radius: var(--r, 0.3em); background: rgba(10, 18, 24, 0.55); font-size: var(--fs-s, 0.86em);
+  line-height: 1.4; overflow-wrap: anywhere; text-shadow: 0 0.08em 0 #000a; }
+.chat-line .who, .chat-line .me { font: inherit; font-weight: 700; color: var(--gold, #f0cf6a); background: none; border: 0; padding: 0; margin-right: 0.45em; cursor: pointer; }
+.chat-line .me { color: #b8e0ea; cursor: default; }
+.chat-line .who:hover { text-decoration: line-through; }
+.chat-note { margin: 0; padding: 0.15em 0.5em; font-size: var(--fs-s, 0.86em); color: #e9c98f; background: rgba(10, 18, 24, 0.55); border-radius: var(--r, 0.3em); cursor: pointer; }
+.chat-hint { margin: 0; font-size: 0.75em; opacity: 0.6; text-shadow: 0 0.08em 0 #000a; }
+.chat-input { font: inherit; font-size: var(--fs-s, 0.86em); padding: 0.4em 0.6em; border-radius: var(--r, 0.3em); border: 0.12em solid var(--gold, #f0cf6a);
+  background: rgba(10, 18, 24, 0.85); color: #efe9dc; outline: none; }
+.chat.open .chat-line { background: rgba(10, 18, 24, 0.75); }

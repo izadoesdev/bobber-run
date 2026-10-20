@@ -44,6 +44,7 @@ type Events = {
   account_deleted: Record<string, never>;
   fund_given: { amount_bucket: string };
   greeting_sent: { greeting: number };
+  chat_sent: { length_bucket: 'short' | 'medium' | 'long' };
   progress: { minutes: number; day: number; coins_bucket: string; species_logged: number; quest: number; projects: number; reason: 'interval' | 'hidden' };
 };
 

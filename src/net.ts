@@ -31,9 +31,6 @@ export const NET = {
   cloudNote: null as string | null,
 };
 export const EMOTES = ['Ahoy!', 'Nice catch!', 'Follow me!', 'Look over here!', 'Thanks!', 'Fair winds!', 'Good night!', 'Wow!'];
-const ADJ = ['Salty', 'Sunny', 'Misty', 'Brave', 'Quiet', 'Lucky', 'Rusty', 'Jolly', 'Sleepy', 'Wandering', 'Merry', 'Tidal'];
-const NOUN = ['Gull', 'Tern', 'Otter', 'Cod', 'Puffin', 'Heron', 'Seal', 'Skipper', 'Mackerel', 'Barnacle', 'Pelican', 'Kelp'];
-const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 const errText = (e: unknown) => String((e as Error)?.message ?? e).slice(0, 120);
 
 let client: ConvexReactClient | null = null;
@@ -83,7 +80,7 @@ const pageStart = Date.now();
 async function onSignedIn() {
   watch<Profile | null>('profile', api.profiles.me, {}, p => {
     NET.profile = p;
-    if (p && p.name === 'Sailor' && !naming && !switching) { naming = true; void setName(`${pick(ADJ)} ${pick(NOUN)}`, true); }
+    if (p && p.name === 'Sailor' && !naming && !switching) { naming = true; void setName('', true); }   // the server picks a guest name
   });
   watch('records', api.records.world, { species: speciesIds }, r => { NET.records = r as typeof NET.records; });
   watch('fund', api.fund.get, { key: FUND_KEY }, f => { NET.fund = f as Fund; });
@@ -129,7 +126,7 @@ export async function netGive(amount: number, cheated = false): Promise<Result> 
 }
 export async function setName(name: string, auto = false): Promise<Result> {
   if (!NET.authed) return { ok: false, why: 'You are offline' };
-  try { const r = await call(api.profiles.setName, { name, auto }); if (r.ok) relayRenamed(); return r; } catch { return { ok: false, why: 'Could not reach the server' }; } finally { naming = false; }
+  try { const r = await client!.action(api.profiles.setName, { name, auto }); if (r.ok) relayRenamed(); return r; } catch { return { ok: false, why: 'Could not reach the server' }; } finally { naming = false; }
 }
 export function sendEmote(i: number) {
   if (!NET.authed) return;

@@ -30,6 +30,11 @@ const strongIn = (t: string) => STRONG.some(b => t.includes(b)) || STRONG_C.some
 const shortIs = (w: string) => ENDINGS.some(e => w.endsWith(e) && (SHORT_S.has(w.slice(0, w.length - e.length)) ||
   SHORT_C.has(collapse(w.slice(0, w.length - e.length)))));
 
+const ADJ = ['Salty', 'Sunny', 'Misty', 'Brave', 'Quiet', 'Lucky', 'Rusty', 'Jolly', 'Sleepy', 'Wandering', 'Merry', 'Tidal'];
+const NOUN = ['Gull', 'Tern', 'Otter', 'Cod', 'Puffin', 'Heron', 'Seal', 'Skipper', 'Mackerel', 'Barnacle', 'Pelican', 'Kelp'];
+/** A friendly guest name, chosen here so a client can't pass off its own text as a generated name. */
+export const guestName = (): string => `${ADJ[Math.floor(Math.random() * ADJ.length)]} ${NOUN[Math.floor(Math.random() * NOUN.length)]}`;
+
 export type NameCheck = { ok: true; name: string } | { ok: false; why: string };
 export function cleanName(raw: string): NameCheck {
   const name = raw.normalize('NFKC').replace(/\s+/g, ' ').trim();

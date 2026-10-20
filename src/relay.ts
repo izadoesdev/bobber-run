@@ -1,5 +1,7 @@
 // The realtime position relay (server/). When VITE_RELAY_URL is set, boat positions and greetings go over this
 // WebSocket at about ten updates a second; otherwise, or while it is unreachable, net.ts uses Convex instead.
+import { heard, ONLINE } from './online';
+
 const URL: string | undefined = import.meta.env.VITE_RELAY_URL;
 export type RelayBoat = { id: string; name: string; x: number; y: number; a: number; vx: number; vy: number; w: number; boat: string; paint: string; at: number; emote: number | null; emoteAt: number };
 
@@ -26,6 +28,8 @@ export function relayKeep(next: string | null): void {
     const m = JSON.parse(String(e.data));
     if (m.t === 'welcome') { open = true; retry = 1000; }
     else if (m.t === 'boats') boats = m.list;
+    else if (m.t === 'chat') heard({ id: m.id, name: m.name, text: m.text, at: m.at });
+    else if (m.t === 'chat-slow') ONLINE.note = 'You are sending messages too fast. Wait a moment';
   };
   sock.onclose = () => {
     if (ws === sock) { ws = null; open = false; boats = []; }
@@ -35,6 +39,8 @@ export function relayKeep(next: string | null): void {
 export function relaySend(state: { x: number; y: number; a: number; vx: number; vy: number; w: number; boat: string; paint: string }): void {
   if (open) ws?.send(JSON.stringify({ t: 's', ...state }));
 }
+/** Say something to everyone in your sea; the relay filters it before anyone sees it. */
+export function relayChat(text: string): void { if (open) ws?.send(JSON.stringify({ t: 'chat', text })); }
 export function relayEmote(i: number): void { if (open) ws?.send(JSON.stringify({ t: 'emote', i })); }
 /** Ask the relay to re-read our captain name from Convex. */
 export function relayRenamed(): void { if (open) ws?.send(JSON.stringify({ t: 'renamed', token })); }

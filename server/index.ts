@@ -1,10 +1,12 @@
 // Realtime boat positions for Bobber Run. A client connects with its Convex sign-in token; the relay checks the token
 // against Convex's published keys, asks Convex for the player's captain name and sea, then sends every boat the boats
-// near it in the same sea ten times a second. Saves, records, accounts and names stay in Convex.
+// near it in the same sea ten times a second, and relays chat to the sea after filtering it the way Roblox does
+// (moderate.ts). Saves, records, accounts and names stay in Convex.
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { ConvexHttpClient } from 'convex/browser';
 import { makeFunctionReference } from 'convex/server';
 import type { ServerWebSocket } from 'bun';
+import { filterChat } from './moderate';
 
 const env = (k: string) => { const v = process.env[k]; if (!v) throw new Error(`${k} is not set`); return v; };
 const CONVEX_URL = env('CONVEX_URL'), SITE = env('CONVEX_SITE_URL');
@@ -17,9 +19,10 @@ const TICK_MS = 100;          // how often each boat is told about its neighbour
 const RANGE = 900;            // world units; farther boats aren't sent
 const STALE_MS = 25_000;      // a boat that hasn't reported for this long is dropped from others' views
 const MSGS_PER_S = 30, MAX_PER_USER = 3, MAX_MSG = 4096;   // a sign-in token is about 1-2 KB
+const CHAT_MAX = 120, CHAT_GAP_MS = 1200, CHAT_BURST = 6, CHAT_WINDOW_MS = 15_000;   // chat: a line every 1.2 s, 6 per 15 s
 
 type Boat = { x: number; y: number; a: number; vx: number; vy: number; w: number; boat: string; paint: string; at: number };
-interface Peer { id: string; userId: string; name: string; sea: number; token: string; boat: Boat | null; emote: number | null; emoteAt: number; tokens: number; refill: number }
+interface Peer { id: string; userId: string; name: string; sea: number; token: string; boat: Boat | null; emote: number | null; emoteAt: number; tokens: number; refill: number; chats: number[] }
 type Sock = ServerWebSocket<Peer | null>;
 const seas = new Map<number, Set<Sock>>();
 const perUser = new Map<string, number>();
@@ -63,7 +66,7 @@ async function onMessage(ws: Sock, text: string): Promise<void> {
     if (!who) return void ws.close(4003, 'not signed in');
     if ((perUser.get(who.userId) ?? 0) >= MAX_PER_USER) return void ws.close(4008, 'too many tabs');
     perUser.set(who.userId, (perUser.get(who.userId) ?? 0) + 1);
-    ws.data = { id: crypto.randomUUID().slice(0, 12), ...who, token: m.token, boat: null, emote: null, emoteAt: 0, tokens: MSGS_PER_S, refill: Date.now() };
+    ws.data = { id: crypto.randomUUID().slice(0, 12), ...who, token: m.token, boat: null, emote: null, emoteAt: 0, tokens: MSGS_PER_S, refill: Date.now(), chats: [] };
     if (!seas.has(who.sea)) seas.set(who.sea, new Set());
     seas.get(who.sea)!.add(ws);
     ws.send(JSON.stringify({ t: 'welcome', sea: who.sea }));
@@ -76,6 +79,16 @@ async function onMessage(ws: Sock, text: string): Promise<void> {
   } else if (m.t === 'emote') {
     if (!(Number.isInteger(m.i) && (m.i as number) >= 0 && (m.i as number) < 16) || Date.now() - p.emoteAt < 1500) return;
     p.emote = m.i as number; p.emoteAt = Date.now();
+  } else if (m.t === 'chat' && typeof m.text === 'string') {     // everyone in the sea hears it, filtered first
+    const text = m.text.replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX), now = Date.now();
+    p.chats = p.chats.filter(t => now - t < CHAT_WINDOW_MS);
+    if (!text) return;
+    if (p.chats.length >= CHAT_BURST || now - (p.chats.at(-1) ?? 0) < CHAT_GAP_MS) return void ws.send(JSON.stringify({ t: 'chat-slow' }));
+    p.chats.push(now);
+    const v = await filterChat(text);
+    const line = JSON.stringify({ t: 'chat', id: p.id, name: p.name, text: v.text, at: Date.now() });
+    for (const o of seas.get(p.sea) ?? []) if (o !== ws && o.data) o.send(line);
+    ws.send(JSON.stringify({ t: 'chat', id: 'me', name: p.name, text: v.text, at: Date.now(), filtered: v.filtered }));   // like Roblox, you see what others see
   } else if (m.t === 'renamed') {                                // re-read the name from Convex; the client's word isn't taken
     if (typeof m.token === 'string') p.token = m.token;
     const who = await player(p.token);
