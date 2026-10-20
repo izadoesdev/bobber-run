@@ -5,6 +5,8 @@ import { SPECIES } from '../econ';
 import { poisNear, schoolsNear, LAIR } from '../world';
 import { mapTile, MT } from '../maptiles';
 import { ONLINE } from '../online';
+import { claimableNear } from '../world';
+import { ISLANDS, watchExtra } from '../islands';
 import { PAINTS } from '../econ';
 import type { Point, Poi } from '../types';
 
@@ -59,6 +61,7 @@ export function drawChart(ctx: Ctx, w: number, h: number, cx: number, cy: number
   }
   if (opt.labels) drawLabels(ctx, pois, S, u, showUncharted);
   if (opt.target) drawTarget(ctx, w, h, S(opt.target.x, opt.target.y), u, !!opt.round);
+  drawIslandNames(ctx, cx, cy, Math.max(w, h) * wpp * 0.6, S, u, !!opt.labels);
   drawSailors(ctx, w, h, S, u, !!opt.labels);
   drawBoat(ctx, S, u);
 }
@@ -231,6 +234,29 @@ function drawLabels(ctx: Ctx, pois: Poi[], S: Project, u: number, showUncharted:
   }
 }
 
+// claimed islands: the owner's flag and name over each one (names only on the full chart, gold for yours)
+const flagImgs = new Map<string, HTMLImageElement>();
+function flagImg(url: string): HTMLImageElement | null {
+  let im = flagImgs.get(url);
+  if (!im) { if (flagImgs.size > 200) flagImgs.clear(); im = new Image(); im.src = url; flagImgs.set(url, im); }
+  return im.complete && im.naturalWidth ? im : null;
+}
+function drawIslandNames(ctx: Ctx, cx: number, cy: number, rad: number, S: Project, u: number, labels: boolean): void {
+  const near = claimableNear(cx, cy, rad);
+  if (labels) watchExtra(near.map(c => c.key));            // the full chart asks for every island it shows
+  ctx.font = `600 ${Math.round(12 * u)}px Pixelify, monospace`;
+  ctx.textAlign = 'center';
+  for (const c of near) {
+    const row = ISLANDS.get(c.key);
+    if (!row) continue;
+    const [x, y] = S(c.x, c.y), f = row.logoUrl ? flagImg(row.logoUrl) : null, fs = (labels ? 16 : 10) * u;
+    if (f) { ctx.imageSmoothingEnabled = false; ctx.drawImage(f, x - fs / 2, y - fs - (labels ? 8 : 2) * u, fs, fs); }
+    if (!labels) continue;
+    ctx.lineWidth = 3 * u; ctx.strokeStyle = 'rgba(27,42,51,0.85)'; ctx.strokeText(row.name, x, y + 4 * u);
+    ctx.fillStyle = row.mine ? '#f0cf6a' : '#f6eedc'; ctx.fillText(row.name, x, y + 4 * u);
+  }
+  ctx.textAlign = 'start';
+}
 /** Every other sailor we know about: the nearby ones we draw on the water, plus the far ones the relay reports for the chart. */
 type Mark = { uid: string; name: string; x: number; y: number; paint?: string };
 function sailorMarks(): Mark[] {

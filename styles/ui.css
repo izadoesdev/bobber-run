@@ -397,3 +397,15 @@ html.touch #ui .screen:has(.chartwrap) .foot { padding-right: 130px; }
   font-size: 0.72em; padding: 0.05em 0.45em; border-radius: 0.4em; background: var(--chip); white-space: nowrap; }
 .mini .forecast { margin-top: 0.9em; font-size: 0.75em; }
 .hud-bar { width: max-content; max-width: calc(100vw - 1.6em); }
+
+/* claimed islands: the owner's sign over the island, the claim chip, the island dialog */
+.island-sign { position: absolute; transform: translate(-50%, -100%); display: inline-flex; align-items: center; gap: 0.35em; padding: 0.15em 0.5em 0.15em 0.2em;
+  font: inherit; font-size: var(--fs-s); color: var(--text); background: var(--chip); border: 0.1em solid rgba(122,85,48,0.7); border-radius: 0.35em; cursor: pointer; pointer-events: auto; white-space: nowrap; }
+.island-sign img { width: 1.6em; height: 1.6em; image-rendering: pixelated; }
+.island-sign.mine { border-color: var(--gold); } .island-sign.mine span { color: var(--gold); }
+.island-claim { position: absolute; left: 50%; top: 4.5em; transform: translateX(-50%); font: inherit; color: inherit; cursor: pointer; pointer-events: auto; gap: 0.5em; }
+.island-claim b { color: var(--gold); }
+.dialog.island .flag { width: 2.4em; height: 2.4em; image-rendering: pixelated; }
+.island-form .flag-box { width: 3.2em; height: 3.2em; display: inline-flex; align-items: center; justify-content: center; background: var(--well); border-radius: var(--r); }
+.island-form .flag-box .flag { width: 3em; height: 3em; }
+.island-form input[type=text], .island-form input:not([type]) { min-width: 12em; }

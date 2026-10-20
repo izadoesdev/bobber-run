@@ -3,6 +3,7 @@
 // one focus colour, one icon style (voxel renders), sentence case for anything longer than a label.
 import { Chat } from './chat';
 import { Leaderboard } from './leaders';
+import { IslandDialog } from './island';
 import { SailorCard } from './sailorcard';
 import { render } from 'preact';
 import { G } from '../game';
@@ -39,6 +40,7 @@ function App() {
       {m === 'talk' && G.talk && <Talk t={G.talk} />}
       {m === 'journal' && <Journal />}
       {m === 'leaders' && <Leaderboard />}
+      {m === 'island' && <IslandDialog />}
       {m !== 'title' && <Toasts low={m !== 'play' && m !== 'sunk'} />}
     </div>
   );

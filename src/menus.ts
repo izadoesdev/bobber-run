@@ -8,6 +8,7 @@ import { talkNext } from './story';
 import { NET, sendEmote, EMOTES } from './net';
 import { TITLE_ITEMS, PAUSE_ITEMS } from './ui/index';
 import { BOARDS } from './ui/leaders';
+import { closeIsland } from './ui/island';
 import { sfx } from './audio';
 import { voyageStarted } from './telemetry';
 import type { Mode } from './types';
@@ -109,6 +110,7 @@ function screenInput(dt: number, refit: () => void): void {
     case 'emote': return emote();
     case 'account': if (hit('Escape') && !G.needName) go(G.accountBack); return;   // a name must be picked first
     case 'journal': if (hit('j', 'Escape', 'Enter', ' ')) go(G.journalBack); return;
+    case 'island': if (hit('Escape')) closeIsland(); return;
     case 'leaders':
       if (hit('ArrowLeft', 'a', 'A')) { G.leaderTab = (G.leaderTab + BOARDS.length - 1) % BOARDS.length; sfx('move'); }
       if (hit('ArrowRight', 'd', 'D', 'Tab')) { G.leaderTab = (G.leaderTab + 1) % BOARDS.length; sfx('move'); }

@@ -20,6 +20,8 @@ import { currentQuest, questProgress } from '../story';
 import { guide, guideOn, markerTarget, tip, whereText, type Step } from '../game/guide';
 import type { CatchCard as CatchCardState, FishLine, School, Toast } from '../types';
 import { drawChart, nearestUncharted } from './chart';
+import { IslandSigns } from './island';
+import { tickIslands } from '../islands';
 import { Bar, Canvas, Fish, Hint, Icon, Key, keyed, money, type DrawFn } from './parts';
 
 // stable keys so a toast keeps its element (and its fade) as older ones leave
@@ -354,11 +356,13 @@ function QuietHud() {
   );
 }
 export function Hud() {
+  tickIslands();
   if (!SET.hud) return <QuietHud />;
   const quest = currentQuest(), step = guide();
   return (
     <div>
       {worldLabels()}
+      <IslandSigns />
       <Marker step={step} />
       <div class="hud-left">
         <Status />

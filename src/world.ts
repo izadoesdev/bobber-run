@@ -386,4 +386,15 @@ export function trimWorld(x: number, y: number, view: number): void {
   }
 }
 /** Sizes of the world caches (for tests and the memory budget). */
+// ---------- claimable islands ----------
+/** The main island of a cell: the unit players can claim and name (islets ride along), Alderhaven's included. */
+export interface Claimable { key: string; i: number; j: number; x: number; y: number; R: number }
+export function claimableNear(x: number, y: number, rad: number): Claimable[] {
+  const out: Claimable[] = [], i0 = Math.floor((x - rad) / CELL), i1 = Math.floor((x + rad) / CELL), j0 = Math.floor((y - rad) / CELL), j1 = Math.floor((y + rad) / CELL);
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const m = cellIslands(i, j)[0];
+    if (m && !m.islet && Math.hypot(m.x - x, m.y - y) < rad + m.R) out.push({ key: `${i},${j}`, i, j, x: m.x, y: m.y, R: m.R });
+  }
+  return out;
+}
 export const worldCaches = () => ({ tiles: tiles.size, cells: cells.size, pois: poiCells.size, fish: fishCells.size });

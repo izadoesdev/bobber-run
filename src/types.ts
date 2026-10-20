@@ -8,7 +8,7 @@ export type ToastKind = 'info' | 'good' | 'bad';
 /** Every screen the game can be on. `G.mode` drives input routing and which UI is drawn. */
 export type Mode =
   | 'title' | 'play' | 'port' | 'map' | 'log' | 'ship' | 'pause' | 'settings' | 'controls'
-  | 'sunk' | 'finale' | 'cheat' | 'talk' | 'journal' | 'account' | 'emote' | 'leaders';
+  | 'sunk' | 'finale' | 'cheat' | 'talk' | 'journal' | 'account' | 'emote' | 'leaders' | 'island';
 
 export type WeatherState = 'clear' | 'cloudy' | 'rain' | 'storm';
 /** Conditions a species checks before it bites (see `activeAt` in econ). */
