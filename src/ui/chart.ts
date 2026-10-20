@@ -159,12 +159,20 @@ function drawZone(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp:
 }
 
 function drawTiles(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp: number, inBudget: () => boolean): void {
-  const tpx = MT / wpp;
-  for (let ty = Math.floor(wy0 / MT); ty <= Math.floor((wy0 + h * wpp) / MT); ty++) {
-    for (let tx = Math.floor(wx0 / MT); tx <= Math.floor((wx0 + w * wpp) / MT); tx++) {
-      const c = mapTile(tx, ty, inBudget());
-      if (c) ctx.drawImage(c, Math.floor((tx * MT - wx0) / wpp), Math.floor((ty * MT - wy0) / wpp), Math.ceil(tpx) + 1, Math.ceil(tpx) + 1);
-    }
+  const tpx = MT / wpp, size = Math.ceil(tpx) + 1, tx0 = Math.floor(wx0 / MT), tx1 = Math.floor((wx0 + w * wpp) / MT);
+  const ty0 = Math.floor(wy0 / MT), ty1 = Math.floor((wy0 + h * wpp) / MT);
+  // two passes: first the whole view in half-size tiles (a quarter of the work each), then sharp tiles as the budget
+  // allows, so a freshly opened or zoomed-out chart is covered at once and sharpens over a few frames
+  const sharp = tpx >= 24, missing: [number, number][] = [];
+  for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+    const c = (sharp ? mapTile(tx, ty, false, 0) : null) ?? mapTile(tx, ty, inBudget(), 1);
+    if (c) ctx.drawImage(c, Math.floor((tx * MT - wx0) / wpp), Math.floor((ty * MT - wy0) / wpp), size, size);
+    if (sharp && !mapTile(tx, ty, false, 0)) missing.push([tx, ty]);
+  }
+  for (const [tx, ty] of missing) {
+    if (!inBudget()) break;
+    const c = mapTile(tx, ty, true, 0)!;
+    ctx.drawImage(c, Math.floor((tx * MT - wx0) / wpp), Math.floor((ty * MT - wy0) / wpp), size, size);
   }
 }
 
@@ -391,12 +399,15 @@ function drawBoat(ctx: Ctx, S: Project, u: number): void {
   const b = G.boat, [bx, by] = S(b.x, b.y);
   ctx.save();
   ctx.translate(bx, by);
+  // a pale disc behind the arrow so "you are here" stands out from the objective ring and the markers
+  ctx.beginPath(); ctx.arc(0, 0, 9 * u, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,246,214,0.28)'; ctx.fill();
+  ctx.lineWidth = u; ctx.strokeStyle = 'rgba(27,42,51,0.5)'; ctx.stroke();
   ctx.rotate(b.a);
   ctx.beginPath();
-  ctx.moveTo(6 * u, 0);
-  ctx.lineTo(-4 * u, -3.5 * u);
-  ctx.lineTo(-2 * u, 0);
-  ctx.lineTo(-4 * u, 3.5 * u);
+  ctx.moveTo(7.5 * u, 0);
+  ctx.lineTo(-5 * u, -4.5 * u);
+  ctx.lineTo(-2.5 * u, 0);
+  ctx.lineTo(-5 * u, 4.5 * u);
   ctx.closePath();
   ctx.fillStyle = '#fff6d6';
   ctx.fill();

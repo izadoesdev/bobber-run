@@ -227,8 +227,8 @@ export type TipId = 'hull' | 'night';
 // only what no prompt or toast already says: the cast and dock prompts teach fishing and selling, and the weather
 // and a full hold get their own toasts
 const TIPS: { id: TipId; text: string; when: () => boolean }[] = [
-  { id: 'hull', text: 'Rocks and shallow water damage your hull. Repair it at any port', when: () => G.boat.hp < hpMax() * 0.6 },
-  { id: 'night', text: 'Night brings out different fish. Glow lures work twice as fast in the dark', when: () => isNight() },
+  { id: 'hull', text: 'Rocks scrape your hull. Any port can repair it', when: () => G.boat.hp < hpMax() * 0.6 },
+  { id: 'night', text: 'Night fish are out. Glow lures bite twice as fast', when: () => isNight() },
 ];
 const TIP_S = 9, TIP_GAP = 14;
 let seen: Partial<Record<TipId, true>> = {};

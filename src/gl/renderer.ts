@@ -5,7 +5,7 @@
 import { W, H, clamp, lerp, frac, smooth01 } from '../config';
 import { ONLINE, type Sailor } from '../online';
 import { SET, type Quality, type PixelStyle } from '../prefs';
-import { TS, TN, getTile, hasTile, poisNear, schoolsNear, cratesNear, type HeightTile } from '../world';
+import { TS, TN, getTile, hasTile, hAt, poisNear, schoolsNear, cratesNear, type HeightTile } from '../world';
 import { hash01 } from '../noise';
 import { SPECIES, BOATS, activeAt } from '../econ';
 import { biomeMix, coldness, warmth } from '../biome';
@@ -346,15 +346,20 @@ function tileBed(t: HeightTile): Float32Array {
     if (px < x0 || px >= x0 + TS || py < y0 || py >= y0 + TS) continue;
     const depth = -t.h[(py - y0 + 1) * TN + px - x0 + 1];
     if (depth < 0.025 || depth > 0.3) continue;
+    // a pond walled in by land on every side gets nothing (no coral in an inland pool)
+    if (hAt(px + 20, py) > 0 && hAt(px - 20, py) > 0 && hAt(px, py + 20) > 0 && hAt(px, py - 20) > 0) continue;
     biomeLerp(g, px - x0, py - y0, bmS, 0);
-    const [rf, kp, vc, mg] = bmS, rb = hash01(gx, gy, 63), r = hash01(gx, gy, 64), rk = hash01(gx, gy, 65);
+    // only the region that clearly holds this spot places props: where two meet, neither one's mix of coral,
+    // kelp and basalt spills into the other's water
+    const [rf, kp, vc, mg] = bmS, top = Math.max(rf, kp, vc, mg), r = hash01(gx, gy, 64), rk = hash01(gx, gy, 65);
     let list: Pick, odds: number, clear: number;
-    if (rb < rf) { list = BED_REEF; odds = 0.6; clear = 0.28; }
-    else if (rb < rf + kp) { list = BED_KELP; odds = 0.5; clear = 0.34; }
-    else if (rb < rf + kp + vc) { list = BED_VOLC; odds = 0.28; clear = 0.36; }
-    else if (rb < rf + kp + vc + mg) { list = BED_MANG; odds = 0.4; clear = 0.5; }
-    else if (coldness(py) > 0.45) { list = BED_ICE; odds = 0.18; clear = 0.4; }
-    else { list = BED_HOME; odds = 0.07; clear = 0.4; }
+    if (top >= 0.45 && rf === top) { list = BED_REEF; odds = 0.6 * rf; clear = 0.28; }
+    else if (top >= 0.45 && kp === top) { list = BED_KELP; odds = 0.5 * kp; clear = 0.34; }
+    else if (top >= 0.45 && vc === top) { list = BED_VOLC; odds = 0.28 * vc; clear = 0.36; }
+    else if (top >= 0.45 && mg === top) { if (depth < 0.04) continue; list = BED_MANG; odds = 0.4 * mg; clear = 0.5; }
+    else if (top < 0.25 && coldness(py) > 0.45) { list = BED_ICE; odds = 0.18; clear = 0.4; }
+    else if (top < 0.25) { list = BED_HOME; odds = 0.07; clear = 0.4; }
+    else continue;                                                  // a border: bare sand between the two
     if (r > odds * (1 - smooth01((depth - 0.2) / 0.1) * 0.7)) continue;   // thinning out toward the deep edge
     let kind = pick(list, rk);
     if ((kind === 'kelpTall' || kind === 'vent') && depth < 0.08) kind = list === BED_KELP ? 'kelp' : 'basalt';
@@ -379,7 +384,10 @@ function tileIce(t: HeightTile): Float32Array {
     const px = gx * GS + Math.floor(hash01(gx, gy, 81) * GS), py = gy * GS + Math.floor(hash01(gx, gy, 82) * GS);
     if (px < x0 || px >= x0 + TS || py < y0 || py >= y0 + TS) continue;
     const depth = -t.h[(py - y0 + 1) * TN + px - x0 + 1], cd = coldness(py), r = hash01(gx, gy, 83);
-    if (depth < 0.08 || r > 0.2 * smooth01((cd - 0.15) / 0.5)) continue;
+    if (depth < 0.15 || cd < 0.4 || r > 0.2 * smooth01((cd - 0.4) / 0.4)) continue;
+    if (hAt(px + 26, py) > -0.06 || hAt(px - 26, py) > -0.06 || hAt(px, py + 26) > -0.06 || hAt(px, py - 26) > -0.06) continue;   // clear of the shore
+    const bm = biomeMix(px, py);
+    if (bm.kelp > 0.3 || bm.reef > 0.3) continue;
     const rk = hash01(gx, gy, 84), kind = depth > 0.3 && rk < 0.12 ? 3 : rk < 0.45 ? 0 : rk < 0.8 ? 1 : 2;
     L.push(px + 0.5, py + 0.5, kind, 0.8 + hash01(gx, gy, 85) * 0.5, hash01(gx, gy, 86) * 6.283, hash01(gx, gy, 87) * 6.283);
   }
@@ -596,7 +604,7 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
       const ph = A[i + 5], x = A[i] + Math.sin(G.t * 0.05 + ph) * 4, y = A[i + 1] + Math.cos(G.t * 0.04 + ph) * 3;
       if (x < camX - 30 || x > camX + W + 30 || y < camY - 12 || y > camY + H + 40) continue;
       inst(MS.iceMesh(ICES[A[i + 2]]), x, y, A[i + 4] + Math.sin(G.t * 0.03 + ph) * 0.3, A[i + 3], -0.5 + Math.sin(G.t * 0.9 + ph) * 0.2,
-        Math.sin(G.t * 0.7 + ph) * 0.035, Math.cos(G.t * 0.6 + ph) * 0.035);
+        Math.sin(G.t * 0.7 + ph) * 0.035, Math.cos(G.t * 0.6 + ph) * 0.035, true);
     }
   }
   // landmarks, flotsam, treasure buoys

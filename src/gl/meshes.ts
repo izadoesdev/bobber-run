@@ -327,7 +327,7 @@ const BED_BUILD: Record<BedKind, () => Vox> = {
 const bedMeshes: Partial<Record<BedKind, Mesh>> = {};
 export const bedMesh = (k: BedKind): Mesh => bedMeshes[k] ??= cached('bed:' + k, BED_BUILD[k], 0, true);
 // ---------- ice floes: flat rafts of sea ice and the odd small berg, drifting on the far northern sea ----------
-const ICE = { top: mat(['#c4d6de', '#eaf2f6', '#ffffff']), side: mat(['#5e8ea8', '#8cb8cc', '#b8dcea']) };
+const ICE = { top: mat(['#b4cbd6', '#dbe8ee', '#f2f7fa']), side: mat(['#3f7896', '#6aa2bc', '#9ccbdc']) };   // bluish tops, a cold cyan rim
 function floe(r: number, seed: number): Vox {
   const R = Math.ceil(r) + 1, V = new Vox(-R, R, -R, R, 2);
   for (let v = -R; v <= R; v++) for (let u = -R; u <= R; u++) {

@@ -94,7 +94,7 @@ function Minimap({ step }: { step: Step }) {
   const night = isNight(), c = dayFrac();
   const sail = boatDef().prop === 'SAIL', eff = sail ? sailEfficiency() : 0;
   const wxIcon = WX.state === 'clear' && night ? 'moon' : WX_ICON[WX.state];
-  const part = night ? ', night' : c > 0.55 ? ', dusk' : '';
+  const part = night ? ', night' : c > 0.55 ? ', dusk' : '';   // the icon already shows it; the words go in the tooltip so the label never grows into the wind dial
   return (
     <div class="mini">
       <div class="ring"><Canvas draw={draw} /><span class="n">N</span>
@@ -102,7 +102,7 @@ function Minimap({ step }: { step: Step }) {
           <WindVane sail={sail} eff={eff} />
           {sail && <span class={'pct ' + (eff > 0.9 ? 'good' : eff > 0.6 ? '' : 'bad')}>{Math.round(eff * 100)}%</span>}
         </div>
-        <span class="day"><Icon k={wxIcon} size="s" />Day {dayNum()}{part}</span>
+        <span class="day" title={`Day ${dayNum()}${part}`}><Icon k={wxIcon} size="s" />Day {dayNum()}</span>
       </div>
       {G.up.radio >= 2 && <div class="chip muted forecast"><Icon k="radio" size="s" />{cap1(WX.upcoming)} in {clockText(WX.next)}</div>}
     </div>
