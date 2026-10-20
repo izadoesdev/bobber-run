@@ -7,7 +7,7 @@ import { SPECIES, SP, SUPPLIES } from '../econ';
 import { sfx, soundscape, music } from '../audio';
 import { SET } from '../prefs';
 import { FUNNEL } from '../models';
-import type { BaitChoice, Crate, Poi, TreasureMap, WeatherState, Wreck } from '../types';
+import type { BaitChoice, Crate, Poi, School, TreasureMap, WeatherState, Wreck } from '../types';
 import { G, hit } from './state';
 import { boatDef, boatSpeed, cap, dayNum, hpMax, isNight, logged, netLvl, sailEff, toWorld, windAngle } from './rules';
 import { addCoins, burst, celebrate, jitter, spawn, toast } from './feedback';
@@ -69,22 +69,25 @@ export function petCat(): void {
 // ---------- every frame ----------
 function tickFeedback(dt: number): void {
   for (const list of [G.toasts, G.captions, G.floaters]) for (let i = list.length - 1; i >= 0; i--) if ((list[i].t -= dt) <= 0) list.splice(i, 1);
-  for (let i = G.parts.length - 1; i >= 0; i--) {
-    const p = G.parts[i];
+  // particles move, fade and are dropped in one pass that keeps the survivors in order (no splicing)
+  const parts = G.parts, wa = windAngle(), ws = 3 + WX.wind * 14, windX = Math.cos(wa) * ws, windY = Math.sin(wa) * ws;
+  const smokeK = Math.exp(-1.2 * dt), riseK = Math.exp(-0.6 * dt), dragK = Math.exp(-3 * dt);
+  let kept = 0;
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
     if (p.kind === 'smoke') {                       // smoke keeps rising and drifts downwind
-      const wa = windAngle(), ws = 3 + WX.wind * 14, k = Math.exp(-1.2 * dt);
       const { vx = 0, vy = 0, vz = 0 } = p;
-      p.x += (vx + Math.cos(wa) * ws) * dt; p.y += (vy + Math.sin(wa) * ws) * dt; p.z = (p.z ?? 0) + vz * dt;
-      p.vx = vx * k; p.vy = vy * k; p.vz = vz * Math.exp(-0.6 * dt);
+      p.x += (vx + windX) * dt; p.y += (vy + windY) * dt; p.z = (p.z ?? 0) + vz * dt;
+      p.vx = vx * smokeK; p.vy = vy * smokeK; p.vz = vz * riseK;
     } else if (p.vx !== undefined && p.vy !== undefined) {
       p.x += p.vx * dt; p.y += p.vy * dt;
-      const k = Math.exp(-3 * dt);
-      p.vx *= k; p.vy *= k;
+      p.vx *= dragK; p.vy *= dragK;
       if (p.kind === 'spout') p.vy += 40 * dt;      // falling spray
       if (p.vz) p.z = (p.z ?? 0) + p.vz * dt;
     }
-    if ((p.life -= dt) <= 0) G.parts.splice(i, 1);
+    if ((p.life -= dt) > 0) parts[kept++] = p;
   }
+  parts.length = kept;
   const dc = G.coins - G.coinsShown;
   G.coinsShown += Math.abs(dc) < 1 ? dc : Math.sign(dc) * Math.max(1, Math.abs(dc) * 6 * dt);
   G.crashCd -= dt; G.spookCd -= dt;
@@ -141,6 +144,9 @@ export function update(dt: number): void {
   if ((G.saveT += dt) > 15) { G.saveT = 0; saveGame(); }
 }
 
+// reused query results for the per-frame scans below
+const netScratch: School[] = [], poiScratch: Poi[] = [], crateScratch: Crate[] = [];
+
 /** Crab pots and the drift net fill the hold on their own; schools refill, and fast engines scatter them. */
 function autoCatches(dt: number, speed: number): void {
   const b = G.boat, bd = boatDef();
@@ -150,7 +156,7 @@ function autoCatches(dt: number, speed: number): void {
   }
   updateSchools(speed, dt);
   if (netLvl() > 0 && !G.fish && speed > 3 && speed < 20 && G.hold.length < cap()) {   // the net only works at a slow drift
-    const s = schoolsNear(b.x, b.y, 40).find(q => schoolActive(q) && SPECIES[q.sp].rod === 0 && Math.hypot(q.x - b.x, q.y - b.y) < 10 + bd.B * 2);
+    const s = schoolsNear(b.x, b.y, 40, netScratch).find(q => schoolActive(q) && SPECIES[q.sp].rod === 0 && Math.hypot(q.x - b.x, q.y - b.y) < 10 + bd.B * 2);
     if (s && (G.netT += dt) > [0, 3.6, 2.9, 2.2][netLvl()]) { G.netT = 0; landNetted(s.sp, s); }
   }
 }
@@ -159,7 +165,7 @@ function autoCatches(dt: number, speed: number): void {
 function scanSurroundings(): void {
   const b = G.boat, bd = boatDef();
   G.nearPort = null; G.nearWreck = null;
-  for (const p of poisNear(b.x, b.y, 220)) {
+  for (const p of poisNear(b.x, b.y, 220, poiScratch)) {
     const d = Math.hypot(p.x - b.x, p.y - b.y);
     const sight = (p.type === 'light' ? 140 : p.type === 'port' ? 150 : 100) * [1, 1.5, 2][G.up.spyglass];
     if (!G.found.has(p.id) && d < sight) discover(p);
@@ -168,7 +174,7 @@ function scanSurroundings(): void {
   }
   G.nearSchool = G.fish ? null : nearestSchool();
   G.nearTreasure = G.maps.find(m => Math.hypot(m.x - b.x, m.y - b.y) < 16 + bd.L * 0.6) || null;
-  for (const c of cratesNear(b.x, b.y, 120)) {
+  for (const c of cratesNear(b.x, b.y, 120, crateScratch)) {
     if (c.taken) { if (G.t > c.respawn) c.taken = false; continue; }
     if (Math.hypot(c.x - b.x, c.y - b.y) < 8 + bd.B) pickUp(c);
   }

@@ -16,11 +16,20 @@ export type DrawFn = (ctx: CanvasRenderingContext2D, w: number, h: number, dpr: 
 type CanvasProps = { draw: DrawFn; cls?: string } & Omit<HTMLAttributes<HTMLCanvasElement>, 'class' | 'ref'>;
 export function Canvas({ draw, cls, ...rest }: CanvasProps) {
   const ref = useRef<HTMLCanvasElement>(null);
+  // the CSS box, measured on mount and whenever it resizes, so the per-frame redraw never forces a layout
+  const box = useRef<DOMRect | null>(null);
+  useEffect(() => {
+    const c = ref.current!, measure = () => { box.current = c.getBoundingClientRect(); };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(c, { box: 'border-box' });
+    return () => ro.disconnect();
+  }, []);
   // redraws after every render: the UI re-renders each frame, so this animates
   useEffect(() => {
-    const c = ref.current;
-    if (!c) return;
-    const r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    const c = ref.current, r = box.current;
+    if (!c || !r) return;
+    const dpr = window.devicePixelRatio || 1;
     const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
     if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
     draw(c.getContext('2d')!, w, h, dpr);
@@ -46,7 +55,9 @@ export const Pips = ({ n, of }: { n: number; of: number }) => (
   </div>
 );
 
-export const money = (n: number) => '$' + Math.round(n).toLocaleString('en-US');
+// one formatter: toLocaleString builds a new one on every call, and the HUD formats money every frame
+const thousands = new Intl.NumberFormat('en-US');
+export const money = (n: number) => '$' + thousands.format(Math.round(n));
 export const cap1 = (s: string) => s[0].toUpperCase() + s.slice(1);
 
 // ---------- keycaps ----------

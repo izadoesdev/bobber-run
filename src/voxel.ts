@@ -77,7 +77,8 @@ export class Vox {
 }
 
 const LIGHT = (() => { const l = [-0.62, -0.15, 0.77], n = Math.hypot(...l); return l.map(x => x / n); })();
-const SUB = [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]];
+/** the four sub-sample offsets in a pixel, as x, y pairs */
+const SUB = [0.25, 0.25, 0.75, 0.25, 0.25, 0.75, 0.75, 0.75];
 const INK = hex('#1b2a33');
 
 /** thin parts drawn over the voxels (oar shafts); `wide` doubles them vertically */
@@ -95,12 +96,24 @@ export interface VoxRenderOpts {
 /** A rendered sprite; (cx, cy) is where the model origin lands on `img`. */
 export interface VoxFrame { img: HTMLCanvasElement; shadow: HTMLCanvasElement | null; cx: number; cy: number }
 
+/**
+ * Narrows r to the integer z where p + q*z lies in [L, U) (the ray's u or v stays on the grid), padded by one step
+ * so float rounding never cuts a valid height; the caller still checks each z exactly. Empty when r.lo > r.hi.
+ */
+function narrow(r: { lo: number; hi: number }, p: number, q: number, L: number, U: number): void {
+  if (Math.abs(q) < 1e-9) { if (p < L - 1 || p >= U + 1) r.hi = -1; return; }
+  const a = (L - p) / q, b = (U - p) / q;
+  r.lo = Math.max(r.lo, Math.floor(Math.min(a, b)) - 1);
+  r.hi = Math.min(r.hi, Math.ceil(Math.max(a, b)) + 1);
+}
+
 export function renderVox(M: Vox, angle: number, { lines = [], points = [], rad = 0, outlineZ = 3, shadow = true }: VoxRenderOpts = {}): VoxFrame {
   const c = Math.cos(angle), s = Math.sin(angle);
   const R = Math.ceil(Math.max(M.rad, rad)) + 2, w = R * 2, h = R * 2 + M.nz, cx = R, cy = R + M.nz;
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
-  const g = cv.getContext('2d')!, id = g.createImageData(w, h), d = id.data, zb = new Float32Array(w * h).fill(-9);
+  // a CPU-backed canvas: icons read their sprite back to crop it, which would otherwise stall on a GPU readback
+  const g = cv.getContext('2d', { willReadFrequently: true })!, id = g.createImageData(w, h), d = id.data, zb = new Float32Array(w * h).fill(-9);
   const put = (px: number, py: number, col: RGB, z: number) => {
     if (px < 0 || py < 0 || px >= w || py >= h) return;
     const k = py * w + px;
@@ -110,17 +123,23 @@ export function renderVox(M: Vox, angle: number, { lines = [], points = [], rad 
     d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = 255;
   };
   // ray down through the stack at a sub-pixel position: the first voxel hit, packed as material*3 + tone + z*4096
+  const { u0, v0, nu, nv, nz, d: vox, n: normals } = M, lit = new Uint8Array(RGB.length);
+  for (let m = 1; m < RGB.length; m++) lit[m] = EMISSIVE.has(m) ? 0 : 1;
+  const span = { lo: 0, hi: 0 };
   const cast = (fx: number, fy: number) => {
-    const dx = fx - cx;
-    for (let z = M.nz - 1; z >= 0; z--) {
-      const dy = fy - cy + z, iu = Math.round(dx * c + dy * s), iv = Math.round(-dx * s + dy * c);
-      if (!M.inb(iu, iv, z)) continue;
-      const ix = M.idx(iu, iv, z), m = M.d[ix];
+    const dx = fx - cx, dxc = dx * c, dxs = dx * s, oy = fy - cy;
+    span.lo = 0; span.hi = nz - 1;                          // only the heights where the ray is over the grid
+    narrow(span, dxc + oy * s, s, u0 - 0.5, u0 + nu - 0.5);
+    narrow(span, -dxs + oy * c, c, v0 - 0.5, v0 + nv - 0.5);
+    for (let z = span.hi; z >= span.lo; z--) {
+      const dy = fy - cy + z, a = Math.round(dxc + dy * s) - u0, b = Math.round(-dxs + dy * c) - v0;
+      if (a < 0 || a >= nu || b < 0 || b >= nv) continue;
+      const ix = (z * nv + b) * nu + a, m = vox[ix];
       if (!m) continue;
       let tone = 2;
-      if (!EMISSIVE.has(m)) {
-        const nu = M.n[ix * 3], nv = M.n[ix * 3 + 1], nz = M.n[ix * 3 + 2];
-        const lam = (nu * c - nv * s) * LIGHT[0] + (nu * s + nv * c) * LIGHT[1] + nz * LIGHT[2];
+      if (lit[m]) {
+        const nu3 = normals[ix * 3], nv3 = normals[ix * 3 + 1], nz3 = normals[ix * 3 + 2];
+        const lam = (nu3 * c - nv3 * s) * LIGHT[0] + (nu3 * s + nv3 * c) * LIGHT[1] + nz3 * LIGHT[2];
         tone = lam > 0.62 ? 2 : lam > 0.05 ? 1 : 0;
       }
       return m * 3 + tone + z * 4096;
@@ -131,8 +150,8 @@ export function renderVox(M: Vox, angle: number, { lines = [], points = [], rad 
   const hits = [0, 0, 0, 0];
   for (let py = 0; py < h; py++) for (let px = 0; px < w; px++) {
     let n = 0;
-    for (const [ox, oy] of SUB) {
-      const r = cast(px + ox - 0.5, py + oy - 0.5);
+    for (let q = 0; q < 8; q += 2) {
+      const r = cast(px + SUB[q] - 0.5, py + SUB[q + 1] - 0.5);
       if (r >= 0) hits[n++] = r;
     }
     if (n < 2) continue;

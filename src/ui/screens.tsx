@@ -116,7 +116,7 @@ export function Ship() {
         <div class="col side">
           <Canvas cls="preview" draw={boatPreview(bd.id, equipment(), 8)} />
           <div class="stat"><span class="caps">Speed</span><Bar k={speedMul() / 3.1} /><span class="num">{Math.round(speedMul() * 100)}%</span></div>
-          <div class="stat"><span class="caps">Hull</span><Bar k={G.boat.hp / hpMax()} /><span class="num">{Math.ceil(G.boat.hp)}/{hpMax()}</span></div>
+          <div class="stat"><span class="caps">Hull</span><Bar k={G.boat.hp / hpMax()} /><span class="num">{Math.max(0, Math.ceil(G.boat.hp))}/{hpMax()}</span></div>
           <div class="stat"><span class="caps">Hold</span><Bar k={G.hold.length / cp} tone="gold" /><span class="num">{G.hold.length}/{cp}</span></div>
           <div class="row wrap">
             {BAITS.map(k => <span class="row" title={SUPPLIES[k].name}><Icon k={k} size="s" />{G.bait[k] || 0}</span>)}

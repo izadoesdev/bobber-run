@@ -169,7 +169,7 @@ function DetailBody({ it }: { it: PortRow }) {
     case 'repair':
       return (
         <>
-          <div class="stat"><span class="caps">Hull</span><Bar k={G.boat.hp / hpMax()} /><span class="num">{G.boat.hp}/{hpMax()}</span></div>
+          <div class="stat"><span class="caps">Hull</span><Bar k={G.boat.hp / hpMax()} /><span class="num">{Math.max(0, Math.ceil(G.boat.hp))}/{hpMax()}</span></div>
           <p>{it.what}</p>
         </>
       );

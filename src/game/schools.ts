@@ -1,7 +1,7 @@
 // Fish schools in the water: their fish mill about a slowly wandering centre (loose flocking, never into the
 // shallows), a fast engine scatters them or, done recklessly, sends them diving, and fished schools thin out
 // and fill back in one fish at a time.
-import { FISH_SHORE, GOLD_SCHOOLS, SWIM, hAt, schoolsNear, type Swimmer } from '../world';
+import { FISH_SHORE, GOLD_SCHOOLS, SWIM, TS, hAt, hasTile, heightAt, schoolsNear, type Swimmer } from '../world';
 import { SPECIES, activeAt } from '../econ';
 import { schoolLook } from '../species';
 import { sfx } from '../audio';
@@ -83,6 +83,24 @@ function scare(s: School): void {
 const CRUISE: Record<FightStyle, number> = { steady: 3.5, darter: 5, generic: 5, jumper: 5.5, erratic: 5.5, boss: 3 };
 const TURN_S: Record<FightStyle, number> = { steady: 4, darter: 2.5, generic: 3, jumper: 3, erratic: 1.2, boss: 5 };
 const frac = (x: number): number => x - Math.floor(x);
+/**
+ * hAt without its side effect: where the height tile is not built yet, the same value (the tile's float32 height
+ * at that integer cell) is computed directly and remembered. Schools far out at the edge of the swim radius would
+ * otherwise force whole tiles to be built mid-frame; the renderer's prefetch builds them on its own budget.
+ */
+const untiled = new Map<number, number>();
+function depthAt(x: number, y: number): number {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  if (hasTile(Math.floor(ix / TS), Math.floor(iy / TS))) return hAt(ix, iy);
+  const k = (ix + 1e6) * 2e6 + (iy + 1e6);
+  let h = untiled.get(k);
+  if (h === undefined) {
+    if (untiled.size >= 50000) untiled.clear();
+    h = Math.fround(heightAt(ix, iy));
+    untiled.set(k, h);
+  }
+  return h;
+}
 // darters dash and pause, erratic fish surge and dawdle, the rest ease between a little slower and faster
 function rhythm(style: FightStyle, cruise: number, f: Swimmer): number {
   if (style === 'darter') return frac(G.t * 0.6 + f.ph) < 0.18 ? cruise * 3 : cruise * 0.35;
@@ -94,7 +112,7 @@ function spawnSwimmers(s: School): Swimmer[] {
   for (let k = 0; k < look.count + 2; k++) {
     const a = s.ph + k * 2.4, r = look.radius * (0.3 + 0.5 * frac(k * 0.618));
     let x = s.x + Math.cos(a) * r, y = s.y + Math.sin(a) * r;
-    if (hAt(x, y) > FISH_SHORE) { x = s.x; y = s.y; }          // the home itself is always open water
+    if (depthAt(x, y) > FISH_SHORE) { x = s.x; y = s.y; }      // the home itself is always open water
     L.push({ x, y, vx: -Math.sin(a) * cruise, vy: Math.cos(a) * cruise, ph: s.ph + k * 0.37, turn: k * 0.4, bias: 0 });
   }
   return L;
@@ -111,36 +129,38 @@ function swim(s: School, dt: number): void {
   const age = s.scatterT === undefined ? 99 : G.t - s.scatterT, hold = Math.min(1, age / SCATTER_S) ** 2;   // cohesion returns as a scatter wears off
   const R = look.radius, reach = R + SWIM.wander + SWIM.scatter, sep = look.space, cruise = CRUISE[style] * (look.bottom ? 0.6 : 1);
   const hook = G.fish?.s === s && G.fish.st === 'reel' ? G.fish : null;
+  const sep2 = sep * sep, near2 = 9 * sep2;
   for (const f of fish) {
-    const dx = cx - f.x, dy = cy - f.y, d = Math.hypot(dx, dy) || 1e-3, pull = (d > R ? 2.2 : 0.35) * hold;
+    const dx = cx - f.x, dy = cy - f.y, d = Math.sqrt(dx * dx + dy * dy) || 1e-3, pull = (d > R ? 2.2 : 0.35) * hold;
     let ax = dx * pull, ay = dy * pull, nvx = 0, nvy = 0, nn = 0;
-    for (const o of fish) {
+    for (const o of fish) {                                 // squared distances first: most pairs are neither close nor near
       if (o === f) continue;
-      const ex = f.x - o.x, ey = f.y - o.y, e = Math.hypot(ex, ey);
-      if (e < sep && e > 1e-3) { ax += ex / e * (sep - e) * 8; ay += ey / e * (sep - e) * 8; }
-      if (e < sep * 3) { nvx += o.vx; nvy += o.vy; nn++; }
+      const ex = f.x - o.x, ey = f.y - o.y, e2 = ex * ex + ey * ey;
+      if (e2 >= near2) continue;
+      nvx += o.vx; nvy += o.vy; nn++;
+      if (e2 < sep2 && e2 > 1e-6) { const e = Math.sqrt(e2), k = (sep - e) * 8 / e; ax += ex * k; ay += ey * k; }
     }
     if (nn) { ax += (nvx / nn - f.vx) * 0.9; ay += (nvy / nn - f.vy) * 0.9; }
     if (hook?.fx !== undefined && hook.fy !== undefined) {   // give the hooked fish room
-      const ex = f.x - hook.fx, ey = f.y - hook.fy, e = Math.hypot(ex, ey);
+      const ex = f.x - hook.fx, ey = f.y - hook.fy, e = Math.sqrt(ex * ex + ey * ey);
       if (e < 8 && e > 1e-3) { ax += ex / e * (8 - e) * 6; ay += ey / e * (8 - e) * 6; }
     }
     if ((f.turn -= dt) <= 0) { f.turn = TURN_S[style] * (0.6 + Math.random() * 0.8); f.bias = Math.random() * 2 - 1; }
-    const v = Math.hypot(f.vx, f.vy) || 1e-3, hx = f.vx / v, hy = f.vy / v;
+    const v = Math.sqrt(f.vx * f.vx + f.vy * f.vy) || 1e-3, hx = f.vx / v, hy = f.vy / v;
     ax -= hy * f.bias * cruise * 0.8; ay += hx * f.bias * cruise * 0.8;
     if (age > 0.4) { const dv = (rhythm(style, cruise, f) - v) * 2; ax += hx * dv; ay += hy * dv; }
-    if (hAt(f.x + hx * 5, f.y + hy * 5) > FISH_SHORE - 0.02) { ax += dx / d * 30; ay += dy / d * 30; }   // shallows ahead: turn for home
+    if (depthAt(f.x + hx * 5, f.y + hy * 5) > FISH_SHORE - 0.02) { ax += dx / d * 30; ay += dy / d * 30; }   // shallows ahead: turn for home
     f.vx += ax * dt; f.vy += ay * dt;
-    const speed = Math.hypot(f.vx, f.vy), top = age < 1 ? 30 : cruise * 3;
+    const speed = Math.sqrt(f.vx * f.vx + f.vy * f.vy), top = age < 1 ? 30 : cruise * 3;
     if (speed > top) { f.vx *= top / speed; f.vy *= top / speed; }
     let x = f.x + f.vx * dt, y = f.y + f.vy * dt;
-    const ox = x - s.x, oy = y - s.y, od = Math.hypot(ox, oy);
+    const ox = x - s.x, oy = y - s.y, od = Math.sqrt(ox * ox + oy * oy);
     if (od > reach) {                                       // the edge of the school's water: slide along it
       x = s.x + ox / od * reach; y = s.y + oy / od * reach;
       const out = (f.vx * ox + f.vy * oy) / od;
       if (out > 0) { f.vx -= ox / od * out; f.vy -= oy / od * out; }
     }
-    if (hAt(x, y) > FISH_SHORE) { f.vx = dx / d * v * 0.5; f.vy = dy / d * v * 0.5; continue; }   // never into the shallows
+    if (depthAt(x, y) > FISH_SHORE) { f.vx = dx / d * v * 0.5; f.vy = dy / d * v * 0.5; continue; }   // never into the shallows
     f.x = x; f.y = y;
   }
 }

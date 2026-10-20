@@ -61,7 +61,8 @@ function nearestSchool(ok: (s: School) => boolean = () => true, rad = 700): Scho
 const at = (text: string, p: Point | null | undefined, icon: string, near: number): Step => p ? { text, at: { x: p.x, y: p.y }, icon, near } : { text, icon, near };
 const clock = (s: number): string => s >= 60 ? `${Math.round(s / 60)} min` : `${Math.max(1, Math.round(s))} s`;
 const fishN = (n: number): string => n === 1 ? '1 fish' : `${n} fish`;
-const cash = (n: number): string => '$' + Math.round(n).toLocaleString('en-US');
+const thousands = new Intl.NumberFormat('en-US');   // toLocaleString builds a formatter per call, and rows redraw every frame
+const cash = (n: number): string => '$' + thousands.format(Math.round(n));
 
 function sellStep(): Step {
   const p = nearestPort();

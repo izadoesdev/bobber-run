@@ -67,7 +67,7 @@ function Status() {
       <div class="row gap-t">
         <Icon k="hull" size="s" /><span class="caps">Hull</span>
         <div class="grow"><Bar k={k} tone={k > 0.5 ? '' : k > 0.25 ? 'warn' : 'bad'} /></div>
-        <span class="num">{Math.ceil(b.hp)}</span>
+        <span class="num">{Math.max(0, Math.ceil(b.hp))}</span>
       </div>
       <div class="row gap-t small">
         <Icon k={bait === 'none' ? 'rod' : bait} size="s" />

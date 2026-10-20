@@ -393,11 +393,11 @@ function toURL(V: Vox, angle = -0.55): string {
     if (y > y1) y1 = y;
   }
   if (x1 < 0) return c.toDataURL();
-  // a square canvas with a one-pixel margin around the cropped sprite
+  // a square canvas with a one-pixel margin around the cropped sprite (CPU-backed, so toDataURL doesn't wait on the GPU)
   const w = x1 - x0 + 3, h = y1 - y0 + 3, s = Math.max(w, h), o = document.createElement('canvas');
   o.width = s;
   o.height = s;
-  o.getContext('2d')!.drawImage(c, x0, y0, w - 2, h - 2, Math.floor((s - w) / 2) + 1, Math.floor((s - h) / 2) + 1, w - 2, h - 2);
+  o.getContext('2d', { willReadFrequently: true })!.drawImage(c, x0, y0, w - 2, h - 2, Math.floor((s - w) / 2) + 1, Math.floor((s - h) / 2) + 1, w - 2, h - 2);
   return o.toDataURL();
 }
 

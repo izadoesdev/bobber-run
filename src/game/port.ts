@@ -293,7 +293,8 @@ export function portTabs(p: Port): PortTab[] {
   return ['MARKET', 'OUTFITTER', ...(p.shipyard ? ['SHIPYARD' as const] : []), ...(projDone('market') ? ['FLEET' as const] : []),
     'FERRY', ...(p.id === homePort().id ? ['HARBOUR' as const] : [])];
 }
-const cash = (n: number): string => '$' + Math.round(n).toLocaleString('en-US');
+const thousands = new Intl.NumberFormat('en-US');   // toLocaleString builds a formatter per call, and rows redraw every frame
+const cash = (n: number): string => '$' + thousands.format(Math.round(n));
 const short = (cost: number): string => G.coins < cost ? `You need ${cash(cost - G.coins)} more` : '';
 const deny = (): void => sfx('deny');
 

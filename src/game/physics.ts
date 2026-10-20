@@ -4,7 +4,7 @@ import { hBil, poisNear } from '../world';
 import { WX } from '../weather';
 import { sfx } from '../audio';
 import { OAR } from '../models';
-import type { Solid } from '../types';
+import type { Poi, Solid } from '../types';
 import { G, inp } from './state';
 import { boatDef, hpMax, keelLvl, speedMul, sailEff, windAngle, toWorld } from './rules';
 import { spawn, toast, jitter, burst } from './feedback';
@@ -28,9 +28,10 @@ function hullPoints(): [number, number][] {
 
 const RESTITUTION = 0.2, FRICTION = 0.35, DRAFT = 0.028;
 /** Piers and wrecks near the boat; refreshed once per frame rather than every physics step. */
-let solids: Solid[] = [];
+const solids: Solid[] = [], nearPois: Poi[] = [];
 export function refreshSolids(): void {
-  solids = poisNear(G.boat.x, G.boat.y, 140).flatMap(p => p.solid ? [p.solid] : []);
+  solids.length = 0;
+  for (const p of poisNear(G.boat.x, G.boat.y, 140, nearPois)) if (p.solid) solids.push(p.solid);
 }
 
 interface Contact { pen: number; nx: number; ny: number }
@@ -108,8 +109,9 @@ function onImpact(speed: number, at: { x: number; y: number; nx: number; ny: num
   if (speed <= 11) return;
   const dmg = Math.round((speed - 11) * 1.7 * (1 - 0.12 * G.up.hull));
   if (dmg <= 0 || G.god) return;
-  G.boat.hp -= dmg;
-  toast(`-${dmg} hull`, 'bad');
+  const taken = Math.min(dmg, Math.max(0, G.boat.hp));   // the hull bottoms out at zero
+  G.boat.hp -= taken;
+  toast(`-${taken} hull`, 'bad');
   if (G.boat.hp <= 0) sink();
   else if (G.boat.hp < hpMax() * 0.3) toast('Hull critical. Repair at a port', 'bad');
 }
