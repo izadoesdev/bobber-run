@@ -1,5 +1,6 @@
 // CPU-drawn chart tiles (1/4 scale) for the minimap and the sea chart.
 import { hex, bayer } from './config';
+import { hash01 } from './noise';
 import { heightAt } from './world';
 import { biomeMix, warmth, coldness } from './biome';
 
@@ -13,6 +14,9 @@ const MAPC_C = ramp(['#465f73', '#556f82', '#8aa2b1', '#c2bba8', '#7f8f6a', '#34
 const MAPC_R = ramp(['#2f7f93', '#2fa3ad', '#7fe0d6', '#f6efd8', '#7ec25a', '#2f7a40', '#8a949c']);
 const MAPC_K = ramp(['#3c5f6a', '#3f6e72', '#6f9a94', '#a8a89e', '#6f8f5c', '#2f4a36', '#7a8288']);
 const MAPC_V = ramp(['#3a5670', '#44657c', '#6f8ea0', '#4a4648', '#7a7a50', '#4a5236', '#4a4a52']);
+// olive channels and mud flats in the mangroves; ice floes speckle the dark northern water
+const MAPC_M = ramp(['#3f5a52', '#566a48', '#7e8a5a', '#6e6046', '#4f7a3c', '#2a4a26', '#7a8288']);
+const ICE: RGB = hex('#e8f2f6');
 
 /** world units per tile, and pixels per tile side */
 export const MT = 128;
@@ -47,8 +51,10 @@ export function mapTile(tx: number, ty: number, build = true): HTMLCanvasElement
     const wy = ty * MT + j * 4 + 2, h = heightAt(tx * MT + i * 4 + 2, wy), th = bayer(i, j);
     // biome, warm and cold palettes blend in with an ordered dither
     const bm = biomeMix(tx * MT + i * 4 + 2, wy);
-    const pal = bm.reef > th ? MAPC_R : bm.kelp > th ? MAPC_K : bm.volcanic > th ? MAPC_V : warmth(wy) > th ? MAPC_W : coldness(wy) > th ? MAPC_C : MAPC;
-    const col = pal[band(h)], o = (j * MTP + i) * 4;
+    const cd = coldness(wy), b = band(h);
+    const pal = bm.reef > th ? MAPC_R : bm.kelp > th ? MAPC_K : bm.volcanic > th ? MAPC_V : bm.mangrove > th ? MAPC_M : warmth(wy) > th ? MAPC_W : cd > th ? MAPC_C : MAPC;
+    const floe = b <= 1 && hash01(tx * MTP + i, ty * MTP + j, 91) < 0.08 * Math.max(0, cd - 0.2);
+    const col = floe ? ICE : pal[b], o = (j * MTP + i) * 4;
     d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = 255;
   }
   g.putImageData(im, 0, 0);

@@ -123,7 +123,7 @@ function ensureField(): Field {
   const [vw, vh] = maxView(), tw = Math.ceil(vw) + PAD * 2 + SNAP * 2 + 8, th = Math.ceil(vh) + PAD * 2 + SNAP * 2 + 8;
   if (field && tw === field.TW && th === field.TH) return field;
   if (field) { gl.deleteTexture(field.tex); free(gl, field.foam); free(gl, field.shadow); }
-  const tex = texture(gl, tw, th, gl.RGBA16F, gl.RGBA, gl.FLOAT);   // height, then the reef, kelp and volcanic weights
+  const tex = texture(gl, tw, th, gl.RGBA16F, gl.RGBA, gl.FLOAT);   // height, reef minus mangrove (never both), kelp, volcanic
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
   field = {
     TW: tw, TH: th, hdata: new Float32Array(tw * th * 4), tex, V: [0, 0, 0, 0], fs: 0,
@@ -230,7 +230,8 @@ function heightsRect(F: Field, X: number, Y: number, c: number, r: number, w: nu
       const wx = x0 + k * fs;
       if (wx - base > TS) { tx++; tile = getTile(tx, ty); base = tx * TS - 1; bg = biomeGrid(tile); }
       hdata[i] = tile.h[row + wx - base];
-      biomeLerp(bg, wx - base - 1, ly, hdata, i + 1);
+      biomeLerp(bg, wx - base - 1, ly, bq, 0);
+      hdata[i + 1] = bq[0] - bq[3]; hdata[i + 2] = bq[1]; hdata[i + 3] = bq[2];
     }
   }
   gl.bindTexture(gl.TEXTURE_2D, F.tex);
@@ -238,29 +239,31 @@ function heightsRect(F: Field, X: number, Y: number, c: number, r: number, w: nu
 }
 
 // ---------- biomes: weights on a coarse grid per height tile (the noise is slow, the grid is not) ----------
-const BG = 8, BN = TS / BG + 1;
+// reef, kelp, volcanic, mangrove; the GPU gets reef and mangrove in one signed channel, since one always pushes
+// the other out (both are warm shallows)
+const BG = 8, BN = TS / BG + 1, NB = 4, bq = [0, 0, 0, 0];
 const biomeGrids = new WeakMap<HeightTile, Float32Array>();
 function biomeGrid(t: HeightTile): Float32Array {
   let g = biomeGrids.get(t);
   if (g) return g;
-  g = new Float32Array(BN * BN * 3);
+  g = new Float32Array(BN * BN * NB);
   for (let j = 0; j < BN; j++) for (let i = 0; i < BN; i++) {
-    const m = biomeMix(t.tx * TS + i * BG, t.ty * TS + j * BG), o = (j * BN + i) * 3;
-    g[o] = m.reef; g[o + 1] = m.kelp; g[o + 2] = m.volcanic;
+    const m = biomeMix(t.tx * TS + i * BG, t.ty * TS + j * BG), o = (j * BN + i) * NB;
+    g[o] = m.reef; g[o + 1] = m.kelp; g[o + 2] = m.volcanic; g[o + 3] = m.mangrove;
   }
   biomeGrids.set(t, g);
   return g;
 }
-/** The reef, kelp and volcanic weights at tile-local (lx, ly), written to out[o..o+2]. */
+/** The reef, kelp, volcanic and mangrove weights at tile-local (lx, ly), written to out[o..o+3]. */
 function biomeLerp(g: Float32Array, lx: number, ly: number, out: Float32Array | number[], o: number): void {
   const gx = clamp(lx / BG, 0, BN - 1.001), gy = clamp(ly / BG, 0, BN - 1.001), i = Math.floor(gx), j = Math.floor(gy), fx = gx - i, fy = gy - j;
-  const a = (j * BN + i) * 3, b = a + 3, cc = a + BN * 3, d = cc + 3;
-  for (let k = 0; k < 3; k++) {
+  const a = (j * BN + i) * NB, b = a + NB, cc = a + BN * NB, d = cc + NB;
+  for (let k = 0; k < NB; k++) {
     const top = g[a + k] + (g[b + k] - g[a + k]) * fx, bot = g[cc + k] + (g[d + k] - g[cc + k]) * fx;
     out[o + k] = top + (bot - top) * fy;
   }
 }
-const bmS = [0, 0, 0];
+const bmS = [0, 0, 0, 0];
 
 // ---------- trees: deterministic per height tile ----------
 const KINDS = MS.TREE_KINDS;
@@ -273,7 +276,12 @@ function tileTrees(t: HeightTile): number[] {
     const r = hash01(gx, gy, 41), px = gx * GS + Math.floor(hash01(gx, gy, 42) * GS), py = gy * GS + Math.floor(hash01(gx, gy, 43) * GS);
     if (px < x0 || px >= x0 + TS || py < y0 || py >= y0 + TS) continue;
     const v = t.h[(py - y0 + 1) * TN + px - x0 + 1];
-    if (v < 0.03) continue;
+    if (v < 0.03) {                                                         // mangroves stand out in the shallows
+      if (v < -0.06) continue;
+      biomeLerp(biomeGrid(t), px - x0, py - y0, bmS, 0);
+      if (r < 0.55 * bmS[3]) L.push(px + 0.5, py + 0.5, KI.mangrove, 0.8 + hash01(gx, gy, 46) * 0.35, hash01(gx, gy, 47) * 6.283);
+      continue;
+    }
     let kind: string | null = null;
     if (v < 0.12) { if (r < 0.025) kind = 'boulders'; }                     // the odd heap of stones on the beach
     else if (v >= 0.36 && v < 0.76) { if (r < 0.72) kind = v > 0.5 || r < 0.25 ? 'pine' : 'round'; }
@@ -286,7 +294,7 @@ function tileTrees(t: HeightTile): number[] {
     else if (kind === 'pine' && wm > rr) kind = 'round';
     // biomes: palms and ferns on coral islands, birch and ferns on kelp coasts, burnt snags on the ember isles
     biomeLerp(biomeGrid(t), px - x0, py - y0, bmS, 0);
-    const [rf, kp, vc] = bmS, rb = hash01(gx, gy, 48), r2 = hash01(gx, gy, 49);
+    const [rf, kp, vc, mg] = bmS, rb = hash01(gx, gy, 48), r2 = hash01(gx, gy, 49);
     const tall = kind === 'pine' || kind === 'round' || kind === 'snowpine';
     if (rb < vc) {
       if (tall || kind === 'palm') kind = r2 < 0.4 ? 'deadtree' : r2 < 0.55 ? 'ashbush' : null;
@@ -300,7 +308,12 @@ function tileTrees(t: HeightTile): number[] {
       if (kind === 'round') kind = r2 < 0.7 ? 'birch' : 'pine';
       else if (shrub) kind = 'fern';
       else if (!kind && v >= 0.1 && v < 0.36 && r < 0.12) kind = r2 < 0.5 ? 'fern' : 'birch';
+    } else if (rb < vc + rf + kp + mg) {                                     // mangrove thickets on the low ground
+      if (v < 0.22 && r < 0.45) kind = 'mangrove';
+      else if (kind === 'pine' || kind === 'snowpine' || kind === 'palm') kind = 'round';
+      else if (shrub) kind = 'fern';
     }
+    if (cd > 0.5 && (kind === 'palm' || kind === 'fern' || kind === 'mangrove')) kind = 'snowpine';   // nothing tropical on the ice
     if (!kind) continue;
     if (kind === 'pine' || kind === 'round' || kind === 'snowpine') { if (hash01(gx, gy, 44) < 0.3) kind += 'B'; }   // big variant
     L.push(px + 0.5, py + 0.5, KI[kind], 0.85 + hash01(gx, gy, 46) * 0.35, hash01(gx, gy, 47) * 6.283);
@@ -318,6 +331,8 @@ const BED_REEF: Pick = [['coralPink', 5], ['coralOrange', 4], ['coralPurple', 4]
 const BED_KELP: Pick = [['kelp', 6], ['kelpTall', 5], ['urchin', 3], ['pebble', 3], ['starOrange', 1], ['seagrass', 2]];
 const BED_VOLC: Pick = [['basalt', 6], ['pebble', 4], ['urchin', 2], ['vent', 1]];
 const BED_HOME: Pick = [['pebble', 4], ['starOrange', 2], ['shell', 3], ['seagrass', 4], ['clam', 1]];
+const BED_MANG: Pick = [['roots', 5], ['oyster', 3], ['leaves', 4], ['seagrass', 1]];
+const BED_ICE: Pick = [['pebble', 5], ['urchin', 3], ['shell', 2], ['kelp', 1]];   // grey and dark, nothing tropical
 const pick = (L: Pick, r: number): MS.BedKind => { let t = 0; for (const [, w] of L) t += w; let v = r * t; for (const [k, w] of L) { v -= w; if (v <= 0) return k; } return L[0][0]; };
 const bedProps = new WeakMap<HeightTile, Float32Array>();
 const BED_STRIDE = 7;                            // x, y, kind, scale, yaw, z, clear
@@ -332,11 +347,13 @@ function tileBed(t: HeightTile): Float32Array {
     const depth = -t.h[(py - y0 + 1) * TN + px - x0 + 1];
     if (depth < 0.025 || depth > 0.3) continue;
     biomeLerp(g, px - x0, py - y0, bmS, 0);
-    const [rf, kp, vc] = bmS, rb = hash01(gx, gy, 63), r = hash01(gx, gy, 64), rk = hash01(gx, gy, 65);
+    const [rf, kp, vc, mg] = bmS, rb = hash01(gx, gy, 63), r = hash01(gx, gy, 64), rk = hash01(gx, gy, 65);
     let list: Pick, odds: number, clear: number;
     if (rb < rf) { list = BED_REEF; odds = 0.6; clear = 0.28; }
     else if (rb < rf + kp) { list = BED_KELP; odds = 0.5; clear = 0.34; }
     else if (rb < rf + kp + vc) { list = BED_VOLC; odds = 0.28; clear = 0.36; }
+    else if (rb < rf + kp + vc + mg) { list = BED_MANG; odds = 0.4; clear = 0.5; }
+    else if (coldness(py) > 0.45) { list = BED_ICE; odds = 0.18; clear = 0.4; }
     else { list = BED_HOME; odds = 0.07; clear = 0.4; }
     if (r > odds * (1 - smooth01((depth - 0.2) / 0.1) * 0.7)) continue;   // thinning out toward the deep edge
     let kind = pick(list, rk);
@@ -348,6 +365,28 @@ function tileBed(t: HeightTile): Float32Array {
   return A;
 }
 const SWAY = new Set<number>([BI.kelp, BI.kelpTall, BI.fanPurple, BI.fanPink, BI.seagrass]);
+
+// ---------- ice floes: rafts of sea ice drifting on the far northern sea (scenery: boats sail through them) ----------
+const ICES = MS.ICE_KINDS;
+const iceProps = new WeakMap<HeightTile, Float32Array>();
+const ICE_STRIDE = 6;                            // x, y, kind, scale, yaw, phase
+// one candidate per 22x22 cell in open water, more of them the colder it is; bergs only out in deep water
+function tileIce(t: HeightTile): Float32Array {
+  let A = iceProps.get(t);
+  if (A) return A;
+  const L: number[] = [], x0 = t.tx * TS, y0 = t.ty * TS, GS = 22;
+  if (coldness(y0 + TS) > 0.05) for (let gy = Math.floor(y0 / GS); gy <= Math.floor((y0 + TS - 1) / GS); gy++) for (let gx = Math.floor(x0 / GS); gx <= Math.floor((x0 + TS - 1) / GS); gx++) {
+    const px = gx * GS + Math.floor(hash01(gx, gy, 81) * GS), py = gy * GS + Math.floor(hash01(gx, gy, 82) * GS);
+    if (px < x0 || px >= x0 + TS || py < y0 || py >= y0 + TS) continue;
+    const depth = -t.h[(py - y0 + 1) * TN + px - x0 + 1], cd = coldness(py), r = hash01(gx, gy, 83);
+    if (depth < 0.08 || r > 0.2 * smooth01((cd - 0.15) / 0.5)) continue;
+    const rk = hash01(gx, gy, 84), kind = depth > 0.3 && rk < 0.12 ? 3 : rk < 0.45 ? 0 : rk < 0.8 ? 1 : 2;
+    L.push(px + 0.5, py + 0.5, kind, 0.8 + hash01(gx, gy, 85) * 0.5, hash01(gx, gy, 86) * 6.283, hash01(gx, gy, 87) * 6.283);
+  }
+  A = new Float32Array(L);
+  iceProps.set(t, A);
+  return A;
+}
 
 // ---------- instance pools ----------
 interface Pool { mesh: MS.Mesh; arr: Float32Array; n: number }
@@ -548,6 +587,16 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
       if (x < camX - 12 || x > camX + W + 12 || y < camY - 8 || y > camY + H + 30) continue;
       const k = A[i + 2], sway = SWAY.has(k) ? Math.sin(G.t * 1.3 + x * 0.21 + y * 0.13) * 0.16 : 0;
       inst(MS.bedMesh(BEDS[k]), x, y, A[i + 4], A[i + 3], A[i + 5], sway, sway * 0.6, true, 1, k === BI.vent ? 1 : 0, A[i + 6]);
+    }
+  }
+  // ice floes rocking gently and drifting a little about their spot
+  for (let ty = Math.floor((camY - 20) / TS); ty <= Math.floor((camY + H + 40) / TS); ty++) for (let tx = Math.floor((camX - 20) / TS); tx <= Math.floor((camX + W + 20) / TS); tx++) {
+    const A = tileIce(getTile(tx, ty));
+    for (let i = 0; i < A.length; i += ICE_STRIDE) {
+      const ph = A[i + 5], x = A[i] + Math.sin(G.t * 0.05 + ph) * 4, y = A[i + 1] + Math.cos(G.t * 0.04 + ph) * 3;
+      if (x < camX - 30 || x > camX + W + 30 || y < camY - 12 || y > camY + H + 40) continue;
+      inst(MS.iceMesh(ICES[A[i + 2]]), x, y, A[i + 4] + Math.sin(G.t * 0.03 + ph) * 0.3, A[i + 3], -0.5 + Math.sin(G.t * 0.9 + ph) * 0.2,
+        Math.sin(G.t * 0.7 + ph) * 0.035, Math.cos(G.t * 0.6 + ph) * 0.035);
     }
   }
   // landmarks, flotsam, treasure buoys

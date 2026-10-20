@@ -200,12 +200,27 @@ function fern(): Vox {
   V.set(0, 0, 1, TM.leaf);
   return V.finalize();
 }
+// a mangrove: a low dark crown on a short trunk, held up out of the water on arching stilt roots
+const MG = {
+  leaf: mat(['#1e3a1e', '#2e5428', '#467038']), root: mat(['#4a4032', '#6e604a', '#8e7e62']),
+};
+function mangrove(): Vox {
+  const V = new Vox(-6, 6, -6, 6, 12);
+  for (let k = 0; k < 7; k++) {
+    const a = k / 7 * 6.283 + 0.5, r = 4 + (k % 3) * 0.7, fx = Math.round(Math.cos(a) * r), fy = Math.round(Math.sin(a) * r);
+    const mx = Math.round(Math.cos(a) * r * 0.7), my = Math.round(Math.sin(a) * r * 0.7);
+    V.line([fx, fy, 0], [mx, my, 3], MG.root); V.line([mx, my, 3], [0, 0, 5], MG.root);
+  }
+  V.box(0, 0, 0, 0, 3, 7, MG.root);
+  sphere(V, 0, 0, 8.5, 3.6, MG.leaf, TM.leaf, 51); sphere(V, 2, 1, 7.5, 2.4, MG.leaf, TM.needle, 52); sphere(V, -2, -1, 7.8, 2.2, TM.leaf, MG.leaf, 53);
+  return V.finalize();
+}
 // (append new kinds: tiles cache trees by index into this list)
 export const TREE_KINDS = ['pine', 'pineB', 'round', 'roundB', 'palm', 'snowpine', 'snowpineB', 'rock', 'bush', 'berrybush', 'boulders',
-  'birch', 'deadtree', 'ashbush', 'fern'] as const;
+  'birch', 'deadtree', 'ashbush', 'fern', 'mangrove'] as const;
 export type TreeKind = typeof TREE_KINDS[number];
 const TREE_BUILD: Record<TreeKind, () => Vox> = { pine: () => pine(false, false), pineB: () => pine(true, false), round: () => round(false), roundB: () => round(true), palm, snowpine: () => pine(false, true), snowpineB: () => pine(true, true), rock,
-  bush: () => bush(TM.bloom), berrybush: () => bush(TM.berry), boulders, birch, deadtree, ashbush, fern };
+  bush: () => bush(TM.bloom), berrybush: () => bush(TM.berry), boulders, birch, deadtree, ashbush, fern, mangrove };
 
 // ---------- the sea floor: coral, kelp, urchins and stones, drawn under the water by the seabed pass ----------
 const SB = {
@@ -278,20 +293,62 @@ function vent(): Vox {
   V.box(0, 0, 0, 0, 0, 3, SB.vent); V.set(1, 0, 2, SB.vent);
   return V.finalize();
 }
+// mangrove channels: a tangle of fallen roots in the mud, a clump of oysters, drifts of fallen leaves
+const MS2 = { oyster: mat(['#5e5a54', '#8a867c', '#b4b0a4']), leafy: mat(['#5e4a1a', '#8a6e28', '#b49440']) };
+function rootTangle(): Vox {
+  const V = new Vox(-4, 4, -4, 4, 3);
+  V.line([-4, -1, 0], [0, 0, 2], MG.root); V.line([0, 0, 2], [4, 2, 0], MG.root); V.line([-1, 3, 0], [1, -3, 1], MG.root);
+  return V.finalize();
+}
+function oysters(): Vox {
+  const V = new Vox(-2, 2, -2, 2, 2);
+  for (const [u, v, z] of [[0, 0, 0], [1, 0, 0], [-1, 1, 0], [0, -1, 0], [0, 0, 1], [1, 1, 1]]) V.set(u, v, z, MS2.oyster);
+  return V.finalize();
+}
+function leaves(): Vox {
+  const V = new Vox(-3, 3, -3, 3, 1);
+  for (let k = 0; k < 7; k++) V.set(Math.round(Math.cos(k * 2.3) * (1 + k % 3)), Math.round(Math.sin(k * 2.3) * (1 + k % 3)), 0, k % 2 ? MS2.leafy : TM.palm);
+  return V.finalize();
+}
 function pebble(): Vox { const V = new Vox(-2, 2, -2, 2, 2); sphere(V, 0, 0, 0.4, 1.6, M.stone, M.ironp, 43); return V.finalize(); }
 function shell(): Vox { const V = new Vox(-1, 1, -1, 1, 1); V.box(-1, 1, 0, 0, 0, 0, SB.shell); V.set(0, 1, 0, SB.shell); V.set(0, 0, 1, SB.shell); return V.finalize(); }
 // (append new kinds: tiles cache props by index into this list)
 export const BED_KINDS = ['coralPink', 'coralOrange', 'coralPurple', 'domeYellow', 'domePink', 'tubesTeal', 'tubesOrange', 'fanPurple', 'fanPink',
-  'anemone', 'starOrange', 'starPink', 'clam', 'kelp', 'kelpTall', 'urchin', 'seagrass', 'basalt', 'vent', 'pebble', 'shell'] as const;
+  'anemone', 'starOrange', 'starPink', 'clam', 'kelp', 'kelpTall', 'urchin', 'seagrass', 'basalt', 'vent', 'pebble', 'shell',
+  'roots', 'oyster', 'leaves'] as const;
 export type BedKind = typeof BED_KINDS[number];
 const BED_BUILD: Record<BedKind, () => Vox> = {
   coralPink: () => coralBranch(SB.pink, 1), coralOrange: () => coralBranch(SB.orange, 2), coralPurple: () => coralBranch(SB.purple, 3),
   domeYellow: () => coralDome(SB.yellow), domePink: () => coralDome(SB.pink), tubesTeal: () => coralTubes(SB.teal), tubesOrange: () => coralTubes(SB.orange),
   fanPurple: () => seaFan(SB.purple), fanPink: () => seaFan(SB.pink), anemone, starOrange: () => starfish(SB.orange), starPink: () => starfish(SB.pink),
   clam, kelp: () => kelpStrand(9), kelpTall: () => kelpStrand(14), urchin, seagrass, basalt, vent, pebble, shell,
+  roots: rootTangle, oyster: oysters, leaves,
 };
 const bedMeshes: Partial<Record<BedKind, Mesh>> = {};
 export const bedMesh = (k: BedKind): Mesh => bedMeshes[k] ??= cached('bed:' + k, BED_BUILD[k], 0, true);
+// ---------- ice floes: flat rafts of sea ice and the odd small berg, drifting on the far northern sea ----------
+const ICE = { top: mat(['#c4d6de', '#eaf2f6', '#ffffff']), side: mat(['#5e8ea8', '#8cb8cc', '#b8dcea']) };
+function floe(r: number, seed: number): Vox {
+  const R = Math.ceil(r) + 1, V = new Vox(-R, R, -R, R, 2);
+  for (let v = -R; v <= R; v++) for (let u = -R; u <= R; u++) {
+    const a = Math.atan2(v, u), edge = r * (0.75 + 0.35 * hash01(Math.round(a * 3) + seed, seed, 57));
+    if (Math.hypot(u, v) <= edge) { V.set(u, v, 0, ICE.side); V.set(u, v, 1, hash01(u + seed, v, 58) < 0.12 ? ICE.side : ICE.top); }
+  }
+  return V.finalize();
+}
+function berg(): Vox {
+  const V = new Vox(-6, 6, -6, 6, 9);
+  for (let z = 0; z <= 8; z++) {
+    const r = 5.6 - z * 0.55 + (z % 3 === 1 ? 0.4 : 0), cx = Math.round(Math.sin(z * 0.7) * 0.8);
+    for (let v = -6; v <= 6; v++) for (let u = -6; u <= 6; u++) if (Math.hypot(u - cx, v * 1.2) <= r - hash01(u * 3 + z, v, 59) * 0.8) V.set(u, v, z, z < 2 ? ICE.side : ICE.top);
+  }
+  return V.finalize();
+}
+export const ICE_KINDS = ['floeS', 'floeM', 'floeL', 'berg'] as const;
+export type IceKind = typeof ICE_KINDS[number];
+const ICE_BUILD: Record<IceKind, () => Vox> = { floeS: () => floe(3, 1), floeM: () => floe(5, 2), floeL: () => floe(7.5, 3), berg };
+const iceMeshes: Partial<Record<IceKind, Mesh>> = {};
+export const iceMesh = (k: IceKind): Mesh => iceMeshes[k] ??= cached('ice:' + k, ICE_BUILD[k], 0, true);
 const treeMeshes: Partial<Record<TreeKind, Mesh>> = {};
 export const treeMesh = (k: TreeKind): Mesh => treeMeshes[k] ??= cached('tree:' + k, TREE_BUILD[k], 0, true);   // trees only turn about the vertical
 
