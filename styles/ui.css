@@ -225,6 +225,10 @@ h2, .title { font-size: var(--fs-xl); }
 .menu-box { padding: 0.8em 1.2em; }
 .menu { display: flex; flex-direction: column; gap: 0.3em; min-width: 14em; }
 .menu .item { font-size: 1.15em; justify-content: center; text-transform: uppercase; letter-spacing: 0.08em; }
+.menu-box.confirm { max-width: 30em; text-align: center; display: flex; flex-direction: column; gap: 0.6em; }
+.menu-box.confirm p { margin: 0; white-space: normal; }
+.menu.row { flex-direction: row; justify-content: center; gap: 0.6em; }
+.menu .item.danger { color: var(--bad); }
 .dialog { padding: 1em 1.4em; width: 34em; max-width: 96vw; max-height: 92%; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; }
 .dialog h1 { margin-bottom: 0.3em; }
 .scroll { overflow-y: auto; min-height: 0; flex: 1; scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }

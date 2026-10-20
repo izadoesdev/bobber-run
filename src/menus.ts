@@ -1,6 +1,6 @@
 // What a press does on each screen. Called once per frame before the simulation;
 // a press that changes screens is consumed, so it can't also act on the new screen.
-import { G, hit, portMenuInput, shipInput, newGame, loadGame, wipeSave, saveGame, toast } from './game';
+import { G, hit, portMenuInput, shipInput, newGame, loadGame, wipeSave, saveGame, toast, hasSave } from './game';
 import { SET, savePrefs } from './prefs';
 import { SPECIES } from './econ';
 import { ROWS, ACTIONS, applySettings, resetBinds } from './settings';
@@ -22,16 +22,28 @@ function nav(key: ListKey, n: number): void {
 }
 const go = (mode: Mode, sound: 'move' | 'select' = 'move') => { G.mode = mode; sfx(sound); };
 const openSettings = (back: Mode, settings: boolean) => { G.back = back; G.setSel = 1; G.ctlSel = 0; G.mode = settings ? 'settings' : 'controls'; };
-const startVoyage = () => { wipeSave(); newGame(); G.mode = 'play'; voyageStarted('new'); };
+const startVoyage = () => { G.newConfirm = -1; wipeSave(); newGame(); G.mode = 'play'; voyageStarted('new'); };
+/** A new voyage erases the save, so with one on this device it asks first. */
+const askNewVoyage = () => { if (hasSave()) G.newConfirm = 0; else startVoyage(); };
+
+// the question has two answers side by side; keeping the save is picked first, and Escape keeps it too
+function confirmNew(): void {
+  if (hit('ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'a', 'A', 'd', 'D', 'w', 'W', 's', 'S', 'Tab')) { G.newConfirm = 1 - G.newConfirm; sfx('move'); }
+  if (hit('Escape', 'Backspace')) { G.newConfirm = -1; sfx('move'); return; }
+  if (!hit(' ', 'Enter')) return;
+  sfx('select');
+  if (G.newConfirm === 1) startVoyage(); else G.newConfirm = -1;
+}
 
 function title(): void {
+  if (G.newConfirm >= 0) return confirmNew();
   const items = TITLE_ITEMS(); nav('titleSel', items.length);
-  if (hit('n', 'N')) { startVoyage(); sfx('select'); return; }
+  if (hit('n', 'N')) { askNewVoyage(); sfx('select'); return; }
   if (!hit(' ', 'Enter')) return;
   const pick = items[Math.min(G.titleSel, items.length - 1)]; sfx('select');
   if (pick === 'CONTINUE') { loadGame(); G.mode = 'play'; voyageStarted('continue'); }
   else if (pick === 'ONLINE') { G.accountBack = 'title'; G.mode = 'account'; }
-  else if (pick === 'NEW VOYAGE') startVoyage();
+  else if (pick === 'NEW VOYAGE') askNewVoyage();
   else openSettings('title', pick === 'SETTINGS');
 }
 function pause(): void {

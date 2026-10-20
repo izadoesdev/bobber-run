@@ -9,7 +9,7 @@ const focusOnce = (el: HTMLInputElement | null) => {
   if (!focusedForm) { focusedForm = true; el.focus(); }
 };
 import { CHEATS_ENABLED } from '../input';
-import { G, hasSave, dayNum, logged, loadGame, newGame, toast } from '../game';
+import { G, hasSave, savedVoyage, dayNum, logged, loadGame, newGame, toast } from '../game';
 import { SPECIES } from '../econ';
 import { ROWS, ACTIONS, SET } from '../settings';
 import { CHEATS } from '../cheats';
@@ -35,14 +35,31 @@ function Menu({ items, sel, onPick, setSel }: MenuProps) {
   );
 }
 
+// "erase your save?": the answers go through the same keys as the keyboard (menus.ts), keeping the save picked first
+function NewVoyageConfirm() {
+  const v = savedVoyage(), pick = (i: number) => { G.newConfirm = i; press('Enter'); };
+  return (
+    <div class="panel rivets menu-box confirm" role="alertdialog" aria-labelledby="new-q">
+      <h2 id="new-q">Start a new voyage?</h2>
+      <p class="muted">{v ? `Your voyage on day ${v.day}, with ${v.caught} fish caught and ${v.species} species logged, will be erased.` : 'Your saved voyage will be erased.'} This can't be undone.</p>
+      <div class="menu row">
+        {['Keep my voyage', 'Start over'].map((s, i) => (
+          <button data-track={i ? 'new-voyage-confirm' : 'new-voyage-keep'} class={'item' + (i === G.newConfirm ? ' sel' : '') + (i ? ' danger' : '')}
+            onMouseMove={byPointer(() => { G.newConfirm = i; })} onClick={() => pick(i)}>{s}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function Title() {
   return (
     <div class="center">
       <div class="logo">Bobber Run</div>
       <div class="tagline">Fish, sell, upgrade, and sail further</div>
-      <div class="panel rivets menu-box">
+      {G.newConfirm >= 0 ? <NewVoyageConfirm /> : <div class="panel rivets menu-box">
         <Menu items={TITLE_ITEMS()} sel={G.titleSel || 0} setSel={i => { G.titleSel = i; }} onPick={i => { G.titleSel = i; press('Enter'); }} />
-      </div>
+      </div>}
       <AccountCta from="title" />
       <OnlineNow />
       <div class="hints-inline shadowed"><Hint k="ArrowUp" k2="ArrowDown" pad="D-pad">Choose</Hint><Hint k="Enter" pad="A">Select</Hint></div>

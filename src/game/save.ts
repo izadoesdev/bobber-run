@@ -42,6 +42,14 @@ export function saveGame(): void {
 export function hasSave(): boolean {
   try { return !!(localStorage.getItem(KEY) || localStorage.getItem(OLD)); } catch { return false; }
 }
+/** A few facts about the save on this device, for the "erase it?" question; null when there is none or it can't be read. */
+export function savedVoyage(): { day: number; caught: number; species: number } | null {
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY) || 'null') as Partial<SaveData> | null;
+    if (!d) return null;
+    return { day: Math.floor((d.clock || 0) / DAYLEN) + 1, caught: d.stats?.caught || 0, species: Object.keys(d.log || {}).length };
+  } catch { return null; }
+}
 export function wipeSave(): void {
   try { localStorage.removeItem(KEY); localStorage.removeItem(OLD); } catch { }
 }

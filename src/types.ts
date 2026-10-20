@@ -431,6 +431,8 @@ export interface Screens {
   map: MapView;
   talk: Talk | null;
   shipSel: number; logSel: number; titleSel: number; pauseSel: number;
+  /** the "erase your save?" question on the title: -1 closed, 0 keep the save (the default), 1 start over */
+  newConfirm: number;
   setSel: number; ctlSel: number; emoteSel: number;
   /** settings/controls return here */
   back: Mode;
