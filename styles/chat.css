@@ -60,3 +60,6 @@ html.touch .dock-btn { min-height: 36px; }
 .board li:nth-child(-n+3) .rank { color: var(--gold); font-weight: 700; }
 .board li.me { background: rgba(240, 207, 106, 0.22); border-radius: var(--r, 0.3em); }
 .leaders .mine { margin-top: 0.8em; }
+
+/* the dock stays small: the dot, who's online and Sign in; Chat shows on hover (and always on touch screens) */
+html:not(.touch) #ui .dock:not(:hover):not(:focus-within) .dock-btn:not(.cta-link) { display: none; }

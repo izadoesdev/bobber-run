@@ -15,7 +15,7 @@ import { SET } from '../settings';
 import { EMOTES } from '../net';
 import { ONLINE } from '../online';
 import { currentQuest, questProgress } from '../story';
-import { guide, guideOn, markerTarget, tip, whereText, type Step } from '../game/guide';
+import { guide, guideOn, markerTarget, stepLine, tip, whereText, type Step } from '../game/guide';
 import type { CatchCard as CatchCardState, FishLine, Toast } from '../types';
 import { drawChart, nearestUncharted } from './chart';
 import { IslandSigns } from './island';
@@ -181,6 +181,20 @@ function CatchCard({ c }: { c: CatchCardState }) {
   );
 }
 
+// past the opening quests the objective folds to its icon and distance; it opens for a few seconds when it
+// changes, and on hover, and the journal (J) always has it in full
+let shownText = '', changedAt = -99;
+function Objective({ step, prog }: { step: Step; prog?: string | null }) {
+  if (step.text !== shownText) { shownText = step.text; changedAt = G.t; }
+  const open = (G.story?.i ?? 0) < 2 || G.t - changedAt < 8, w = whereText(step);
+  return (
+    <button data-track="objective" class={'chip objective' + (open ? '' : ' folded')} onClick={() => { G.journalBack = 'play'; G.mode = 'journal'; }}
+      title="Open the journal (J)" aria-label={stepLine(step)}>
+      <span class="obj-full"><NextLine step={step} prog={prog} /></span>
+      <span class="obj-short row"><Icon k={step.icon} size="s" />{w ? <span class="gold">{w.split(' ').slice(0, 2).join(' ')}</span> : prog}</span>
+    </button>
+  );
+}
 function NextLine({ step, prog }: { step: Step; prog?: string | null }) {
   const w = whereText(step);
   return (
@@ -382,7 +396,7 @@ function worldLabels(): JSX.Element[] {
 
 // the catch card, captions, the reel or strike gauge and the prompt. `quiet` (interface hidden with H) keeps only
 // the prompts a catch needs; toasts stay above everything either way
-function Fishing({ quiet }: { quiet?: boolean }) {
+function Fishing() {
   const f = G.fish;
   return (
     <>
@@ -391,16 +405,24 @@ function Fishing({ quiet }: { quiet?: boolean }) {
         <Captions />
         {f?.st === 'reel' && <Reel f={f} />}
         {f?.st === 'bite' && SET.strike !== 'auto' && <StrikeMeter f={f} />}
-        {G.prompt && G.mode === 'play' && (f || !quiet) && (
-          <div class={'prompt panel' + (f?.st === 'bite' || f?.warn ? ' hot' : '')}>{keyed(G.prompt)}</div>
+        {G.prompt && G.mode === 'play' && f && (
+          <div class={'prompt panel' + (f.st === 'bite' || f.warn ? ' hot' : '')}>{keyed(G.prompt)}</div>
         )}
       </div>
     </>
   );
 }
+// what you can do right here (cast, dock, salvage) as a small label under the boat instead of a panel; the
+// fishing prompts stay at the bottom, where a warning has to be loud
+function BoatPrompt() {
+  if (!G.prompt || G.fish || G.mode !== 'play') return null;
+  const [x, y] = viewPct(G.boat.x, G.boat.y + 16);
+  return <div class="prompt-world" style={{ left: x + '%', top: y + '%' }}>{keyed(G.prompt)}</div>;
+}
+
 export function Hud() {
   tickIslands(); tickWaypoint();
-  if (!SET.hud) return <div><Fishing quiet /></div>;
+  if (!SET.hud) return <div><Fishing /></div>;
   const quest = currentQuest(), step = guide();
   // a waypoint the player set takes over the on-screen arrow from the guide
   const wp: Step | null = G.waypoint ? { text: 'Waypoint', at: G.waypoint, icon: 'map', near: 25 } : null;
@@ -408,14 +430,13 @@ export function Hud() {
     <div>
       <RouteDots />
       <RegionTitle />
+      <BoatPrompt />
       {worldLabels()}
       <IslandSigns />
       <Marker step={wp ?? step} force={!!wp} />
       <div class="hud-left">
         <Status />
-        <button data-track="objective" class="chip objective" onClick={() => { G.journalBack = 'play'; G.mode = 'journal'; }} title="Open the journal (J)">
-          <NextLine step={step} prog={(() => { const pr = quest && questProgress(quest); return pr && pr.want > 1 ? `${pr.have}/${pr.want}` : null; })()} />
-        </button>
+        <Objective step={step} prog={(() => { const pr = quest && questProgress(quest); return pr && pr.want > 1 ? `${pr.have}/${pr.want}` : null; })()} />
         {wp && <WaypointChip />}
         {G.active.length > 0 && (
           <div class="chip contracts small">

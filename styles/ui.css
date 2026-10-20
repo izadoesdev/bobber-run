@@ -328,7 +328,7 @@ html.touch #ui > .app { font-size: max(1em, calc(12px * var(--ui-k, 1))); }
 html.touch #ui :is(.item:not(.static), .btn, .tab, .seg-btn) { min-height: 44px; }
 html.touch #ui :is(.dialog, .card, .talk, .online, .cheats, .finale, .sunk-card, .emote-pick, .reel) { max-width: calc(100vw - 1.2em); }
 /* the on-screen buttons replace keyboard hints; keycaps inside prompts and buttons would only confuse */
-html.touch #ui :is(.hint, .tnum), html.touch #ui :is(.prompt, .btn, .tabs) > .key { display: none; }
+html.touch #ui :is(.hint, .tnum), html.touch #ui :is(.prompt, .prompt-world, .btn, .tabs) > .key { display: none; }
 html.touch #ui .prompt { white-space: normal; text-align: center; max-width: calc(100vw - 2em); }
 html.touch #ui .bottom-stack { bottom: 76px; }
 /* room in the footer for the Close (and chart Zoom) buttons; the port has its own Set off button */
@@ -416,3 +416,13 @@ html.touch #ui .screen:has(.chartwrap) .foot { padding-right: 130px; }
 .region-title { position: absolute; left: 50%; top: 14%; transform: translateX(-50%); font-family: var(--font-head); font-size: 2.1em; letter-spacing: 0.06em; color: #fff6dc; text-shadow: 0 0.06em 0 #2a1f17, 0 0.12em 0.4em #000a; pointer-events: none; white-space: nowrap; animation: region-in 0.9s ease-out; transition: opacity 0.9s; }
 .region-title.out { opacity: 0; }
 @keyframes region-in { from { opacity: 0; transform: translate(-50%, 0.3em); } }
+
+/* the objective folds to its icon and distance once the opening quests are done; hover shows it in full */
+.chip.objective .obj-short { display: none; gap: 0.35em; align-items: center; }
+.chip.objective.folded .obj-full { display: none; }
+.chip.objective.folded .obj-short { display: flex; }
+.chip.objective.folded:hover .obj-full, .chip.objective.folded:focus-visible .obj-full { display: block; }
+.chip.objective.folded:hover .obj-short, .chip.objective.folded:focus-visible .obj-short { display: none; }
+/* what you can do right here, under the boat */
+.prompt-world { position: absolute; transform: translate(-50%, 0); font-size: var(--fs-s); white-space: nowrap; color: #fff6dc; text-shadow: 0 0.08em 0 #000, 0 0 0.4em #000c; pointer-events: none; animation: region-in 0.3s ease-out; }
+.prompt-world .key { font-size: 0.9em; }
