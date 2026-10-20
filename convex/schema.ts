@@ -31,7 +31,8 @@ export default defineSchema({
   // status 'pending' is a hold while the buyer pays on Stripe Checkout (until holdUntil); price is in US dollars
   islands: defineTable({ key: v.string(), ownerId: v.id('users'), ownerName: v.string(), name: v.string(), logo: v.optional(v.id('_storage')), price: v.number(),
     claimedAt: v.number(), updatedAt: v.number(), seenAt: v.number(), status: v.optional(v.union(v.literal('owned'), v.literal('pending'))),
-    holdUntil: v.optional(v.number()), sessionId: v.optional(v.string()), paymentIntent: v.optional(v.string()), paidCents: v.optional(v.number()) })
+    holdUntil: v.optional(v.number()), sessionId: v.optional(v.string()), paymentIntent: v.optional(v.string()), paidCents: v.optional(v.number()),
+    url: v.optional(v.string()) })
     .index('by_key', ['key']).index('by_owner', ['ownerId']).index('by_seen', ['seenAt']).index('by_payment', ['paymentIntent']),
   islandReports: defineTable({ key: v.string(), userId: v.id('users'), name: v.string(), logo: v.optional(v.id('_storage')), at: v.number() }).index('by_key_user', ['key', 'userId']),
   // small server-wide values (the relay's online count)

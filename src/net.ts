@@ -224,7 +224,7 @@ export function reportStats(caught: number, earned: number, cheated = false): vo
   call(api.stats.report, { caught, earned }).catch(() => { statsAt = 0; });
 }
 // ---------- islands ----------
-export interface IslandRow { key: string; name: string; owner: string; logoUrl: string | null; mine: boolean }
+export interface IslandRow { key: string; name: string; owner: string; logoUrl: string | null; url: string | null; mine: boolean }
 /** Keep `cb` up to date with the claimed islands among these cell keys (one subscription; a new key list replaces it). */
 export function watchIslands(keys: string[], cb: (list: IslandRow[]) => void): void {
   if (client) watch<IslandRow[]>('islands', api.islands.near, { keys: keys.slice(0, 150) }, cb);
@@ -247,7 +247,9 @@ export async function buyIsland(key: string, name: string): Promise<{ ok: true; 
 export const renameIsland = (key: string, name: string) => islandCall(() => client!.action(api.islands.rename, { key, name }));
 export const releaseIsland = (key: string) => islandCall(() => client!.mutation(api.islands.release, { key }));
 export const reportIsland = (key: string) => islandCall(() => client!.mutation(api.islands.report, { key }));
-/** Admins only: clear an island's name and logo, or the whole claim. */
+/** Set the link on your island's sign (https only, checked on the server); '' removes it. */
+export const setIslandUrl = (key: string, url: string) => islandCall(() => client!.action(api.islands.setUrl, { key, url }));
+/** Admins only: clear an island's name, logo and link, or the whole claim. */
 export const clearIsland = (key: string, all = false) => islandCall(() => client!.mutation(api.islands.clear, { key, all }));
 /** Upload an already downscaled PNG (16 KB at most) as an island's logo. */
 export async function uploadIslandLogo(key: string, png: Blob): Promise<Result> {

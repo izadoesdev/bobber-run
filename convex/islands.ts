@@ -29,7 +29,7 @@ export const near = query({
     const me = await getAuthUserId(ctx), out = [];
     for (const key of keys.slice(0, 150)) {
       const isl = await byKey(ctx, key);
-      if (owned(isl)) out.push({ key, name: isl.name, owner: isl.ownerName, logoUrl: isl.logo ? await ctx.storage.getUrl(isl.logo) : null, mine: isl.ownerId === me });
+      if (owned(isl)) out.push({ key, name: isl.name, owner: isl.ownerName, logoUrl: isl.logo ? await ctx.storage.getUrl(isl.logo) : null, url: isl.url ?? null, mine: isl.ownerId === me });
     }
     return out;
   },
@@ -179,6 +179,55 @@ export const dropHold = internalMutation({
   handler: async (ctx, { holdId }) => { const id = ctx.db.normalizeId('islands', holdId); const h = id && await ctx.db.get(id); if (h && h.status === 'pending') await ctx.db.delete(h._id); },
 });
 
+// ---------- the owner's link, shown on their sign ----------
+const URL_MAX = 120;
+/** A clean https link, or why not. Plain hosts only: no logins in the URL, no bare IPs, no localhost. */
+function cleanUrl(raw: string): { ok: true; url: string } | { ok: false; why: string } {
+  let u: URL;
+  try { u = new URL(/^https?:\/\//i.test(raw.trim()) ? raw.trim() : `https://${raw.trim()}`); } catch { return { ok: false, why: 'That doesn\'t look like a web address' }; }
+  if (u.protocol !== 'https:') return { ok: false, why: 'Use an https:// link' };
+  if (u.username || u.password || !/\.[a-z]{2,}$/i.test(u.hostname) || /^[\d.]+$/.test(u.hostname)) return { ok: false, why: 'Use a normal website address' };
+  const url = u.toString().replace(/\/$/, '');
+  return url.length <= URL_MAX ? { ok: true, url } : { ok: false, why: `Keep the link under ${URL_MAX} characters` };
+}
+const LINK_QUESTION = 'Is the website `link.url` likely adult or sexual, gambling, a scam or phishing, malware, drugs, hate or violence, '
+  + 'or otherwise unsafe to link from a game played by teenagers?';
+async function jevAllowsLink(url: string): Promise<boolean> {
+  const key = env('AI_GATEWAY_API_KEY');
+  if (!key) return true;
+  try {
+    const r = await fetch('https://ai-gateway.vercel.sh/v1/evaluate', {
+      method: 'POST', signal: AbortSignal.timeout(4000), headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'typesafe-ai/jev-1.14.0', state: { link: { url } }, questions: { unsafe: { type: 'boolean', instructions: LINK_QUESTION } } }),
+    });
+    const p = r.ok ? (await r.json()).answers?.unsafe?.probability : undefined;
+    return typeof p !== 'number' || p < 0.5;
+  } catch { return true; }
+}
+/** Set (or with '' clear) the link on your island's sign. */
+export const setUrl = action({
+  args: { key: v.string(), url: v.string() },
+  handler: async (ctx, { key, url }): Promise<Result> => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return { ok: false, why: 'Sign in first' };
+    const acct = await ctx.runQuery(internal.islands.accountOf, { userId });
+    if (!url.trim()) return ctx.runMutation(internal.islands.applyUrl, { userId, key, url: undefined });
+    const c = cleanUrl(url);
+    if (!c.ok) return c;
+    if (!acct.admin && !await jevAllowsLink(c.url)) return { ok: false, why: "That link isn't allowed" };
+    return ctx.runMutation(internal.islands.applyUrl, { userId, key, url: c.url });
+  },
+});
+export const applyUrl = internalMutation({
+  args: { userId: v.id('users'), key: v.string(), url: v.optional(v.string()) },
+  handler: async (ctx, { userId, key, url }): Promise<Result> => {
+    const isl = await byKey(ctx, key);
+    if (!owned(isl) || isl.ownerId !== userId) return { ok: false, why: "That isn't your island" };
+    await ctx.db.patch(isl._id, { url, updatedAt: Date.now() });
+    return { ok: true };
+  },
+});
+
 export const rename = action({
   args: { key: v.string(), name: v.string() },
   handler: async (ctx, { key, name }): Promise<Result> => {
@@ -245,7 +294,7 @@ export const clear = mutation({
     const isl = await byKey(ctx, key);
     if (!isl) return { ok: false, why: 'No island here' };
     if (isl.logo) await ctx.storage.delete(isl.logo);
-    if (all) await ctx.db.delete(isl._id); else await ctx.db.patch(isl._id, { name: 'Unnamed island', logo: undefined, updatedAt: Date.now() });
+    if (all) await ctx.db.delete(isl._id); else await ctx.db.patch(isl._id, { name: 'Unnamed island', logo: undefined, url: undefined, updatedAt: Date.now() });
     return { ok: true };
   },
 });
