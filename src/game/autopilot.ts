@@ -8,6 +8,8 @@ import { G } from './state';
 import { boatDef, boatSpeed, sailEfficiency, speedMul } from './rules';
 import { toast } from './feedback';
 import { wrapAngle } from '../config';
+import { clearLine, findRoute } from './route';
+import type { Point } from '../types';
 
 /** Treated as land: a little deeper than where the hull grounds, so the boat keeps clear of the beach. */
 const LAND = -0.045;
@@ -17,7 +19,10 @@ type SteerKey = typeof STEER_KEYS[number];
 const VEERS = [0, 0.3, 0.6, 0.9, 1.2, 1.5, 1.8, 2.2];
 
 interface Course {
+  /** the leg being sailed now: the next corner of the route, or the destination */
   x: number; y: number;
+  /** corners still ahead after this leg, ending at the destination (empty on the last leg) */
+  rest: Point[];
   /** set with a line out (before a bite): sailing off reels it in, as rowing away does */
   reelIn: boolean;
   /** which way it last veered round an obstacle (-1, 0, 1), so it doesn't dither between sides */
@@ -28,8 +33,10 @@ interface Course {
 let course: Course | null = null;
 const held: Record<SteerKey, boolean> = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
 
-/** Where the boat is heading, for the marker; null when not under way. */
-export const courseTarget = (): { x: number; y: number } | null => course;
+/** Where the boat is heading in the end, for the marker; null when not under way. */
+export const courseTarget = (): Point | null => course && (course.rest.at(-1) ?? course);
+/** The corners still to sail through, ending at the destination; empty when not under way. */
+export const coursePath = (): Point[] => course ? [{ x: course.x, y: course.y }, ...course.rest] : [];
 
 // ---------- obstacles ----------
 const poiScratch: Poi[] = [], solids: Solid[] = [];
@@ -80,8 +87,11 @@ export function setCourse(x: number, y: number, quiet = false): boolean {
   while (t > 0 && blocked(b.x + dx * t, b.y + dy * t, pad)) t -= 2;    // walk back from the shore toward the boat
   if (t < d) t -= bd.L * 0.7;                                          // and keep the bow off it
   if (t < arriveR()) { if (!quiet) sfx('deny'); if (!course) return false; dropCourse(); return false; }
-  const prev = course;
-  course = { x: b.x + dx * t, y: b.y + dy * t, reelIn: !!f, side: prev?.side ?? 0, best: t, bestT: G.t };
+  const prev = course, end = { x: b.x + dx * t, y: b.y + dy * t };
+  // a click plans a way round anything in between; a held finger or a followed sailor just steers straight
+  const route = !quiet && !clearLine(b, end) ? findRoute(b, end) : null;
+  const [leg, ...rest] = route ?? [end];
+  course = { x: leg.x, y: leg.y, rest, reelIn: !!f, side: prev?.side ?? 0, best: Math.hypot(leg.x - b.x, leg.y - b.y), bestT: G.t };
   if (!quiet) sfx('move', 0.5);
   return true;
 }
@@ -108,8 +118,14 @@ export function steerCourse(): void {
   if (!c) return;
   if (G.mode !== 'play' || (G.fish && !c.reelIn)) { dropCourse(); return; }
   if (!G.fish) c.reelIn = false;
-  const b = G.boat, bd = boatDef(), dx = c.x - b.x, dy = c.y - b.y, d = Math.hypot(dx, dy);
-  if (d < 2 || (d < arriveR() && boatSpeed() < 3)) { dropCourse(); return; }   // there, and nearly stopped
+  const b = G.boat, bd = boatDef();
+  // round a corner once it's close, or as soon as the next one is in clear sight
+  while (c.rest.length && (Math.hypot(c.x - b.x, c.y - b.y) < 12 + bd.L || clearLine(b, c.rest[0]))) {
+    const n = c.rest.shift()!;
+    c.x = n.x; c.y = n.y; c.best = Math.hypot(n.x - b.x, n.y - b.y); c.bestT = G.t;
+  }
+  const dx = c.x - b.x, dy = c.y - b.y, d = Math.hypot(dx, dy), last = !c.rest.length;
+  if (last && (d < 2 || (d < arriveR() && boatSpeed() < 3))) { dropCourse(); return; }   // there, and nearly stopped
   if (d < c.best - 2) { c.best = d; c.bestT = G.t; }
   else if (G.t - c.bestT > 6) { dropCourse(); toast('No clear way there'); return; }
   nearSolids();
@@ -134,7 +150,7 @@ export function steerCourse(): void {
   const stopFrom = (dist: number): number => { const s = Math.max(0, dist); return k * s + Math.sqrt(brake * s); };
   const shore = clearRun(b.x, b.y, b.a, 30 + boatSpeed() * 2) - bd.L;
   const err = wrapAngle(heading - b.a), turnFirst = Math.abs(err) > 1.1;
-  let vMax = Math.min(stopFrom(d - 2), stopFrom(shore - 3));
+  let vMax = Math.min(last ? stopFrom(d - 2) : Infinity, stopFrom(shore - 3));   // no braking at a corner
   if (turnFirst) vMax = Math.min(vMax, 5);
   if (ahead < 6 + bd.L) vMax = 0;                                       // boxed in: stop
   const vf = b.vx * Math.cos(b.a) + b.vy * Math.sin(b.a);

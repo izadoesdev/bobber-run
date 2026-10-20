@@ -3,7 +3,7 @@
 // while you hold some, key hints until the first catches. The reel gauge, catch card, toasts and sailor tags sit over
 // the sea; schools carry no labels, since the cast prompt names the fish and why it won't bite.
 import type { JSX } from 'preact';
-import { clamp, money } from '../config';
+import { clamp, money, dirTo } from '../config';
 import {
   G, cap, hpMax, boatDef, isNight, dayNum, dayFrac, windAngle, sailEfficiency, schoolActive,
   lineMax,
@@ -19,7 +19,8 @@ import { guide, guideOn, markerTarget, tip, whereText, type Step } from '../game
 import type { CatchCard as CatchCardState, FishLine, Toast } from '../types';
 import { drawChart, nearestUncharted } from './chart';
 import { IslandSigns } from './island';
-import { clearWaypoint, tickWaypoint } from '../waypoint';
+import { clearWaypoint, sailToWaypoint, tickWaypoint, waypointRoute } from '../waypoint';
+import { courseTarget, coursePath } from '../game/autopilot';
 import { tickIslands } from '../islands';
 import { Bar, Canvas, Fish, Hint, Icon, Key, WX_ICON, cap1, clockText, keyed, viewPct, type DrawFn } from './parts';
 
@@ -218,6 +219,7 @@ function Marker({ step, force }: { step: Step; force?: boolean }) {
   const [tx, ty] = toPx(p.x, p.y);
   const pct = (x: number, y: number) => ({ left: (x - box.left) / box.width * 100 + '%', top: (y - box.top) / box.height * 100 + '%' });
   if (tx > box.left + 2 * em && tx < box.right - 2 * em && ty > box.top + 3 * em && ty < box.bottom - 2 * em && !covered(tx, ty - 1.6 * em, em)) {
+    if (force) return null;                         // a waypoint in view has its buoy
     const bob = SET.calm ? 0 : Math.sin(G.t * 3) * 0.3;
     return (
       <div key="guide-on" aria-hidden="true" style={{ position: 'absolute', ...pct(tx, ty), transform: `translate(-50%, ${-130 - bob * 40}%)`, pointerEvents: 'none', filter: 'drop-shadow(0 0.12em 0 #000a)' }}>
@@ -236,6 +238,56 @@ function Marker({ step, force }: { step: Step; force?: boolean }) {
       <svg viewBox="0 0 16 16" width="1.6em" height="1.6em" style={{ display: 'block', transform: `rotate(${a}rad)`, filter: 'drop-shadow(0 0.12em 0 #000a)' }}>
         <path d="M14.5 8 L2.5 2.5 L5.5 8 L2.5 13.5 Z" fill={TARGET_COL} stroke="#1b2a33" stroke-width="1.4" stroke-linejoin="round" />
       </svg>
+    </div>
+  );
+}
+
+// the waypoint: how far by the route and which way it lies, a Sail button that lets the autopilot take the route,
+// and a clear button
+function WaypointChip() {
+  const w = G.waypoint!, b = G.boat, route = waypointRoute();
+  let d = 0, ax = b.x, ay = b.y;
+  for (const p of route.length ? route : [w]) { d += Math.hypot(p.x - ax, p.y - ay); ax = p.x; ay = p.y; }
+  const sailing = courseTarget(), there = !!sailing && Math.hypot(sailing.x - w.x, sailing.y - w.y) < 30;
+  return (
+    <div class="chip waypoint small">
+      <Icon k="map" size="s" /><span class="gold">{Math.max(1, Math.round(d / 10))} m</span><span class="muted">{dirTo(b.x, b.y, w.x, w.y)}</span>
+      {there ? <span class="muted">sailing</span> : <button data-track="waypoint-sail" class="go" onClick={sailToWaypoint}>Sail</button>}
+      <button data-track="waypoint-clear" class="x" aria-label="Clear waypoint" onClick={clearWaypoint}>×</button>
+    </div>
+  );
+}
+
+// the way to the waypoint (or to where the boat is sailing itself) as a trail of dots on the sea, rippling toward
+// the end, with a buoy there; the route already goes round islands, so the dots never cross land
+const DOT_GAP = 13, MAX_DOTS = 80;
+function RouteDots() {
+  const path = G.waypoint ? waypointRoute() : coursePath();
+  if (!path.length || G.mode !== 'play' || G.fish) return null;
+  const dots: JSX.Element[] = [], inView = (x: number, y: number) => x > -2 && x < 102 && y > -2 && y < 102;
+  let ax = G.boat.x, ay = G.boat.y, t0 = DOT_GAP * 1.5, n = 0;     // the first dot a little ahead of the bow
+  for (const p of path) {
+    const dx = p.x - ax, dy = p.y - ay, len = Math.hypot(dx, dy);
+    let t = t0;
+    for (; t < len && n < MAX_DOTS; t += DOT_GAP, n++) {
+      const [x, y] = viewPct(ax + dx * t / len, ay + dy * t / len);
+      if (inView(x, y)) dots.push(<i key={n} style={{ left: x + '%', top: y + '%', animationDelay: -n * 0.11 + 's' }} />);
+    }
+    t0 = t - len; ax = p.x; ay = p.y;
+  }
+  const end = G.waypoint, [ex, ey] = end ? viewPct(end.x, end.y) : [-9, -9];
+  return (
+    <div class="route" aria-hidden="true">
+      {dots}
+      {end && inView(ex, ey) && (
+        <svg class="buoy" viewBox="0 0 16 24" style={{ left: ex + '%', top: ey + '%' }}>
+          <path d="M8 1 V9" stroke="#2a1f17" stroke-width="1.2" />
+          <path d="M8.6 1.5 L14 3.6 L8.6 5.7 Z" fill="#f0cf6a" stroke="#2a1f17" stroke-width="0.8" stroke-linejoin="round" />
+          <path d="M4 9 H12 L13 16 Q8 18.5 3 16 Z" fill="#e05a45" stroke="#2a1f17" stroke-width="1" stroke-linejoin="round" />
+          <path d="M3.6 12.2 H12.4" stroke="#fff6dc" stroke-width="1.6" />
+          <ellipse cx="8" cy="18.5" rx="6.5" ry="1.6" fill="#e6efec" fill-opacity="0.35" />
+        </svg>
+      )}
     </div>
   );
 }
@@ -336,6 +388,7 @@ export function Hud() {
   const wp: Step | null = G.waypoint ? { text: 'Waypoint', at: G.waypoint, icon: 'map', near: 25 } : null;
   return (
     <div>
+      <RouteDots />
       {worldLabels()}
       <IslandSigns />
       <Marker step={wp ?? step} force={!!wp} />
@@ -344,7 +397,7 @@ export function Hud() {
         <button data-track="objective" class="chip objective" onClick={() => { G.journalBack = 'play'; G.mode = 'journal'; }} title="Open the journal (J)">
           <NextLine step={step} prog={(() => { const pr = quest && questProgress(quest); return pr && pr.want > 1 ? `${pr.have}/${pr.want}` : null; })()} />
         </button>
-        {wp && <div class="chip waypoint small"><Icon k="map" size="s" />Waypoint <span class="gold">{whereText(wp)}</span><button data-track="waypoint-clear" class="x" aria-label="Clear waypoint" onClick={clearWaypoint}>×</button></div>}
+        {wp && <WaypointChip />}
         {G.active.length > 0 && (
           <div class="chip contracts small">
             {G.active.map(c => { const n = Math.min(G.hold.filter(f => f.sp === c.sp).length, c.n);

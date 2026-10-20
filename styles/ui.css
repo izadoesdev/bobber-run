@@ -403,4 +403,11 @@ html.touch #ui .screen:has(.chartwrap) .foot { padding-right: 130px; }
 .dialog.island .isl-head h1 { font-size: var(--fs-xl); }
 .dialog.island .isl-head p { margin: 0.1em 0 0; }
 .dialog.island .foot { gap: 0.5em; }
-.chip.waypoint { gap: 0.4em; } .chip.waypoint .x { font-size: 1.15em; line-height: 1; color: var(--muted); padding: 0 0.2em; cursor: pointer; pointer-events: auto; }
+.chip.waypoint { gap: 0.4em; } .chip.waypoint .go { pointer-events: auto; cursor: pointer; color: var(--gold); border: 1px solid rgba(240,207,106,0.6); border-radius: var(--r); padding: 0 0.45em; margin-left: 0.2em; }
+.chip.waypoint .go:hover { background: rgba(240,207,106,0.15); }
+/* the route on the sea: dots that ripple toward the waypoint, and a buoy at it */
+.route { position: absolute; inset: 0; pointer-events: none; }
+.route i { position: absolute; width: 0.3em; height: 0.3em; margin: -0.15em 0 0 -0.15em; background: #fff6dc; border-radius: 1px; box-shadow: 0 0.08em 0 #0007; animation: route-ripple 1.8s ease-in-out infinite; }
+@keyframes route-ripple { 0%, 100% { opacity: 0.3; transform: scale(0.75); } 45% { opacity: 0.95; transform: scale(1.05); } }
+.route .buoy { position: absolute; width: 1.3em; height: 1.95em; transform: translate(-50%, -88%); filter: drop-shadow(0 0.1em 0 #0008); animation: bob-buoy 2.4s ease-in-out infinite; }
+@keyframes bob-buoy { 0%, 100% { transform: translate(-50%, -88%) rotate(-4deg); } 50% { transform: translate(-50%, -82%) rotate(4deg); } } .chip.waypoint .x { font-size: 1.15em; line-height: 1; color: var(--muted); padding: 0 0.2em; cursor: pointer; pointer-events: auto; }
