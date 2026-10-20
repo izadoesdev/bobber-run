@@ -235,7 +235,7 @@ const islandCall = async (fn: () => Promise<{ ok: boolean; why?: string; price?:
   catch { return { ok: false, why: 'Could not reach the server' }; }
 };
 /** Admins only: take an island for free (everyone else buys with buyIsland). */
-export const claimIsland = (key: string, name: string, _cheated = false) => islandCall(() => client!.action(api.islands.claim, { key, name }));   // _cheated: old callers; remove once island.tsx uses buyIsland
+export const claimIsland = (key: string, name: string) => islandCall(() => client!.action(api.islands.claim, { key, name }));
 /**
  * Start buying an island with real money: the server holds it for 30 minutes and returns a Stripe Checkout URL to open.
  * Stripe sends the player back to /?island=<key>&paid=1 (or paid=0 if they cancel); the island turns up once paid.
