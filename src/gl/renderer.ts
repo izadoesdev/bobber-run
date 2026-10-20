@@ -604,7 +604,7 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
       const ph = A[i + 5], x = A[i] + Math.sin(G.t * 0.05 + ph) * 4, y = A[i + 1] + Math.cos(G.t * 0.04 + ph) * 3;
       if (x < camX - 30 || x > camX + W + 30 || y < camY - 12 || y > camY + H + 40) continue;
       inst(MS.iceMesh(ICES[A[i + 2]]), x, y, A[i + 4] + Math.sin(G.t * 0.03 + ph) * 0.3, A[i + 3], -0.5 + Math.sin(G.t * 0.9 + ph) * 0.2,
-        Math.sin(G.t * 0.7 + ph) * 0.035, Math.cos(G.t * 0.6 + ph) * 0.035, true);
+        Math.sin(G.t * 0.7 + ph) * 0.035, Math.cos(G.t * 0.6 + ph) * 0.035, true, 0.8);   // dimmed a touch: bright ice set off the bloom
     }
   }
   // landmarks, flotsam, treasure buoys

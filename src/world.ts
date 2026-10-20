@@ -4,13 +4,32 @@ import { nA, nB, nC, fbm, hash, hash01, mulberry } from './noise';
 import { pickSpecies, SP, SPECIES } from './econ';
 import { schoolLook } from './species';
 import type { Point, Poi, Port, Wreck, School, Crate } from './types';
+import { createNoise2D } from 'simplex-noise';
+import Alea from 'alea';
+import { biomeMix, coldness, setBiomeAnchor } from './biome';
 
 const CELL = 560;                              // one archipelago cell
 const HOME_ISLAND: Point = { x: 280, y: 280 };
 const key = (i: number, j: number) => (i + 50000) * 100000 + (j + 50000);
 
 // ---------- islands ----------
-interface Island { x: number; y: number; R: number; peak: number; islet?: boolean }
+// Every island has all its fields from the start, in one fixed shape: heightAt reads them for every point, and
+// properties added later (in differing orders) made those reads several times slower.
+interface Island {
+  x: number; y: number; R: number; peak: number; islet: boolean;
+  /** the cell it belongs to (main islands), for its landmarks */
+  ci: number; cj: number;
+  /** relief, worked out on first use (mtn < 0 until then): how mountainous it is, and whether it is a volcano */
+  mtn: number; volc: number;
+  /** how much bigger it grows than its first size (1 = not at all) */
+  grow: number;
+  /** the coast factor (shoreAt) baked at 64 headings, null for a plain round coast, undefined until worked out */
+  coast: Float32Array | null | undefined;
+  /** how far its land can reach, squared and in units of R (2.3 for a plain island, more with headlands) */
+  reach2: number;
+}
+const island = (x: number, y: number, R: number, peak: number, islet: boolean, ci = 0, cj = 0): Island =>
+  ({ x, y, R, peak, islet, ci, cj, mtn: -1, volc: 0, grow: 1, coast: undefined, reach2: 2.3 });
 const cells = new Map<number, Island[]>();
 function cellIslands(i: number, j: number): Island[] {
   const k = key(i, j), cached = cells.get(k);
@@ -18,8 +37,12 @@ function cellIslands(i: number, j: number): Island[] {
   const r = mulberry(hash(i, j, 7)), L: Island[] = [];
   const ox = i * CELL, oy = j * CELL;
   let main: Island | null = null;
-  if (i === 0 && j === 0) main = { x: HOME_ISLAND.x, y: HOME_ISLAND.y, R: 145, peak: 0.8 };
-  else if (r() < 0.72) main = { x: ox + CELL * (0.3 + 0.4 * r()), y: oy + CELL * (0.3 + 0.4 * r()), R: 55 + Math.pow(r(), 1.4) * 160, peak: 0.55 + 0.45 * r() };
+  if (i === 0 && j === 0) main = island(HOME_ISLAND.x, HOME_ISLAND.y, 145, 0.8, false, i, j);
+  else if (r() < 0.72) {
+    // argument order matters: x, y, R and peak draw from r in this order, as they always have
+    const x = ox + CELL * (0.3 + 0.4 * r()), y = oy + CELL * (0.3 + 0.4 * r()), R = 55 + Math.pow(r(), 1.4) * 160, peak = 0.55 + 0.45 * r();
+    main = island(x, y, R, peak, false, i, j);
+  }
   if (main) L.push(main);
   const n = Math.floor(r() * 3.6);
   for (let q = 0; q < n; q++) {
@@ -31,32 +54,144 @@ function cellIslands(i: number, j: number): Island[] {
       x = ox + CELL * (0.15 + 0.7 * r()); y = oy + CELL * (0.15 + 0.7 * r());
     }
     const sandbar = r() < 0.3;
-    L.push({ x, y, R: 12 + r() * 28, peak: sandbar ? 0.1 + 0.08 * r() : 0.45 + 0.4 * r(), islet: true });
+    const R = 12 + r() * 28;
+    L.push(island(x, y, R, sandbar ? 0.1 + 0.08 * r() : 0.45 + 0.4 * r(), true));
   }
   cells.set(k, L);
   return L;
 }
 
+// an island and the water around it share the region at its centre (see biome.ts)
+setBiomeAnchor((x, y) => {
+  const ci = Math.floor(x / CELL), cj = Math.floor(y / CELL);
+  let best: { x: number; y: number; w: number } | null = null;
+  for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+    const m = cellIslands(ci + di, cj + dj)[0];
+    if (!m || m.islet) continue;
+    const w = 1 - smooth01((Math.hypot(x - m.x, y - m.y) / m.R - 1.3) / 0.9);
+    if (w > 0 && (!best || w > best.w)) best = { x: m.x, y: m.y, w };
+  }
+  return best;
+});
+const smooth01 = (t: number): number => { const c = t < 0 ? 0 : t > 1 ? 1 : t; return c * c * (3 - 2 * c); };
+
+// ---------- relief ----------
+// Mountains are added only where the ground is already well above the sea, so they shape the interior (ridges,
+// valleys, peaks) without moving a single coastline. Some islands are rugged and some gentle; the far north is
+// rugged, and big islands in the ember isles grow a volcano with a crater.
+const nRidge = createNoise2D(Alea('bobber-run', 'ridge'));
+const ridged = (x: number, y: number): number => {
+  let s = 0, a = 0.6, f = 0.012;
+  for (let o = 0; o < 2; o++) { const v = 1 - Math.abs(nRidge(x * f, y * f)); s += v * v * a; a *= 0.55; f *= 2.3; }
+  return s;                                    // about 0..1, sharp crests (two octaves: it runs for every inland point)
+};
+function relief(is: Island): void {
+  if (is.mtn >= 0) return;
+  const big = smoothstepN((is.R - 50) / 120);
+  is.mtn = is.islet ? 0 : big * (0.35 + 0.65 * hash01(Math.round(is.x), Math.round(is.y), 41)) * (0.7 + 0.6 * coldness(is.y));
+  is.volc = !is.islet && is.R > 80 ? smoothstepN((biomeMix(is.x, is.y).volcanic - 0.4) / 0.3) : 0;
+}
+// The coastline of a main island: coves bitten in (sheltered water to fish in) and lobes reaching out (headlands
+// and peninsulas, so some islands become large, ragged landmasses), plus, for islands with no landmarks of their own,
+// overall growth. All of it keeps clear of every port, lighthouse and wreck nearby: those were placed on the plain
+// coast and never move, and the island's centre (its claim) never moves either. Alderhaven keeps its shape.
+function shore(is: Island): number[] {
+  const S: number[] = [];
+  if (is.islet || (is.ci === 0 && is.cj === 0)) return S;
+  const near: Point[] = [];
+  for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) near.push(...bareLandmarks(is.ci + di, is.cj + dj));
+  const own = bareLandmarks(is.ci, is.cj);
+  const sx = Math.round(is.x), sy = Math.round(is.y);
+  if (!own.length && hash01(sx, sy, 71) < 0.6) is.grow = 1.4 + 0.6 * hash01(sx, sy, 72);
+  const R = is.R * is.grow;
+  // a feature at heading a reaching out to `reach` x R must keep clear of every landmark within that reach
+  const clear = (a: number, half: number, reach: number): boolean => near.every(p => {
+    const da = Math.abs(Math.atan2(Math.sin(Math.atan2(p.y - is.y, p.x - is.x) - a), Math.cos(Math.atan2(p.y - is.y, p.x - is.x) - a)));
+    return da > half * 2.5 + 0.35 || Math.hypot(p.x - is.x, p.y - is.y) > R * (reach + 0.35);
+  });
+  if (is.R >= 80) {                                          // coves
+    const n = 2 + Math.floor(hash01(sx, sy, 51) * 2);
+    for (let k = 0; k < n; k++) {
+      const a = hash01(sx, sy, 52 + k) * Math.PI * 2, half = 0.16 + 0.14 * hash01(sx, sy, 56 + k);
+      if (own.some(p => Math.abs(Math.atan2(Math.sin(Math.atan2(p.y - is.y, p.x - is.x) - a), Math.cos(Math.atan2(p.y - is.y, p.x - is.x) - a))) < 0.75)) continue;
+      S.push(a, half, -(0.28 + 0.22 * hash01(sx, sy, 60 + k)));
+    }
+  }
+  if (is.R >= 60) {                                          // lobes and peninsulas
+    const n = 1 + Math.floor(hash01(sx, sy, 64) * 3);
+    for (let k = 0; k < n; k++) {
+      const a = hash01(sx, sy, 65 + k) * Math.PI * 2, half = 0.25 + 0.3 * hash01(sx, sy, 69 + k), reach = 0.35 + 0.55 * hash01(sx, sy, 73 + k);
+      if (clear(a, half, 1 + reach)) S.push(a, half, reach);
+    }
+  }
+  return S;
+}
+// baked once per island: heightAt reads it per point with one atan2 and a lerp
+const COAST_N = 64;
+function coastTable(is: Island): Float32Array | null {
+  if (is.coast !== undefined) return is.coast;
+  const S = shore(is);                          // (also sets grow)
+  if (!S.length) return is.coast = null;
+  const T = new Float32Array(COAST_N + 1);
+  let lo = 1;
+  for (let k = 0; k <= COAST_N; k++) lo = Math.min(lo, T[k] = shoreAt(S, k / COAST_N * Math.PI * 2 - Math.PI));
+  is.reach2 = 2.3 / (lo * lo);
+  return is.coast = T;
+}
+function coastAt(T: Float32Array, dx: number, dy: number): number {
+  const f = (Math.atan2(dy, dx) + Math.PI) / (Math.PI * 2) * COAST_N, k = Math.floor(f);
+  return T[k] + (T[k + 1] - T[k]) * (f - k);
+}
+/** How far the coast is pulled in (> 1, a cove) or pushed out (< 1, a lobe) at heading a, as a factor on distance. */
+function shoreAt(S: number[], a: number): number {
+  let k = 1;
+  for (let q = 0; q < S.length; q += 3) {
+    const da = Math.atan2(Math.sin(a - S[q]), Math.cos(a - S[q])) / S[q + 1], g = Math.exp(-da * da), v = S[q + 2];
+    k *= v < 0 ? 1 - v * g : 1 / (1 + v * g);
+  }
+  return k;
+}
+const smoothstepN = (t: number): number => { const c = t < 0 ? 0 : t > 1 ? 1 : t; return c * c * (3 - 2 * c); };
+const LIFT = 0.14;                             // relief starts this far above the sea, so shores and beaches stay put
+
 /** Terrain height: < 0 is water (deeper = more negative), > 0 is land. */
-export function heightAt(x: number, y: number): number {
+export const heightAt = (x: number, y: number): number => shape(x, y, true);
+/** The coast before coves are cut: where ports, lighthouses and wrecks were always placed, so they never move. */
+const baseHeight = (x: number, y: number): number => shape(x, y, false);
+function shape(x: number, y: number, cut: boolean): number {
   // domain-warp the lookup so coastlines wander
   const wx = x + 36 * nB(x * 0.0042, y * 0.0042), wy = y + 36 * nB(x * 0.0042 + 31.7, y * 0.0042 - 12.3);
   const ci = Math.floor(wx / CELL), cj = Math.floor(wy / CELL);
   let h = -0.5 + 0.1 * nC(x * 0.0016, y * 0.0016);
-  let shape: number | null = null, best = -9;
+  let shape: number | null = null, best = -9, top: Island | null = null, topD = 0;
   for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
     for (const is of cellIslands(ci + di, cj + dj)) {
-      const dx = wx - is.x, dy = wy - is.y, d2 = (dx * dx + dy * dy) / (is.R * is.R);
-      if (d2 > 2.3) continue;
+      const T = cut && !is.islet ? coastTable(is) : null, R = cut && !is.islet ? is.R * is.grow : is.R;
+      const dx = wx - is.x, dy = wy - is.y, d2 = (dx * dx + dy * dy) / (R * R);
+      if (d2 > (T ? is.reach2 : 2.3)) continue;                       // headlands reach further than a round coast
+      // coves and headlands scale the distance by heading; an island only counts within 2.3 of its own, shaped
+      // radius in that direction, as a round island always did
+      const k = T && d2 > 0.16 ? 1 + (coastAt(T, dx, dy) - 1) * smoothstepN((d2 - 0.16) / 0.5) : 1;
+      if (d2 * k * k > 2.3) continue;
       if (shape === null) shape = fbm(nA, x * 0.009, y * 0.009, 3);
-      const d = Math.sqrt(d2) * (1 + 0.3 * shape);
+      const d = Math.sqrt(d2) * (1 + 0.3 * shape) * k;
       const base = 1 - d * d, e = base > 0 ? is.peak * Math.pow(base, 1.4) : is.peak * base;
-      if (e > best) best = e;
+      if (e > best) { best = e; top = is; topD = d; }
     }
   }
   if (best > -9) {
     let e = best;
     if (e > -0.25) { const k = Math.min(1, (e + 0.25) / 0.5); e += 0.15 * k * fbm(nC, x * 0.022, y * 0.022, 3); }
+    if (e > LIFT && top) {
+      relief(top);
+      const up = smoothstepN((e - LIFT) / 0.35);              // 0 at the foothills, 1 well inland
+      const rugged = up * top.mtn * (1 - 0.8 * top.volc);              // a volcano is a smooth cone, not a ridge
+      if (rugged > 0.01) e += rugged * 0.75 * ridged(x, y);
+      if (top.volc > 0) {                                     // a cone, and a crater at its top
+        const cone = Math.max(0, 1 - topD / 0.55);
+        e += top.volc * up * (0.9 * cone * cone - 0.55 * smoothstepN((0.12 - topD) / 0.07));
+      }
+    }
     if (e > h) h = e;
   }
   return h;
@@ -120,7 +255,7 @@ function shoreAlong(is: Island, a: number): Point | null {
   let last: Point | null = null;
   for (let d = 0; d < is.R * 1.9; d += 2) {
     const x = is.x + c * d, y = is.y + s * d;
-    if (heightAt(x, y) > 0) last = { x, y };
+    if (baseHeight(x, y) > 0) last = { x, y };
     else if (last && d > is.R * 0.35) return last;
   }
   return null;
@@ -130,8 +265,8 @@ function openWater(p: Point, a: number): boolean {
   const c = Math.cos(a), s = Math.sin(a);
   for (let d = 4; d <= 56; d += 4) {
     const need = d > 18 ? -0.1 : 0;
-    if (heightAt(p.x + c * d, p.y + s * d) > need) return false;
-    if (d > 14 && (heightAt(p.x + c * d - s * 14, p.y + s * d + c * 14) > -0.02 || heightAt(p.x + c * d + s * 14, p.y + s * d - c * 14) > -0.02)) return false;
+    if (baseHeight(p.x + c * d, p.y + s * d) > need) return false;
+    if (d > 14 && (baseHeight(p.x + c * d - s * 14, p.y + s * d + c * 14) > -0.02 || baseHeight(p.x + c * d + s * 14, p.y + s * d - c * 14) > -0.02)) return false;
   }
   return true;
 }
@@ -154,7 +289,15 @@ function makePort(i: number, j: number, home: boolean, r: Rng, s: Point, di: num
     solid: { kind: 'seg', ax, ay, bx: ax + c * 27, by: ay + sn * 27, r: 3.5 },
   };
 }
-function genCellPois(i: number, j: number): Poi[] {
+// a cell's landmarks without their schools, for the coast work in shore(); cached, as each island asks for 9 cells
+const bareCells = new Map<number, Poi[]>();
+function bareLandmarks(i: number, j: number): Poi[] {
+  const k = key(i, j);
+  let L = bareCells.get(k);
+  if (!L) bareCells.set(k, L = landmarks(i, j, false));
+  return L;
+}
+function landmarks(i: number, j: number, schools: boolean): Poi[] {
   const r = mulberry(hash(i, j, 99)), L = cellIslands(i, j), out: Poi[] = [];
   const main = L.find(is => !is.islet), home = i === 0 && j === 0;
   let portA: number | null = null;
@@ -177,27 +320,27 @@ function genCellPois(i: number, j: number): Poi[] {
         const a = base + q * 0.5, s = shoreAlong(main, a);
         if (!s) continue;
         const x = s.x - Math.cos(a) * 7, y = s.y - Math.sin(a) * 7;
-        if (heightAt(x, y) < 0.03) continue;
+        if (baseHeight(x, y) < 0.03) continue;
         out.push({ id: `light:${i},${j}`, type: 'light', name: placeName(r) + ' Light', x, y, beam: r() * 6.28 });
         break;
       }
     }
   }
-  for (const is of L) if (is.islet && is.peak > 0.3 && r() < 0.14 && heightAt(is.x, is.y) > 0.05)
+  for (const is of L) if (is.islet && is.peak > 0.3 && r() < 0.14 && baseHeight(is.x, is.y) > 0.05)
     out.push({ id: `light:${i},${j}:${Math.round(is.x)}`, type: 'light', name: placeName(r) + ' Light', x: is.x, y: is.y, beam: r() * 6.28 });
   if (r() < 0.42) {
-    const w = placeWreck(i, j, r, main, out);
+    const w = placeWreck(i, j, r, main, out, schools);
     if (w) out.push(w);
   }
   return out;
 }
 // a wreck in shallow water off the main island (or anywhere in an empty cell), away from ports
-function placeWreck(i: number, j: number, r: Rng, main: Island | undefined, pois: Poi[]): Wreck | null {
+function placeWreck(i: number, j: number, r: Rng, main: Island | undefined, pois: Poi[], schools: boolean): Wreck | null {
   for (let q = 0; q < 20; q++) {
     let x, y;
     if (main) { const a = r() * 6.28, d = main.R * (1.12 + r() * 0.35); x = main.x + Math.cos(a) * d; y = main.y + Math.sin(a) * d; }
     else { x = i * CELL + CELL * (0.2 + 0.6 * r()); y = j * CELL + CELL * (0.2 + 0.6 * r()); }
-    const h = heightAt(x, y);
+    const h = baseHeight(x, y);
     if (h > -0.08 || h < -0.36) continue;
     if (pois.some(p => p.type === 'port' && Math.hypot(p.dock.x - x, p.dock.y - y) < 70)) continue;
     const dist = Math.hypot(x - HOME_ISLAND.x, y - HOME_ISLAND.y);
@@ -206,6 +349,7 @@ function placeWreck(i: number, j: number, r: Rng, main: Island | undefined, pois
       id: `wreck:${i},${j}`, type: 'wreck', name: 'Wreck of the ' + SHIPS[Math.floor(r() * SHIPS.length)], x, y, dir: Math.floor(r() * 16),
       loot: 25 + Math.floor(r() * 40 + dist / 60), solid: { kind: 'circ', x, y, r: 12 },
     };
+    if (!schools) return w;                                  // (its school is the last thing drawn from r)
     const sp = pickSpecies(0, dist, r, x, y, 'wreck'), home = openSpot(x, y, a, [34, 46, 58], sp);
     if (home) w.school = makeSchool(`ws:${i},${j}`, home.x, home.y, sp, r, 2);
     return w;
@@ -232,7 +376,7 @@ function lightSchools(L: Poi[], i: number, j: number): Poi[] {
 export function cellPois(i: number, j: number): Poi[] {
   const k = key(i, j);
   let L = poiCells.get(k);
-  if (!L) { L = lightSchools(genCellPois(i, j), i, j); poiCells.set(k, L); }
+  if (!L) { L = lightSchools(landmarks(i, j, true), i, j); poiCells.set(k, L); }
   return L;
 }
 /** points of interest within a square of half-size rad around (x, y); fills and returns `out` if given */
@@ -398,8 +542,18 @@ export function claimableNear(x: number, y: number, rad: number): Claimable[] {
   const out: Claimable[] = [], i0 = Math.floor((x - rad) / CELL), i1 = Math.floor((x + rad) / CELL), j0 = Math.floor((y - rad) / CELL), j1 = Math.floor((y + rad) / CELL);
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const m = cellIslands(i, j)[0];
-    if (m && !m.islet && Math.hypot(m.x - x, m.y - y) < rad + m.R) out.push({ key: `${i},${j}`, i, j, x: m.x, y: m.y, R: m.R });
+    const R = m && !m.islet ? (coastTable(m), m.R * m.grow) : 0;
+    if (m && !m.islet && Math.hypot(m.x - x, m.y - y) < rad + R) out.push({ key: `${i},${j}`, i, j, x: m.x, y: m.y, R });
   }
   return out;
+}
+/** The nearest point of open water (depth beyond `depth`) to (x, y), searching outward in rings; (x, y) if none. */
+export function nearestWater(x: number, y: number, depth = -0.12): Point {
+  if (heightAt(x, y) < depth) return { x, y };
+  for (let r = 12; r <= 600; r += 12) for (let k = 0; k < 24; k++) {
+    const a = k / 24 * Math.PI * 2, px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+    if (heightAt(px, py) < depth) return { x: px, y: py };
+  }
+  return { x, y };
 }
 export const worldCaches = () => ({ tiles: tiles.size, cells: cells.size, pois: poiCells.size, fish: fishCells.size });

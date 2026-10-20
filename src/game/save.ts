@@ -1,6 +1,6 @@
 // Saving and loading, new voyages, and putting the boat at a port.
 import { W, H, clamp } from '../config';
-import { hAt, homePort, cellPois } from '../world';
+import { hAt, homePort, cellPois, nearestWater } from '../world';
 import { SP } from '../econ';
 import { netSaved, reportStats } from '../net';
 import type { BoatId, Contract, Fish, GameState, LogEntry, Pet, Port, ProjectId, Stats, StoryState, TreasureMap, UpgradeKey, BaitKind, BaitChoice } from '../types';
@@ -137,6 +137,8 @@ export function loadGame(): void {
     G.boat.hp = clamp(d.hp ?? hpMax(), 1, hpMax());
     // older saves stored destination names in capitals, and could ask for more fish than the hold carries
     for (const c of [...G.active, ...Object.values(G.offers).flat()]) if (c && c.to) { c.toName = portById(c.to).name; c.n = Math.min(c.n, cap()); }
+    // the coastline can change between versions: a treasure that now lies under land moves out to open water
+    G.maps = G.maps.map(m => ({ ...m, ...nearestWater(m.x, m.y, -0.2) }));
     const { x, y } = d, a = d.a || 0;
     if (typeof x === 'number' && typeof y === 'number' && Number.isFinite(x) && hAt(x, y) < -0.05) {
       Object.assign(G.boat, { x, y, a, px: x, py: y, pa: a });

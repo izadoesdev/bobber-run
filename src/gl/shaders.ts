@@ -193,6 +193,13 @@ void main(){
     vec3 light = uAmb*ao*(0.8 + 0.2*n.z) + uSunC*diff*sunVis*(1.0 - tsh);
     light += stL(pointLights(vec3(p, 0.0), n), 5.0) + vec3(1.0, .84, .58)*st(beams(p), 3.0)*(0.12 + uNight*0.9);
     col *= light;
+    // a volcano's crater: a dip at the top of a tall ember-isle peak, its floor glowing lava that pulses slowly
+    float lava = 0.0;
+    if (bm.z > 0.4 && h > 0.95){                                  // only a wide, deep dip near the top: the crater
+      float wide = (H(p + vec2(10, 0)) + H(p - vec2(10, 0)) + H(p + vec2(0, 10)) + H(p - vec2(0, 10)))*0.25;
+      lava = st(smoothstep(0.4, 0.7, bm.z)*smoothstep(0.05, 0.12, wide - h), 2.0);
+    }
+    col = mix(col, mix(vec3(1.0, .42, .12), vec3(1.0, .72, .25), step(0.6, hash(floor(p*0.5 + uT*0.6))))*(0.85 + 0.15*sin(uT*1.7)), lava);
     float wetk = smoothstep(0.035, 0.0, h);                     // wet sand glistens
     col += uSunC*wetk*st(pow(max(dot(reflect(-uSun, n), normalize(vec3(0, .55, .85))), 0.0), 30.0), 2.0)*0.3*sunVis;
   } else {

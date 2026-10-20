@@ -19,7 +19,19 @@ const nBio = createNoise2D(Alea('bobber-run', 'biome'));
 const F = 1 / 1500;                                         // features a few cells across
 const HOME = { x: 280, y: 280 };
 
+// Each island belongs to one region: on and around an island the region is read at its centre, fading back to the
+// open-sea field between islands, so no island is half coral and half ash. The world registers how to find the
+// island near a point (biome.ts can't import world.ts, which imports it).
+type Anchor = (x: number, y: number) => { x: number; y: number; w: number } | null;
+let anchor: Anchor = () => null;
+export function setBiomeAnchor(f: Anchor): void { anchor = f; }
+
 export function biomeMix(x: number, y: number): BiomeMix {
+  const at = anchor(x, y);
+  if (at) { x += (at.x - x) * at.w; y += (at.y - y) * at.w; }
+  return fieldMix(x, y);
+}
+function fieldMix(x: number, y: number): BiomeMix {
   const d = Math.hypot(x - HOME.x, y - HOME.y), away = smooth01((d - 650) / 550);
   if (away <= 0) return { reef: 0, kelp: 0, volcanic: 0, mangrove: 0 };
   const wm = warmth(y), cd = coldness(y);
