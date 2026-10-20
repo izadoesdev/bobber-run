@@ -1,6 +1,6 @@
 // Menus and dialogs: title, pause, settings, controls, online, cheats, greeting picker,
 // conversations, the finale and the towed-home card.
-import type { TargetedMouseEvent } from 'preact';
+import type { TargetedMouseEvent, TargetedSubmitEvent } from 'preact';
 
 // The account form's email field takes focus when the form first appears, so typing (and Tab) works at once.
 let focusedForm = false;
@@ -9,11 +9,12 @@ const focusOnce = (el: HTMLInputElement | null) => {
   if (!focusedForm) { focusedForm = true; el.focus(); }
 };
 import { CHEATS_ENABLED } from '../input';
-import { G, hasSave, dayNum, logged } from '../game';
+import { G, hasSave, dayNum, logged, loadGame, newGame } from '../game';
 import { SPECIES } from '../econ';
 import { ROWS, ACTIONS, SET } from '../settings';
 import { CHEATS } from '../cheats';
-import { NET, EMOTES, account, deleteAccount, signOut, setName } from '../net';
+import { NET, EMOTES, HAD_ACCOUNT_KEY, account, deleteAccount, signOut, setName } from '../net';
+import { voyageStarted } from '../telemetry';
 import { PEOPLE, currentQuest } from '../story';
 import type { NetForm, Talk as TalkState } from '../types';
 import { Hint, Icon, Key, SetRow, byPointer, keyLabel, money } from './parts';
@@ -133,22 +134,34 @@ export function Controls() {
 
 // online status, captain name and accounts. Form fields keep their text in G.netForm, so the
 // per-frame redraw never wipes what you are typing.
+/** After signing in or making an account: sail on with the (possibly just loaded) save. */
+function enterGame(loaded: boolean): void {
+  if (loaded || G.accountBack === 'title') {
+    if (hasSave()) loadGame(); else newGame();
+    voyageStarted(loaded || hasSave() ? 'continue' : 'new');
+  }
+  G.mode = 'play';
+}
+const hadAccount = (): boolean => { try { return !!localStorage.getItem(HAD_ACCOUNT_KEY); } catch { return false; } };
 export function Online() {
   const p = NET.profile;
-  const f: NetForm = (G.netForm ||= { name: null, email: '', pass: '', show: false, mode: 'signUp' });
+  const f: NetForm = (G.netForm ||= { name: null, email: '', pass: '', show: false, mode: hadAccount() ? 'signIn' : 'signUp' });
+  if (f.uid !== (p?.userId ?? null)) { f.uid = p?.userId ?? null; f.name = null; }   // a different account: forget a half-typed name
   const say = (msg: string, bad = false) => { G.netMsg = { msg, bad }; };
   const saveName = async () => {
     const r = await setName(f.name ?? p?.name ?? '');
     if (r.ok) { f.name = null; say(`Your captain name is now ${r.name}`); } else say(r.why, true);
   };
-  const submit = async () => {
+  // read the fields themselves: password managers often fill them without an input event
+  const submit = async (e: TargetedSubmitEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const data = new FormData(e.currentTarget), email = String(data.get('email') ?? ''), pass = String(data.get('password') ?? '');
+    f.email = email; f.pass = pass;
     say(f.mode === 'signUp' ? 'Making your account...' : 'Signing in...');
-    const r = await account(f.mode, f.email.trim(), f.pass);
-    if (r.ok) {
-      f.pass = '';
-      say(r.msg ?? '');
-      if (r.reload) setTimeout(() => location.reload(), 900);
-    } else say(r.why, true);
+    const r = await account(f.mode, email.trim(), pass);
+    if (!r.ok) { say(r.why, true); return; }
+    f.pass = ''; G.netMsg = null;
+    enterGame(!!r.loaded);
   };
   // deleting takes two presses within a few seconds
   const arming = !!f.delAt && Date.now() - f.delAt < 5000;
@@ -176,29 +189,29 @@ export function Online() {
           <button class="btn" disabled={f.name === null || f.name === p?.name} onClick={saveName}>Save name</button>
         </div>
       )}
-      {NET.authed && p?.guest && (
-        <div class="account-box">
+      {(NET.busy || (NET.authed && p?.guest)) && (
+        <form class="account-box" onSubmit={submit}>
           <div class="seg">
-            <button class={'seg-btn' + (f.mode === 'signUp' ? ' on' : '')} onClick={setMode('signUp')}>Make an account</button>
-            <button class={'seg-btn' + (f.mode === 'signIn' ? ' on' : '')} onClick={setMode('signIn')}>I have an account</button>
+            <button type="button" class={'seg-btn' + (f.mode === 'signUp' ? ' on' : '')} onClick={setMode('signUp')}>Make an account</button>
+            <button type="button" class={'seg-btn' + (f.mode === 'signIn' ? ' on' : '')} onClick={setMode('signIn')}>I have an account</button>
           </div>
           <div class="form-grid">
             <label class="caps" for="net-email">Email</label>
-            <input id="net-email" ref={focusOnce} type="email" autocomplete="email" value={f.email}
-              onInput={e => { f.email = e.currentTarget.value; }} onKeyDown={onEnter(submit)} />
+            <input id="net-email" name="email" ref={focusOnce} type="email" autocomplete="username" value={f.email}
+              onInput={e => { f.email = e.currentTarget.value; }} />
             <label class="caps" for="net-pass">Password</label>
             <span class="row">
               {/* the cast: Preact's per-type input typings can't express a type that toggles on one element */}
-              <input id="net-pass" type={(f.show ? 'text' : 'password') as 'text'} autocomplete={f.mode === 'signUp' ? 'new-password' : 'current-password'} value={f.pass}
-                onInput={e => { f.pass = e.currentTarget.value; }} onKeyDown={onEnter(submit)} />
-              <button class="btn small-btn" onClick={() => { f.show = !f.show; }} aria-label={f.show ? 'Hide password' : 'Show password'}>{f.show ? 'Hide' : 'Show'}</button>
+              <input id="net-pass" name="password" type={(f.show ? 'text' : 'password') as 'text'} autocomplete={f.mode === 'signUp' ? 'new-password' : 'current-password'} value={f.pass}
+                onInput={e => { f.pass = e.currentTarget.value; }} />
+              <button type="button" class="btn small-btn" onClick={() => { f.show = !f.show; }} aria-label={f.show ? 'Hide password' : 'Show password'}>{f.show ? 'Hide' : 'Show'}</button>
             </span>
             <span /><span class="muted small">{f.mode === 'signUp' ? 'At least 8 characters. Your current progress moves to the new account.' : 'Signing in loads the save stored on that account.'}</span>
-            <span /><button class="btn primary" disabled={NET.busy || !f.email || f.pass.length < 8} onClick={submit}>{NET.busy ? 'Working...' : f.mode === 'signUp' ? 'Make account' : 'Sign in'}</button>
+            <span /><button type="submit" class="btn primary" disabled={NET.busy}>{NET.busy ? 'Working...' : f.mode === 'signUp' ? 'Make account' : 'Sign in'}</button>
           </div>
-        </div>
+        </form>
       )}
-      {NET.authed && !p?.guest && (
+      {NET.authed && !p?.guest && !NET.busy && (
         <p class="row">
           <button class="btn" disabled={NET.busy} onClick={async () => { await signOut(); say('Signed out. You are sailing as a guest again'); }}>Sign out</button>
           <button class={'btn' + (arming ? ' danger' : '')} disabled={NET.busy} onClick={removeAccount}>{arming ? 'Press again to delete' : 'Delete account'}</button>

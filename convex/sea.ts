@@ -20,14 +20,14 @@ export const join = mutation({
   },
 });
 export const move = mutation({
-  args: { x: v.number(), y: v.number(), a: v.number(), boat: v.string(), paint: v.string() },
-  handler: async (ctx, { x, y, a, boat, paint }) => {
+  args: { x: v.number(), y: v.number(), a: v.number(), vx: v.optional(v.number()), vy: v.optional(v.number()), w: v.optional(v.number()), boat: v.string(), paint: v.string() },
+  handler: async (ctx, { x, y, a, vx = 0, vy = 0, w = 0, boat, paint }) => {
     const userId = await requireUser(ctx);
-    if (!finite(x, y, a) || Math.abs(x) > 1e6 || Math.abs(y) > 1e6 || boat.length > 16 || paint.length > 16) return;
+    if (!finite(x, y, a, vx, vy, w) || Math.hypot(vx, vy) > 400 || Math.abs(w) > 20 || Math.abs(x) > 1e6 || Math.abs(y) > 1e6 || boat.length > 16 || paint.length > 16) return;
     const now = Date.now(), prof = await profileOf(ctx, userId), sea = prof?.sea ?? 0;
     const p = await ctx.db.query('positions').withIndex('by_user', q => q.eq('userId', userId)).unique();
     if (p && now - p.at < MOVE_MIN_MS) return;                               // too fast: drop it
-    const row = { userId, sea, cell: cellOf(sea, x, y), x, y, a, boat, paint, name: prof?.name ?? 'Sailor', at: now, emote: p?.emote, emoteAt: p?.emoteAt };
+    const row = { userId, sea, cell: cellOf(sea, x, y), x, y, a, vx, vy, w, boat, paint, name: prof?.name ?? 'Sailor', at: now, emote: p?.emote, emoteAt: p?.emoteAt };
     if (p) await ctx.db.replace(p._id, row); else await ctx.db.insert('positions', row);
   },
 });
@@ -54,13 +54,13 @@ export const near = query({
   args: { cells: v.array(v.string()) },
   handler: async (ctx, { cells }) => {
     const userId = await getAuthUserId(ctx);
-    const out: { id: string; x: number; y: number; a: number; boat: string; paint: string; name: string; at: number; emote: number | null; emoteAt: number }[] = [];
+    const out: { id: string; x: number; y: number; a: number; vx: number; vy: number; w: number; boat: string; paint: string; name: string; at: number; emote: number | null; emoteAt: number }[] = [];
     if (!userId) return out;
     const prefix = `${(await profileOf(ctx, userId))?.sea ?? 0}|`;
     for (const cell of cells.slice(0, 9)) {
       if (!cell.startsWith(prefix)) continue;
       for (const p of await ctx.db.query('positions').withIndex('by_cell', q => q.eq('cell', cell)).take(SEA_CAP))
-        if (p.userId !== userId) out.push({ id: p._id, x: p.x, y: p.y, a: p.a, boat: p.boat, paint: p.paint, name: p.name, at: p.at, emote: p.emote ?? null, emoteAt: p.emoteAt ?? 0 });
+        if (p.userId !== userId) out.push({ id: p._id, x: p.x, y: p.y, a: p.a, vx: p.vx ?? 0, vy: p.vy ?? 0, w: p.w ?? 0, boat: p.boat, paint: p.paint, name: p.name, at: p.at, emote: p.emote ?? null, emoteAt: p.emoteAt ?? 0 });
     }
     return out;
   },

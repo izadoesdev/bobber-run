@@ -1,7 +1,6 @@
 // Keyboard and gamepad. Raw events become entries in G.keys (held) and G.pressed (this frame),
 // translated through the player's key bindings. The cheat console and key rebinding take raw typing.
 import { G, saveGame } from './game';
-import { NET } from './net';
 import { remap, bind, toggleFullscreen } from './settings';
 import { runCheat } from './cheats';
 import { unlockAudio, suspendAudio, sfx } from './audio';
@@ -71,7 +70,7 @@ export function initInput(): void {
   // browsers only allow sound after a user gesture: a click or tap counts, not just a key
   addEventListener('pointerdown', () => unlockAudio(), { capture: true });
   // save when the tab is hidden or closed (beforeunload alone is unreliable, especially on mobile), and pause sound meanwhile
-  const saveNow = () => { if (G.mode !== 'title' && !NET.skipUnloadSave) saveGame(); };
+  const saveNow = () => { if (G.mode !== 'title') saveGame(); };
   document.addEventListener('visibilitychange', () => { suspendAudio(document.hidden); if (document.hidden) { releaseAll(); saveNow(); } });
   addEventListener('pagehide', saveNow);
   addEventListener('blur', releaseAll);

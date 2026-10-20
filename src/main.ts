@@ -101,7 +101,7 @@ function frame(ts: number): void {
   tick(dt);
   requestAnimationFrame(frame);
 }
-addEventListener('beforeunload', () => { if (G.mode !== 'title' && !NET.skipUnloadSave) saveGame(); });
+addEventListener('beforeunload', () => { if (G.mode !== 'title') saveGame(); });
 
 // debug and test hooks (the Playwright suites drive the game through these)
 declare global { interface Window { BR: Record<string, unknown> } }

@@ -270,6 +270,12 @@ const SFX = {
     hiss(c, { a: 0.003, d: 0.05, vol: 0.06 * v, f: 1600, q: 0.8, pan: p });
     hiss(c, { t: 0.03, a: 0.03, d: 0.5, vol: 0.1 * v, f: 1100, f1: 400, q: 0.7, color: 'pink', pan: p, rev: 0.2 });
   },
+  slap: (c, v, p) => {                                           // two hulls meet: a flat wet smack, a hollow knock, water sloshing between
+    hiss(c, { a: 0.001, d: 0.07, vol: 0.2 * v, f: 2400, f1: 900, q: 0.9, pan: p });
+    tone(c, { f: r(230, 260), f1: 150, a: 0.002, d: 0.14, vol: 0.12 * v, type: 'triangle', lp: 1200, pan: p, rev: 0.12 });
+    tone(c, { f: 90, f1: 60, a: 0.004, d: 0.18, vol: 0.12 * v, pan: p });
+    hiss(c, { t: 0.04, a: 0.03, d: 0.35, vol: 0.07 * v, f: 900, f1: 380, q: 0.7, color: 'pink', pan: p, rev: 0.2 });
+  },
   scrape: (c, v, p) => {
     hiss(c, { a: 0.05, d: 0.35, hold: 0.1, vol: 0.055 * v, f: 480, f1: 360, q: 2, color: 'pink', pan: p });
     tone(c, { f: 70, a: 0.05, d: 0.3, vol: 0.075 * v, pan: p });
@@ -472,7 +478,7 @@ function purrBreath(c: BaseAudioContext, t0: number, len: number, vol: number, h
 
 // short text for sounds that carry information, shown when captions are on
 const CAPTION: Partial<Record<SfxName, string>> = {
-  bite: 'Bobber splashes', snap: 'Line snaps', crash: 'Hull crunches', scrape: 'Hull scrapes', thunder: 'Thunder rumbles',
+  bite: 'Bobber splashes', snap: 'Line snaps', crash: 'Hull crunches', slap: 'Boats bump', scrape: 'Hull scrapes', thunder: 'Thunder rumbles',
   gulls: 'Gulls crying', sink: 'Boat sinking', discover: 'Bell rings', purr: 'Cat purring', meow: 'Cat meows',
   whale: 'Whale song', bigsplash: 'Big splash',
 };

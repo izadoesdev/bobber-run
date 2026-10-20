@@ -5,6 +5,8 @@ import { WX } from '../weather';
 import { sfx } from '../audio';
 import { track, bucket } from '../analytics';
 import { OAR } from '../models';
+import { BOATS } from '../econ';
+import { ONLINE } from '../online';
 import type { Poi, Solid } from '../types';
 import { G, inp } from './state';
 import { boatDef, hpMax, keelLvl, speedMul, sailEff, windAngle, toWorld } from './rules';
@@ -117,6 +119,28 @@ function onImpact(speed: number, at: { x: number; y: number; nx: number; ny: num
   else if (G.boat.hp < hpMax() * 0.3) toast('Hull critical. Repair at a port', 'bad');
 }
 
+// Other sailors' boats are solid: running into one bounces you off it with a wet slap. Each client only moves its own
+// boat, so both sides bounce. Hulls are treated as circles a little shorter than the boat; nobody takes damage.
+let slapAt = 0;
+function bumpSailors(): void {
+  const b = G.boat, mine = boatDef();
+  for (const o of ONLINE.sailors) {
+    const theirs = BOATS.find(bd => bd.id === o.id) ?? mine;
+    const dx = b.x - o.x, dy = b.y - o.y, d = Math.hypot(dx, dy), reach = 0.4 * (mine.L + theirs.L);
+    if (d >= reach || d < 1e-3) continue;
+    const nx = dx / d, ny = dy / d, vn = (b.vx - o.vx) * nx + (b.vy - o.vy) * ny;
+    b.x += nx * (reach - d) * 0.5; b.y += ny * (reach - d) * 0.5;      // the other boat moves its half on its own screen
+    if (vn >= 0) continue;
+    const j = -1.4 * vn / 2;                                          // equal boats, a bouncy bump; we take half the impulse
+    b.vx += j * nx; b.vy += j * ny; b.w += (Math.random() - 0.5) * Math.min(1.2, -vn * 0.05);
+    if (-vn > 3 && G.t - slapAt > 0.35) {
+      slapAt = G.t;
+      sfx('slap', Math.min(1, 0.35 + -vn / 40));
+      G.shake = Math.max(G.shake, Math.min(2.5, -vn / 12));
+      spawn({ kind: 'dot', x: b.x - nx * reach * 0.5, y: b.y - ny * reach * 0.5, vx: jitter(20), vy: jitter(20), life: 0.4 });
+    }
+  }
+}
 export function physicsStep(dt: number): void {
   const b = G.boat, bd = boatDef();
   b.px = b.x; b.py = b.y; b.pa = b.a;
@@ -146,6 +170,7 @@ export function physicsStep(dt: number): void {
   }
   b.x += b.vx * dt; b.y += b.vy * dt;
   contacts();
+  bumpSailors();
   G.throttle = thr || rev;
   if (bd.id === 'row' && !G.fish) rowOars(dt, thr, rev, steer);
 }

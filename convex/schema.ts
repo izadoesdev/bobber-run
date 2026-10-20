@@ -14,8 +14,9 @@ export default defineSchema({
   // the coastwide fund everyone gives to; gifts track each player's total and today's giving
   fund: defineTable({ key: v.string(), total: v.number(), givers: v.number() }).index('by_key', ['key']),
   gifts: defineTable({ key: v.string(), userId: v.id('users'), amount: v.number(), day: v.optional(v.string()), today: v.optional(v.number()) }).index('by_key_user', ['key', 'userId']),
-  // other sailors, at most once a second while moving. cell = "sea|cx,cy"; stale rows are swept by a cron
-  positions: defineTable({ userId: v.id('users'), sea: v.optional(v.number()), cell: v.string(), x: v.number(), y: v.number(), a: v.number(), boat: v.string(), paint: v.string(), name: v.string(), at: v.number(),
+  // other sailors, a few times a second while moving, with velocity and turn rate so others can draw them smoothly. cell = "sea|cx,cy"; stale rows are swept by a cron
+  positions: defineTable({ userId: v.id('users'), sea: v.optional(v.number()), cell: v.string(), x: v.number(), y: v.number(), a: v.number(), vx: v.optional(v.number()), vy: v.optional(v.number()), w: v.optional(v.number()),
+    boat: v.string(), paint: v.string(), name: v.string(), at: v.number(),
     emote: v.optional(v.number()), emoteAt: v.optional(v.number()) })
     .index('by_cell', ['cell']).index('by_user', ['userId']).index('by_sea_at', ['sea', 'at']),
   // coastwide news: legendary catches and new world records

@@ -15,17 +15,19 @@ export const SAVE_KEY = 'bobber-run-save-v3';
 export const FUND_KEY = 'grand-harbour';
 
 /** Just what this module needs from the game state. */
-interface Game { mode: string; boat: { x: number; y: number; a: number }; boatId: string; paint: string }
+interface Game { mode: string; boat: { x: number; y: number; a: number; vx: number; vy: number; w: number }; boatId: string; paint: string }
 type Profile = { userId: string; name: string; guest: boolean; email: string | null; sea: number | null };
 type Fund = { total: number; givers: number; goal: number; mine: number };
 type Status = 'offline' | 'connecting' | 'online';
-type Result = { ok: true; msg?: string; reload?: boolean; name?: string } | { ok: false; why: string };
+type Result = { ok: true; msg?: string; loaded?: boolean; name?: string } | { ok: false; why: string };
+/** Set once this browser has signed into an account, so the Online screen opens on "I have an account". */
+export const HAD_ACCOUNT_KEY = 'bobber-run-had-account';
 
 export const NET = {
   on: !!URL, status: (URL ? 'connecting' : 'offline') as Status, authed: false, busy: false,
   profile: null as Profile | null, records: {} as Record<string, { name: string; kg: number }>, fund: null as Fund | null,
   news: [] as { id: string; name: string; text: string; at: number }[], err: null as string | null,
-  cloudNote: null as string | null, skipUnloadSave: false,
+  cloudNote: null as string | null,
 };
 export const EMOTES = ['Ahoy!', 'Nice catch!', 'Follow me!', 'Look over here!', 'Thanks!', 'Fair winds!', 'Good night!', 'Wow!'];
 const ADJ = ['Salty', 'Sunny', 'Misty', 'Brave', 'Quiet', 'Lucky', 'Rusty', 'Jolly', 'Sleepy', 'Wandering', 'Merry', 'Tidal'];
@@ -165,15 +167,16 @@ export async function account(flow: 'signUp' | 'signIn', rawEmail: string, passw
     }
     // wait until the server sees the new account (slow connections can take a while)
     if (!await waitFor(() => !!NET.profile && NET.profile.userId !== oldUser && !NET.profile.guest, 20_000)) return failed(flow, null);
+    try { localStorage.setItem(HAD_ACCOUNT_KEY, '1'); } catch { /* private mode */ }
     if (flow === 'signUp') {
       if (keep) await putSave(keep.data, Date.now());
-      if (oldName && oldName !== 'Sailor') await setName(oldName);
+      if (oldName && oldName !== 'Sailor') await setName(oldName, true);   // carrying the guest's name over isn't a rename
       track('account_signed_up', { kept_save: !!keep });
       return { ok: true, msg: `Account made and signed in as ${email}. Your progress is saved to it` };
     }
     const cloud = await client.query(api.saves.load, {});
     track('account_signed_in', { loaded_cloud_save: !!cloud });
-    if (cloud) { localStorage.setItem(SAVE_KEY, cloud.data); NET.skipUnloadSave = true; return { ok: true, reload: true, msg: 'Signed in. Loading your save' }; }   // the reload must not save over it
+    if (cloud) { localStorage.setItem(SAVE_KEY, cloud.data); return { ok: true, loaded: true, msg: 'Signed in. Your save is loaded' }; }   // the caller loads it into the game
     if (keep) await putSave(keep.data, Date.now());
     return { ok: true, msg: `Signed in as ${email}` };
   } catch (e) {
@@ -204,42 +207,69 @@ const cellsAround = (sea: number, x: number, y: number) => {
   for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) out.push(`${sea}|${cx + i},${cy + j}`);
   return out;
 };
-type Raw = { id: string; x: number; y: number; a: number; boat: string; paint: string; name: string; at: number; emote: number | null; emoteAt: number };
+type Raw = { id: string; x: number; y: number; a: number; vx: number; vy: number; w: number; boat: string; paint: string; name: string; at: number; emote: number | null; emoteAt: number };
 let lastSent: { x: number; y: number; a: number } | null = null, sendT = 0, inFlight = false, raw: Raw[] = [];
 const seenSailors = new Set<string>();
-/** Each sailor's last report, its estimated velocity (from the last two reports) and when it arrived here. */
-interface Track { x: number; y: number; a: number; at: number; vx: number; vy: number; recv: number }
-const tracks = new Map<string, Track>();
-const SEND_MOVING_S = 2.5, SEND_STILL_S = 10, PREDICT_MAX_S = 3;
+/**
+ * Other boats are drawn a little in the past, between two real reports, so they move smoothly however unevenly
+ * reports arrive. Each report carries the boat's velocity and turn rate, so the path between reports curves the way
+ * the boat actually moved; if reports stop, the boat coasts on for a moment before holding still.
+ */
+type Snap = { at: number; x: number; y: number; a: number; vx: number; vy: number; w: number };
+const snaps = new Map<string, Snap[]>();
+/** The server clock minus ours, from the freshest report seen (a report can't have been written in our future). */
+let clockAhead = -Infinity;
+const SEND_MOVING_S = 0.5, SEND_STILL_S = 10, BEHIND_MS = 600, COAST_MS = 1500, SNAP_DIST = 200;
+const turn = (from: number, to: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
+/** Where a boat was at server time t: a cubic curve through the reports either side, matching their velocities. */
+function sample(list: Snap[], t: number): { x: number; y: number; a: number; vx: number; vy: number } {
+  const last = list[list.length - 1];
+  if (t >= last.at) {
+    const e = Math.min(t - last.at, COAST_MS) / 1000;
+    return { x: last.x + last.vx * e, y: last.y + last.vy * e, a: last.a + last.w * e, vx: e < COAST_MS / 1000 ? last.vx : 0, vy: e < COAST_MS / 1000 ? last.vy : 0 };
+  }
+  const first = list[0];
+  if (list.length < 2 || t <= first.at) return { x: first.x, y: first.y, a: first.a, vx: 0, vy: 0 };
+  let i = list.length - 2;
+  while (i > 0 && list[i].at > t) i--;
+  const p = list[i], q = list[i + 1];
+  const span = (q.at - p.at) / 1000, u = (t - p.at) / (q.at - p.at), u2 = u * u, u3 = u2 * u;
+  const h = [2 * u3 - 3 * u2 + 1, u3 - 2 * u2 + u, -2 * u3 + 3 * u2, u3 - u2];          // Hermite basis
+  const d = [(6 * u2 - 6 * u) / span, 3 * u2 - 4 * u + 1, (6 * u - 6 * u2) / span, 3 * u2 - 2 * u];   // its derivative
+  const at = (k: 'x' | 'y', vk: 'vx' | 'vy', b: number[]) => b[0] * p[k] + b[1] * span * p[vk] + b[2] * q[k] + b[3] * span * q[vk];
+  return { x: at('x', 'vx', h), y: at('y', 'vy', h), a: p.a + turn(p.a, q.a) * u, vx: at('x', 'vx', d) / span, vy: at('y', 'vy', d) / span };
+}
 export function netTick(dt: number) {
   if (!NET.authed || !G || NET.profile?.sea == null) return;
   const b = G.boat, cells = cellsAround(NET.profile.sea, b.x, b.y);
   watch<Raw[]>('sailors', api.sea.near, { cells }, list => { raw = list; });
-  // our position: every 2.5 s while moving, every 10 s when still, one request at a time (others predict in between)
+  // our position: twice a second while moving, every 10 s when still, one request at a time
   sendT += dt;
-  const moved = !lastSent || Math.hypot(b.x - lastSent.x, b.y - lastSent.y) > 1 || Math.abs(b.a - lastSent.a) > 0.05;
+  const moved = !lastSent || Math.hypot(b.x - lastSent.x, b.y - lastSent.y) > 0.5 || Math.abs(b.a - lastSent.a) > 0.03;
   if (G.mode === 'play' && !inFlight && ((moved && sendT > SEND_MOVING_S) || sendT > SEND_STILL_S)) {
     sendT = 0; inFlight = true; lastSent = { x: b.x, y: b.y, a: b.a };
-    client!.mutation(api.sea.move, { x: b.x, y: b.y, a: b.a, boat: G.boatId, paint: G.paint }).catch(() => { }).finally(() => { inFlight = false; });
+    client!.mutation(api.sea.move, { x: b.x, y: b.y, a: b.a, vx: b.vx, vy: b.vy, w: b.w, boat: G.boatId, paint: G.paint }).catch(() => { }).finally(() => { inFlight = false; });
   }
-  // the nearest few sailors: dead-reckon from their last two reports, and glide the drawn boat toward that guess
-  const now = Date.now(), prev = new Map(ONLINE.sailors.map(s => [s.uid, s])), k = 1 - Math.exp(-4 * dt);
-  const live = raw.filter(r => now - r.at < QUIET_MS).sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y)).slice(0, MAX_SHOWN);
+  const now = Date.now(), prev = new Map(ONLINE.sailors.map(s => [s.uid, s]));
+  for (const r of raw) {
+    clockAhead = Math.max(clockAhead, r.at - now);
+    const list = snaps.get(r.id) ?? [];
+    if (!list.length || r.at > list[list.length - 1].at) list.push({ at: r.at, x: r.x, y: r.y, a: r.a, vx: r.vx, vy: r.vy, w: r.w });
+    while (list.length > 2 && list[1].at < now + clockAhead - BEHIND_MS - 2000) list.shift();
+    snaps.set(r.id, list);
+  }
+  const t = now + clockAhead - BEHIND_MS, k = 1 - Math.exp(-20 * dt);
+  const live = raw.filter(r => now + clockAhead - r.at < QUIET_MS).sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y)).slice(0, MAX_SHOWN);
   ONLINE.sailors = live.map(r => {
-    let tr = tracks.get(r.id);
-    if (!tr || tr.at !== r.at) {                                      // a new report: update the velocity estimate
-      const span = tr ? (r.at - tr.at) / 1000 : 0;
-      const vx = tr && span > 0.2 && span < 12 ? (r.x - tr.x) / span : 0, vy = tr && span > 0.2 && span < 12 ? (r.y - tr.y) / span : 0;
-      tr = { x: r.x, y: r.y, a: r.a, at: r.at, vx, vy, recv: now }; tracks.set(r.id, tr);
-    }
-    const ahead = Math.min(PREDICT_MAX_S, (now - tr.recv) / 1000), tx = tr.x + tr.vx * ahead, ty = tr.y + tr.vy * ahead;
-    const s: Sailor = prev.get(r.id) ?? { uid: r.id, id: r.boat, name: r.name, paint: r.paint, x: tx, y: ty, a: r.a, vx: 0, vy: 0, online: true, emote: null, emoteAt: 0 };
-    const px = s.x, py = s.y, da = Math.atan2(Math.sin(r.a - s.a), Math.cos(r.a - s.a));
-    s.x += (tx - s.x) * k; s.y += (ty - s.y) * k; s.a += da * k;
-    s.vx = (s.x - px) / Math.max(dt, 1e-3); s.vy = (s.y - py) / Math.max(dt, 1e-3);
+    const at = sample(snaps.get(r.id)!, t);
+    const s: Sailor = prev.get(r.id) ?? { uid: r.id, id: r.boat, name: r.name, paint: r.paint, x: at.x, y: at.y, a: at.a, vx: 0, vy: 0, online: true, emote: null, emoteAt: 0 };
+    // follow the sampled path closely; a big gap (a ferry trip, a respawn) is a real jump, so take it at once
+    if (Math.hypot(at.x - s.x, at.y - s.y) > SNAP_DIST) { s.x = at.x; s.y = at.y; s.a = at.a; }
+    else { s.x += (at.x - s.x) * k; s.y += (at.y - s.y) * k; s.a += turn(s.a, at.a) * k; }
+    s.vx = at.vx; s.vy = at.vy;
     Object.assign(s, { id: r.boat, paint: r.paint, name: r.name, emote: r.emote, emoteAt: r.emoteAt });   // id = boat model, as the renderer expects
     if (!seenSailors.has(r.id)) { seenSailors.add(r.id); if (seenSailors.size > 1 || G!.mode === 'play') toast(`${r.name} sailed into view`); }
     return s;
   });
-  for (const id of tracks.keys()) if (!live.some(r => r.id === id)) tracks.delete(id);
+  for (const id of snaps.keys()) if (!raw.some(r => r.id === id)) snaps.delete(id);
 }
