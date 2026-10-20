@@ -14,6 +14,7 @@ import { boatDef, canLand, cap, catchNeed, crewLvl, env, harpoonLvl, isNight, li
 import { addCoins, burst, jitter, spawn, toast } from './feedback';
 import { placeAtPort, saveGame } from './save';
 import { schoolActive, takeFish } from './schools';
+import { isRunningNow } from '../tides';
 
 /** Fight tuning: how hard tension climbs while reeling, and how much surges add. Exposed on BR for tweaking. */
 export const TUNE = { k: 1.5, surge: 0.55 };
@@ -123,7 +124,8 @@ function castStage(f: FishLine): void {
   f.st = 'wait'; f.t = 0;
   const rod = G.up.rod, sp = SPECIES[f.s.sp];
   const baitMul = (f.bait === 'glow' && isNight() ? 0.5 : f.bait ? 0.75 : 1) * (f.bait === favBait(sp) ? 0.8 : 1);
-  f.wait = Math.max(0.4, 1 - 0.15 * G.dry) * (1.4 + Math.random() * 2.6) * (1 - 0.1 * rod) * (f.frenzy ? 0.4 : 1) * baitMul * biteMul() * (1 - 0.12 * G.up.tackle);
+  f.wait = Math.max(0.4, 1 - 0.15 * G.dry) * (1.4 + Math.random() * 2.6) * (1 - 0.1 * rod) * (f.frenzy ? 0.4 : 1) * baitMul * biteMul() * (1 - 0.12 * G.up.tackle)
+    * (isRunningNow(SPECIES[f.s.sp].id) ? 0.75 : 1);           // this week's running fish bite sooner
   f.teases = TEASES[sp.fight]().filter(before => before < f.wait - 0.3);
   spawn({ kind: 'ring', x: f.tx, y: f.ty, life: 0.9, r0: 1, grow: 5 });
   sfx('plop', 0.5);
