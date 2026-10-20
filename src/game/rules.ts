@@ -2,16 +2,26 @@
 import { nA } from '../noise';
 import { WX } from '../weather';
 import { SPECIES, BOATS } from '../econ';
-import type { BoatDef, Env, Fish, ProjectId } from '../types';
+import type { BoatDef, Env, Fish, ProjectId, UpgradeKey } from '../types';
 import { G } from './state';
 
 const frac = (x: number): number => x - Math.floor(x);
 
 // ---------- boat and gear ----------
+// how much one level of each stat upgrade adds (the shop quotes these numbers)
+const PROP_STEP = 0.12, HULL_STEP = 0.25, HOLD_STEP = 2, LINE_STEP = 0.12, ICE_STEP = 0.05;
 // boatId always names a BOATS entry (saves only ever store ids from that list)
 export const boatDef = (): BoatDef => BOATS.find(b => b.id === G.boatId)!;
-export const cap = (): number => boatDef().hold + 2 * G.up.hold;
-export const hpMax = (): number => Math.round(boatDef().hp * (1 + 0.25 * G.up.hull) * (keelLvl() >= 2 ? 1.25 : 1));
+/** A boat's numbers with your upgrades fitted (any boat, so the shipyard can compare). */
+export function boatStats(bd: BoatDef = boatDef()): { speed: number; hold: number; hp: number; turn: number; accel: number } {
+  const keel = Math.max(G.up.keel, bd.keel ?? 0);
+  return {
+    speed: bd.speed * (1 + PROP_STEP * G.up.prop), hold: bd.hold + HOLD_STEP * G.up.hold,
+    hp: Math.round(bd.hp * (1 + HULL_STEP * G.up.hull) * (keel >= 2 ? 1.25 : 1)), turn: bd.turn, accel: bd.accel,
+  };
+}
+export const cap = (): number => boatStats().hold;
+export const hpMax = (): number => boatStats().hp;
 // gear a ship carries built in counts like the upgrade
 const built = (k: 'crew' | 'keel' | 'harpoon'): number => boatDef()[k] ?? 0;
 export const crewLvl = (): number => Math.max(G.up.deckhand, built('crew'));
@@ -20,13 +30,50 @@ export const harpoonLvl = (): number => Math.max(G.up.harpoon, built('harpoon'))
 export const sonarLvl = (): number => Math.max(G.up.sonar, boatDef().sonar);
 export const netLvl = (): number => Math.max(G.up.net, boatDef().net);
 export const projDone = (id: ProjectId): boolean => G.projects.includes(id);
-export const speedMul = (): number => boatDef().speed * (1 + 0.12 * G.up.prop);
+export const speedMul = (): number => boatStats().speed;
 export const lightR = (): number => 21 + 19 * G.up.lantern;
-export const lineMax = (): number => 1 + 0.12 * G.up.line;
+export const lineMax = (): number => 1 + LINE_STEP * G.up.line;
 export const contractSlots = (): number => 3 + G.up.quarter;
 // fish never spoil; the ice box keeps them prime and worth a little more
-export const fishValue = (f: Fish): number => Math.round(f.value * (1 + 0.05 * G.up.ice));
+export const fishValue = (f: Fish): number => Math.round(f.value * (1 + ICE_STEP * G.up.ice));
 export const logged = (): number => SPECIES.filter(s => G.log[s.id]).length;
+
+// ---------- what an upgrade level amounts to (the outfitter's "now -> next" line) ----------
+// Effects that live in fishing/sailing code are quoted from there: reel, tackle, net, pots, bilge, radio, deckhand, harpoon, bell.
+const BUILT_IN: Partial<Record<UpgradeKey, 'sonar' | 'net' | 'crew' | 'keel' | 'harpoon'>> = { sonar: 'sonar', net: 'net', deckhand: 'crew', keel: 'keel', harpoon: 'harpoon' };
+/** The level of gear the current boat carries for upgrade `k` without buying it. */
+export const builtIn = (k: UpgradeKey): number => { const b = BUILT_IN[k]; return b ? boatDef()[b] ?? 0 : 0; };
+const pct = (n: number): string => `${Math.round(n * 100)}%`;
+const UPGRADE_STAT: Record<UpgradeKey, [string, (l: number) => string]> = {
+  prop: ['Top speed', l => pct(boatDef().speed * (1 + PROP_STEP * l))],
+  hull: ['Hull', l => `${Math.round(boatDef().hp * (1 + HULL_STEP * l) * (keelLvl() >= 2 ? 1.25 : 1))} points`],
+  hold: ['Hold', l => `${boatDef().hold + HOLD_STEP * l} fish`],
+  bilge: ['Pump', l => ['off', '1 hull point / 4 s', '1 hull point / 1.4 s'][l]],
+  anchor: ['Anchor', l => l ? 'holds you still' : 'none'],
+  net: ['Drift net', l => ['none', '1 fish / 3.6 s', '1 fish / 2.9 s', '1 fish / 2.2 s'][l]],
+  rod: ['Species you can catch', l => `${SPECIES.filter(s => s.rod <= l).length} of ${SPECIES.length}`],
+  reel: ['Reeling speed', l => pct(1 + 0.12 * l)],
+  line: ['Line strength', l => pct(1 + LINE_STEP * l)],
+  tackle: ['Wait for a bite', l => pct(1 - 0.12 * l)],
+  ice: ['Fish value', l => pct(1 + ICE_STEP * l)],
+  sonar: ['Sonar', l => ['off', 'schools', 'schools by species', 'species and legends'][l]],
+  lantern: ['Night light', l => `${((21 + 19 * l) / 21).toFixed(1)}x reach`],
+  spyglass: ['Charting range', l => `${[1, 1.5, 2][l]}x`],
+  sextant: ['Sextant', l => ['off', 'points to the nearest', 'marks them all'][l]],
+  radio: ['Feeding frenzies', l => l ? 'every 45 to 80 s' : 'every 70 to 120 s'],
+  deckhand: ['Bonus catch', l => pct([0, 0.25, 0.4][l]) + ' chance'],
+  cook: ['Sale price', l => `+${10 * l}%`],
+  quarter: ['Contracts', l => `${3 + l} at once, pay +${15 * l}%`],
+  pots: ['Crab pots', l => ['none', '1 crab / 4 min', '1 crab / 2.5 min', '1 crab / min'][l]],
+  keel: ['Storm push', l => pct([1, 0.5, 0][l])],
+  harpoon: ['Giants land', l => `${pct(1 + 0.25 * l)} speed`],
+  bell: ['Daily re-dive', l => ['none', '60% of the loot', '120% of the loot'][l]],
+};
+/** The stat upgrade `k` changes and its value at level `l` (gear built into the current boat counts as a floor). */
+export function upgradeStat(k: UpgradeKey, l: number): [string, string] {
+  const [stat, at] = UPGRADE_STAT[k];
+  return [stat, at(Math.max(l, builtIn(k)))];
+}
 
 /** What the boat should visibly carry (levels the models draw). */
 export interface Equipment {

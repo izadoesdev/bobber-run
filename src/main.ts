@@ -19,6 +19,7 @@ import { updateLife, LIFE } from './life';
 import { WX, setWeather } from './weather';
 import { initInput, pollPad } from './input';
 import { menuInput } from './menus';
+import { screenScale, zoomLevel } from './camera';
 
 const screen = document.getElementById('screen') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLDivElement;
@@ -26,11 +27,13 @@ initRender(screen); initUI(uiRoot); applySettings();
 initNet(G, SPECIES.map(s => s.id), toast);
 initInput();
 
-// Fill the window: an integer screen scale S keeps about 320x200 world units in view, and the view
-// grows to the window's shape so W*S x H*S just covers it (the stage crops the last few pixels).
+// Fill the window: an integer screen scale S keeps the ship's view in sight (about 320x200 world
+// units for the rowboat, more for bigger ships or when zoomed out), and the view grows to the
+// window's shape so W*S x H*S just covers it (the stage crops the last few pixels).
+let fittedZoom = 0;
 function fit(): void {
   const dpr = window.devicePixelRatio || 1, iw = innerWidth * dpr, ih = innerHeight * dpr;
-  const S = Math.max(1, Math.round(Math.min(iw / 320, ih / 200)));
+  const S = screenScale(iw, ih); fittedZoom = zoomLevel();
   setView(Math.ceil(iw / S), Math.ceil(ih / S));
   R.S = S; screen.width = W * S; screen.height = H * S;
   const cw = W * S / dpr, ch = H * S / dpr;
@@ -52,6 +55,7 @@ function panChart(dt: number): void {
   if (k.ArrowDown || k.s) G.map.y += s;
 }
 export function tick(dt: number): void {
+  if (zoomLevel() !== fittedZoom) fit();               // a new ship or a zoom step changes the view
   pollPad();
   menuInput(dt, fit);
   let alpha = 1;

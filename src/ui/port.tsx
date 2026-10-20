@@ -1,8 +1,12 @@
 // The port screen: tabbed shop lists on wood, the selected item's details on parchment.
 import { G, portItems, portTabs, projDone, setTab, leavePort, hpMax, equipment, fishValue, priceAt } from '../game';
-import { SPECIES, BOATS } from '../econ';
+import { boatDef, boatStats, builtIn, upgradeStat } from '../game/rules';
+import { saleBonus, sailorsNear } from '../game/port';
+import { SPECIES } from '../econ';
+import { NET } from '../net';
+import { CREW_RANGE } from '../online';
 import { WX } from '../weather';
-import type { Fish as FishT, NeedStatus, Port as PortT, PortItem, PortRow, Project } from '../types';
+import type { BoatDef, Fish as FishT, NeedStatus, Port as PortT, PortItem, PortRow, Project, UpgradeKey } from '../types';
 import { drawChart } from './chart';
 import { Bar, Canvas, Fish, Hint, Icon, Key, Pips, boatPreview, boatThumb, cap1, flashing, money, useScrollTo } from './parts';
 
@@ -45,12 +49,13 @@ function SellDetail({ p }: { p: PortT }) {
   const groups: Record<number, FishT[]> = {};
   for (const f of G.hold) (groups[f.sp] = groups[f.sp] || []).push(f);
   const best = SPECIES.map((s, i) => ({ s, m: p.mult[i] })).filter(o => G.log[o.s.id]).sort((a, b) => b.m - a.m).slice(0, 3);
+  const bonus = saleBonus(), mul = (1 + bonus.cook) * (1 + bonus.crew), sailors = sailorsNear(G.boat.x, G.boat.y);
   return (
     <div class="d-body">
       {Object.keys(groups).length
         ? <div class="ledger">{Object.entries(groups).map(([key, fs]) => {
           const sp = +key, m = p.mult[sp], pct = Math.round((m - 1) * 100);
-          const each = Math.round(fs.reduce((a, f) => a + fishValue(f), 0) / fs.length * priceAt(p, sp) * (1 + 0.1 * G.up.cook));
+          const each = Math.round(fs.reduce((a, f) => a + fishValue(f), 0) / fs.length * priceAt(p, sp) * mul);
           return (
             <div class="row">
               <Fish sp={sp} size="s" /><span class="grow">{SPECIES[sp].name} ×{fs.length}</span>
@@ -60,6 +65,11 @@ function SellDetail({ p }: { p: PortT }) {
           );
         })}</div>
         : <p>Nothing in the hold yet.</p>}
+      {(G.up.ice > 0 || bonus.cook > 0) && <p class="small">Included: {[G.up.ice > 0 && `ice box +${5 * G.up.ice}%`, bonus.cook > 0 && `cook +${Math.round(bonus.cook * 100)}%`].filter(Boolean).join(', ')}.</p>}
+      {bonus.crew > 0
+        ? <p class="small good">Crew bonus +{Math.round(bonus.crew * 100)}%: {sailors} sailor{sailors === 1 ? '' : 's'} nearby</p>
+        : NET.on && <p class="small muted">Crew bonus: +5% per sailor within {CREW_RANGE / 10} m, up to +15%.</p>}
+      <p class="small muted">Prices are per fish. Each one of a kind sold here lowers its price 7% for a few minutes.</p>
       {best.length > 0 && <p class="muted">This port pays well for {best.map(o => o.s.name).join(', ')}.</p>}
     </div>
   );
@@ -104,35 +114,58 @@ function DetailVisual({ p, it }: { p: PortT; it: PortRow }) {
   return <div class="d-icon"><Icon k={it.icon} size="xl" /></div>;
 }
 
-const MAX_BOAT = BOATS[BOATS.length - 1];
+const pct = (n: number): string => Math.round(n * 100) + '%';
+/** "+8" / "-12%" style change, coloured by direction. */
+function Delta({ d, rel }: { d: number; rel?: boolean }) {
+  const v = rel ? Math.round(d * 100) : Math.round(d);
+  if (!v) return <span class="num muted">same</span>;
+  return <span class={'num ' + (v > 0 ? 'good' : 'bad')}>{v > 0 ? '+' : ''}{v}{rel ? '%' : ''}</span>;
+}
+const STAT_ROWS: [string, (s: ReturnType<typeof boatStats>) => number, (v: number) => string, boolean][] = [
+  ['Top speed', s => s.speed, pct, true], ['Hold', s => s.hold, v => v + ' fish', false], ['Hull', s => s.hp, v => String(v), false],
+  ['Turning', s => s.turn, pct, true],
+];
+const GEAR_NAMES: [keyof BoatDef, string][] = [['net', 'net'], ['sonar', 'sonar'], ['crew', 'deckhand'], ['keel', 'keel'], ['harpoon', 'harpoon']];
+// a boat against the one you sail now, both with your upgrades fitted
+function BoatCompare({ b }: { b: BoatDef }) {
+  const cur = boatDef(), mine = boatStats(cur), it = boatStats(b), same = cur.id === b.id;
+  const gear = GEAR_NAMES.filter(([k]) => (b[k] as number | undefined ?? 0) > 0).map(([k, n]) => `level ${b[k]} ${n}`);
+  return (
+    <>
+      <div class="ledger">
+        {STAT_ROWS.map(([n, get, fmt, rel]) => (
+          <div class="row"><span class="caps grow">{n}</span>
+            {!same && <><span class="muted">{fmt(get(mine))}</span><span class="muted">to</span></>}<span>{fmt(get(it))}</span>
+            {!same && <Delta d={rel ? get(it) / get(mine) - 1 : get(it) - get(mine)} rel={rel} />}
+          </div>
+        ))}
+      </div>
+      <p>{b.what}.{gear.length > 0 && ` Built in: ${gear.join(', ')}.`}</p>
+    </>
+  );
+}
+function UpgradeDetail({ k, lvl, max, next }: { k: UpgradeKey; lvl: number; max: number; next: string | null | undefined }) {
+  const [stat, now] = upgradeStat(k, lvl), after = lvl < max ? upgradeStat(k, lvl + 1)[1] : null, b = builtIn(k);
+  return (
+    <>
+      <div class="checklist">
+        <span class="caps">{stat}</span>
+        <div class="row wrap"><span>{now}</span>{after && after !== now && <><span class="muted">to</span><span class="good">{after}</span></>}</div>
+      </div>
+      {next && <p><span class="caps">Next</span> {k === 'rod' ? `Level ${lvl + 2} rod. New fish: ${SPECIES.filter(s => s.rod === lvl + 1 && s.w > 0).map(s => s.name).join(', ')}` : next}.</p>}
+      {b > lvl && <p class="warn small">Your {boatDef().name} already has level {b} built in, so levels up to {b} only help on boats without it.</p>}
+      {k === 'prop' && <p class="muted small">100% is a plain rowboat. Speed upgrades carry over to every boat.</p>}
+    </>
+  );
+}
 
 // the kind-specific middle of the detail card
 function DetailBody({ it }: { it: PortRow }) {
   switch (it.kind) {
-    case 'upgrade': {
-      if (!it.pips) return null;
-      return (
-        <>
-          <div class="row"><Pips n={it.pips[0]} of={it.pips[1]} /><span class="muted">Level {it.pips[0] + 1} of {it.pips[1] + 1}</span></div>
-          <p><span class="caps">Now</span> {it.now}</p>
-          {it.what && <p><span class="caps">Next</span> <span class="good">{it.what}</span></p>}
-          {it.key !== 'keel' && <p class="muted small">Fitted gear shows on your boat.</p>}
-        </>
-      );
-    }
-    case 'boat': {
-      const b = it.boat;
-      if (!b) return null;
-      const stats: [string, number, (string | number)?][] = [
-        ['Speed', b.speed / MAX_BOAT.speed], ['Hold', b.hold / MAX_BOAT.hold, b.hold + ' fish'], ['Hull', b.hp / MAX_BOAT.hp, b.hp], ['Turning', b.turn / 1.05],
-      ];
-      return (
-        <>
-          {stats.map(([n, k, v]) => <div class="stat"><span class="caps">{n}</span><Bar k={k} tone="gold" /><span class="num">{v || ''}</span></div>)}
-          <p>{b.what}.</p>
-        </>
-      );
-    }
+    case 'upgrade':
+      return it.pips && it.key ? <UpgradeDetail k={it.key as UpgradeKey} lvl={it.pips[0]} max={it.pips[1]} next={it.what} /> : null;
+    case 'boat':
+      return it.boat ? <BoatCompare b={it.boat} /> : null;
     case 'repair':
       return (
         <>
@@ -151,6 +184,7 @@ function DetailBody({ it }: { it: PortRow }) {
         </>
       );
     case 'rest':
+    case 'paint':
     case 'fleet':
     case 'collect':
     case 'fund':

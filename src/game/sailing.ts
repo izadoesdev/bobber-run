@@ -6,9 +6,6 @@ import { WX, updateWeather } from '../weather';
 import { SPECIES, SP, SUPPLIES } from '../econ';
 import { sfx, soundscape, music } from '../audio';
 import { SET } from '../prefs';
-import { NET, readBottle, BOTTLE_MSGS } from '../net';
-import { ONLINE } from '../online';
-import { talk } from '../story';
 import { FUNNEL } from '../models';
 import type { BaitChoice, Crate, Poi, TreasureMap, WeatherState, Wreck } from '../types';
 import { G, hit } from './state';
@@ -17,6 +14,7 @@ import { addCoins, burst, celebrate, jitter, spawn, toast } from './feedback';
 import { checkGoals } from './goals';
 import { placeAtPort, portById, saveGame } from './save';
 import { endlessStock, idleOk, landNetted, nearestSchool, schoolActive, tryCast, updateFishing, updateFrenzy, useChum } from './fishing';
+import { swimSchools, updateSchools } from './schools';
 import { dock, updateFleet } from './port';
 
 // ---------- landmarks ----------
@@ -124,6 +122,7 @@ export function update(dt: number): void {
     return;
   }
   tickSound(dt);
+  swimSchools(dt);
   if (G.mode !== 'title') updateFleet(dt);
   if (G.mode !== 'play') { G.prompt = null; return; }
   G.clock += dt;
@@ -142,20 +141,14 @@ export function update(dt: number): void {
   if ((G.saveT += dt) > 15) { G.saveT = 0; saveGame(); }
 }
 
-/** Crab pots and the drift net fill the hold on their own; schools refill, and engines spook them. */
+/** Crab pots and the drift net fill the hold on their own; schools refill, and fast engines scatter them. */
 function autoCatches(dt: number, speed: number): void {
   const b = G.boat, bd = boatDef();
   if (G.up.pots > 0 && G.hold.length < cap() && !G.fish && (G.potT += dt) > [0, 240, 150, 60][G.up.pots]) {
     G.potT = 0;
     landNetted(SP.crab, endlessStock(), 'POTS');
   }
-  for (const s of schoolsNear(b.x, b.y, 260)) {
-    if (s.stock <= 0 && G.t > s.respawn) s.stock = s.max;
-    if (bd.prop === 'ENGINE' && speed > 22 && Math.hypot(s.x - b.x, s.y - b.y) < 60 && schoolActive(s) && !(G.frenzy?.s === s)) {
-      s.spooked = G.t + 25;
-      if (G.spookCd <= 0) { G.spookCd = 20; toast('Your engine spooked a school. Slow down near fish', 'bad'); }
-    }
-  }
+  updateSchools(speed, dt);
   if (netLvl() > 0 && !G.fish && speed > 3 && speed < 20 && G.hold.length < cap()) {   // the net only works at a slow drift
     const s = schoolsNear(b.x, b.y, 40).find(q => schoolActive(q) && SPECIES[q.sp].rod === 0 && Math.hypot(q.x - b.x, q.y - b.y) < 10 + bd.B * 2);
     if (s && (G.netT += dt) > [0, 3.6, 2.9, 2.2][netLvl()]) { G.netT = 0; landNetted(s.sp, s); }
@@ -174,7 +167,6 @@ function scanSurroundings(): void {
     if (p.type === 'wreck' && (!G.salvaged.has(p.id) || (G.up.bell > 0 && G.dives[p.id] !== dayNum())) && d < 30 + bd.L * 0.5) G.nearWreck = p;
   }
   G.nearSchool = G.fish ? null : nearestSchool();
-  G.nearBottle = ONLINE.bottles.find(o => !G.readBottles.has(o.id) && o.userId !== NET.profile?.userId && Math.hypot(o.x - b.x, o.y - b.y) < 12 + bd.B) || null;
   G.nearTreasure = G.maps.find(m => Math.hypot(m.x - b.x, m.y - b.y) < 16 + bd.L * 0.6) || null;
   for (const c of cratesNear(b.x, b.y, 120)) {
     if (c.taken) { if (G.t > c.respawn) c.taken = false; continue; }
@@ -193,11 +185,13 @@ function promptFor(speed: number): string | null {
       if (idleOk(SPECIES[f.s.sp]) && !f.reelOn) return 'It will tire itself out. Hold [SPACE] to reel faster';
       return 'Hold [SPACE] to reel. Let go before the line snaps';
     }
-    if (f.st === 'bite') return 'Strike now! [SPACE]';
-    if (f.st === 'wait') return 'Wait for the bobber to dip';
+    if (f.st === 'bite') return f.run !== undefined ? 'It runs with the bait. Strike! [SPACE]' : 'Strike now! [SPACE]';
+    if (f.st === 'wait') {
+      if (f.teaseT !== undefined && G.t - f.teaseT < 0.9) return 'A nibble... wait for the real bite';
+      return f.hint ? `Wait for the bobber to dip. ${f.hint}` : 'Wait for the bobber to dip';
+    }
     return null;
   }
-  if (G.nearBottle) return speed < 14 ? '[E] Read the message in a bottle' : 'Slow down to fish out the bottle';
   if (G.nearPort) return speed < 14 ? `[E] Dock at ${G.nearPort.name}` : 'Slow down to dock';
   if (G.nearTreasure) return speed < 12 ? '[E] Haul up the treasure chest' : 'Slow down over the X';
   if (G.nearWreck) return speed < 12 ? `[E] Salvage the ${G.nearWreck.name.replace('Wreck of the ', '')}` : 'Slow down to salvage';
@@ -211,12 +205,7 @@ function promptFor(speed: number): string | null {
 const BAIT_ORDER: BaitChoice[] = ['none', 'shrimp', 'glow'];
 function handleActions(dt: number, speed: number): void {
   const f = G.fish;
-  if (G.nearBottle && speed < 14 && hit('e', 'E', 'Enter')) {           // read a message another sailor left
-    const o = G.nearBottle;
-    G.readBottles.add(o.id); readBottle(o.id); sfx('splash', 0.5);
-    talk([['bottle', `"${BOTTLE_MSGS[o.msg] || '...'}" Signed, ${o.name}.`]]);
-    G.pressed.clear();
-  }
+
   if (hit('e', 'E', 'Enter')) {
     if (G.nearPort && speed < 14) dock(G.nearPort);
     else if (G.nearTreasure && speed < 12) haul(G.nearTreasure);

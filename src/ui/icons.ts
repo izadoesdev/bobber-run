@@ -358,16 +358,7 @@ const BUILD: Record<string, () => Vox> = {
     V.box(0, 0, 0, 0, 10, 11, M.iron);
     return V;
   },
-  bottle: () => {
-    const V = new Vox(-6, 6, -2, 2, 6);
-    for (let u = -4; u <= 2; u++) for (let v = -2; v <= 2; v++) for (let z = 0; z <= 4; z++) {
-      if (Math.hypot(v, z - 2) <= 2.2) V.set(u, v, z, X.green);
-    }
-    V.box(-2, 0, 0, 0, 2, 3, X.paper);
-    V.box(3, 4, -1, 1, 1, 3, X.green);
-    V.box(5, 5, -1, 1, 1, 3, M.post);
-    return V;
-  },
+
   // story portraits: head and shoulders, facing the viewer
   maren: () => bust(M.navy, M.iron, M.iron),
   ida: () => bust(X.green, M.post, null),
@@ -385,8 +376,8 @@ const BUILD: Record<string, () => Vox> = {
 };
 
 const cache = new Map<string, string>();
-// portraits and the bottle are drawn face-on; everything else at a three-quarter turn
-const FACE_ON = new Set(['maren', 'ida', 'tobias', 'wren', 'nell', 'bottle']);
+// portraits are drawn face-on; everything else at a three-quarter turn
+const FACE_ON = new Set(['maren', 'ida', 'tobias', 'wren', 'nell']);
 
 // render, then crop to the drawn pixels so icons fill their boxes
 function toURL(V: Vox, angle = -0.55): string {

@@ -1,13 +1,14 @@
 // Ports: the market, outfitter, shipyard, fleet office, ferry and Alderhaven's harbour projects,
 // plus contracts, the inn, harbourmaster gifts, docking and the port menu.
 import { homePort, poisNear } from '../world';
-import { SPECIES, SP, BOATS, UPGRADES, UPGRADE_KEYS, UP_CATS, PAINTS, SUPPLIES, BAIT_KINDS, PROJECTS } from '../econ';
+import { SPECIES, SP, BOATS, UPGRADES, UPGRADE_KEYS, UP_CATS, PAINTS, SUPPLIES, BAIT_KINDS, PROJECTS, FLEET_PER_MIN, FLEET_HOLD_MIN } from '../econ';
 import { sfx } from '../audio';
 import { NET, netGive } from '../net';
+import { CREW_RANGE, ONLINE, crewBonus } from '../online';
 import { BOAT_MODELS } from '../models';
-import type { BaitKind, BoatDef, Contract, Fish, NeedStatus, Paint, Point, Port, PortItem, PortRow, Project, ProjectNeed, UpgradeKey } from '../types';
+import type { BaitKind, BoatDef, BoatId, Contract, Fish, NeedStatus, Paint, Point, Port, PortItem, PortRow, Project, ProjectNeed, UpgradeKey } from '../types';
 import { G, hit } from './state';
-import { boatDef, cap, contractSlots, DAYLEN, dayFrac, dayNum, fishValue, hpMax, projDone } from './rules';
+import { boatDef, boatStats, cap, contractSlots, DAYLEN, dayFrac, dayNum, fishValue, hpMax, projDone } from './rules';
 import { addCoins, celebrate, markBought, toast, tooPoor } from './feedback';
 import { placeAtPort, portById, saveGame } from './save';
 
@@ -26,12 +27,16 @@ function reserved(): Set<Fish> {
   }
   return keep;
 }
+/** Other players' boats within crew range of a point. */
+export const sailorsNear = (x: number, y: number): number => ONLINE.sailors.filter(s => Math.hypot(s.x - x, s.y - y) < CREW_RANGE).length;
+/** Everything a sale is multiplied by besides the port's price: the cook's smoking and the crew bonus for sailors nearby. */
+export const saleBonus = (): { cook: number; crew: number } => ({ cook: 0.1 * G.up.cook, crew: crewBonus(G.boat.x, G.boat.y) });
 export function saleValue(p: Port): { tot: number; n: number; kept: number } {
-  const keep = reserved(), sold: Record<number, number> = {};
+  const keep = reserved(), sold: Record<number, number> = {}, b = saleBonus(), mul = (1 + b.cook) * (1 + b.crew);
   let tot = 0, n = 0;
   for (const f of G.hold) {
     if (keep.has(f)) continue;
-    tot += Math.round(fishValue(f) * priceAt(p, f.sp, sold[f.sp] || 0) * (1 + 0.1 * G.up.cook));
+    tot += Math.round(fishValue(f) * priceAt(p, f.sp, sold[f.sp] || 0) * mul);
     sold[f.sp] = (sold[f.sp] || 0) + 1;
     n++;
   }
@@ -197,13 +202,16 @@ function fundProject(pr: Project): void {
 }
 
 // ---------- the fleet office: spare boats fish on their own ----------
-const fleetRate = (bd: BoatDef): number => bd.hold * 0.025 * (1 + 0.15 * BOATS.indexOf(bd));   // coins per second of play
-const fleetCap = (bd: BoatDef): number => Math.round(fleetRate(bd) * 600);                      // ten minutes of earnings at most
+// A fleet boat earns a fixed, modest rate (well under what you make fishing with your best boat), only while you are
+// at sea, and holds at most FLEET_HOLD_MIN minutes of catch until collected: idling in port or in a menu earns nothing.
+export const fleetPerMin = (bd: BoatDef): number => FLEET_PER_MIN[bd.id];
+const fleetCap = (bd: BoatDef): number => fleetPerMin(bd) * FLEET_HOLD_MIN;
 export const fleetTotal = (): number => Object.values(G.fleet).reduce((a, f) => a + Math.floor(f.earned), 0);
 export function updateFleet(dt: number): void {
+  if (G.mode !== 'play') return;
   for (const [id, f] of Object.entries(G.fleet)) {
     const bd = BOATS.find(b => b.id === id);
-    if (bd) f.earned = Math.min(fleetCap(bd), f.earned + fleetRate(bd) * dt);
+    if (bd) f.earned = Math.min(fleetCap(bd), f.earned + fleetPerMin(bd) / 60 * dt);
   }
 }
 function collectFleet(): void {
@@ -251,10 +259,11 @@ type Rows = PortItem[];
 const header = (items: Rows, label: string): void => { items.push({ kind: 'header', label }); };
 
 function marketItems(p: Port, items: Rows): void {
-  const sv = saleValue(p);
+  const sv = saleValue(p), crew = saleBonus().crew;
   header(items, 'SELL');
   items.push({
-    kind: 'sell', icon: 'coin', label: 'Sell your catch', sub: sv.n ? `${sv.n} fish${sv.kept ? `, ${sv.kept} kept for contracts` : ''}` : 'Your hold is empty',
+    kind: 'sell', icon: 'coin', label: 'Sell your catch',
+    sub: sv.n ? `${sv.n} fish${sv.kept ? `, ${sv.kept} kept for contracts` : ''}${crew ? `, crew bonus +${Math.round(crew * 100)}%` : ''}` : 'Your hold is empty',
     right: sv.n ? '+' + cash(sv.tot) : '', ok: sv.n > 0, why: sv.n ? '' : (sv.kept ? 'Every fish is kept back for a contract' : 'Your hold is empty. Go fishing!'),
     action: 'Sell all', act: () => sell(p),
   });
@@ -267,11 +276,12 @@ function marketItems(p: Port, items: Rows): void {
     });
   }
   for (const c of offersAt(p)) {
-    const full = G.active.length >= contractSlots(), name = SPECIES[c.sp].name;
+    const full = G.active.length >= contractSlots(), name = SPECIES[c.sp].name, weak = SPECIES[c.sp].rod > G.up.rod;
     items.push({
       kind: 'take', c, fish: c.sp, label: `${c.n} ${name}`, sub: `Bring them to ${c.toName}`, right: cash(contractPay(c)), ok: !full,
-      why: full ? `You can hold ${contractSlots()} contracts at once` : '', action: 'Take contract', act: () => take(p, c),
-      what: `Catch ${c.n} ${name} and bring them to ${c.toName}. You are holding ${G.active.length} of ${contractSlots()} contracts.`,
+      why: full ? `You already hold ${contractSlots()} contracts. The Quartermaster adds more` : '', action: 'Take contract', act: () => take(p, c),
+      what: `Catch ${c.n} ${name} (${SPECIES[c.sp].where.toLowerCase()}) and bring them to ${c.toName} for ${cash(contractPay(c))}.`
+        + `${weak ? ` You need a level ${SPECIES[c.sp].rod + 1} rod for them.` : ''} The best ${name} in your hold are kept back from sale. You hold ${G.active.length} of ${contractSlots()} contracts.`,
     });
   }
   header(items, 'INN');
@@ -279,24 +289,25 @@ function marketItems(p: Port, items: Rows): void {
   items.push({
     kind: 'rest', icon: day ? 'lantern' : 'sun', label: day ? 'Rest until dusk' : 'Sleep until morning', sub: day ? 'Night fish come out after dark' : 'Day fish return at dawn',
     right: 'Free', ok: true, action: 'Rest', act: rest,
-    what: day ? 'Pass the afternoon by the stove. Some fish only bite at dusk or at night.' : 'Get a good night\'s sleep and set out at first light.',
+    what: day ? 'Skip ahead to dusk. Squid, herring, crabs and other night fish only bite after dark.' : 'Sleep until first light, when the day fish return.',
   });
   header(items, 'SUPPLIES');
   const miss = hpMax() - G.boat.hp, rc = repairCost();
   items.push({
     kind: 'repair', icon: 'repair', label: 'Repair hull', sub: `${G.boat.hp} of ${hpMax()} hull`, cost: rc, right: miss > 0 ? cash(rc) : 'Sound', ok: miss > 0 && G.coins > 0,
     why: miss <= 0 ? 'Your hull is in good shape' : G.coins <= 0 ? 'You have no coins' : '', action: 'Repair', act: repair,
-    what: 'Patch up your hull. If you are short on coin, you get a partial repair.',
+    what: `Patches every missing hull point for ${cash(REPAIR_PER_HP * 100)} per 100 points. Short on coin? You get a partial repair. At 0 hull you sink and are towed home.`,
   });
   for (const k of BAIT_KINDS) {
     const it = SUPPLIES[k];
     items.push({
       kind: 'supply', key: k, icon: k, label: `${it.name} ×${it.n}`, sub: `You have ${G.bait[k] || 0}`, cost: it.cost, right: cash(it.cost), ok: G.coins >= it.cost,
-      why: short(it.cost), action: 'Buy', act: () => buySupply(k), what: it.what, repeat: true,
+      why: short(it.cost), action: 'Buy', act: () => buySupply(k), what: it.what + (k === 'chum' ? '' : '. Press B at sea to switch bait'), repeat: true,
     });
   }
 }
 
+const DRYDOCK = PROJECTS.find(q => q.id === 'drydock')!;
 function outfitterItems(items: Rows): void {
   for (const cat of UP_CATS) {
     header(items, cat);
@@ -307,24 +318,25 @@ function outfitterItems(items: Rows): void {
       const locked = !!u.req && !projDone(u.req);
       items.push({
         kind: 'upgrade', key: k, icon: k, label: u.name(boatDef()), cost: !maxed && !locked ? cost : null, right: locked ? 'Dry dock' : maxed ? 'Max' : cash(cost),
-        ok: !locked && !maxed && G.coins >= cost, why: locked ? 'Build the dry dock in Alderhaven first' : maxed ? 'Fully upgraded' : short(cost),
+        ok: !locked && !maxed && G.coins >= cost, why: locked ? `${DRYDOCK.name} first (Alderhaven, Harbour tab)` : maxed ? 'Fully upgraded' : short(cost),
         action: 'Buy', act: () => buy(k), what: maxed ? null : u.lv[lvl], now: lvl > 0 ? u.lv[lvl - 1] : 'Not fitted yet', pips: [lvl, max],
       });
     }
   }
 }
 
+const pctOf = (n: number): string => Math.round(n * 100) + '%';
 function boatRow(p: Port, bd: BoatDef): PortRow {
-  const own = G.owned.includes(bd.id), on = G.boatId === bd.id;
-  const base = { kind: 'boat', key: bd.id, boat: bd, label: bd.name } as const;
+  const own = G.owned.includes(bd.id), on = G.boatId === bd.id, st = boatStats(bd);
+  const base = { kind: 'boat', key: bd.id, boat: bd, label: bd.name, sub: `${st.hold} fish, ${pctOf(st.speed)} speed, ${st.hp} hull` } as const;
   if (!own && bd.req && !projDone(bd.req)) {
     const pr = PROJECTS.find(q => q.id === bd.req);
-    return { ...base, sub: bd.what, cost: null, right: 'Locked', ok: false, why: `Unlocked by "${pr?.name}" in Alderhaven`, action: 'Buy', act: deny };
+    return { ...base, sub: `Unlocked by ${pr?.name} (Harbour tab)`, cost: null, right: 'Locked', ok: false, why: `${pr?.name} first (Alderhaven, Harbour tab)`, action: 'Buy', act: deny };
   }
   const out = G.fleet[bd.id];
   if (out) return { ...base, sub: `Fishing out of ${out.portName}`, cost: null, right: 'At sea', ok: true, why: '', action: 'Recall and sail', act: () => { toggleFleet(p, bd); buyBoat(bd); } };
   return {
-    ...base, sub: bd.what, cost: own ? null : bd.cost, right: on ? 'Sailing' : own ? 'Owned' : cash(bd.cost), ok: own ? !on : G.coins >= bd.cost,
+    ...base, cost: own ? null : bd.cost, right: on ? 'Sailing' : own ? 'Owned' : cash(bd.cost), ok: own ? !on : G.coins >= bd.cost,
     why: on ? 'You are sailing this boat' : own ? '' : short(bd.cost), action: own ? 'Sail this boat' : 'Buy', act: () => buyBoat(bd),
   };
 }
@@ -335,9 +347,10 @@ function shipyardItems(p: Port, items: Rows): void {
   for (const pt of PAINTS) {
     const own = G.paints.includes(pt.id), on = G.paint === pt.id;
     items.push({
-      kind: 'paint', key: pt.id, pt, paint: pt.id, boat: boatDef(), label: pt.name, sub: own ? 'Owned' : '', cost: own ? null : pt.cost,
+      kind: 'paint', key: pt.id, pt, paint: pt.id, boat: boatDef(), label: pt.name, sub: own ? 'Owned' : 'Looks only', cost: own ? null : pt.cost,
       right: on ? 'On' : own ? 'Owned' : cash(pt.cost), ok: own ? !on : G.coins >= pt.cost,
       why: on ? 'Your boat wears this paint' : own ? '' : short(pt.cost), action: own ? 'Apply' : 'Buy', act: () => buyPaint(pt),
+      what: 'Looks only: paint changes no stats. It goes on whichever boat you sail, and paints you own swap for free.',
     });
   }
 }
@@ -345,37 +358,45 @@ function shipyardItems(p: Port, items: Rows): void {
 function fleetItems(p: Port, items: Rows): void {
   header(items, 'EARNINGS');
   const n = fleetTotal(), out = Object.keys(G.fleet).length;
+  const perMin = Object.keys(G.fleet).reduce((a, id) => a + FLEET_PER_MIN[id as BoatId], 0);
   items.push({
-    kind: 'collect', icon: 'coin', label: 'Collect fleet earnings', sub: out ? `${out} boat${out > 1 ? 's' : ''} fishing` : 'No boats out yet', right: n ? '+' + cash(n) : '',
-    ok: n > 0, why: out ? 'Nothing to collect yet' : 'Send a spare boat out below', action: 'Collect', act: collectFleet,
-    what: 'Boats you own but are not sailing can fish on their own. Each one earns more the bigger its hold, up to ten minutes of catch, until you collect it at any port.',
+    kind: 'collect', icon: 'coin', label: 'Collect fleet earnings', sub: out ? `${out} boat${out > 1 ? 's' : ''} out, ${cash(perMin)} a minute in all` : 'No boats out yet', right: n ? '+' + cash(n) : '',
+    ok: n > 0, why: out ? 'Nothing to collect yet. Fleet boats only earn while you are at sea' : 'Send a spare boat out below', action: 'Collect', act: collectFleet,
+    what: `Boats you own but are not sailing can fish for you. Each earns a set amount every minute you spend at sea (not in port or menus) and holds up to ${FLEET_HOLD_MIN} minutes of catch until you collect it at any port.`,
   });
   header(items, 'BOATS');
   const spare = BOATS.filter(bd => G.owned.includes(bd.id) && bd.id !== G.boatId);
   if (!spare.length) items.push({ kind: 'note', icon: 'hull', label: 'No spare boats', sub: 'Buy another boat at a shipyard, then send your old one out', ok: false, why: 'Every boat you own is in use', act: deny });
   for (const bd of spare) {
-    const f = G.fleet[bd.id], rate = Math.round(fleetRate(bd) * 60);
+    const f = G.fleet[bd.id], rate = fleetPerMin(bd);
     items.push({
-      kind: 'fleet', key: bd.id, boat: bd, label: bd.name, sub: f ? `Fishing out of ${f.portName}, $${Math.floor(f.earned)} aboard` : `Earns about $${rate} a minute`,
+      kind: 'fleet', key: bd.id, boat: bd, label: bd.name, sub: f ? `Fishing out of ${f.portName}, ${cash(Math.floor(f.earned))} aboard` : `Would earn ${cash(rate)} a minute`,
       right: f ? 'At sea' : 'In port', ok: true, action: f ? 'Recall' : 'Send out', act: () => toggleFleet(p, bd),
-      what: `About $${rate} a minute, holding up to $${fleetCap(bd)} until collected.`,
+      what: f
+        ? `Recalling brings the ${bd.name} back to the quay with what it has aboard, so you can sail it again.`
+        : `The ${bd.name} fishes on its own for ${cash(rate)} every minute you are at sea, holding up to ${cash(fleetCap(bd))} (${FLEET_HOLD_MIN} minutes) until you collect.`,
     });
   }
 }
 
+const FUND_DAILY = 50_000;   // the server's daily cap per sailor (convex/limits.ts)
+let giving = false;          // one gift in flight at a time, so a held button can't spend twice
 async function giveToFund(amt: number): Promise<void> {
-  if (G.coins < amt || !NET.authed) { sfx('deny'); return; }
+  if (giving || G.coins < amt || !NET.authed || G.cheated) { sfx('deny'); return; }
+  giving = true;
   addCoins(-amt); sfx('coin');
-  const r = await netGive(amt);
+  const r = await netGive(amt, G.cheated);
+  giving = false;
   if (r.ok) toast(`You gave ${cash(amt)} to the coastwide fund. Thank you!`, 'good');
   else { addCoins(amt); toast(`${r.why}. Your coins are back`, 'bad'); }
   saveGame();
 }
 function harbourItems(items: Rows): void {
   header(items, 'RESTORE ALDERHAVEN');
+  const next = nextProject();
   for (const pr of PROJECTS) {
-    const done = projDone(pr.id), cur = nextProject() === pr, st = needStatus(pr.need);
-    const why = done ? 'Finished' : !cur ? 'Finish the earlier projects first' : st.have < st.want ? `Bring ${st.label} (you have ${st.have})` : short(pr.cost);
+    const done = projDone(pr.id), cur = next === pr, st = needStatus(pr.need);
+    const why = done ? 'Finished' : !cur ? `Finish "${next?.name}" first` : st.have < st.want ? `Bring ${st.label} (you have ${st.have})` : short(pr.cost);
     items.push({
       kind: 'project', key: pr.id, pr, st, icon: done ? 'star' : cur ? 'repair' : 'map', label: pr.name, sub: done ? pr.gives : `${cash(pr.cost)} and ${st.label}`,
       cost: done ? null : pr.cost, right: done ? 'Done' : cur ? `${st.have}/${st.want}` : 'Later', ok: !done && cur && st.have >= st.want && G.coins >= pr.cost,
@@ -388,8 +409,9 @@ function harbourItems(items: Rows): void {
   for (const amt of [100, 1000, 10000]) items.push({
     kind: 'fund', key: 'fund' + amt, icon: 'coin', label: `Give ${cash(amt)} to the coastwide fund`,
     sub: f ? `${cash(f.total)} of ${cash(f.goal)} from ${f.givers} sailor${f.givers === 1 ? '' : 's'}` : NET.authed ? 'Loading' : 'Connecting to the coast',
-    cost: amt, right: cash(amt), ok: NET.authed && G.coins >= amt, why: !NET.authed ? 'You are offline' : short(amt), action: 'Give', act: () => giveToFund(amt),
-    what: 'Every sailor on every server shares this fund. When it fills, the whole coast celebrates. You have given ' + cash(f?.mine || 0) + ' so far.',
+    cost: amt, right: cash(amt), ok: NET.authed && !G.cheated && G.coins >= amt,
+    why: G.cheated ? 'Saves that used cheats cannot give to the fund' : !NET.authed ? 'You are offline' : short(amt), action: 'Give', act: () => giveToFund(amt),
+    what: `A gift for the whole coast: every sailor on every server fills this fund together, and when it is full everyone celebrates. It buys nothing for you. Each sailor can give up to ${cash(FUND_DAILY)} a day; you have given ${cash(f?.mine || 0)} in all.`,
   });
 }
 

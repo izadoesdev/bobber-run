@@ -4,6 +4,8 @@ import { G } from './game';
 import { remap, bind, toggleFullscreen } from './settings';
 import { runCheat } from './cheats';
 import { unlockAudio, sfx } from './audio';
+import { stepZoom } from './camera';
+import { toast } from './game';
 
 /** Keys whose browser default (page scroll, focus change) the game suppresses. */
 const BLOCKED = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Tab']);
@@ -12,6 +14,8 @@ const norm = (key: string) => (key.length === 1 ? key.toLowerCase() : key);
 const releaseAll = () => { for (const k in G.keys) G.keys[k] = false; };
 const isTyping = (t: EventTarget | null): t is HTMLElement => t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement;
 
+/** Cheats exist only in development builds (or when a build opts in with VITE_ENABLE_CHEATS=1); the live game has none. */
+export const CHEATS_ENABLED = import.meta.env.DEV || import.meta.env.VITE_ENABLE_CHEATS === '1';
 /** The key left of 1 (` or ~ on most layouts, § or a dead key on others), or F2. */
 const isCheatKey = (e: KeyboardEvent) => e.key === '`' || e.key === '~' || e.key === 'F2' || e.code === 'Backquote';
 
@@ -33,7 +37,7 @@ function onKeyDown(e: KeyboardEvent): void {
   unlockAudio(); G.pad = false;
   if (BLOCKED.has(e.key)) e.preventDefault();
   if (G.mode === 'cheat') return cheatConsoleKey(e);
-  if (isCheatKey(e) && (G.mode === 'play' || G.mode === 'port')) {
+  if (CHEATS_ENABLED && isCheatKey(e) && (G.mode === 'play' || G.mode === 'port')) {
     e.preventDefault(); G.cheatBack = G.mode; G.mode = 'cheat'; G.cheatBuf = ''; G.cheatErr = false; sfx('select'); return;
   }
   if (G.rebinding) {                                   // the controls screen is waiting for a new key
@@ -41,12 +45,24 @@ function onKeyDown(e: KeyboardEvent): void {
     return;
   }
   if ((e.key === 'f' || e.key === 'F') && remap(e.key) === e.key) { if (!e.repeat) toggleFullscreen(); return; }   // unless f is rebound
+  if (canZoom() && (e.key === '=' || e.key === '+' || e.key === '-' || e.key === '_')) { if (!e.repeat) zoom(e.key === '-' || e.key === '_' ? -1 : 1); return; }
   const k = remap(norm(e.key));
   G.keys[k] = true;
   if (!e.repeat) G.pressed.add(k);
 }
 
+/** Zoom the sea view: mouse wheel or - and + (=) while sailing. */
+function zoom(dir: 1 | -1): void {
+  const z = stepZoom(dir);
+  if (z === null) { sfx('deny'); return; }
+  sfx('move');
+  G.toasts = G.toasts.filter(t => !t.s.startsWith('Zoom '));          // one zoom notice, updated in place
+  toast(`Zoom ${Math.round(z * 100)}%`);
+}
+const canZoom = () => G.mode === 'play' || G.mode === 'sunk';
+
 export function initInput(): void {
+  addEventListener('wheel', e => { if (!canZoom() || (e.target instanceof Element && e.target.closest('.screen, .dialog, .panel'))) return; zoom(e.deltaY < 0 ? 1 : -1); }, { passive: true });
   addEventListener('keydown', onKeyDown);
   addEventListener('keyup', e => { const k = norm(e.key); G.keys[remap(k)] = false; G.keys[k] = false; });
   document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });

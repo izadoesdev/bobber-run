@@ -64,6 +64,7 @@ export function runCheat(text: string): boolean {
   const c = CHEATS.find(q => q.code === text.trim().toLowerCase());
   if (!c) { sfx('deny'); return false; }
   const msg = c.run();
+  if (!G.cheated) toast('Cheats are on: this save no longer counts for world records or the coastwide fund', 'bad');
   G.cheated = true;
   if (msg === 'finale') G.mode = 'finale';
   else toast(typeof msg === 'string' ? msg : `Cheat: ${c.what}`, 'good');

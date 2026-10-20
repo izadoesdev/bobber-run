@@ -1,12 +1,12 @@
 // Online play through Convex: guest sign-in, accounts, cloud saves, world records, the coastwide fund,
-// messages in bottles, greetings and other sailors. Without VITE_CONVEX_URL the game stays offline.
+// greetings and other sailors. Without VITE_CONVEX_URL the game stays offline.
 import { h, render } from 'preact';
 import { useEffect } from 'preact/hooks';
 import { ConvexReactClient } from 'convex/react';
 import type { FunctionReference } from 'convex/server';
 import { ConvexAuthProvider, useAuthActions, useConvexAuth } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
-import { ONLINE, type Sailor, type Bottle } from './online';
+import { ONLINE, type Sailor } from './online';
 import type { ToastKind } from './types';
 
 const URL: string | undefined = import.meta.env.VITE_CONVEX_URL;
@@ -26,13 +26,6 @@ export const NET = {
   news: [] as { id: string; name: string; text: string; at: number }[], err: null as string | null,
   cloudNote: null as string | null, skipUnloadSave: false,
 };
-// preset phrases only, so nothing anyone writes needs moderating
-export const BOTTLE_MSGS = [
-  'Good fishing here!', 'Try this spot at night.', 'Beware the rocks ahead.', 'A storm is coming.', 'Whales nearby!', 'Hello, sailor!',
-  'There is a wreck close by.', 'Something huge swims below.', 'I caught a trophy here.', 'Follow the gulls.', 'Rest a while, friend.', 'Fair winds!',
-  'Have you seen Nell?', 'The Old One stirs.', 'Bring a stronger rod.', 'Shallows ahead.', 'Lovely sunset from here.', 'Do not give up!',
-  'Beaconfish below the light.', 'The cold water is worth it.', 'Glowing jellies at night!', 'Thank you, whoever you are.', 'Keep sailing.', 'This spot is lucky.',
-];
 export const EMOTES = ['Ahoy!', 'Nice catch!', 'Follow me!', 'Look over here!', 'Thanks!', 'Fair winds!', 'Good night!', 'Wow!'];
 const ADJ = ['Salty', 'Sunny', 'Misty', 'Brave', 'Quiet', 'Lucky', 'Rusty', 'Jolly', 'Sleepy', 'Wandering', 'Merry', 'Tidal'];
 const NOUN = ['Gull', 'Tern', 'Otter', 'Cod', 'Puffin', 'Heron', 'Seal', 'Skipper', 'Mackerel', 'Barnacle', 'Pelican', 'Kelp'];
@@ -114,26 +107,34 @@ export function netSaved() {
   if (!NET.authed || saveTimer) return;
   saveTimer = window.setTimeout(() => { saveTimer = 0; if (!NET.authed || switching) return; const l = localSave(); if (l) call(api.saves.put, { data: l.data, updatedAt: l.at || Date.now() }).catch(() => { }); }, 4000);
 }
-export function netCatch(species: string, kg: number) { if (NET.authed) call(api.records.submit, { species, kg: Math.round(kg * 10) / 10 }).catch(() => { }); }
-export async function netGive(amount: number): Promise<Result> {
+// cheat-tainted saves never call these (the server also accepts an optional `cheated` flag, which this client
+// leaves out so it works against older backends too)
+export function netCatch(species: string, kg: number, cheated = false) { if (NET.authed && !cheated) call(api.records.submit, { species, kg: Math.round(kg * 10) / 10 }).catch(() => { }); }
+export async function netGive(amount: number, cheated = false): Promise<Result> {
   if (!NET.authed) return { ok: false, why: 'You are offline' };
+  if (cheated) return { ok: false, why: 'Saves that used cheats cannot give to the fund' };
   try { const r = await call(api.fund.give, { key: FUND_KEY, amount }); return r.ok ? { ok: true } : { ok: false, why: r.why ?? 'Could not give' }; } catch { return { ok: false, why: 'Could not reach the coast' }; }
 }
 export async function setName(name: string, auto = false): Promise<Result> {
   if (!NET.authed) return { ok: false, why: 'You are offline' };
   try { return await call(api.profiles.setName, { name, auto }); } catch { return { ok: false, why: 'Could not reach the server' }; } finally { naming = false; }
 }
-export async function throwBottle(x: number, y: number, msg: number): Promise<Result> {
-  if (!NET.authed) return { ok: false, why: 'Bottles need a connection to the coast' };
-  try { const r = await call(api.bottles.toss, { x, y, msg }); return r.ok ? { ok: true } : { ok: false, why: r.why ?? 'Could not toss it' }; } catch { return { ok: false, why: 'Could not reach the coast' }; }
-}
-export function readBottle(id: string) { if (NET.authed) call(api.bottles.read, { id: id as never }).catch(() => { }); }
 export function sendEmote(i: number) { if (NET.authed) call(api.sea.emote, { i }).catch(() => { }); }
 
 // ---------- accounts: a guest can make an account (keeping this save), sign into one (loading its save), or sign out ----------
 const waitFor = async (test: () => boolean, ms = 10_000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (test()) return true; await new Promise(r => setTimeout(r, 150)); } return false; };
-export async function account(flow: 'signUp' | 'signIn', email: string, password: string): Promise<Result> {
+/** Human-readable reasons for Convex Auth errors (the raw messages are codes like InvalidSecret). */
+function accountError(m: string, flow: 'signUp' | 'signIn'): string {
+  if (/TooManyFailedAttempts|rate/i.test(m)) return 'Too many tries. Wait a few minutes, then try again';
+  if (/InvalidAccountId/i.test(m)) return flow === 'signIn' ? 'No account uses that email. Make one instead' : 'Could not make the account. Try again';
+  if (/InvalidSecret|Invalid password/i.test(m)) return 'Wrong password for that email';
+  if (/already exists/i.test(m)) return 'That email already has an account. Sign in instead';
+  if (/password/i.test(m)) return 'Use a password of at least 8 characters';
+  return 'Could not reach the server. Check your connection and try again';
+}
+export async function account(flow: 'signUp' | 'signIn', rawEmail: string, password: string): Promise<Result> {
   if (!actions || !client) return { ok: false, why: 'You are offline' };
+  const email = rawEmail.trim().toLowerCase();                       // addresses are case-insensitive; accounts are stored lower case
   if (!/^\S+@\S+\.\S+$/.test(email)) return { ok: false, why: 'Enter a valid email address' };
   if (password.length < 8) return { ok: false, why: 'Use a password of at least 8 characters' };
   NET.busy = true; NET.err = null; switching = true;
@@ -142,8 +143,14 @@ export async function account(flow: 'signUp' | 'signIn', email: string, password
     // Convex Auth only re-authenticates the connection on a signed-out -> signed-in change, so leave the guest
     // session first; otherwise the server keeps seeing the guest. If sign-in then fails, a new guest session starts.
     if (NET.authed) { await actions.signOut(); await waitFor(() => !NET.authed, 4000); }
-    await actions.signIn('password', { email, password, flow });
-    if (!await waitFor(() => !!NET.profile && NET.profile.userId !== oldUser && !NET.profile.guest)) return { ok: false, why: 'Signed in, but the server is slow. Try again in a moment' };
+    try { await actions.signIn('password', { email, password, flow }); }
+    catch (e) {                                                        // accounts made before emails were lower-cased keep their original case
+      const typed = rawEmail.trim();
+      if (flow !== 'signIn' || typed === email || !/InvalidAccountId/i.test(errText(e))) throw e;
+      await actions.signIn('password', { email: typed, password, flow });
+    }
+    // wait until the server sees the new account (slow connections can take a while)
+    if (!await waitFor(() => !!NET.profile && NET.profile.userId !== oldUser && !NET.profile.guest, 20_000)) return { ok: false, why: 'The server is taking a long time. Check your connection, then try again' };
     if (flow === 'signUp') {
       if (keep) await call(api.saves.put, { data: keep.data, updatedAt: Date.now() });
       if (oldName && oldName !== 'Sailor') await setName(oldName);
@@ -154,15 +161,14 @@ export async function account(flow: 'signUp' | 'signIn', email: string, password
     if (keep) await call(api.saves.put, { data: keep.data, updatedAt: Date.now() });
     return { ok: true, msg: `Signed in as ${email}` };
   } catch (e) {
-    const m = errText(e);
-    return { ok: false, why: /InvalidSecret|Invalid password|InvalidAccountId/i.test(m) ? 'Wrong email or password' : /already exists/i.test(m) ? 'That email already has an account. Sign in instead' : 'Could not sign in. Try again' };
+    return { ok: false, why: accountError(errText(e), flow) };
   } finally { NET.busy = false; switching = false; }
 }
 export async function signOut() { if (!actions) return; NET.busy = true; try { await actions.signOut(); NET.profile = null; } finally { NET.busy = false; } }
 /** Test hook: ask the server who we are right now (no tokens exposed). */
 export const whoami = () => client?.query(api.profiles.me, {}) ?? null;
 
-// ---------- other sailors and bottles near you ----------
+// ---------- other sailors near you ----------
 const CELL = 400, MAX_SHOWN = 12, QUIET_MS = 25_000;
 const cellsAround = (sea: number, x: number, y: number) => {
   const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL), out: string[] = [];
@@ -176,7 +182,6 @@ export function netTick(dt: number) {
   if (!NET.authed || !G || NET.profile?.sea == null) return;
   const b = G.boat, cells = cellsAround(NET.profile.sea, b.x, b.y);
   watch<Raw[]>('sailors', api.sea.near, { cells }, list => { raw = list; });
-  watch('bottles', api.bottles.near, { cells }, list => { ONLINE.bottles = list as Bottle[]; });
   // our position: about once a second while moving, every 10 s when still, one request at a time
   sendT += dt;
   const moved = !lastSent || Math.hypot(b.x - lastSent.x, b.y - lastSent.y) > 1 || Math.abs(b.a - lastSent.a) > 0.05;

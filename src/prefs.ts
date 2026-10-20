@@ -18,6 +18,8 @@ export interface Settings {
   contrast: boolean; calm: boolean; captions: boolean;
   strike: StrikeTiming;
   reelAssist: boolean; reelToggle: boolean;
+  /** camera zoom chosen by the player; 1 = the default view for your ship */
+  zoom: number;
   /** action id -> custom key */
   binds: Record<string, string>;
 }
@@ -25,7 +27,7 @@ export interface Settings {
 export const SET: Settings = {
   music: 6, sfx: 8, amb: 8, quality: 'auto', pixel: 'chunky', tilt: true, bloom: true, shake: true,
   ui: 1, font: 'pixel', contrast: false, calm: false, captions: false,
-  strike: 'normal', reelAssist: false, reelToggle: false, binds: {},
+  strike: 'normal', reelAssist: false, reelToggle: false, zoom: 1, binds: {},
 };
 // storage may be unavailable (private mode) or hold junk; defaults stand in either case
 try { Object.assign(SET, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { }

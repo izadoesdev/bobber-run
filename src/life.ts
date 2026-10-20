@@ -176,7 +176,8 @@ function newWhale(x: number, y: number, a: number, size: number, mom: Whale | nu
 function spawnWhales(): boolean {
   const b = G.boat;
   for (let k = 0; k < 20; k++) {
-    const a = Math.random() * TAU, d = 100 + Math.random() * 120, x = b.x + Math.cos(a) * d, y = b.y + Math.sin(a) * d;
+    // just beyond the edge of the view, so nobody sees a whale appear out of nothing
+    const a = Math.random() * TAU, d = viewR() + 20 + Math.random() * 100, x = b.x + Math.cos(a) * d, y = b.y + Math.sin(a) * d;
     if (depth(x, y) > -0.38 || depth(x + 30, y) > -0.36 || depth(x - 30, y) > -0.36 || depth(x, y + 30) > -0.36 || depth(x, y - 30) > -0.36) continue;
     const h = Math.random() * TAU, mom = newWhale(x, y, h, 0.9 + Math.random() * 0.2);
     LIFE.whales.push(mom);
@@ -387,7 +388,8 @@ function whales(dt: number): void {
   let j = 0;
   for (let i = 0; i < L.length; i++) {
     const w = L[i];
-    const gone = Math.hypot(w.x - b.x, w.y - b.y) > 420 || (w.mom && !L.includes(w.mom)) || !Number.isFinite(w.x + w.y + w.z);
+    const gone = Math.hypot(w.x - b.x, w.y - b.y) > viewR() + 160 ||   // only once well out of view
+      (w.mom && !L.includes(w.mom)) || !Number.isFinite(w.x + w.y + w.z);
     if (!gone) L[j++] = w;
   }
   L.length = j;
@@ -469,18 +471,19 @@ function makeSwarm(i: number, j: number): Swarm {
   return { cx, cy, m };
 }
 function jellies(dt: number): void {
-  const b = G.boat, ci = Math.floor(b.x / JC), cj = Math.floor(b.y / JC), S = LIFE.swarms;
-  for (let j = cj - 1; j <= cj + 1; j++) for (let i = ci - 1; i <= ci + 1; i++) {
+  // swarms are loaded and drawn out to beyond the edge of the view, so they never pop in
+  const b = G.boat, ci = Math.floor(b.x / JC), cj = Math.floor(b.y / JC), S = LIFE.swarms, reach = viewR() + 120, n = Math.ceil(reach / JC);
+  for (let j = cj - n; j <= cj + n; j++) for (let i = ci - n; i <= ci + n; i++) {
     const k = i + ',' + j;
-    if (!S.has(k)) { const cx = (i + 0.5) * JC, cy = (j + 0.5) * JC; if (Math.hypot(cx - b.x, cy - b.y) < 520) S.set(k, makeSwarm(i, j)); }
+    if (!S.has(k)) { const cx = (i + 0.5) * JC, cy = (j + 0.5) * JC; if (Math.hypot(cx - b.x, cy - b.y) < reach + JC * 0.7) S.set(k, makeSwarm(i, j)); }
   }
   // LIFE.jellies is rebuilt each frame with the visible ones
   const gk = glowK(), out = LIFE.jellies;
   out.length = 0;
   for (const [k, sw] of S) {
     const d = Math.hypot(sw.cx - b.x, sw.cy - b.y);
-    if (d > 700) { S.delete(k); continue; }                    // regenerates identically when we come back
-    if (d > 340 || !sw.m.length) continue;
+    if (d > reach + JC * 1.5) { S.delete(k); continue; }        // regenerates identically when we come back
+    if (d > reach + 70 || !sw.m.length) continue;
     for (const m of sw.m) {
       m.ph += dt * m.rate;
       const T = LIFE.t;
@@ -793,21 +796,24 @@ function plankton(dt: number): void {
 
 // ---------------------------------------------------------------- dolphins
 // a pod arrives from one side of a fast boat
+/** Distance from the boat to just past the screen edge, going sideways from its heading. */
+const offscreenSide = (c: number, s: number) => Math.abs(s) * W / 2 + Math.abs(c) * H / 2 + 24;
 function spawnPod(): void {
-  const b = G.boat, c = Math.cos(b.a), s = Math.sin(b.a), from = Math.random() < 0.5 ? -1 : 1;
+  const b = G.boat, c = Math.cos(b.a), s = Math.sin(b.a), from = Math.random() < 0.5 ? -1 : 1, edge = offscreenSide(c, s);
   LIFE.pods.push({
     t: 0, m: [0, 1, 2].map(k => {
-      const side = k % 2 ? 1 : -1, x = b.x - c * 30 - s * from * (40 + k * 8), y = b.y - s * 30 + c * from * (40 + k * 8);
+      const side = k % 2 ? 1 : -1, x = b.x - c * 30 - s * from * (edge + k * 8), y = b.y - s * 30 + c * from * (edge + k * 8);
       return { side, off: 10 + k * 6, lead: 6 + k * 7, ph: k * 0.37 + Math.random() * 0.2, x, y, vx: b.vx, vy: b.vy, a: b.a, wv: Math.random() * 6 };
     }),
   });
 }
 // each dolphin steers toward a loose slot beside the bow; it has its own speed and heading,
 // so the pod lags behind turns, overtakes, weaves, and peels away at the end
+const POD_STAY = 14;   // seconds alongside before they peel away
 function dolphins(dt: number): void {
   const b = G.boat, c = Math.cos(b.a), s = Math.sin(b.a), gk = glowK();
   for (const p of LIFE.pods) for (const m of p.m) {
-    const leave = p.t > 8.5 ? (p.t - 8.5) * 18 : 0, weave = Math.sin(p.t * 0.9 + m.wv) * 5;
+    const leave = p.t > POD_STAY ? (p.t - POD_STAY) * 18 : 0, weave = Math.sin(p.t * 0.9 + m.wv) * 5;
     const lead = m.lead + Math.sin(p.t * 0.7 + m.ph) * 5, off = m.side * (m.off + weave + leave);
     const tx = b.x + c * lead - s * off + b.vx * 0.35, ty = b.y + s * lead + c * off + b.vy * 0.35;
     let ax = (tx - m.x) * 2.2 + (b.vx - m.vx) * 1.4, ay = (ty - m.y) * 2.2 + (b.vy - m.vy) * 1.4;
@@ -820,7 +826,9 @@ function dolphins(dt: number): void {
     if (v > 2) { m.a += wrap(Math.atan2(m.vy, m.vx) - m.a) * Math.min(1, dt * 5); }
     if (gk > 0 && Math.random() < dt * 10 * gk) glow(m.x, m.y, 6, 1.1);   // dolphins streak through the glow
   }
-  LIFE.pods = LIFE.pods.filter(p => (p.t += dt) < 11);
+  // a pod stays a while, then peels away and is removed only once every dolphin is off-screen
+  const edge = offscreenSide(c, s) + 20;
+  LIFE.pods = LIFE.pods.filter(p => (p.t += dt) < POD_STAY || (p.t < 40 && p.m.some(m => Math.hypot(m.x - b.x, m.y - b.y) < edge)));
 }
 
 // ---------------------------------------------------------------- main entry

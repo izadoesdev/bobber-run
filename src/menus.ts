@@ -1,15 +1,15 @@
 // What a press does on each screen. Called once per frame before the simulation;
 // a press that changes screens is consumed, so it can't also act on the new screen.
-import { G, hit, portMenuInput, shipInput, newGame, loadGame, wipeSave, saveGame, toast } from './game';
+import { G, hit, portMenuInput, shipInput, newGame, loadGame, wipeSave, saveGame } from './game';
 import { SPECIES } from './econ';
 import { ROWS, ACTIONS, applySettings, resetBinds } from './settings';
 import { talkNext } from './story';
-import { NET, throwBottle, sendEmote, BOTTLE_MSGS, EMOTES } from './net';
+import { NET, sendEmote, EMOTES } from './net';
 import { TITLE_ITEMS, PAUSE_ITEMS } from './ui/index';
 import { sfx } from './audio';
 import type { Mode } from './types';
 
-type ListKey = 'titleSel' | 'pauseSel' | 'ctlSel' | 'bottleSel' | 'emoteSel';
+type ListKey = 'titleSel' | 'pauseSel' | 'ctlSel' | 'emoteSel';
 const up = () => hit('ArrowUp', 'w', 'W'), down = () => hit('ArrowDown', 's', 'S');
 /** Up/down through a wrapping list stored in G[key]. */
 function nav(key: ListKey, n: number): void {
@@ -63,16 +63,6 @@ function controls(): void {                            // rows: each action, the
   }
   if (hit('Escape', 'Backspace')) go(G.back);
 }
-function bottle(): void {                              // choose a phrase to toss overboard
-  nav('bottleSel', BOTTLE_MSGS.length);
-  if (hit(' ', 'Enter')) {
-    G.mode = 'play';
-    void throwBottle(G.boat.x, G.boat.y, G.bottleSel).then(r => {
-      if (r.ok) { sfx('splash'); toast('You toss a bottle into the sea. Someone may find it'); }
-      else { sfx('deny'); toast(r.why, 'bad'); }
-    });
-  } else if (hit('Escape', 't')) go('play');
-}
 function emote(): void {                               // a preset greeting other sailors see over your boat
   nav('emoteSel', EMOTES.length);
   const digits = Math.min(9, EMOTES.length);
@@ -94,10 +84,6 @@ function sailing(): void {
   else if (hit('l', 'L')) go('log');
   else if (hit('j')) { G.journalBack = 'play'; go('journal'); }
   else if (hit('g') && NET.authed) go('emote', 'select');
-  else if (hit('t') && !G.fish) {
-    if (NET.authed) go('bottle', 'select');
-    else { toast('Bottles need a connection to the coast'); sfx('deny'); }
-  }
   else if (hit('Tab', 'i', 'I')) { G.shipSel = 0; go('ship'); }
   else if (hit('Escape') && !G.fish) { G.pauseSel = 0; go('pause'); }
 }
@@ -109,7 +95,6 @@ function screenInput(dt: number, refit: () => void): void {
     case 'settings': return settings(refit);
     case 'controls': return controls();
     case 'talk': if (hit(' ', 'Enter', 'e')) talkNext(); else if (hit('Escape')) talkNext(true); return;
-    case 'bottle': return bottle();
     case 'emote': return emote();
     case 'account': if (hit('Escape')) go(G.accountBack); return;
     case 'journal': if (hit('j', 'Escape', 'Enter', ' ')) go(G.journalBack); return;

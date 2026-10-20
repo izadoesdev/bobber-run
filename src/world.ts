@@ -1,7 +1,8 @@
 // Infinite world: island archipelago heightfield, cached height tiles, points of interest,
 // fish schools and floating crates. Everything is deterministic from the seed.
-import { nA, nB, nC, fbm, hash, mulberry } from './noise';
+import { nA, nB, nC, fbm, hash, hash01, mulberry } from './noise';
 import { pickSpecies, SP, SPECIES } from './econ';
+import { schoolLook } from './species';
 import type { Point, Poi, Port, Wreck, School, Crate } from './types';
 
 const CELL = 560;                              // one archipelago cell
@@ -199,18 +200,26 @@ function placeWreck(i: number, j: number, r: Rng, main: Island | undefined, pois
       id: `wreck:${i},${j}`, type: 'wreck', name: 'Wreck of the ' + SHIPS[Math.floor(r() * SHIPS.length)], x, y, dir: Math.floor(r() * 16),
       loot: 25 + Math.floor(r() * 40 + dist / 60), solid: { kind: 'circ', x, y, r: 12 },
     };
-    const sx = x + Math.cos(a) * 34, sy = y + Math.sin(a) * 34;
-    if (heightAt(sx, sy) < -0.06) w.school = makeSchool(`ws:${i},${j}`, sx, sy, pickSpecies(0, dist, r, sx, sy, 'wreck'), r, 2);
+    const sp = pickSpecies(0, dist, r, x, y, 'wreck'), home = openSpot(x, y, a, [34, 46, 58], sp);
+    if (home) w.school = makeSchool(`ws:${i},${j}`, home.x, home.y, sp, r, 2);
     return w;
+  }
+  return null;
+}
+/** A home for a landmark's school: the first spot around (x, y), from heading a0, at one of `dists`, with open water to swim in. */
+function openSpot(x: number, y: number, a0: number, dists: number[], sp: number, taken: readonly School[] = []): Point | null {
+  for (const d of dists) for (let q = 0; q < 16; q++) {
+    const a = a0 + q / 16 * Math.PI * 2, sx = x + Math.cos(a) * d, sy = y + Math.sin(a) * d;
+    if (!landPull(sx, sy, schoolReach(sp)) && !crowded(sx, sy, sp, taken)) return { x: sx, y: sy };
   }
   return null;
 }
 // lighthouses attract beaconfish into the water at their feet
 function lightSchools(L: Poi[], i: number, j: number): Poi[] {
-  const r = mulberry(hash(i, j, 77));
-  for (const p of L) if (p.type === 'light') for (let q = 0; q < 16; q++) {
-    const a = q / 16 * 6.283, x = p.x + Math.cos(a) * 38, y = p.y + Math.sin(a) * 38;
-    if (heightAt(x, y) < -0.08) { p.school = makeSchool(`ls:${p.id}`, x, y, pickSpecies(0, 0, r, x, y, 'light'), r, 3); break; }
+  const r = mulberry(hash(i, j, 77)), taken = L.flatMap(p => p.school ? [p.school] : []);
+  for (const p of L) if (p.type === 'light') {
+    const sp = pickSpecies(0, 0, r, p.x, p.y, 'light'), home = openSpot(p.x, p.y, 0, [38, 52, 66, 80], sp, taken);
+    if (home) taken.push(p.school = makeSchool(`ls:${p.id}`, home.x, home.y, sp, r, 3));
   }
   return L;
 }
@@ -234,27 +243,87 @@ export function poisNear(x: number, y: number, rad: number, out: Poi[] = []): Po
 export const homePort = (): Port => cellPois(0, 0).find((p): p is Port => p.type === 'port')!;
 
 // ---------- fish schools + floating crates ----------
+/** One fish of a school as it swims (runtime only). */
+export interface Swimmer {
+  x: number; y: number; vx: number; vy: number;
+  /** its own rhythm, seconds to its next change of heading, and the turn it leans into */
+  ph: number; turn: number; bias: number;
+}
+// Runtime school state (not saved). Kept beside the school data so every reader sees one shape.
+declare module './types' {
+  interface School {
+    /** a golden fish swims with this school */
+    gold?: boolean;
+    /** game time the school last scattered */
+    scatterT?: number;
+    /** recent scares; enough in a row and the school dives (until `spooked`) */
+    heat?: number;
+    /** its fish, once the boat has come near */
+    swim?: Swimmer[];
+  }
+}
+/** Share of ordinary schools that carry a golden fish. */
+export const GOLD_SCHOOLS = 0.08;
+/** Fish mill within their species' radius of a centre that wanders this far from home, and scatter this much further. */
+export const SWIM = { wander: 2, scatter: 6 };
+/** Water at least this deep everywhere a school can swim (heightAt); fish never enter water shallower than FISH_SHORE (hAt). */
+const SWIM_WATER = -0.09;
+export const FISH_SHORE = -0.06;
+/** Furthest any fish of species sp can be from its school's home. */
+export const schoolReach = (sp: number): number => schoolLook(sp).radius + SWIM.wander + SWIM.scatter;
+/** Closest two schools may be: their reaches plus clear water between (at least ~50 for the smallest). */
+export const schoolGap = (a: number, b: number): number => schoolReach(a) + schoolReach(b) + 14;
 const FC = 300;                                // fish cell size
+const FC_EDGE = 0.11;                          // schools keep this share of a cell clear at its edges: 2 x 33 covers the widest gap (~65)
 interface FishCell { schools: School[]; crates: Crate[] }
 const fishCells = new Map<number, FishCell>();
 function makeSchool(id: string, x: number, y: number, sp: number, r: Rng, stock?: number): School {
   return { id, x, y, sp, stock: stock ?? 2 + Math.floor(r() * 3), max: stock ?? 3, respawn: 0, ph: r() * 6.28 };
 }
+// the summed directions from (x, y), out to `reach`, where the water is too shallow for a school; null if none
+function landPull(x: number, y: number, reach: number): Point | null {
+  let dx = 0, dy = 0, hit = heightAt(x, y) > SWIM_WATER;
+  for (let k = 0; k < 24; k++) {
+    const a = k / 24 * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
+    for (const f of [0.35, 0.7, 1]) if (heightAt(x + c * reach * f, y + s * reach * f) > SWIM_WATER) { dx += c; dy += s; hit = true; }
+  }
+  return hit ? { x: dx, y: dy } : null;
+}
+/** Nudge a school's home away from the shore until its whole swim area is open water; null if there's no room. */
+function settle(x: number, y: number, reach: number, box: readonly number[]): Point | null {
+  for (let step = 0; step < 6; step++) {
+    const pull = landPull(x, y, reach);
+    if (!pull) return { x, y };
+    const L = Math.hypot(pull.x, pull.y);
+    if (!L) return null;                          // shallows all round
+    x = Math.min(box[2], Math.max(box[0], x - pull.x / L * reach * 0.4));
+    y = Math.min(box[3], Math.max(box[1], y - pull.y / L * reach * 0.4));
+  }
+  return null;
+}
+function crowded(x: number, y: number, sp: number, others: readonly School[]): boolean {
+  for (const o of others) if (Math.hypot(o.x - x, o.y - y) < schoolGap(sp, o.sp)) return true;
+  return false;
+}
 function genFishCell(i: number, j: number): FishCell {
   const r = mulberry(hash(i, j, 31)), schools: School[] = [], crates: Crate[] = [];
-  const n = 3 + Math.floor(r() * 3);
+  const n = 3 + Math.floor(r() * 3), x0 = (i + FC_EDGE) * FC, y0 = (j + FC_EDGE) * FC, span = (1 - 2 * FC_EDGE) * FC;
+  const box = [x0, y0, x0 + span, y0 + span];
+  const landmarks = [BOSS, ...poisNear(x0 + span / 2, y0 + span / 2, FC).flatMap(p => p.school ? [p.school] : [])];
   for (let q = 0; q < n; q++) {
-    // every other school hugs a coastline (if this cell has one) so shallow-water species get a home
-    let x = 0, y = 0, h = 0;
-    for (let tries = q % 2 ? 1 : 10; tries > 0; tries--) {
-      x = (i + 0.1 + 0.8 * r()) * FC; y = (j + 0.1 + 0.8 * r()) * FC; h = heightAt(x, y);
-      if (q % 2 || (h > -0.28 && h < -0.07)) break;
+    // every other school tries to hug a coastline (if this cell has one) so shallow-water species get a home
+    for (let tries = q % 2 ? 3 : 24; tries > 0; tries--) {
+      const cx = x0 + span * r(), cy = y0 + span * r(), h = heightAt(cx, cy);
+      if (h > -0.07 || (!(q % 2) && tries > 4 && h < -0.28)) continue;
+      const sp = pickSpecies(h, Math.hypot(cx - HOME_ISLAND.x, cy - HOME_ISLAND.y), r, cx, cy);
+      const home = settle(cx, cy, schoolReach(sp), box);
+      if (!home || crowded(home.x, home.y, sp, schools) || crowded(home.x, home.y, sp, landmarks)) continue;
+      const s = makeSchool(`s:${i},${j},${q}`, home.x, home.y, sp, r);
+      s.max = s.stock;
+      s.gold = !SPECIES[s.sp].legend && hash01(i * 7 + q, j, 53) < GOLD_SCHOOLS;
+      schools.push(s);
+      break;
     }
-    if (h > -0.07) continue;
-    const d = Math.hypot(x - HOME_ISLAND.x, y - HOME_ISLAND.y);
-    const s = makeSchool(`s:${i},${j},${q}`, x, y, pickSpecies(h, d, r, x, y), r);
-    s.max = s.stock;
-    schools.push(s);
   }
   if (r() < 0.65) {
     const x = (i + 0.1 + 0.8 * r()) * FC, y = (j + 0.1 + 0.8 * r()) * FC;

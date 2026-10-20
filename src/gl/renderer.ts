@@ -7,15 +7,17 @@ import { ONLINE, type Sailor } from '../online';
 import { SET, type Quality, type PixelStyle } from '../prefs';
 import { TS, TN, getTile, hasTile, poisNear, schoolsNear, cratesNear, type HeightTile } from '../world';
 import { hash01 } from '../noise';
-import { SPECIES, BOATS, warmth, coldness } from '../econ';
-import { G, darkness, lightR, schoolActive, isNight, dayFrac, equipment, windAngle, boatDef } from '../game';
+import { SPECIES, BOATS, warmth, coldness, activeAt } from '../econ';
+import { schoolLook } from '../species';
+import { DIVE_S, SCATTER_S } from '../game/schools';
+import { G, darkness, lightR, schoolActive, isNight, dayFrac, equipment, windAngle, boatDef, env } from '../game';
 import { WX } from '../weather';
 import { LIFE, type Whale, type Giant, type Ship } from '../life';
 import { hasOars, oarGeom, BOAT_MODELS, NP, SHIPPED, PLAIN, type Fit } from '../models';
 import { program, texture, target, msTarget, free, type Program, type Target, type MsTarget } from './glutil';
 import * as SH from './shaders';
 import * as MS from './meshes';
-import type { BoatId, Point, Poi, School, Crate } from '../types';
+import type { BoatId, FishLine, Point, Poi, School, Crate } from '../types';
 
 export interface RenderOptions {
   /** device pixels per world unit (main.ts sets it when fitting the canvas) */
@@ -251,6 +253,72 @@ function eqFor(paint: string): Fit {
 const isBoatId = (id: string): id is BoatId => id in BOAT_MODELS;
 const shipDef = (id: string) => BOATS.find(b => b.id === id) || BOATS[0];
 
+// ---------- fish schools ----------
+// Each species shows in its own colours, size and habits. Scattered fish dart off and regroup, fished-out schools
+// thin to a straggler and fill back in, and diving schools sink out of sight. Surface effects found while placing
+// the fish are kept in `schoolFx` (x, y, kind per entry) for the foam and particle passes.
+const FX_RING = 0, FX_GOLD = 1, FX_GLOW = 2, FX_SPRAY = 3;
+const schoolFx: number[] = [];
+const shownCount = new WeakMap<School, number>();   // eased number of fish on show, so they come and go smoothly
+let sceneT = 0, schoolEase = 0;
+const GOLD_TINT = 1.2;
+const smooth01 = (x: number) => { const t = clamp(x, 0, 1); return t * t * (3 - 2 * t); };
+const tint3 = [1, 1, 1];
+/** How far a school has sunk on a dive (0 swimming .. 1 out of sight); it rises back the same way. */
+function sunk(s: School): number {
+  const end = s.spooked ?? 0;
+  return G.t < end ? smooth01((G.t - (end - DIVE_S)) / 1.6) : 1 - smooth01((G.t - end) / 1.6);
+}
+// Fish come from the school's swim simulation (game/schools); here they get depth, colour, glow and their tricks.
+function drawSchool(s: School, night: boolean, lit: boolean): void {
+  const fish = s.swim, dive = sunk(s);
+  if (!fish || dive >= 1) { shownCount.delete(s); return; }
+  const sp = SPECIES[s.sp], look = schoolLook(s.sp), m = MS.fishMesh(s.sp);
+  const full = look.count + (G.frenzy?.s === s ? 2 : 0), straggler = s.stock <= 0;
+  const want = straggler ? 1 : Math.max(1, Math.round(full * Math.min(1, s.stock / Math.max(1, s.max))));
+  const was = shownCount.get(s) ?? want, n = was + (want - was) * schoolEase;
+  shownCount.set(s, n);
+  const cnt = Math.min(fish.length, Math.ceil(n - 0.02)), age = G.t - (s.scatterT ?? -99), dip = age < SCATTER_S ? Math.sin(Math.PI * Math.min(1, age / 2)) : 0;
+  const leapCycle = 6 + frac(s.ph) * 3, leap = sp.fight === 'jumper' && !straggler && !dip && !dive ? frac(G.t / leapCycle + s.ph) * leapCycle / 0.8 : 9;
+  for (let k = 0; k < cnt; k++) {
+    const f = fish[k], p = clamp(n - k, 0, 1), speed = Math.hypot(f.vx, f.vy);
+    const yaw = Math.atan2(f.vy, f.vx) + Math.sin(G.t * (6 + speed) + k) * 0.08 * Math.min(1, speed / 3);   // tails beat faster at speed
+    const z = look.z - (1 - p) * 5 - dive * 7 - (straggler ? 1.2 : 0) - dip * 1.2;
+    if (age < 0.45) schoolFx.push(f.x, f.y, FX_RING);          // scattering fish ruffle the surface
+    const gold = s.gold && k === 0 && !straggler, shimmer = sp.legend ? 1 + 0.3 * Math.sin(G.t * 2.5 + k * 2) : 1;
+    let tint: number | readonly number[] = (look.bottom ? 0.72 : 1) * (straggler ? 0.75 : 1) * (lit ? 1 : 0.45) * shimmer;
+    if (gold) { tint = GOLD_TINT; schoolFx.push(f.x, f.y, FX_GOLD); }
+    else if (sp.legend) { tint3[0] = shimmer * 0.95; tint3[1] = shimmer; tint3[2] = shimmer * 1.15; tint = tint3; }
+    const mesh = gold ? MS.fishMesh(s.sp, true) : m, glow = look.glow ? (night ? 0.4 : 0.15) : 0;
+    if (glow && night) schoolFx.push(f.x, f.y, FX_GLOW);
+    if (k === 0 && leap < 1) {                            // a jumper breaks the surface now and then
+      const side = Math.cos(yaw) > 0 ? 0 : Math.PI;
+      inst(mesh, f.x, f.y, side, look.size, look.z + Math.sin(Math.PI * leap) * (5 + look.size * 6), (0.5 - leap) * (side ? -1.6 : 1.6), 0, true, tint, glow, look.fade);
+      if (leap < 0.15 || leap > 0.85) schoolFx.push(f.x, f.y, FX_SPRAY);
+      continue;
+    }
+    inst(mesh, f.x, f.y, yaw, look.size * (0.7 + 0.3 * p), z, 0, Math.PI / 2, true, tint, glow, Math.min(1.2, look.fade + dive * 0.6 + (1 - p) * 0.5));
+  }
+}
+/** The fish on the line: a shadow closing in on the bait, under the bobber as it bites, then fighting where the line runs. */
+function drawHookedFish(f: FishLine, bx: number, by: number): void {
+  const look = schoolLook(f.s.sp), b = G.boat;
+  let x = bx, y = by, yaw = Math.atan2(by - b.y, bx - b.x), z = look.z - 0.6, tint: number | readonly number[] = 0.5, fade = 0.85;
+  if (f.st === 'wait') {
+    const k = smooth01(f.t / Math.max(0.1, f.wait)), nib = f.teaseT !== undefined ? 1 - smooth01((G.t - f.teaseT) / 0.5) : 0;
+    const ang = f.s.ph + G.t * 0.7, r = 3 + 14 * (1 - k) * (1 - nib * 0.8);
+    x = f.tx + Math.cos(ang) * r; y = f.ty + Math.sin(ang) * r * 0.75; yaw = ang + Math.PI / 2; z = look.z - 2.5 + k;
+  } else if (f.st === 'bite') {
+    if (f.run !== undefined) yaw = f.run;
+  } else if (f.st === 'reel') {
+    const surge = Math.min(1, f.surge || 0);
+    yaw += Math.sin(f.ph * 0.7) * 0.6; z = look.z - 0.8 + surge * 0.6; tint = 0.85 + surge * 0.3; fade = 0.5;
+  } else return;
+  const gold = !!f.gold && f.st !== 'wait';
+  if (gold) tint = GOLD_TINT;
+  inst(MS.fishMesh(f.s.sp, gold), x, y, yaw + Math.sin(G.t * 9) * 0.1, look.size * 1.1, z, 0, Math.PI / 2, true, tint, look.glow && isNight() ? 1 : 0, fade);
+}
+
 // ---------- scene ----------
 const SIDES = [-1, 1];
 const W3a = [0, 0, 0], W3b = [0, 0, 0];           // scratch points for boat-local -> world transforms
@@ -289,17 +357,19 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
   }
   for (const c of cratesNear(cx, cy, 230, sceneCrates)) if (!c.taken) inst(MS.crateMesh(), c.x, c.y, c.ph, 1, -1.3 + Math.sin(G.t * 2 + c.ph) * 0.35, Math.sin(G.t * 1.3 + c.ph) * 0.1);
   for (const m of G.maps) if (Math.abs(m.x - cx) < W && Math.abs(m.y - cy) < H) inst(MS.buoyMesh(), m.x, m.y, 0, 1, -1.2 + Math.sin(G.t * 2 + m.x) * 0.3, Math.sin(G.t * 1.7) * 0.08);
-  // fish schools swim under the surface; at night only the ones near your light show
+  // fish schools swim under the surface; at night glowing fish and the ones in your light show clearly, others as dim shapes nearby
   const night = isNight(), lr = lightR() + 14;
+  schoolFx.length = 0;
+  schoolEase = 1 - Math.exp(-2.5 * clamp(G.t - sceneT, 0, 0.1)); sceneT = G.t;
   for (const s of schoolsNear(cx, cy, 240, sceneSchools)) {
-    if (!schoolActive(s)) continue;
-    if (s.boss) { const a = G.t * 0.35; inst(MS.leviMesh(), s.x + Math.cos(a) * 18, s.y + Math.sin(a) * 12, a + Math.PI / 2, 1, -5.5, 0, 0, true, 1); continue; }
-    if (night && Math.hypot(s.x - G.boat.x, s.y - G.boat.y) > lr && G.frenzy?.s !== s) continue;
-    const sp = SPECIES[s.sp], n = Math.min(s.stock + 1, 5), m = MS.fishMesh(s.sp), sc = sp.base >= 40 ? 0.55 : 0.42;
-    for (let k = 0; k < n; k++) {
-      const a = G.t * (0.55 + 0.08 * k) + k * 6.283 / n + s.ph, r = 5 + (k % 2) * 3;
-      inst(m, s.x + Math.cos(a) * r, s.y + Math.sin(a) * r * 0.75, a + Math.PI / 2, sc, -2.2, 0, Math.PI / 2, true, 0.85);
+    if (s.boss) {
+      if (schoolActive(s)) { const a = G.t * 0.35; inst(MS.leviMesh(), s.x + Math.cos(a) * 18, s.y + Math.sin(a) * 12, a + Math.PI / 2, 1, -5.5, 0, 0, true, 1); }
+      continue;
     }
+    const d = Math.hypot(s.x - G.boat.x, s.y - G.boat.y);
+    const lit = !night || G.frenzy?.s === s || schoolLook(s.sp).glow || d < lr;
+    if ((lit || d < 90) && activeAt(s.sp, env())) drawSchool(s, night, lit);
+    else shownCount.delete(s);
   }
   // whales, giants, jellies, NPC ships, dolphins
   const mx = W / 2 + 60, my = H / 2 + 60;
@@ -309,10 +379,7 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
     const pulse = Math.sin(j.ph), sz = 0.55 * j.size;
     inst(MS.jellyMesh(pulse > 0.35), j.x, j.y, j.ph * 0.15, sz * (1 + pulse * 0.06), j.z, 0, 0, true, j.col, j.glow * (0.8 + 0.2 * pulse), 0.6);
   }
-  // messages in bottles left by other players, bobbing where they were thrown
-  for (const bo of ONLINE.bottles) if (Math.abs(bo.x - cx) < W && Math.abs(bo.y - cy) < H) {
-    inst(MS.bottleMesh(), bo.x, bo.y, bo.x * 0.37, 1, -0.6 + Math.sin(G.t * 2.1 + bo.x) * 0.3, Math.sin(G.t * 1.6 + bo.y) * 0.25, 0.4);
-  }
+
   for (let i = 0; i < fleet.length; i++) {
     const sh = fleet[i];
     if (!isBoatId(sh.id) || !near(sh, cx, cy, mx + 30, my + 30)) continue;
@@ -361,10 +428,13 @@ function drawPlayerBoat(bs: BoatPose): void {
     tip[0] = bs.x + Math.cos(ang) * 12; tip[1] = bs.y + Math.sin(ang) * 12; tip[2] = 16 + bz;
     let bx = f.tx, by = f.ty, lift = 0;
     if (f.st === 'cast') { const k = Math.min(1, f.t / 0.55); bx = lerp(bs.x, f.tx, k); by = lerp(bs.y, f.ty, k); lift = Math.sin(Math.PI * k) * 22; }
-    if (f.st === 'reel') { bx += Math.sin(G.t * 37) * (f.surge || 0); by += Math.cos(G.t * 29) * (f.surge || 0) * 0.6; }
+    if (f.st === 'bite' && f.run !== undefined) { const d = Math.min(f.t, 1.5) * 6; bx += Math.cos(f.run) * d; by += Math.sin(f.run) * d; }   // it runs with the bait
+    if (f.st === 'reel') { bx = (f.fx ?? f.tx) + Math.sin(G.t * 37) * (f.surge || 0); by = (f.fy ?? f.ty) + Math.cos(G.t * 29) * (f.surge || 0) * 0.6; }
+    const nibble = f.st === 'wait' && f.teaseT !== undefined ? 1 - smooth01((G.t - f.teaseT) / 0.3) : 0;
+    drawHookedFish(f, bx, by);
     MS.dynBox(hand, tip, 0.45, ROD_RGB);                       // the rod
     // the line sags between the rod tip and the bobber
-    bob[0] = bx; bob[1] = by; bob[2] = lift + (f.st === 'bite' ? -1.4 : 0.2);
+    bob[0] = bx; bob[1] = by; bob[2] = lift + (f.st === 'bite' ? -1.4 : 0.2) - nibble * 0.9;
     const sag = f.st === 'wait' ? 4 : f.st === 'cast' ? 0 : 1.2;
     linePrev[0] = tip[0]; linePrev[1] = tip[1]; linePrev[2] = tip[2];
     for (let i = 1; i <= 6; i++) {
@@ -374,10 +444,13 @@ function drawPlayerBoat(bs: BoatPose): void {
       linePrev[0] = lineNext[0]; linePrev[1] = lineNext[1]; linePrev[2] = lineNext[2];
     }
     inst(MS.bobberMesh(), bob[0], bob[1], 0, 1, bob[2] - 0.6 + Math.sin(G.t * 3) * 0.15);
-    if (f.jump) { const k = Math.min(1, f.jump.t / 0.75); inst(MS.fishMesh(f.s.sp), f.tx + f.jump.dir * (k - 0.5) * 14, f.ty, f.jump.dir > 0 ? 0 : Math.PI, 0.6, Math.sin(Math.PI * k) * 16 - 1, (0.5 - k) * 1.6); }
+    if (f.jump) {
+      const k = Math.min(1, f.jump.t / 0.75), size = Math.max(0.6, schoolLook(f.s.sp).size);
+      inst(MS.fishMesh(f.s.sp, !!f.gold), (f.fx ?? f.tx) + f.jump.dir * (k - 0.5) * 14, f.fy ?? f.ty, f.jump.dir > 0 ? 0 : Math.PI, size, Math.sin(Math.PI * k) * 16 - 1, (0.5 - k) * 1.6, 0, false, f.gold ? GOLD_TINT : 1, isNight() ? 1 : 0.2);
+    }
   }
   // a landed fish arcs into the boat
-  if (G.catchAnim) { const c2 = G.catchAnim, k = Math.min(1, c2.t / 0.7); inst(MS.fishMesh(c2.sp), lerp(c2.x, bs.x, k), lerp(c2.y, bs.y, k), Math.atan2(bs.y - c2.y, bs.x - c2.x), 0.6, Math.sin(Math.PI * k) * 24 + 2, k * 6.28); }
+  if (G.catchAnim) { const c2 = G.catchAnim, k = Math.min(1, c2.t / 0.7); inst(MS.fishMesh(c2.sp), lerp(c2.x, bs.x, k), lerp(c2.y, bs.y, k), Math.atan2(bs.y - c2.y, bs.x - c2.x), 0.6, Math.sin(Math.PI * k) * 24 + 2, k * 6.28, 0, false, 1, isNight() ? 1 : 0.2); }
 }
 
 // ---------- lighting environment for the time of day and weather ----------
@@ -555,6 +628,11 @@ function foamPoints(bs: BoatPose): number {
     if (up > 0) hullWash(w.x - Math.cos(w.a) * 3 * s, w.y - Math.sin(w.a) * 3 * s, w.a, 30 * s, 8 * s, 0, w.t, up);
     if (w.tail > 0.25) foam(w.x + Math.cos(w.a) * (MS.WHALE.joint - 5) * s, w.y + Math.sin(w.a) * (MS.WHALE.joint - 5) * s, 10 * s, w.tail * 0.5, 0, w.a + Math.PI / 2, 0.5);
   }
+  for (let i = 0; i < schoolFx.length; i += 3) {          // darting and leaping fish ruffle the surface
+    const kind = schoolFx[i + 2];
+    if (kind === FX_RING) foam(schoolFx[i], schoolFx[i + 1], 5, 0.35, 0);
+    else if (kind === FX_SPRAY) foam(schoolFx[i], schoolFx[i + 1], 9, 0.6, 1);
+  }
   for (const g of LIFE.giants) {                           // something big just under the surface bulges the water
     if (g.z < -5 || !near(g, cx, cy, mx, my)) continue;
     for (let i = 0; i < 2; i++) {
@@ -598,6 +676,12 @@ function partPoints(): void {
     const glowing = SPECIES[s.sp].shape === 'glow';
     point(s.x + Math.sin(G.t + s.ph) * 4, s.y, 0.2, 1.3, glowing ? 2.2 : 1.3, glowing ? 1.8 : 1.4, glowing ? 0.7 : 1.5, 0.9);
   }
+  // golden fish twinkle, leaping fish throw spray
+  for (let i = 0; i < schoolFx.length; i += 3) {
+    const x = schoolFx[i], y = schoolFx[i + 1], kind = schoolFx[i + 2], q = Math.floor(G.t * 6) + i;
+    if (kind === FX_GOLD && hash01(q, 7, 5) < 0.6) point(x + (hash01(q, 1, 9) - 0.5) * 6, y + (hash01(q, 2, 9) - 0.5) * 4, 0.4, 1.3, 2.4, 1.9, 0.6, 1);
+    else if (kind === FX_SPRAY) for (let k = 0; k < 3; k++) point(x + (hash01(q, k, 4) - 0.5) * 5, y + (hash01(q, k, 6) - 0.5) * 3, 1 + hash01(q, k, 8) * 3, 1.2, 1.3, 1.35, 1.4, 0.8);
+  }
   // smoke drifts downwind as it rises, swelling to ~3x and thinning out; drawn after the rest so it sits on top
   const wa = windAngle(), wdx = Math.cos(wa), wdy = Math.sin(wa);
   for (const p of G.parts) if (p.kind === 'smoke') {
@@ -608,6 +692,9 @@ function partPoints(): void {
   for (const p of G.parts) if (p.kind === 'glow') {        // bioluminescent plankton, added on top
     const k = clamp(p.life / p.max, 0, 1);
     point(p.x, p.y, p.z || 0, p.size || 1.2, 0.35, 1.5, 1.3, k, 2);
+  }
+  for (let i = 0; i < schoolFx.length; i += 3) if (schoolFx[i + 2] === FX_GLOW) {   // glowing fish light the water around them
+    point(schoolFx[i], schoolFx[i + 1], -0.5, 3.2, 1.6, 1.4, 0.7, 0.35 + 0.15 * Math.sin(G.t * 3 + i), 2);
   }
   glowN = pN - blendN;
 }

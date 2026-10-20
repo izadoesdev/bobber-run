@@ -1,11 +1,12 @@
-// Menus and dialogs: title, pause, settings, controls, online, cheats, bottle and greeting pickers,
+// Menus and dialogs: title, pause, settings, controls, online, cheats, greeting picker,
 // conversations, the finale and the towed-home card.
 import type { TargetedMouseEvent } from 'preact';
+import { CHEATS_ENABLED } from '../input';
 import { G, hasSave, dayNum, logged } from '../game';
 import { SPECIES } from '../econ';
 import { ROWS, ACTIONS, SET } from '../settings';
 import { CHEATS } from '../cheats';
-import { NET, BOTTLE_MSGS, EMOTES, account, signOut, setName } from '../net';
+import { NET, EMOTES, account, signOut, setName } from '../net';
 import { PEOPLE, currentQuest } from '../story';
 import type { NetForm, Talk as TalkState } from '../types';
 import { Hint, Icon, Key, SetRow, byPointer, keyLabel, money } from './parts';
@@ -89,7 +90,7 @@ export function Settings() {
   );
 }
 
-const CONTROLS_HELP = 'Choose an action and press Enter to change its key. WASD always steers too. Press ` or F2 while sailing for the cheat console. Gamepad: stick steers, A casts, X docks, Y opens the chart, B goes back.';
+const CONTROLS_HELP = 'Choose an action and press Enter to change its key. WASD always steers too.' + (CHEATS_ENABLED ? ' Press ` or F2 while sailing for the cheat console.' : '') + ' Gamepad: stick steers, A casts, X docks, Y opens the chart, B goes back.';
 export function Controls() {
   const sel = G.ctlSel || 0;
   // rows past the actions: reset, then back
@@ -185,7 +186,7 @@ export function Online() {
         <p><button class="btn" disabled={NET.busy} onClick={async () => { await signOut(); say('Signed out. You are sailing as a guest again'); }}>Sign out</button></p>
       )}
       {G.netMsg && <p class={G.netMsg.bad ? 'why left' : 'good'}>{G.netMsg.msg}</p>}
-      <p class="help">Online you share a sea with up to 30 sailors. Greet them (G), toss and read bottles (T), compare world records in the logbook, and give to the coastwide fund in Alderhaven's Harbour tab.</p>
+      <p class="help">Online you share a sea with up to 30 sailors. Greet them (G), compare world records in the logbook, and give to the coastwide fund in Alderhaven's Harbour tab.</p>
       <footer class="foot"><span /><button class="btn" onClick={() => { G.mode = G.accountBack || 'play'; }}>Back<Key k="Escape" pad="B" /></button></footer>
     </div></div>
   );
@@ -203,24 +204,6 @@ export function EmotePick() {
         </SetRow>
       ))}
     </div>
-  );
-}
-
-// pick a phrase for a message in a bottle
-export function BottlePick() {
-  const sel = G.bottleSel || 0;
-  return (
-    <div class="center dim-bg"><div class="panel rivets dialog">
-      <h1>Message in a bottle</h1>
-      <p class="muted">Pick a line. Other sailors who pass by can fish it out and read it.</p>
-      <div class="scroll">{BOTTLE_MSGS.map((m, i) => (
-        <SetRow sel={i === sel} onEnter={() => { G.bottleSel = i; }} onClick={() => { G.bottleSel = i; press('Enter'); }}><span>{m}</span></SetRow>
-      ))}</div>
-      <footer class="foot">
-        <span class="hints-inline"><Hint k="ArrowUp" k2="ArrowDown">Choose</Hint><Hint k="Enter">Throw</Hint></span>
-        <Hint k="Escape">Cancel</Hint>
-      </footer>
-    </div></div>
   );
 }
 

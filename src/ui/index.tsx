@@ -6,7 +6,7 @@ import { G } from '../game';
 import { Hud, Toasts } from './hud';
 import { Port } from './port';
 import { Chart, Journal, Logbook, Ship } from './screens';
-import { BottlePick, Cheats, Controls, EmotePick, Finale, Online, Pause, Settings, Sunk, Talk, Title } from './menus';
+import { Cheats, Controls, EmotePick, Finale, Online, Pause, Settings, Sunk, Talk, Title } from './menus';
 
 export { TITLE_ITEMS, PAUSE_ITEMS } from './menus';
 export { keyLabel } from './parts';
@@ -32,7 +32,6 @@ function App() {
       {m === 'finale' && <Finale />}
       {m === 'cheat' && <Cheats />}
       {m === 'account' && <Online />}
-      {m === 'bottle' && <BottlePick />}
       {m === 'emote' && <><Hud /><EmotePick /></>}
       {m === 'talk' && G.talk && <Talk t={G.talk} />}
       {m === 'journal' && <Journal />}

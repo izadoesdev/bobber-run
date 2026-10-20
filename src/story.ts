@@ -26,7 +26,6 @@ export const PEOPLE: Record<Speaker, Person> = {
   tobias: { name: 'Tobias', role: 'Lighthouse keeper' },
   wren: { name: 'Wren', role: 'Naturalist' },
   nell: { name: 'Nell', role: 'Your grandmother' },
-  bottle: { name: 'A message in a bottle', role: 'From another sailor' },
 };
 const S = (g: GameState): Stats => g.stats;
 const ports = (): number => [...G.found].filter(id => id.startsWith('port:')).length;

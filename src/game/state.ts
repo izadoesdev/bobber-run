@@ -17,7 +17,7 @@ export const G: GameState = {
   mode: 'title', t: 0,
   boat: { x: 0, y: 0, a: 0, vx: 0, vy: 0, w: 0, px: 0, py: 0, pa: 0, phase: 0.5, phaseL: 0.5, phaseR: 0.5, hp: 100 },
   coinsShown: 0, sat: {}, dry: 0, fish: null, frenzy: null, nextFrenzy: 50, throttle: 0,
-  lairTold: false, readBottles: new Set(), sunkT: 0, sunkMsg: '',
+  lairTold: false, sunkT: 0, sunkMsg: '',
   // timers
   crashCd: 0, spookCd: 0, petCd: 0, petT: 0, wakeAcc: 0, idleRing: 0, smokeT: 0, bilgeT: 0, saveT: 0, netT: 0, potT: 0,
   // feedback
@@ -27,10 +27,10 @@ export const G: GameState = {
   // input
   keys: {}, pressed: new Set(), pad: false,
   // surroundings
-  prompt: null, nearPort: null, nearWreck: null, nearSchool: null, nearBottle: null, nearTreasure: null,
+  prompt: null, nearPort: null, nearWreck: null, nearSchool: null, nearTreasure: null,
   // screens
   menu: { tab: 0, sel: 0, port: null }, map: { x: 0, y: 0, zoom: 1 }, talk: null,
-  shipSel: 0, logSel: 0, titleSel: 0, pauseSel: 0, setSel: 0, ctlSel: 0, bottleSel: 0, emoteSel: 0,
+  shipSel: 0, logSel: 0, titleSel: 0, pauseSel: 0, setSel: 0, ctlSel: 0, emoteSel: 0,
   back: 'title', accountBack: 'play', journalBack: 'play', cheatBack: 'play', cheatBuf: '', cheatErr: false,
   rebinding: null, netForm: null, netMsg: null,
   // cheats

@@ -1,6 +1,5 @@
 // Core domain types shared across the game: the state object `G`, its parts, and the static game data.
 // Type-only module: importing it never pulls in runtime code.
-import type { Bottle } from './online';
 
 // ---------- small shared shapes ----------
 export interface Point { x: number; y: number }
@@ -9,7 +8,7 @@ export type ToastKind = 'info' | 'good' | 'bad';
 /** Every screen the game can be on. `G.mode` drives input routing and which UI is drawn. */
 export type Mode =
   | 'title' | 'play' | 'port' | 'map' | 'log' | 'ship' | 'pause' | 'settings' | 'controls'
-  | 'sunk' | 'finale' | 'cheat' | 'talk' | 'journal' | 'account' | 'bottle' | 'emote';
+  | 'sunk' | 'finale' | 'cheat' | 'talk' | 'journal' | 'account' | 'emote';
 
 export type WeatherState = 'clear' | 'cloudy' | 'rain' | 'storm';
 /** Conditions a species checks before it bites (see `activeAt` in econ). */
@@ -238,7 +237,7 @@ export interface Stats {
   wrecks: number; trophies: number; night: number; frenzy: number; treasures: number; storm: number;
 }
 
-export type Speaker = 'maren' | 'ida' | 'tobias' | 'wren' | 'nell' | 'bottle';
+export type Speaker = 'maren' | 'ida' | 'tobias' | 'wren' | 'nell';
 export type TalkLine = [Speaker, string];
 export interface Talk { lines: TalkLine[]; i: number; then?: (() => void) | undefined; back: Mode }
 /** Story progress; `base` snapshots the stats when the current quest began. */
@@ -346,7 +345,6 @@ export interface Voyage {
   /** 1 while throttle or reverse is held */
   throttle: number;
   lairTold: boolean;
-  readBottles: Set<string>;
   sunkT: number;
   sunkMsg: string;
 }
@@ -392,7 +390,6 @@ export interface Surroundings {
   nearPort: Port | null;
   nearWreck: Wreck | null;
   nearSchool: School | null;
-  nearBottle: Bottle | null;
   nearTreasure: TreasureMap | null;
 }
 
@@ -402,7 +399,7 @@ export interface Screens {
   map: MapView;
   talk: Talk | null;
   shipSel: number; logSel: number; titleSel: number; pauseSel: number;
-  setSel: number; ctlSel: number; bottleSel: number; emoteSel: number;
+  setSel: number; ctlSel: number; emoteSel: number;
   /** settings/controls return here */
   back: Mode;
   accountBack: Mode; journalBack: Mode; cheatBack: Mode;

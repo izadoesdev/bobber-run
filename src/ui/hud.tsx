@@ -6,13 +6,16 @@ import {
   lineMax, nextProject, needStatus, currentGoal,
 } from '../game';
 import { SPECIES, SUPPLIES, PROJECTS, fmtKg } from '../econ';
+import { favBait } from '../species';
+import { schoolInReach } from '../game/fishing';
+import { schoolMood } from '../game/schools';
 import { schoolsNear, cellPois } from '../world';
 import { WX } from '../weather';
 import { SET } from '../settings';
 import { NET, EMOTES } from '../net';
 import { ONLINE } from '../online';
 import { currentQuest, questProgress } from '../story';
-import type { CatchCard as CatchCardState, FishLine, Poi, Toast } from '../types';
+import type { CatchCard as CatchCardState, FishLine, Poi, School, Toast } from '../types';
 import { drawChart, nearestUncharted } from './chart';
 import { fishIcon } from './icons';
 import { Bar, Canvas, Fish, Hint, Icon, Key, keyed, money, type DrawFn } from './parts';
@@ -149,7 +152,10 @@ function Reel({ f }: { f: FishLine }) {
   return (
     <div class={'reel panel' + (warn ? ' alert' : '')}>
       <div class="row">
-        <Fish sp={f.s.sp} /><span class="title">{sp.name}</span><span class="grow" />
+        <Fish sp={f.s.sp} /><span class="title">{sp.name}</span>
+        {f.gold && <span class="gold"><Icon k="star" size="s" />Golden</span>}
+        {f.perfect && f.t < 2.5 && !f.gold && <span class="gold">Perfect strike</span>}
+        <span class="grow" />
         {warn
           ? <span class="callout"><Icon k="warn" size="s" />{f.jump || f.jumpWarn ? 'It jumps. Let go!' : 'It runs. Ease off!'}</span>
           : SET.reelToggle && <span class="muted small">{f.reelOn ? 'Reeling' : 'Paused'}</span>}
@@ -185,6 +191,7 @@ function CatchCard({ c }: { c: CatchCardState }) {
           {c.record && <span class="stamp good">Record</span>}
           {f.trophy && <span class="stamp gold">Trophy</span>}
           {c.perfect && <span class="stamp sea">Perfect</span>}
+          {f.gold && <span class="stamp gold">Golden</span>}
         </div>
         {c.bonus && <div class="small gold">{c.bonus}</div>}
       </div>
@@ -219,14 +226,50 @@ function HarbourChip() {
   );
 }
 
+// the strike window as a draining bar: the gold stretch at the start is a perfect strike
+function StrikeMeter({ f }: { f: FishLine }) {
+  const [perfect, total] = f.win ?? [0.3, 1], perfectNow = f.t < perfect;
+  return (
+    <div class="reel panel" style={{ width: '17em' }}>
+      <div class="meter">
+        <span class={'caps' + (perfectNow ? ' gold' : '')}>{perfectNow ? 'Perfect' : 'Strike'}</span>
+        <div class={'gauge ' + (perfectNow ? 'gold' : 'good')}>
+          <i style={{ width: clamp(1 - f.t / total, 0, 1) * 100 + '%' }} />
+          <b style={{ left: (1 - perfect / total) * 100 + '%' }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // world position -> percent of the view, for labels pinned over the canvas
 const viewPct = (x: number, y: number): [number, number] => [(x - G.cam.x) / W * 100, (y - G.cam.y) / H * 100];
 
-// school names (spyglass 2), other sailors' name tags and greetings, and your own greeting
+const MOOD_NOTE = { biting: '', scattered: 'regrouping', empty: 'fished out' } as const;
+// the school in reach: what it is ("?" until logged), its favourite bait, a golden fish, and why it won't bite
+function SchoolTag({ s }: { s: School }) {
+  const sp = SPECIES[s.sp], mood = schoolMood(s), fav = favBait(sp), [x, y] = viewPct(s.x, s.y - 9);
+  if (x < 3 || x > 97 || y < 8 || y > 94) return null;
+  const note = MOOD_NOTE[mood] || (sp.rod > G.up.rod ? `needs rod ${sp.rod + 1}` : '');
+  return (
+    <div class={'label-world chip row' + (sp.legend ? ' gold' : '')} key="school-tag" style={{ left: x + '%', top: y + '%', gap: '0.3em' }}>
+      <Fish sp={s.sp} size="s" />
+      <span>{sp.name}</span>
+      {!G.log[sp.id] && <span class="gold" title="Not in your logbook yet">?</span>}
+      {s.gold && mood !== 'empty' && <Icon k="star" size="s" />}
+      <Icon k={fav} size="s" style={{ opacity: G.baitSel === fav ? 1 : 0.5 }} />
+      {note && <span class="muted">{note}</span>}
+    </div>
+  );
+}
+
+// the tag for the school in reach, school names (spyglass 2), other sailors' name tags and greetings, and your own greeting
 function worldLabels(): JSX.Element[] {
   const labels: JSX.Element[] = [];
+  const tagged = G.fish ? (G.fish.st === 'reel' ? null : G.fish.s) : schoolInReach();
+  if (tagged) labels.push(<SchoolTag s={tagged} />);
   if (G.up.spyglass >= 2) for (const s of schoolsNear(G.boat.x, G.boat.y, 120)) {
-    if (!schoolActive(s) || s.boss) continue;
+    if (!schoolActive(s) || s.boss || s === tagged) continue;
     const [x, y] = viewPct(s.x, s.y - 6);
     if (x > 4 && x < 96 && y > 30 && y < 92) {
       labels.push(<div class={'label-world chip' + (SPECIES[s.sp].legend ? ' gold' : '')} style={{ left: x + '%', top: y + '%' }}>{SPECIES[s.sp].name}</div>);
@@ -287,6 +330,7 @@ export function Hud() {
       <div class="bottom-stack">
         <Captions />
         {G.fish?.st === 'reel' && <Reel f={G.fish} />}
+        {G.fish?.st === 'bite' && SET.strike !== 'auto' && <StrikeMeter f={G.fish} />}
         {G.prompt && G.mode === 'play' && (
           <div class={'prompt panel' + (G.fish?.st === 'bite' || G.fish?.warn ? ' hot' : '')}>{keyed(G.prompt)}</div>
         )}

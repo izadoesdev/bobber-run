@@ -299,3 +299,6 @@ h2, .title { font-size: var(--fs-xl); }
 .bubble::after { content: ''; position: absolute; left: 50%; bottom: -0.35em; transform: translateX(-50%); border: 0.35em solid transparent; border-top-color: #fff6dc; border-bottom: 0; }
 .bubble.mine { background: #f0d27a; } .bubble.mine::after { border-top-color: #f0d27a; }
 .emote-pick { position: absolute; left: 50%; bottom: 5em; transform: translateX(-50%); padding: 0.6em; min-width: 16em; pointer-events: auto; }
+
+/* long item details scroll; the price and Buy button stay pinned at the bottom of the card */
+.detail .d-foot { position: sticky; bottom: -0.9em; padding: 0.5em 0 0.2em; background: linear-gradient(transparent, #e8d6ad 35%); }

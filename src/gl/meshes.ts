@@ -3,6 +3,7 @@
 import { Vox, RGB, EMISSIVE, mat, type Vec3 } from '../voxel';
 import { M, decorate, eqSig, LIGHTHOUSE, HARBOUR, WRECK, CRATE, type Fit } from '../models';
 import { SPECIES } from '../econ';
+import { schoolLook } from '../species';
 import { FISH_T } from '../fishart';
 import { hash01 } from '../noise';
 import { hex } from '../config';
@@ -158,25 +159,29 @@ export const treeMesh = (k: TreeKind): Mesh => treeMeshes[k] ??= cached('tree:' 
 // ---------- fish: each species' sprite extruded into a two-voxel-thick slab ----------
 const matCache = new Map<string, number>();
 const toHex = (x: number[]) => '#' + x.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
-// a material ramp around one sprite colour: 70% for shadow, 115% for lit
-function matFor(c: string): number {
-  let m = matCache.get(c);
+// a material ramp around one sprite colour: 70% for shadow, 115% for lit; glowing ramps shine at night
+function matFor(c: string, glow = false): number {
+  const key = glow ? c + '*' : c;
+  let m = matCache.get(key);
   if (m === undefined) {
     const [r, g, b] = hex(c);
-    m = mat([toHex([r * 0.7, g * 0.7, b * 0.7]), c, toHex([r * 1.15, g * 1.15, b * 1.15])]);
-    matCache.set(c, m);
+    m = mat([toHex([r * 0.7, g * 0.7, b * 0.7]), c, toHex([r * 1.15, g * 1.15, b * 1.15])], glow);
+    matCache.set(key, m);
   }
   return m;
 }
-const fishMeshes: Mesh[] = [];
-export function fishMesh(spIdx: number): Mesh {
-  return fishMeshes[spIdx] ??= cached('fish:' + spIdx, () => {
-    const sp = SPECIES[spIdx], rows = FISH_T[sp.shape], h = rows.length, w = rows[0].length;
-    const col: Record<string, string> = { T: sp.c[0], M: sp.c[1], B: sp.c[2], F: sp.c[3], G: sp.c[3], S: sp.c[0], E: '#1b2a33' };   // sprite letters -> colour
+const fishMeshes: Mesh[] = [], goldMeshes: Mesh[] = [];
+const GOLD_PAL = ['#a47f22', '#f0cf6a', '#fff6d6', '#e2b94a'];
+// glow spots (G) always shine; glowing species' fins (F) shine too. `gold`: the species' shape in gold
+export function fishMesh(spIdx: number, gold = false): Mesh {
+  const meshes = gold ? goldMeshes : fishMeshes;
+  return meshes[spIdx] ??= cached((gold ? 'goldfish:' : 'fish:') + spIdx, () => {
+    const sp = SPECIES[spIdx], rows = FISH_T[sp.shape], h = rows.length, w = rows[0].length, glowFins = schoolLook(spIdx).glow, c = gold ? GOLD_PAL : sp.c;
+    const col: Record<string, string> = { T: c[0], M: c[1], B: c[2], F: c[3], G: c[3], S: c[0], E: '#1b2a33' };   // sprite letters -> colour
     const V = new Vox(-Math.ceil(w / 2), Math.ceil(w / 2), -1, 1, h + 1);
     for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
       const ch = rows[j][i]; if (ch === '.') continue;
-      const m = matFor(col[ch] || sp.c[1]), u = i - (w >> 1), z = h - 1 - j;
+      const m = matFor(col[ch] || c[1], ch === 'G' || (glowFins && ch === 'F')), u = i - (w >> 1), z = h - 1 - j;
       V.set(u, 0, z, m); if (ch !== 'F') V.set(u, -1, z, m);
     }
     return V.finalize();
@@ -333,8 +338,6 @@ const gullMeshes: Mesh[] = [];
 export const gullMesh = (up: number): Mesh => gullMeshes[up] ??= cached('gull' + up, () => { const V = new Vox(-3, 3, -5, 5, 4); V.box(-1, 1, 0, 0, 1, 1, LM.gull); V.set(2, 0, 1, LM.beak); for (let v = 1; v <= 4; v++) { const z = up ? 1 + Math.min(2, v - 1) : 1; V.set(0, v, z, v > 3 ? LM.wing : LM.gull); V.set(0, -v, z, v > 3 ? LM.wing : LM.gull); } return V.finalize(); });
 export const leviMesh = lazy('levi', () => { const V = new Vox(-22, 22, -8, 8, 7); ellipsoid(V, 17, 6, 3, LM.levi); for (let u = -22; u <= -16; u++) for (let v = -Math.round((-16 - u) * 0.9); v <= Math.round((-16 - u) * 0.9); v++) V.set(u, v, 3, LM.levi); return V.finalize(); });
 export const bobberMesh = lazy('bobber', () => { const V = new Vox(-1, 1, -1, 1, 4); V.box(-1, 1, -1, 1, 0, 0, M.white); V.box(-1, 1, -1, 1, 1, 1, M.redp); V.set(0, 0, 2, M.redp); V.set(0, 0, 3, M.iron); return V.finalize(); });
-// a message in a bottle: green glass, a cork and a curl of paper inside
-export const bottleMesh = lazy('bottle', () => { const V = new Vox(-4, 4, -2, 2, 4); for (let u = -3; u <= 1; u++) for (let v = -1; v <= 1; v++) for (let z = 0; z <= 2; z++) if (Math.abs(v) + Math.abs(z - 1) <= 1 + (u > -1 ? 0 : 0.5)) V.set(u, v, z, LM.glass); V.set(-1, 0, 1, LM.paper); V.box(2, 3, 0, 0, 1, 1, LM.glass); V.set(4, 0, 1, LM.cork); return V.finalize(); });
 export const buoyMesh = lazy('buoy', () => { const V = new Vox(-2, 3, -2, 2, 10); V.box(-1, 1, -1, 1, 0, 1, M.redp); V.box(-1, 1, -1, 1, 2, 2, M.white); V.box(0, 0, 0, 0, 3, 8, M.iron); V.box(1, 2, 0, 0, 7, 8, M.redp); V.set(0, 0, 9, M.lamp); return V.finalize(); });
 
 // ---------- dynamic thin parts, built in world space every frame ----------
