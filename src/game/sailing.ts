@@ -18,6 +18,9 @@ import { schoolActive, swimSchools, updateSchools } from './schools';
 import { dock, keptBack, updateFleet } from './port';
 import { track } from '../analytics';
 import { dropCourse, steerCourse } from './autopilot';
+import { biomeAt, type BiomeId } from '../biome';
+// what a crab pot brings up, by the waters it's set in
+const POT_CRAB: Partial<Record<BiomeId, number>> = { mangrove: SP.mudcrab, volcanic: SP.ventcrab, cold: SP.snowcrab };
 
 // ---------- landmarks ----------
 function discover(p: Poi): void {
@@ -147,7 +150,8 @@ export function update(dt: number): void {
   handleActions(dt, speed);
   steerCourse();
   boatEffects(dt, speed);
-  if (G.up.bilge > 0 && G.boat.hp < hpMax() && (G.bilgeT += dt) > [0, 4, 1.4][G.up.bilge]) { G.bilgeT = 0; G.boat.hp++; }   // the pump patches the hull
+  const pump = [0, 0, 5, 2.5, 1.2][G.up.hull];                  // iron plating and up carry a bilge pump
+  if (pump && G.boat.hp < hpMax() && (G.bilgeT += dt) > pump) { G.bilgeT = 0; G.boat.hp++; }   // the pump patches the hull
   if ((G.saveT += dt) > 15) { G.saveT = 0; saveGame(); }
 }
 
@@ -159,7 +163,7 @@ function autoCatches(dt: number, speed: number): void {
   const b = G.boat, bd = boatDef();
   if (potsLvl() > 0 && G.hold.length < cap() && !G.fish && (G.potT += dt) > [0, 240, 150, 60][potsLvl()]) {
     G.potT = 0;
-    landNetted(SP.crab, endlessStock(), 'POTS');
+    landNetted(POT_CRAB[biomeAt(b.x, b.y)] ?? SP.crab, endlessStock(), 'POTS');   // the crab of these waters
   }
   updateSchools(speed, dt);
   if (netLvl() > 0 && !G.fish && speed > 3 && speed < 20 && G.hold.length < cap()) {   // the net only works at a slow drift

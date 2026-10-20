@@ -1,7 +1,8 @@
 // Saving and loading, new voyages, and putting the boat at a port.
 import { W, H, clamp } from '../config';
 import { hAt, homePort, cellPois, nearestWater, WORLD } from '../world';
-import { SP } from '../econ';
+import { SP, retiredRefund } from '../econ';
+import { toast } from './feedback';
 import { netSaved, reportStats } from '../net';
 import type { BoatId, Contract, Fish, GameState, LogEntry, Pet, Port, ProjectId, Stats, StoryState, TreasureMap, UpgradeKey, BaitKind, BaitChoice } from '../types';
 import { G, freshStats, freshUpgrades } from './state';
@@ -151,6 +152,9 @@ export function loadGame(): void {
       offers: d.offers || {}, active: d.active || [], pity: int(d.pity), clock: d.clock ?? G.clock,
     };
     Object.assign(G, loaded);
+    // retired upgrades (bilge pumps went into Plating): give back what they cost, once
+    const refund = retiredRefund(G.up);
+    if (refund > 0) { G.coins += refund; G.coinsShown = G.coins; G.up.bilge = 0; toast(`Bilge pumps now come with Plating: refunded $${refund}`, 'good'); }
     G.boat.hp = clamp(d.hp ?? hpMax(), 1, hpMax());
     // older saves stored destination names in capitals, and could ask for more fish than the hold carries
     for (const c of [...G.active, ...Object.values(G.offers).flat()]) if (c && c.to) { c.toName = portById(c.to).name; c.n = Math.min(c.n, cap()); }

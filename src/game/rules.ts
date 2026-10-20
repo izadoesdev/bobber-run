@@ -62,7 +62,7 @@ export const fishValue = (f: Fish): number => Math.round(f.value * (1 + ICE_STEP
 export const logged = (): number => SPECIES.filter(s => G.log[s.id]).length;
 
 // ---------- what an upgrade level amounts to (the outfitter's "now -> next" line) ----------
-// Effects that live in fishing/sailing code are quoted from there: reel, tackle, net, pots, bilge, radio, deckhand, harpoon, bell.
+// Effects that live in fishing/sailing code are quoted from there: reel, tackle, net, pots, radio, deckhand, harpoon, bell.
 const BUILT_IN: Partial<Record<UpgradeKey, 'sonar' | 'net' | 'crew' | 'keel' | 'harpoon'>> = { sonar: 'sonar', net: 'net', deckhand: 'crew', keel: 'keel', harpoon: 'harpoon' };
 /** The level of gear the current boat carries for upgrade `k` without buying it. */
 export const builtIn = (k: UpgradeKey): number => { const b = BUILT_IN[k]; return b ? boatDef()[b] ?? 0 : 0; };
@@ -104,7 +104,8 @@ export function equipment(): Fit {
   return {
     paint: G.paint, plate: u.hull, prop: u.prop, lantern: u.lantern, sonar: sonarLvl(), rod: u.rod, ice: u.ice, tackle: u.tackle,
     net: u.net, radio: u.radio, anchor: u.anchor, hold: u.hold, pile: Math.min(3, Math.ceil(G.hold.length / 3)),
-    deckhand: crewLvl(), cook: u.cook, quarter: u.quarter, bilge: u.bilge, reel: u.reel, pet: G.pet ? 1 : 0,
+    deckhand: crewLvl(), cook: u.cook, quarter: u.quarter, bilge: Math.max(0, Math.min(2, u.hull - 1)),   // plating's pump
+    reel: u.reel, pet: G.pet ? 1 : 0,
     pots: u.pots, harpoon: harpoonLvl(), bell: u.bell,
   };
 }

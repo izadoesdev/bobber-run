@@ -30,7 +30,7 @@ export const PROJECTS: Project[] = [
 // the shop adds the exact before and after numbers (see upgradeStat in game/rules).
 export const UPGRADES: Record<UpgradeKey, Upgrade> = {
   prop:     { name: b => ({ OARS: 'Oars', SAIL: 'Sails', ENGINE: 'Engine' } as const)[b.prop], cat: 'VESSEL', costs: [60, 200, 1000, 4000], lv: ['Top speed +12%', 'Top speed +24%', 'Top speed +36%', 'Top speed +48%'] },
-  hull:     { name: () => 'Plating', cat: 'VESSEL', costs: [70, 220, 900, 3000], lv: ['Copper: +25% hull, 12% less crash damage', 'Iron: +50% hull, 24% less crash damage', 'Steel: +75% hull, 36% less crash damage', 'Gilded: +100% hull, 48% less crash damage'] },
+  hull:     { name: () => 'Plating', cat: 'VESSEL', costs: [70, 220, 900, 3000], lv: ['Copper: +25% hull, 12% less crash damage', 'Iron: +50% hull, 24% less crash damage, and a pump patches the hull at sea', 'Steel: +75% hull, 36% less crash damage, a faster pump', 'Gilded: +100% hull, 48% less crash damage, the fastest pump'] },
   hold:     { name: () => 'Hold', cat: 'VESSEL', costs: [50, 170, 800, 3000], lv: ['Carry 2 more fish', 'Carry 4 more fish', 'Carry 6 more fish', 'Carry 8 more fish'] },
   bilge:    { name: () => 'Bilge Pump', cat: 'VESSEL', costs: [200, 1000], lv: ['Repairs 1 hull point every 4 seconds at sea', 'Repairs 1 hull point every 1.4 seconds at sea'] },
   anchor:   { name: () => 'Anchor', cat: 'VESSEL', costs: [150], lv: ['Storm gusts no longer push you while you fish or sit still'] },
@@ -55,7 +55,13 @@ export const UPGRADES: Record<UpgradeKey, Upgrade> = {
   bell:     { name: () => 'Diving Bell', cat: 'NAVIGATION', req: 'drydock', costs: [2500, 12000], lv: ['Dive on each salvaged wreck once a day for another 60% of its loot', 'Daily dives bring up 120% of the loot'] },
 };
 /** Every upgrade key, in shop order. */
-export const UPGRADE_KEYS = Object.keys(UPGRADES) as UpgradeKey[];
+/** Upgrades no longer sold: kept in the table so old saves still read, but out of the shop and the goals. Bilge
+ *  pumps are part of Plating now (game/save.ts refunds what they cost). */
+const RETIRED = new Set<string>(['bilge']);
+export const UPGRADE_KEYS = (Object.keys(UPGRADES) as UpgradeKey[]).filter(k => !RETIRED.has(k));
+/** What a retired upgrade's levels cost, refunded once to saves that bought them. */
+export const retiredRefund = (up: Partial<Record<UpgradeKey, number>>): number =>
+  [...RETIRED].reduce((t, k) => t + UPGRADES[k as UpgradeKey].costs.slice(0, up[k as UpgradeKey] || 0).reduce((a, c) => a + c, 0), 0);
 export const UP_CATS: UpgradeCategory[] = ['VESSEL', 'TACKLE', 'NAVIGATION', 'CREW'];
 export const BAIT_KINDS: BaitKind[] = ['shrimp', 'glow', 'chum'];
 export const SUPPLIES: Record<BaitKind, Supply> = {
