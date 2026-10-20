@@ -6,7 +6,8 @@ import { ConvexReactClient } from 'convex/react';
 import type { FunctionReference } from 'convex/server';
 import { ConvexAuthProvider, useAuthActions, useConvexAuth } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
-import { ONLINE } from './online.js';
+import { ONLINE, type Sailor, type Bottle } from './online';
+import type { ToastKind } from './types';
 
 const URL: string | undefined = import.meta.env.VITE_CONVEX_URL;
 export const SAVE_KEY = 'bobber-run-save-v3';
@@ -17,7 +18,6 @@ interface Game { mode: string; boat: { x: number; y: number; a: number }; boatId
 type Profile = { userId: string; name: string; guest: boolean; email: string | null; sea: number | null };
 type Fund = { total: number; givers: number; goal: number; mine: number };
 type Status = 'offline' | 'connecting' | 'online';
-export interface Sailor { uid: string; id: string; name: string; paint: string; x: number; y: number; a: number; vx: number; vy: number; online: true; emote: number | null; emoteAt: number }
 type Result = { ok: true; msg?: string; reload?: boolean; name?: string } | { ok: false; why: string };
 
 export const NET = {
@@ -41,7 +41,7 @@ const errText = (e: unknown) => String((e as Error)?.message ?? e).slice(0, 120)
 
 let client: ConvexReactClient | null = null;
 let actions: ReturnType<typeof useAuthActions> | null = null;
-let G: Game | null = null, speciesIds: string[] = [], toast: (s: string, kind?: string) => void = () => { };
+let G: Game | null = null, speciesIds: string[] = [], toast: (s: string, kind?: ToastKind) => void = () => { };
 let signingIn = false, switching = false, naming = false;
 
 // ---------- subscriptions ----------
@@ -72,12 +72,12 @@ function Bridge() {
   }, [isAuthenticated]);
   return null;
 }
-export function initNet(game: Game, species: string[], notify: (s: string, kind?: string) => void) {
+export function initNet(game: Game, species: string[], notify: (s: string, kind?: ToastKind) => void) {
   G = game; speciesIds = species; toast = notify;
   if (!URL) return;
   client = new ConvexReactClient(URL);
   const host = document.createElement('div'); host.style.display = 'none'; document.body.appendChild(host);
-  render(h(ConvexAuthProvider, { client }, h(Bridge, null)), host);
+  render(h(ConvexAuthProvider, { client, children: h(Bridge, null) }), host);
   addEventListener('beforeunload', () => { if (NET.authed) client!.mutation(api.sea.leave, {}).catch(() => { }); });
 }
 const pageStart = Date.now();
@@ -176,7 +176,7 @@ export function netTick(dt: number) {
   if (!NET.authed || !G || NET.profile?.sea == null) return;
   const b = G.boat, cells = cellsAround(NET.profile.sea, b.x, b.y);
   watch<Raw[]>('sailors', api.sea.near, { cells }, list => { raw = list; });
-  watch('bottles', api.bottles.near, { cells }, list => { ONLINE.bottles = list as typeof ONLINE.bottles; });
+  watch('bottles', api.bottles.near, { cells }, list => { ONLINE.bottles = list as Bottle[]; });
   // our position: about once a second while moving, every 10 s when still, one request at a time
   sendT += dt;
   const moved = !lastSent || Math.hypot(b.x - lastSent.x, b.y - lastSent.y) > 1 || Math.abs(b.a - lastSent.a) > 0.05;
@@ -185,7 +185,7 @@ export function netTick(dt: number) {
     client!.mutation(api.sea.move, { x: b.x, y: b.y, a: b.a, boat: G.boatId, paint: G.paint }).catch(() => { }).finally(() => { inFlight = false; });
   }
   // the nearest few sailors glide toward their last reported spot; anyone quiet for 25 s drops out
-  const now = Date.now(), prev = new Map((ONLINE.sailors as Sailor[]).map(s => [s.uid, s])), k = 1 - Math.exp(-2.5 * dt);
+  const now = Date.now(), prev = new Map(ONLINE.sailors.map(s => [s.uid, s])), k = 1 - Math.exp(-2.5 * dt);
   const live = raw.filter(r => now - r.at < QUIET_MS).sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y)).slice(0, MAX_SHOWN);
   ONLINE.sailors = live.map(r => {
     const s: Sailor = prev.get(r.id) ?? { uid: r.id, id: r.boat, name: r.name, paint: r.paint, x: r.x, y: r.y, a: r.a, vx: 0, vy: 0, online: true, emote: null, emoteAt: 0 };

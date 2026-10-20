@@ -1,7 +1,7 @@
 import { v } from 'convex/values';
 import { query, mutation, internalMutation } from './_generated/server';
 import { getAuthUserId } from '@convex-dev/auth/server';
-import { requireUser, nameOf, profileOf, cellOf, finite } from './lib';
+import { requireUser, profileOf, cellOf, finite } from './lib';
 import { SEA_CAP, SEAS, MOVE_MIN_MS, EMOTE_MIN_MS } from './limits';
 
 const ACTIVE_MS = 60_000;
