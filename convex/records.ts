@@ -1,15 +1,20 @@
 import { v } from 'convex/values';
 import { query, mutation } from './_generated/server';
-import { requireUser, nameOf } from './lib';
-import { MAX_KG, LEGENDS } from './limits';
+import { requireUser, nameOf, profileOf } from './lib';
+import { MAX_KG, LEGENDS, CATCH_MIN_MS } from './limits';
 
 const valid = (species: string, kg: number) => kg > 0 && kg <= (MAX_KG[species] ?? 0);
 // keeps each player's best per species; announces legends and new world records to the coast
 export const submit = mutation({
-  args: { species: v.string(), kg: v.number() },
-  handler: async (ctx, { species, kg }) => {
+  // `cheated` is optional so older clients keep working; saves that used cheats don't count
+  args: { species: v.string(), kg: v.number(), cheated: v.optional(v.boolean()) },
+  handler: async (ctx, { species, kg, cheated }) => {
     const userId = await requireUser(ctx);
-    if (!valid(species, kg)) return;
+    if (cheated || !valid(species, kg)) return;
+    const prof = await profileOf(ctx, userId), now = Date.now();
+    if (prof?.catchAt && now - prof.catchAt < CATCH_MIN_MS) return;     // at most one record a few seconds apart
+    if (prof) await ctx.db.patch(prof._id, { catchAt: now });
+    else await ctx.db.insert('profiles', { userId, name: 'Sailor', catchAt: now });   // so the throttle applies to everyone
     const mine = await ctx.db.query('records').withIndex('by_user_species', q => q.eq('userId', userId).eq('species', species)).unique();
     if (mine && mine.kg >= kg) return;
     const top = await ctx.db.query('records').withIndex('by_species_kg', q => q.eq('species', species)).order('desc').first();

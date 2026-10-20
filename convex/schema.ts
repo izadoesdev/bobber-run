@@ -6,7 +6,7 @@ import { authTables } from '@convex-dev/auth/server';
 // writes never re-run queries that read saves, records or the fund.
 export default defineSchema({
   ...authTables,
-  profiles: defineTable({ userId: v.id('users'), name: v.string(), nameAt: v.optional(v.number()), sea: v.optional(v.number()) }).index('by_user', ['userId']),
+  profiles: defineTable({ userId: v.id('users'), name: v.string(), nameAt: v.optional(v.number()), sea: v.optional(v.number()), catchAt: v.optional(v.number()) }).index('by_user', ['userId']),
   saves: defineTable({ userId: v.id('users'), data: v.string(), updatedAt: v.number() }).index('by_user', ['userId']),
   // best catch per player per species
   records: defineTable({ species: v.string(), userId: v.id('users'), name: v.string(), kg: v.number(), at: v.number() })
@@ -14,7 +14,8 @@ export default defineSchema({
   // the coastwide fund everyone gives to; gifts track each player's total and today's giving
   fund: defineTable({ key: v.string(), total: v.number(), givers: v.number() }).index('by_key', ['key']),
   gifts: defineTable({ key: v.string(), userId: v.id('users'), amount: v.number(), day: v.optional(v.string()), today: v.optional(v.number()) }).index('by_key_user', ['key', 'userId']),
-  // messages in bottles: preset phrases only, placed in a sea at a spot
+  // Unused since bottles were removed from the game; kept so existing documents still validate.
+  // Empty it on every deployment, then delete this table.
   bottles: defineTable({ userId: v.id('users'), name: v.string(), cell: v.string(), x: v.number(), y: v.number(), msg: v.number(), at: v.number(), reads: v.number() })
     .index('by_cell', ['cell']).index('by_user', ['userId']),
   // other sailors, about once a second while moving. cell = "sea|cx,cy"; stale rows are swept by a cron

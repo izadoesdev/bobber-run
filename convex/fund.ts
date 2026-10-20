@@ -16,9 +16,10 @@ export const get = query({
   },
 });
 export const give = mutation({
-  args: { key: v.string(), amount: v.number() },
-  handler: async (ctx, { key, amount }) => {
+  args: { key: v.string(), amount: v.number(), cheated: v.optional(v.boolean()) },
+  handler: async (ctx, { key, amount, cheated }) => {
     const userId = await requireUser(ctx), day = today();
+    if (cheated) return { ok: false, why: 'Saves that used cheats cannot give to the fund' };
     if (!(Number.isInteger(amount) && amount > 0 && amount <= 100_000)) return { ok: false, why: 'Bad amount' };
     const g = await ctx.db.query('gifts').withIndex('by_key_user', q => q.eq('key', key).eq('userId', userId)).unique();
     const given = g?.day === day ? g.today ?? 0 : 0;

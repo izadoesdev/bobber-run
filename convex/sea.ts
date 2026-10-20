@@ -6,7 +6,7 @@ import { SEA_CAP, SEAS, MOVE_MIN_MS, EMOTE_MIN_MS } from './limits';
 
 const ACTIVE_MS = 60_000;
 // Players are spread across seas of at most SEA_CAP sailors. You stay in your sea while it has room,
-// otherwise you are moved to the first sea with space. Seas only see their own boats and bottles.
+// otherwise you are moved to the first sea with space. Seas only see their own boats.
 export const join = mutation({
   args: {},
   handler: async ctx => {
