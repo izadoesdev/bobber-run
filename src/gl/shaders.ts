@@ -208,7 +208,14 @@ void main(){
     float fdx = texture(uFoam, tu + vec2(fp.x*2.0, 0)).g - texture(uFoam, tu - vec2(fp.x*2.0, 0)).g;
     float fdy = texture(uFoam, tu + vec2(0, fp.y*2.0)).g - texture(uFoam, tu - vec2(0, fp.y*2.0)).g;
     n = normalize(n + vec3(-fdx, -fdy, 0.0)*2.5); nS = normalize(nS + vec3(-fdx, -fdy, 0.0)*2.5);
-    if (uRain > 0.01) n = normalize(n + vec3(ripples(p), 0.0)*uRain*0.7);
+    float splash = 0.0;
+    if (uRain > 0.01){
+      n = normalize(n + vec3(ripples(p), 0.0)*uRain*0.7);
+      // a drop landing: a small ring of one art pixel that widens and fades
+      vec2 g = floor(p/7.0), f = floor(p) - g*7.0; float r = hash(g + 11.0), ph = fract(uT*1.6 + r*7.0);
+      float d = length(f + 0.5 - (floor(vec2(hash(g + 5.3), hash(g + 9.1))*5.0) + 1.5));
+      splash = step(r, 0.18*uRain)*step(abs(d - ph*1.8), 0.45)*(1.0 - ph)*step(ph, 0.7);   // sparse, small, quick
+    }
     vec3 shallowC = mix(mix(vec3(.34,.66,.70), vec3(.24,.80,.78), wm), vec3(.40,.56,.62), cd);
     vec3 midC     = mix(mix(vec3(.17,.43,.55), vec3(.07,.53,.62), wm), vec3(.22,.36,.46), cd);
     vec3 deepC    = mix(mix(vec3(.07,.22,.35), vec3(.03,.27,.42), wm), vec3(.10,.18,.27), cd);
@@ -258,6 +265,7 @@ void main(){
     foam = uPx > 0.0 ? st(smoothstep(0.12, 0.7, foam), 2.0) : foam;   // crisp pixel foam: solid, half (dithered) or none
     vec3 foamC = vec3(0.95, 0.98, 0.98)*(uAmb*1.1 + uSunC*sunVis*0.85 + Lp);
     col = mix(col, foamC, foam);
+    col = mix(col, foamC, splash*0.45);                               // rain rings
     // shelves of sea ice along the far northern shores, with a crack here and there
     float shelfE = depth + (noise(p*0.07) - 0.5)*0.05;
     float shelf = st(ice*smoothstep(0.045, 0.02, shelfE)*step(0.38, noise(p*0.011 + 5.0)), 2.0);
@@ -378,10 +386,23 @@ void main(){ vec2 uv = vUV*uUVS, lim = uUVS - 0.5/vec2(textureSize(uT, 0)); vec3
 export const COMPOSITE_FS = `#version 300 es
 precision highp float; precision highp int; in vec2 vUV; out vec4 o;
 uniform sampler2D uScene, uBloom, uBlur;
-uniform float uT, uExp, uSat, uVig, uTilt, uGrain, uRain, uFlash, uBloomK, uSlant, uGrade, uDusk;
-uniform vec3 uTint; uniform vec2 uRes, uUVS; uniform float uQ, uInk;
+uniform float uT, uExp, uSat, uVig, uTilt, uGrain, uRain, uDrops, uFlash, uBloomK, uSlant, uGrade, uDusk;
+uniform vec3 uTint; uniform vec2 uRes, uUVS; uniform float uQ, uInk; uniform vec4 uCam;
 ${STYLE}
 float hash(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x*p.y); }
+// rain: short slanted streaks one art pixel wide, placed in world space (so the sea scrolls under them as you sail)
+// and snapped to the art grid, falling down the view and leaning with the wind; a near layer and a fainter far one
+float rainDrops(vec2 p, float amt){
+  float s = 0.0;
+  for (int L = 0; L < 2; L++){
+    float near = L == 0 ? 1.0 : 0.0, sp = mix(95.0, 150.0, near), len = mix(3.0, 5.0, near), cell = mix(7.0, 10.0, near);
+    vec2 q = floor(p - vec2(uSlant*sp*0.35, sp)*uT), c = floor(q/cell), f = q - c*cell;
+    if (hash(c + 17.0*near) > amt*0.6) continue;
+    vec2 o = floor(vec2(hash(c + 3.1), hash(c + 7.7))*(cell - 2.0));
+    float dy = f.y - o.y, dx = f.x - o.x - floor(dy*uSlant*0.4 + 0.5);
+    if (dy >= 0.0 && dy < len && abs(dx) < 0.5) s = max(s, mix(0.28, 0.5, near)*(1.0 - 0.4*dy/len));
+  }
+  return s; }
 vec3 aces(vec3 x){ return clamp((x*(2.51*x + 0.03))/(x*(2.43*x + 0.59) + 0.14), 0.0, 1.0); }
 // procedural film LUT on display-referred colour: soft S-curve, teal-navy lifted blacks, warm highlights,
 // gentle saturation roll-off at the extremes, warmer at dusk
@@ -409,10 +430,11 @@ void main(){
   }
   if (uBloomK > 0.0) c += texture(uBloom, tuv).rgb*uBloomK;
   if (uRain > 0.01){
-    vec2 q = vec2(uv.x*170.0 + uv.y*uSlant*40.0, uv.y*9.0 + uT*7.0); vec2 id = floor(q); float r = hash(id);
-    float f = fract(q.y), x = fract(q.x);
-    float s = step(1.0 - 0.05*uRain, r)*smoothstep(0.0, 0.35, f)*smoothstep(1.0, 0.7, f)*smoothstep(0.18, 0.0, abs(x - 0.5));
-    c = mix(c, vec3(0.82, 0.88, 0.92), s*0.35);
+    // wet light: cooler and a little flatter, rather than a grey wash
+    float lr = dot(c, vec3(0.299, 0.587, 0.114));
+    c = mix(c, vec3(lr), 0.28*uRain)*mix(vec3(1.0), vec3(0.88, 0.94, 1.02), uRain);
+    vec2 wp = uCam.xy + vec2(uv.x, 1.0 - uv.y)*uCam.zw;              // the world point under this pixel
+    c = mix(c, vec3(0.80, 0.87, 0.93), rainDrops(wp, uDrops));
   }
   c *= uExp*uTint;
   float l = dot(c, vec3(0.299, 0.587, 0.114)); c = mix(vec3(l), c, uSat);

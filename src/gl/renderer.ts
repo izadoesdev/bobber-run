@@ -1122,7 +1122,7 @@ export function render(alpha: number): void {
   styleUniforms(cp); U1(cp, 'uQ', 0); U1(cp, 'uInk', px ? 0.75 * (R.fx.ink ?? 1) : 0);
   U1(cp, 'uT', G.t); U1(cp, 'uExp', E.exp); U1(cp, 'uSat', E.sat); U1(cp, 'uVig', 0.42); U1(cp, 'uTilt', tilt); U1(cp, 'uGrain', SET.calm || px ? 0 : 0.01);
   U1(cp, 'uGrade', R.fx.grade ?? 1); U1(cp, 'uDusk', E.dusk);
-  U1(cp, 'uRain', WX.rain); U1(cp, 'uFlash', WX.flash * (SET.calm ? 0.15 : 1)); U1(cp, 'uBloomK', bloomK); U1(cp, 'uSlant', 0.3 + WX.wind * 0.7);
+  U1(cp, 'uRain', WX.rain); U1(cp, 'uDrops', WX.rain * (SET.calm ? 0.5 : 1)); U4(cp, 'uCam', CAM); U1(cp, 'uFlash', WX.flash * (SET.calm ? 0.15 : 1)); U1(cp, 'uBloomK', bloomK); U1(cp, 'uSlant', 0.3 + WX.wind * 0.7);
   U3(cp, 'uTint', E.tint); U2(cp, 'uRes', out ? w : cv.width, out ? h : cv.height);
   quad();
   if (out) present(out, h, (camX0 - camX) * upx, (camY0 - camY) * upx, R.S / upx);
