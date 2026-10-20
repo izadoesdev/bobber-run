@@ -12,7 +12,8 @@ export default defineSchema({
   records: defineTable({ species: v.string(), userId: v.id('users'), name: v.string(), kg: v.number(), at: v.number() })
     .index('by_species_kg', ['species', 'kg']).index('by_user_species', ['userId', 'species']),
   // the coastwide fund everyone gives to; gifts track each player's total and today's giving
-  fund: defineTable({ key: v.string(), total: v.number(), givers: v.number() }).index('by_key', ['key']),
+  // a coastwide fund fills in rounds: total counts toward this round's goal, and each filled round raises the next goal
+  fund: defineTable({ key: v.string(), total: v.number(), givers: v.number(), round: v.optional(v.number()), goal: v.optional(v.number()) }).index('by_key', ['key']),
   gifts: defineTable({ key: v.string(), userId: v.id('users'), amount: v.number(), day: v.optional(v.string()), today: v.optional(v.number()) }).index('by_key_user', ['key', 'userId']),
   // other sailors, a few times a second while moving, with velocity and turn rate so others can draw them smoothly. cell = "sea|cx,cy"; stale rows are swept by a cron
   positions: defineTable({ userId: v.id('users'), sea: v.optional(v.number()), cell: v.string(), x: v.number(), y: v.number(), a: v.number(), vx: v.optional(v.number()), vy: v.optional(v.number()), w: v.optional(v.number()),
@@ -29,7 +30,7 @@ export default defineSchema({
     .index('by_user', ['userId']).index('by_species', ['species']).index('by_heaviest', ['heaviest']).index('by_caught', ['caught']).index('by_earned', ['earned']),
   // claimed islands (one per world cell, see islandRules.ts) and players' reports about them
   // status 'pending' is a hold while the buyer pays on Stripe Checkout (until holdUntil); price is in US dollars
-  islands: defineTable({ key: v.string(), ownerId: v.id('users'), ownerName: v.string(), name: v.string(), logo: v.optional(v.id('_storage')), price: v.number(),
+  islands: defineTable({ key: v.string(), ownerId: v.id('users'), ownerName: v.string(), name: v.string(), logo: v.optional(v.id('_storage')), logoOk: v.optional(v.boolean()), price: v.number(),
     claimedAt: v.number(), updatedAt: v.number(), seenAt: v.number(), status: v.optional(v.union(v.literal('owned'), v.literal('pending'))),
     holdUntil: v.optional(v.number()), sessionId: v.optional(v.string()), paymentIntent: v.optional(v.string()), paidCents: v.optional(v.number()),
     url: v.optional(v.string()) })

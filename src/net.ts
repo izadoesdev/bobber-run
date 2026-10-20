@@ -20,7 +20,8 @@ const FUND_KEY = 'grand-harbour';
 /** Just what this module needs from the game state. */
 interface Game { mode: string; boat: { x: number; y: number; a: number; vx: number; vy: number; w: number }; boatId: string; paint: string }
 type Profile = { userId: string; name: string; chosen: boolean; guest: boolean; email: string | null; sea: number | null; admin: boolean };
-type Fund = { total: number; givers: number; goal: number; mine: number };
+/** round: which filling of the fund this is (each filled round raises the next goal). */
+type Fund = { total: number; givers: number; goal: number; round: number; mine: number };
 type Status = 'offline' | 'connecting' | 'online';
 type Result = { ok: true; msg?: string; loaded?: boolean; name?: string } | { ok: false; why: string };
 /** Set once this browser has signed into an account, so the Online screen opens on "I have an account". */
@@ -249,7 +250,8 @@ export function reportStats(caught: number, earned: number, cheated = false): vo
   call(api.stats.report, { caught, earned }).catch(() => { statsAt = 0; });
 }
 // ---------- islands ----------
-export interface IslandRow { key: string; name: string; owner: string; logoUrl: string | null; url: string | null; mine: boolean }
+/** logoPending: your own logo, still waiting for an admin to approve it before other sailors see it. */
+export interface IslandRow { key: string; name: string; owner: string; logoUrl: string | null; logoPending: boolean; url: string | null; mine: boolean }
 /** Keep `cb` up to date with the claimed islands among these cell keys (one subscription; a new key list replaces it). */
 export function watchIslands(keys: string[], cb: (list: IslandRow[]) => void): void {
   if (client) watch<IslandRow[]>('islands', api.islands.near, { keys: keys.slice(0, 150) }, cb);
@@ -265,9 +267,9 @@ export const claimIsland = (key: string, name: string) => islandCall(() => clien
  * Start buying an island with real money: the server holds it for 30 minutes and returns a Stripe Checkout URL to open.
  * Stripe sends the player back to /?island=<key>&paid=1 (or paid=0 if they cancel); the island turns up once paid.
  */
-export async function buyIsland(key: string, name: string): Promise<{ ok: true; url: string; price: number } | { ok: false; why: string }> {
+export async function buyIsland(key: string, name: string, adult?: boolean): Promise<{ ok: true; url: string; price: number } | { ok: false; why: string }> {
   if (!NET.authed) return { ok: false, why: 'Sign in to buy islands' };
-  try { return await client!.action(api.islands.buy, { key, name }); } catch { return { ok: false, why: 'Could not reach the server' }; }
+  try { return await client!.action(api.islands.buy, { key, name, ...(adult === undefined ? {} : { adult }) }); } catch { return { ok: false, why: 'Could not reach the server' }; }
 }
 export const renameIsland = (key: string, name: string) => islandCall(() => client!.action(api.islands.rename, { key, name }));
 export const releaseIsland = (key: string) => islandCall(() => client!.mutation(api.islands.release, { key }));

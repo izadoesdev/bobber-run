@@ -28,7 +28,10 @@ export const near = query({
     const me = await getAuthUserId(ctx), out = [];
     for (const key of keys.slice(0, 150)) {
       const isl = await byKey(ctx, key);
-      if (owned(isl)) out.push({ key, name: isl.name, owner: isl.ownerName, logoUrl: isl.logo ? await ctx.storage.getUrl(isl.logo) : null, url: isl.url ?? null, mine: isl.ownerId === me });
+      if (!owned(isl)) continue;
+      // a logo shows to others only once an admin has approved it; its owner sees it straight away, marked as waiting
+      const mine = isl.ownerId === me, showLogo = !!isl.logo && (isl.logoOk || mine);
+      out.push({ key, name: isl.name, owner: isl.ownerName, logoUrl: showLogo ? await ctx.storage.getUrl(isl.logo!) : null, logoPending: mine && !!isl.logo && !isl.logoOk, url: isl.url ?? null, mine });
     }
     return out;
   },
@@ -97,9 +100,12 @@ export const claim = action({
 });
 
 /** Start buying an island: hold it, open a Stripe Checkout page, and return its URL for the game to open. */
+/** Buyers confirm they are 18 or older, or have a parent's or guardian's permission (minors can cancel purchases). */
+const ADULT_REQUIRED = false;   // true once every client sends the confirmation
 export const buy = action({
-  args: { key: v.string(), name: v.string() },
-  handler: async (ctx, { key, name }): Promise<{ ok: true; url: string; price: number } | { ok: false; why: string }> => {
+  args: { key: v.string(), name: v.string(), adult: v.optional(v.boolean()) },
+  handler: async (ctx, { key, name, adult }): Promise<{ ok: true; url: string; price: number } | { ok: false; why: string }> => {
+    if (ADULT_REQUIRED && adult !== true) return { ok: false, why: 'Ask a parent or guardian before buying an island' };
     const site = envVar('SITE_URL');
     if (!envVar('STRIPE_SECRET_KEY') || !site) return { ok: false, why: 'Buying islands is not available right now' };
     const b = await buyer(ctx, key, name);
@@ -288,7 +294,7 @@ export const setLogo = mutation({
     if (!owned(isl) || isl.ownerId !== userId) return { ok: false, why: "That isn't your island" };
     if (bad) { if (meta) await ctx.storage.delete(storageId); return { ok: false, why: 'Use a PNG under 16 KB' }; }
     if (isl.logo) await ctx.storage.delete(isl.logo);
-    await ctx.db.patch(isl._id, { logo: storageId, updatedAt: Date.now() });
+    await ctx.db.patch(isl._id, { logo: storageId, logoOk: await isAdminUser(ctx, userId), updatedAt: Date.now() });
     return { ok: true };
   },
 });
@@ -304,6 +310,27 @@ export const report = mutation({
     return { ok: true as const };
   },
 });
+/**
+ * Logos waiting for review, oldest first. Admins approve or remove them from the command line:
+ * `bunx convex run --prod islands:pendingLogos` then `bunx convex run --prod islands:reviewLogo '{"key":"3,-2","ok":true}'`.
+ */
+export const pendingLogos = internalQuery({
+  args: {},
+  handler: async ctx => {
+    const out = [];
+    for (const isl of await ctx.db.query('islands').collect()) if (isl.logo && !isl.logoOk) out.push({ key: isl.key, name: isl.name, owner: isl.ownerName, url: await ctx.storage.getUrl(isl.logo), at: isl.updatedAt });
+    return out.sort((a, b) => a.at - b.at);
+  },
+});
+export const reviewLogo = internalMutation({
+  args: { key: v.string(), ok: v.boolean() },
+  handler: async (ctx, { key, ok }) => {
+    const isl = await byKey(ctx, key);
+    if (!isl?.logo) return 'no logo';
+    if (ok) await ctx.db.patch(isl._id, { logoOk: true }); else { await ctx.storage.delete(isl.logo); await ctx.db.patch(isl._id, { logo: undefined, logoOk: undefined }); }
+    return ok ? 'approved' : 'removed';
+  },
+});
 /** Admins: clear an island's name and logo, or (all) the whole claim. */
 export const clear = mutation({
   args: { key: v.string(), all: v.optional(v.boolean()) },
@@ -313,7 +340,7 @@ export const clear = mutation({
     const isl = await byKey(ctx, key);
     if (!isl) return { ok: false, why: 'No island here' };
     if (isl.logo) await ctx.storage.delete(isl.logo);
-    if (all) await ctx.db.delete(isl._id); else await ctx.db.patch(isl._id, { name: 'Unnamed island', logo: undefined, url: undefined, updatedAt: Date.now() });
+    if (all) await ctx.db.delete(isl._id); else await ctx.db.patch(isl._id, { name: 'Unnamed island', logo: undefined, logoOk: undefined, url: undefined, updatedAt: Date.now() });
     return { ok: true };
   },
 });

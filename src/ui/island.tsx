@@ -78,7 +78,7 @@ export function IslandDialog() {
       if (r.ok && f.url.trim()) await setIslandUrl(key, f.url.trim());
       return r;
     }
-    const r = await buyIsland(key, f.name.trim());
+    const r = await buyIsland(key, f.name.trim(), admin || f.adult);
     if (!r.ok) return r;
     if (f.logo) await stashLogo(key, f.logo.blob);
     saveGame();
