@@ -110,7 +110,7 @@ function give(r: Quest['reward']): void {
   for (const k of BAIT_KINDS) { const n = r[k]; if (n) G.bait[k] = (G.bait[k] || 0) + n; }
 }
 // a conversation pauses the game; lines are [speaker, text]
-export function talk(lines: TalkLine[], then?: () => void): void {
+function talk(lines: TalkLine[], then?: () => void): void {
   if (!lines.length) { then?.(); return; }
   G.talk = { lines, i: 0, then, back: G.mode === 'talk' ? 'play' : G.mode };
   G.mode = 'talk';

@@ -2,7 +2,7 @@
 import { createNoise2D, type NoiseFunction2D } from 'simplex-noise';
 import Alea from 'alea';
 
-export const SEED = 'bobber-run';
+const SEED = 'bobber-run';
 export const nA = createNoise2D(Alea(SEED, 'shape'));
 export const nB = createNoise2D(Alea(SEED, 'warp'));
 export const nC = createNoise2D(Alea(SEED, 'detail'));
@@ -37,20 +37,3 @@ export function mulberry(a: number): () => number {
   };
 }
 
-// value noise over a wrapping 128x128 grid of seeded randoms
-const NG = 128, grid = new Float32Array(NG * NG);
-{
-  const r = mulberry(1234);
-  for (let i = 0; i < NG * NG; i++) grid[i] = r();
-}
-export function vn(x: number, y: number): number {
-  const xi = Math.floor(x), yi = Math.floor(y);
-  let fx = x - xi, fy = y - yi;
-  fx = fx * fx * (3 - 2 * fx);
-  fy = fy * fy * (3 - 2 * fy);
-  const x0 = xi & (NG - 1), x1 = (xi + 1) & (NG - 1);
-  const y0 = (yi & (NG - 1)) * NG, y1 = ((yi + 1) & (NG - 1)) * NG;
-  const a = grid[y0 + x0], b = grid[y0 + x1], c = grid[y1 + x0], d = grid[y1 + x1];
-  const top = a + (b - a) * fx, bottom = c + (d - c) * fx;
-  return top + (bottom - top) * fy;
-}

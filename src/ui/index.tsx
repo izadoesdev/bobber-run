@@ -9,7 +9,6 @@ import { Chart, Journal, Logbook, Ship } from './screens';
 import { Cheats, Controls, EmotePick, Finale, Online, Pause, Settings, Sunk, Talk, Title } from './menus';
 
 export { TITLE_ITEMS, PAUSE_ITEMS } from './menus';
-export { keyLabel } from './parts';
 
 let root: HTMLElement | null = null;
 export function initUI(el: HTMLElement): void { root = el; }

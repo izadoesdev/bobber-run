@@ -5,8 +5,8 @@ import { R } from './gl/renderer';
 import { SET, savePrefs, type Quality, type Settings } from './prefs';
 export { SET };
 
-export const QUALITIES: Quality[] = ['auto', 'high', 'medium', 'low'];
-export const UI_SIZES = [0.85, 1, 1.15, 1.3, 1.5];
+const QUALITIES: Quality[] = ['auto', 'high', 'medium', 'low'];
+const UI_SIZES = [0.85, 1, 1.15, 1.3, 1.5];
 
 export function applySettings(): void {
   setVolumes({ music: SET.music / 10, sfx: SET.sfx / 10, amb: SET.amb / 10 });

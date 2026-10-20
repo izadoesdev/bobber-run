@@ -270,9 +270,9 @@ export const SWIM = { wander: 2, scatter: 6 };
 const SWIM_WATER = -0.09;
 export const FISH_SHORE = -0.06;
 /** Furthest any fish of species sp can be from its school's home. */
-export const schoolReach = (sp: number): number => schoolLook(sp).radius + SWIM.wander + SWIM.scatter;
+const schoolReach = (sp: number): number => schoolLook(sp).radius + SWIM.wander + SWIM.scatter;
 /** Closest two schools may be: their reaches plus clear water between (at least ~50 for the smallest). */
-export const schoolGap = (a: number, b: number): number => schoolReach(a) + schoolReach(b) + 14;
+const schoolGap = (a: number, b: number): number => schoolReach(a) + schoolReach(b) + 14;
 const FC = 300;                                // fish cell size
 const FC_EDGE = 0.11;                          // schools keep this share of a cell clear at its edges: 2 x 33 covers the widest gap (~65)
 interface FishCell { schools: School[]; crates: Crate[] }

@@ -11,7 +11,8 @@ const MAPC_W = ramp(['#2f7f8f', '#3f97a3', '#7fcac6', '#f2e8c8', '#96bf5c', '#3f
 const MAPC_C = ramp(['#465f73', '#556f82', '#8aa2b1', '#c2bba8', '#7f8f6a', '#344a3c', '#e2eaec']);
 
 /** world units per tile, and pixels per tile side */
-export const MT = 128, MTP = 32;
+export const MT = 128;
+const MTP = 32;
 const mtiles = new Map<number, HTMLCanvasElement>();
 
 function band(h: number): number {

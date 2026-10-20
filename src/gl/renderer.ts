@@ -760,7 +760,7 @@ export function prefetch(budgetMs = 4): void {
 // per-frame camera and heightfield rectangles, reused: CAM = [x, y, w, h] in world units, HR = [x0, y0, w, h] in texels
 const CAM = [0, 0, 0, 0], HR = [0, 0, 0, 0], SHXY = [0, 0];
 const viewPois: Poi[] = [];
-// NPC ships then other players' boats, gathered once per frame (same order as shipsAndSailors)
+// NPC ships then other players' boats, gathered once per frame
 const fleet: (Ship | Sailor)[] = [];
 function gatherFleet(): void {
   fleet.length = 0;

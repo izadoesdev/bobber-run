@@ -16,7 +16,7 @@ Needs a browser with WebGL2.
 
 ### Online play (optional)
 
-Without configuration the game runs fully offline. To enable accounts, cloud saves, world records, bottles and other sailors, run a [Convex](https://convex.dev) backend from `convex/`:
+Without configuration the game runs fully offline. To enable accounts, cloud saves, world records, the coastwide fund and other sailors, run a [Convex](https://convex.dev) backend from `convex/`:
 
 ```sh
 bunx convex dev   # creates a dev deployment and writes VITE_CONVEX_URL to .env.local
@@ -34,9 +34,10 @@ Convex Auth also needs `JWT_PRIVATE_KEY`, `JWKS` and `SITE_URL` set on the deplo
 | B / C | Switch bait / throw chum |
 | Tab | Ship and hold |
 | M / L / J | Sea chart / logbook / journal |
+| Mouse wheel / - and + | Zoom the sea view |
 | F | Fullscreen |
 | Esc | Pause |
-| `` ` `` or F2 | Cheat console (while sailing or docked) |
+| `` ` `` or F2 | Cheat console (dev builds only, or with `VITE_ENABLE_CHEATS=1`) |
 
 Keys can be rebound under Controls. Gamepads work too. Settings > Pixel style switches between Chunky, Crisp and Smooth.
 
@@ -45,7 +46,7 @@ Keys can be rebound under Controls. Gamepads work too. Settings > Pixel style sw
 TypeScript throughout (`bun run typecheck` checks the client and `convex/`).
 
 - `src/main.ts`: entry point, fixed-step loop, window fitting; `input.ts` keyboard and gamepad; `menus.ts` per-screen input
-- `src/game.ts` and `src/game/`: simulation, physics, fishing, ports, saves; `econ.ts` species, boats, upgrades; `world.ts` procedural world; `story.ts` quests
+- `src/game.ts` and `src/game/`: simulation, physics, fishing and schools, ports, saves, the next-step guide; `econ.ts` and `species.ts` boats, upgrades and fish; `world.ts` procedural world; `story.ts` quests; `camera.ts` zoom
 - `src/gl/`: WebGL2 renderer, shaders, voxel meshes
 - `src/ui/`: Preact TSX interface, icons, sea chart
 - `src/audio.ts`: synthesized sound effects, ambience and music

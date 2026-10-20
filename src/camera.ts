@@ -6,7 +6,7 @@ import { SET, savePrefs } from './prefs';
 import { boatDef } from './game';
 
 /** Zoom steps for the - and + keys (1 = the ship's default view); the wheel zooms anywhere in between. */
-export const ZOOMS = [0.5, 0.625, 0.75, 0.875, 1, 1.25, 1.5, 2];
+const ZOOMS = [0.5, 0.625, 0.75, 0.875, 1, 1.25, 1.5, 2];
 const ZOOM_MIN = ZOOMS[0], ZOOM_MAX = ZOOMS[ZOOMS.length - 1];
 /** The rowboat (13.5 units long) sees about 320x200 world units; longer ships see proportionally more. */
 const BASE_VIEW = { w: 320, h: 200 }, ROWBOAT_LENGTH = 13.5;
