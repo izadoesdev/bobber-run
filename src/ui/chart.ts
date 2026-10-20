@@ -4,6 +4,8 @@ import { schoolShown, schoolMood } from '../game/schools';
 import { SPECIES } from '../econ';
 import { poisNear, schoolsNear, LAIR } from '../world';
 import { mapTile, MT } from '../maptiles';
+import { ONLINE } from '../online';
+import { PAINTS } from '../econ';
 import type { Point, Poi } from '../types';
 
 const COL = { port: '#f0cf6a', light: '#efe9dc', wreck: '#dcb074', dim: '#8a949c', ink: '#1b2a33', red: '#c0493a', green: '#8fd48a' };
@@ -57,6 +59,7 @@ export function drawChart(ctx: Ctx, w: number, h: number, cx: number, cy: number
   }
   if (opt.labels) drawLabels(ctx, pois, S, u, showUncharted);
   if (opt.target) drawTarget(ctx, w, h, S(opt.target.x, opt.target.y), u, !!opt.round);
+  drawSailors(ctx, w, h, S, u, !!opt.labels);
   drawBoat(ctx, S, u);
 }
 
@@ -226,6 +229,35 @@ function drawLabels(ctx: Ctx, pois: Poi[], S: Project, u: number, showUncharted:
     ctx.fillStyle = COL.green;
     ctx.fillText('!', x - 2 * u, y - 9 * u);
   }
+}
+
+/** Every other sailor we know about: the nearby ones we draw on the water, plus the far ones the relay reports for the chart. */
+type Mark = { uid: string; name: string; x: number; y: number; paint?: string };
+function sailorMarks(): Mark[] {
+  const near = new Set(ONLINE.sailors.map(s => s.uid));
+  return [...ONLINE.sailors, ...ONLINE.far.filter(f => !near.has(f.uid))];   // far includes the nearby ones too
+}
+const paintColour = (id?: string): string => PAINTS.find(p => p.id === id)?.ramp?.[2] ?? '#e6efec';
+/** Other players: a dot in their paint (outlined so it reads on land and sea), with their name on the full chart. */
+function drawSailors(ctx: Ctx, w: number, h: number, S: Project, u: number, labels: boolean): void {
+  ctx.font = `600 ${Math.round(11 * u)}px Pixelify, monospace`;
+  ctx.textAlign = 'center';
+  for (const s of sailorMarks()) {
+    const [x, y] = S(s.x, s.y);
+    if (x < -10 || y < -10 || x > w + 10 || y > h + 10) continue;
+    ctx.beginPath();
+    ctx.arc(x, y, 3.2 * u, 0, 7);
+    ctx.fillStyle = paintColour(s.paint);
+    ctx.fill();
+    ctx.lineWidth = 1.4 * u;
+    ctx.strokeStyle = COL.ink;
+    ctx.stroke();
+    if (labels) {
+      ctx.lineWidth = 3 * u; ctx.strokeStyle = 'rgba(27,42,51,0.85)'; ctx.strokeText(s.name, x, y - 6 * u);
+      ctx.fillStyle = '#f6eedc'; ctx.fillText(s.name, x, y - 6 * u);
+    }
+  }
+  ctx.textAlign = 'start';
 }
 
 function drawBoat(ctx: Ctx, S: Project, u: number): void {

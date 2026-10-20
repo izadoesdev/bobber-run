@@ -13,14 +13,14 @@ import { G, hasSave, dayNum, logged, loadGame, newGame } from '../game';
 import { SPECIES } from '../econ';
 import { ROWS, ACTIONS, SET } from '../settings';
 import { CHEATS } from '../cheats';
-import { NET, EMOTES, HAD_ACCOUNT_KEY, account, deleteAccount, signOut, setName } from '../net';
+import { NET, EMOTES, HAD_ACCOUNT_KEY, account, deleteAccount, onlineCount, signOut, setName } from '../net';
 import { voyageStarted } from '../telemetry';
 import { PEOPLE, currentQuest } from '../story';
 import type { NetForm, Talk as TalkState } from '../types';
 import { Hint, Icon, Key, SetRow, byPointer, keyLabel, money } from './parts';
 
 export const TITLE_ITEMS = () => [...(hasSave() ? ['CONTINUE'] : []), 'NEW VOYAGE', 'SETTINGS', 'CONTROLS', ...(NET.on ? ['ONLINE'] : [])];
-export const PAUSE_ITEMS = ['RESUME', 'JOURNAL', 'SETTINGS', 'CONTROLS', ...(NET.on ? ['ONLINE'] : []), 'SAVE & QUIT'];
+export const PAUSE_ITEMS = ['RESUME', 'JOURNAL', ...(NET.on ? ['LEADERBOARD'] : []), 'SETTINGS', 'CONTROLS', ...(NET.on ? ['ONLINE'] : []), 'SAVE & QUIT'];
 
 // Mouse picks go through the same input path as the keyboard: select the row, then press a key for main.js.
 const press = (key: string) => { G.pressed.add(key); };
@@ -43,9 +43,17 @@ export function Title() {
         <Menu items={TITLE_ITEMS()} sel={G.titleSel || 0} setSel={i => { G.titleSel = i; }} onPick={i => { G.titleSel = i; press('Enter'); }} />
       </div>
       <AccountCta from="title" />
+      <OnlineNow />
       <div class="hints-inline shadowed"><Hint k="ArrowUp" k2="ArrowDown" pad="D-pad">Choose</Hint><Hint k="Enter" pad="A">Select</Hint></div>
     </div>
   );
+}
+// "12 sailors online now" under the title menu, asked again every 20 s while the title is showing
+let onlineNow: number | null = null, onlineAt = 0;
+function OnlineNow() {
+  if (!NET.on) return null;
+  if (Date.now() - onlineAt > 20_000) { onlineAt = Date.now(); void onlineCount().then(n => { onlineNow = n; }); }
+  return onlineNow ? <p class="online-now shadowed"><span class="dot online" />{onlineNow} {onlineNow === 1 ? 'sailor' : 'sailors'} online now</p> : null;
 }
 /** Signing in is the main thing to do online: a big button while you're a guest, your name once signed in. */
 export function AccountCta({ from }: { from: 'title' | 'play' }) {
@@ -54,7 +62,7 @@ export function AccountCta({ from }: { from: 'title' | 'play' }) {
   if (p && !p.guest) return from === 'title' ? <p class="cta-signed">Signed in as <b>{p.name}</b></p> : null;
   return from === 'title'
     ? <button class="btn primary cta" onClick={go}>Sign in or make an account<span class="cta-sub">Keep your boat and catch on any device</span></button>
-    : <button class="btn small-btn cta-chip" onClick={go}>Playing as a guest · <b>Sign in</b></button>;
+    : <button class="dock-btn cta-link" title="You are playing as a guest. Sign in to keep your boat on any device" onClick={go}>Sign in</button>;
 }
 /** Online players with a generated name are sent to pick their own before sailing on (once per session if they skip offline). */
 export function forceName(): void {

@@ -120,7 +120,7 @@ h2, .title { font-size: var(--fs-xl); }
 .prompt { padding: 0.45em 1em; white-space: nowrap; }
 .prompt.hot { color: var(--gold); animation: pulse 0.9s ease-in-out infinite alternate; }
 @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.03); } }
-.hints { position: absolute; left: 0.8em; bottom: 0.9em; max-width: 28%; display: flex; flex-wrap: wrap; row-gap: 0.35em; font-size: var(--fs-s); text-shadow: 0 0.1em 0 #000a; }
+.hints { position: absolute; left: 0.8em; bottom: 0.9em; display: flex; flex-wrap: nowrap; white-space: nowrap; row-gap: 0.35em; font-size: var(--fs-s); text-shadow: 0 0.1em 0 #000a; }
 .shadowed { font-size: var(--fs-s); background: var(--chip); padding: 0.25em 0.6em; border-radius: var(--r); }
 .toasts { position: absolute; left: 50%; top: 0.9em; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 0.3em; }
 .toasts.low { top: 1.6em; }
@@ -284,9 +284,6 @@ h2, .title { font-size: var(--fs-xl); }
 .form-grid { display: grid; grid-template-columns: auto 1fr; gap: 0.5em 0.8em; align-items: center; margin: 0.6em 0; }
 #ui input { pointer-events: auto; font: inherit; color: var(--text); background: var(--well); border: 0.1em solid var(--edge); border-radius: var(--r); padding: 0.3em 0.5em; min-width: 0; flex: 1; }
 #ui input:focus { outline: 0.12em solid var(--focus); }
-.net-chip { position: absolute; right: 0.9em; bottom: 0.9em; font-size: var(--fs-s); }
-.net-chip .dot { width: 0.55em; height: 0.55em; border-radius: 50%; background: var(--muted); }
-.net-chip .dot.online { background: var(--good); } .net-chip .dot.connecting { background: var(--warn); }
 .label-world.sailor { color: var(--sea); border-color: rgba(143,184,216,0.6); }
 
 .account-box { margin: 0.6em 0; padding: 0.7em; background: rgba(10,6,3,0.3); border-radius: var(--r); }
@@ -347,7 +344,6 @@ html.touch #ui :is(.dialog, .card, .talk, .online, .cheats, .finale, .sunk-card,
 html.touch #ui :is(.hint, .tnum), html.touch #ui :is(.prompt, .btn, .tabs, .hud-status .row) > .key { display: none; }
 html.touch #ui .prompt { white-space: normal; text-align: center; max-width: calc(100vw - 2em); }
 html.touch #ui .bottom-stack { bottom: 76px; }
-html.touch #ui .net-chip { bottom: 76px; right: auto; left: 0.8em; }
 /* room in the footer for the Close (and chart Zoom) buttons; the port has its own Set off button */
 html.touch #ui .screen:not(:has(.tabs)) .foot { min-height: 52px; padding-right: 64px; }
 html.touch #ui .screen.flush .foot { padding-right: 76px; }
@@ -364,8 +360,8 @@ html.touch #ui .screen:has(.chartwrap) .foot { padding-right: 130px; }
 /* phones held upright: side-by-side panels stack, and the action buttons sit above the bar */
 @media (orientation: portrait) {
   html.touch .tact { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 66px); }
-  html.touch #ui .bottom-stack { bottom: 170px; width: calc(100vw - 1.6em); }
-  html.touch #ui .net-chip { bottom: 170px; }
+  html.touch #ui .bottom-stack { bottom: 250px; width: calc(100vw - 1.6em); }
+  html.touch #ui .chat-float .fade:not(:last-child) { display: none; }
   html.touch #ui .toasts { top: 32%; }
   html.touch #ui :is(.head, .tabs) { flex-wrap: wrap; }
   html.touch #ui .tab { border-radius: var(--r); border-bottom: 0.12em solid var(--wood-hi); }

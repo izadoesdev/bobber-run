@@ -33,7 +33,7 @@ let canvas: HTMLCanvasElement | null = null;
 let steering: number | null = null, sx = 0, sy = 0;
 
 /** HUD panels let clicks through to the canvas; a click on one is not a click on the sea. */
-const HUD_SOLID = '#ui .panel, #ui .chip, #ui .mini, #ui .hints, #ui .card, #ui .caption, #ui .bubble';
+const HUD_SOLID = '#ui .panel, #ui .chip, #ui .mini, #ui .hints, #ui .card, #ui .caption, #ui .bubble, #ui .chat-panel, #ui .sailor-card';
 function overHud(x: number, y: number): boolean {
   for (const el of document.querySelectorAll(HUD_SOLID)) {
     const r = el.getBoundingClientRect();

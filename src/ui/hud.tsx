@@ -12,7 +12,7 @@ import { schoolMood } from '../game/schools';
 import { schoolsNear } from '../world';
 import { WX } from '../weather';
 import { SET } from '../settings';
-import { NET, EMOTES } from '../net';
+import { EMOTES } from '../net';
 import { ONLINE } from '../online';
 import { currentQuest, questProgress } from '../story';
 import { guide, guideOn, markerTarget, nearestPort, tip, whereText, type Step } from '../game/guide';
@@ -262,7 +262,7 @@ function measure(): DOMRect | null {
     const root = document.getElementById('ui');
     uiBox = root?.getBoundingClientRect() ?? null;
     em = root ? parseFloat(getComputedStyle(root).fontSize) || 16 : 16;
-    panels = root ? [...root.querySelectorAll('.hud-left, .mini, .hints, .net-chip, .toast')].map(e => e.getBoundingClientRect()) : [];
+    panels = root ? [...root.querySelectorAll('.hud-left, .mini, .hints, .chat, .toast')].map(e => e.getBoundingClientRect()) : [];
     panels.push(...[...document.querySelectorAll('#touch .tbar, #touch .tact')].map(e => e.getBoundingClientRect()));   // touch buttons
   }
   return uiBox;
@@ -374,7 +374,7 @@ function worldLabels(): JSX.Element[] {
     }
   }
   // other sailors: a name tag, plus a speech bubble for a few seconds after they greet or chat (the newer wins)
-  const now = Date.now(), fresh = (at: number) => now - at < 4500, said = ONLINE.chat;
+  const now = Date.now(), fresh = (at: number) => now - at < 4500, said = SET.chat === 'off' ? new Map<string, { text: string; at: number }>() : ONLINE.chat;
   for (const s of ONLINE.sailors) {
     const [x, y] = viewPct(s.x, s.y - 22);
     if (x < 2 || x > 98 || y < 6 || y > 96) continue;
@@ -393,13 +393,6 @@ function worldLabels(): JSX.Element[] {
     labels.push(<div class="bubble mine" key="me" style={{ left: mx + '%', top: my + '%' }}>{EMOTES[G.myEmote.i]}</div>);
   }
   return labels;
-}
-
-function netText(): string {
-  if (NET.status === 'connecting') return 'Connecting';
-  if (NET.status !== 'online') return 'Offline';
-  const n = ONLINE.sailors.length;
-  return n ? n + ' sailor' + (n > 1 ? 's' : '') + ' nearby' : 'Online';
 }
 
 // With the interface hidden (H): only what a catch needs, the catch card and captions; toasts stay above everything.
@@ -447,7 +440,6 @@ export function Hud() {
         <Tip />
       </div>
       <Minimap step={step} />
-      {NET.on && <div class="net-chip chip"><span class={'dot ' + NET.status} />{netText()}</div>}
       {G.card && <CatchCard c={G.card} />}
       <div class="bottom-stack">
         <Captions />

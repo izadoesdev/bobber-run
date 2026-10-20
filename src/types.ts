@@ -8,7 +8,7 @@ export type ToastKind = 'info' | 'good' | 'bad';
 /** Every screen the game can be on. `G.mode` drives input routing and which UI is drawn. */
 export type Mode =
   | 'title' | 'play' | 'port' | 'map' | 'log' | 'ship' | 'pause' | 'settings' | 'controls'
-  | 'sunk' | 'finale' | 'cheat' | 'talk' | 'journal' | 'account' | 'emote';
+  | 'sunk' | 'finale' | 'cheat' | 'talk' | 'journal' | 'account' | 'emote' | 'leaders';
 
 export type WeatherState = 'clear' | 'cloudy' | 'rain' | 'storm';
 /** Conditions a species checks before it bites (see `activeAt` in econ). */
@@ -430,7 +430,9 @@ export interface Screens {
   setSel: number; ctlSel: number; emoteSel: number;
   /** settings/controls return here */
   back: Mode;
-  accountBack: Mode; journalBack: Mode; cheatBack: Mode;
+  accountBack: Mode; journalBack: Mode; cheatBack: Mode; leadersBack: Mode;
+  /** which leaderboard tab is showing */
+  leaderTab: number;
   /** online players must pick their own captain name before sailing on */
   needName: boolean;
   cheatBuf: string; cheatErr: boolean;

@@ -1,17 +1,40 @@
-/* Chat log and input: bottom left, above the key hints; translucent so the sea shows through. */
-.chat { position: absolute; left: 0.8em; bottom: 3.2em; width: min(30em, 42%); display: flex; flex-direction: column; gap: 0.2em; pointer-events: none; }
+/* Chat, bottom left above the key hints. Collapsed: a few fading lines over one small dock chip. Open: a panel. */
+.chat { position: absolute; left: 0.8em; bottom: 2.8em; width: min(26em, 40%); display: flex; flex-direction: column; align-items: flex-start; gap: 0.3em; pointer-events: none; }
 .chat > * { pointer-events: auto; }
-.chat-line { margin: 0; padding: 0.15em 0.5em; border-radius: var(--r, 0.3em); background: rgba(10, 18, 24, 0.55); font-size: var(--fs-s, 0.86em);
+.chat-float { display: flex; flex-direction: column; align-items: flex-start; gap: 0.15em; pointer-events: none; }
+.chat-float .fade { transition: opacity 0.4s; }
+#ui .chat-line { margin: 0; }
+.chat-line { padding: 0.1em 0.5em; border-radius: var(--r, 0.3em); background: rgba(10, 18, 24, 0.5); font-size: var(--fs-s, 0.86em);
   line-height: 1.4; overflow-wrap: anywhere; text-shadow: 0 0.08em 0 #000a; }
-.chat-line .who, .chat-line .me { font: inherit; font-weight: 700; color: var(--gold, #f0cf6a); background: none; border: 0; padding: 0; margin-right: 0.45em; cursor: pointer; }
-.chat-line .me { color: #b8e0ea; cursor: default; }
-.chat-line .who:hover { text-decoration: line-through; }
-.chat-note { margin: 0; padding: 0.15em 0.5em; font-size: var(--fs-s, 0.86em); color: #e9c98f; background: rgba(10, 18, 24, 0.55); border-radius: var(--r, 0.3em); cursor: pointer; }
-.chat-input { font: inherit; font-size: var(--fs-s, 0.86em); padding: 0.4em 0.6em; border-radius: var(--r, 0.3em); border: 0.12em solid var(--gold, #f0cf6a);
-  background: rgba(10, 18, 24, 0.85); color: #efe9dc; outline: none; }
-.chat.open .chat-line { background: rgba(10, 18, 24, 0.75); }
+.chat-line :is(.who, .me, .name) { font: inherit; font-weight: 700; color: var(--gold, #f0cf6a); background: none; border: 0; padding: 0; margin-right: 0.45em; }
+.chat-line .who { cursor: pointer; } .chat-line .who:hover { text-decoration: line-through; }
+.chat-line .me { color: #b8e0ea; }
 .chat-line.sys { color: #b3c4cc; font-style: italic; }
-.chat-roster { margin: 0; padding: 0.15em 0.5em; font-size: 0.8em; color: #cbd8dd; background: rgba(10, 18, 24, 0.7); border-radius: var(--r, 0.3em); }
+.chat-line .admin { color: var(--gold, #f0cf6a); margin-right: 0.25em; }
+.chat-note { margin: 0; padding: 0.15em 0.5em; font-size: var(--fs-s, 0.86em); color: #e9c98f; background: rgba(10, 18, 24, 0.6); border-radius: var(--r, 0.3em); cursor: pointer; }
+/* the open panel: header with who's here and a close button, the recent log, the input */
+.chat-panel { width: 100%; display: flex; flex-direction: column; gap: 0.3em; padding: 0.4em; border-radius: 0.45em; background: rgba(10, 18, 24, 0.82);
+  border: 0.1em solid rgba(122, 85, 48, 0.7); box-shadow: 0 0.3em 0.8em rgba(0, 0, 0, 0.3); }
+.chat-panel header { display: flex; align-items: baseline; gap: 0.6em; font-size: var(--fs-s, 0.86em); padding: 0 0.2em; }
+.chat-panel header .muted { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-x { font: inherit; font-size: 1.3em; line-height: 1; padding: 0 0.3em; color: #efe9dc; background: none; border: 0; cursor: pointer; }
+.chat-x:hover { color: var(--gold, #f0cf6a); }
+.chat-log { display: flex; flex-direction: column; gap: 0.15em; max-height: 14em; overflow-y: auto; }
+.chat-log .chat-line { background: none; padding: 0.05em 0.3em; }
+.chat-input { font: inherit; font-size: var(--fs-s, 0.86em); padding: 0.4em 0.6em; border-radius: var(--r, 0.3em); border: 0.12em solid var(--gold, #f0cf6a);
+  background: rgba(10, 18, 24, 0.9); color: #efe9dc; outline: none; }
+/* the dock: online count, Chat, and Sign in for guests, as one quiet chip */
+.dock { font-size: var(--fs-s, 0.86em); gap: 0.5em; padding: 0.2em 0.3em 0.2em 0.6em; }
+.dock .dot { width: 0.55em; height: 0.55em; border-radius: 50%; background: var(--muted); flex: none; }
+.dock .dot.online { background: var(--good); } .dock .dot.connecting { background: var(--warn); }
+.dock-btn { font: inherit; font-weight: 700; color: #efe9dc; background: rgba(255, 255, 255, 0.08); border: 0.08em solid rgba(240, 207, 106, 0.45); border-radius: 0.3em;
+  padding: 0.1em 0.5em; cursor: pointer; display: inline-flex; align-items: center; gap: 0.35em; }
+.dock-btn:hover { background: rgba(240, 207, 106, 0.18); }
+.dock-btn kbd { font: inherit; font-size: 0.85em; padding: 0 0.3em; border-radius: 0.2em; background: rgba(255, 255, 255, 0.85); color: #1b2a33; }
+.cta-link { color: var(--gold, #f0cf6a); }
+html.touch .dock-btn kbd { display: none; }
+html.touch .chat { bottom: 76px; width: min(22em, 62vw); }
+html.touch .dock-btn { min-height: 36px; }
 /* the card for another sailor's boat, and the chip while following one */
 .sailor-card { position: absolute; left: 50%; bottom: 4.5em; transform: translateX(-50%); padding: 0.6em 0.8em; display: flex; flex-direction: column; gap: 0.5em; min-width: 18em; }
 .sailor-card header { display: flex; align-items: baseline; gap: 0.6em; }
@@ -20,13 +43,20 @@
 .sailor-card .row { display: flex; gap: 0.4em; flex-wrap: wrap; }
 .follow-chip { position: absolute; left: 50%; bottom: 4.5em; transform: translateX(-50%); margin: 0; padding: 0.25em 0.6em; display: flex; align-items: center; gap: 0.6em;
   background: rgba(10, 18, 24, 0.7); border-radius: var(--r, 0.3em); font-size: var(--fs-s, 0.86em); }
-.chat-line .admin { color: var(--gold, #f0cf6a); margin-right: 0.25em; }
-/* the always-visible chat button and the guest sign-in chip under the log */
-.chat-bar { display: flex; gap: 0.4em; align-items: center; flex-wrap: wrap; }
-.chat-open { font-weight: 700; }
-.chat-open kbd { font: inherit; margin-left: 0.4em; padding: 0 0.35em; border-radius: 0.2em; background: rgba(255, 255, 255, 0.85); color: #1b2a33; }
-.cta-chip b { color: var(--gold, #f0cf6a); }
 /* the title screen's sign-in call to action */
 .cta { display: flex; flex-direction: column; align-items: center; gap: 0.15em; margin: 0.9em auto 0; padding: 0.7em 1.6em; font-size: 1.05em; }
 .cta-sub { font-size: 0.72em; opacity: 0.85; font-weight: 400; }
 .cta-signed { margin: 0.8em 0 0; text-align: center; text-shadow: 0 0.08em 0 #000a; }
+/* the online count in the dock opens the leaderboard; the title screen shows it too */
+.dock-text { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.dock-text:hover { text-decoration: underline; text-underline-offset: 0.2em; }
+.online-now { margin: 0.6em 0 0; display: flex; align-items: center; gap: 0.45em; justify-content: center; font-size: var(--fs-s, 0.86em); }
+.online-now .dot { width: 0.55em; height: 0.55em; border-radius: 50%; background: var(--good, #9ad98f); }
+/* leaderboard */
+.leaders .body { display: block; overflow-y: auto; }
+.board { list-style: none; margin: 0; padding: 0; max-width: 36em; }
+.board li { display: flex; align-items: center; gap: 0.8em; padding: 0.3em 0.6em; border-bottom: 0.08em dashed rgba(90, 70, 40, 0.3); }
+.board li .rank { width: 2em; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.board li:nth-child(-n+3) .rank { color: var(--gold); font-weight: 700; }
+.board li.me { background: rgba(240, 207, 106, 0.22); border-radius: var(--r, 0.3em); }
+.leaders .mine { margin-top: 0.8em; }

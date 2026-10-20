@@ -2,7 +2,7 @@
 import { W, H, clamp } from '../config';
 import { hAt, homePort, cellPois } from '../world';
 import { SP } from '../econ';
-import { netSaved } from '../net';
+import { netSaved, reportStats } from '../net';
 import type { BoatId, Contract, Fish, GameState, LogEntry, Pet, Port, ProjectId, Stats, StoryState, TreasureMap, UpgradeKey, BaitKind, BaitChoice } from '../types';
 import { G, freshStats, freshUpgrades } from './state';
 import { DAYLEN, cap, hpMax } from './rules';
@@ -36,6 +36,7 @@ export function saveGame(): void {
     };
     localStorage.setItem(KEY, JSON.stringify(data));
     netSaved();
+    reportStats(G.stats.caught, G.earned, G.cheated);   // the leaderboard's fish caught and coins earned (sent at most once a minute)
   } catch { }   // storage full or unavailable: keep playing
 }
 export function hasSave(): boolean {

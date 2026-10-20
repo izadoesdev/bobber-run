@@ -22,6 +22,8 @@ export interface Settings {
   guide: boolean;
   /** the sailing interface (status, minimap, quest, hints); H hides it for screenshots or calm sailing */
   hud: boolean;
+  /** chat: the log fades in at the bottom left, only bubbles over boats, or none at all */
+  chat: 'show' | 'bubbles' | 'off';
   strike: StrikeTiming;
   reelAssist: boolean; reelToggle: boolean;
   /** camera zoom chosen by the player; 1 = the default view for your ship */
@@ -32,7 +34,7 @@ export interface Settings {
 
 export const SET: Settings = {
   music: 6, sfx: 8, amb: 8, quality: 'auto', pixel: 'crisp', tilt: true, bloom: true, horizon: true, shake: true,
-  ui: 1, font: 'pixel', contrast: false, calm: false, captions: false, guide: true, hud: true,
+  ui: 1, font: 'pixel', contrast: false, calm: false, captions: false, guide: true, hud: true, chat: 'show',
   strike: 'normal', reelAssist: false, reelToggle: false, zoom: 1, binds: {},
 };
 // storage may be unavailable (private mode) or hold junk; defaults stand in either case

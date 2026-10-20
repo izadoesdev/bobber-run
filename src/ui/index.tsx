@@ -2,6 +2,7 @@
 // Design system: wood panels frame and navigate, parchment holds documents and details,
 // one focus colour, one icon style (voxel renders), sentence case for anything longer than a label.
 import { Chat } from './chat';
+import { Leaderboard } from './leaders';
 import { SailorCard } from './sailorcard';
 import { render } from 'preact';
 import { G } from '../game';
@@ -37,6 +38,7 @@ function App() {
       {m === 'emote' && <><Hud /><EmotePick /></>}
       {m === 'talk' && G.talk && <Talk t={G.talk} />}
       {m === 'journal' && <Journal />}
+      {m === 'leaders' && <Leaderboard />}
       {m !== 'title' && <Toasts low={m !== 'play' && m !== 'sunk'} />}
     </div>
   );

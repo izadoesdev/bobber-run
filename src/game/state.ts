@@ -31,7 +31,7 @@ export const G: GameState = {
   // screens
   menu: { tab: 0, sel: 0, port: null }, map: { x: 0, y: 0, zoom: 1 }, talk: null,
   shipSel: 0, logSel: 0, titleSel: 0, pauseSel: 0, setSel: 0, ctlSel: 0, emoteSel: 0,
-  back: 'title', accountBack: 'play', journalBack: 'play', cheatBack: 'play', cheatBuf: '', cheatErr: false,
+  back: 'title', accountBack: 'play', journalBack: 'play', cheatBack: 'play', leadersBack: 'play', leaderTab: 0, cheatBuf: '', cheatErr: false,
   rebinding: null, netForm: null, netMsg: null, needName: false,
   // cheats
   god: false, cheated: false,

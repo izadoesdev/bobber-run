@@ -79,6 +79,7 @@ export const ROWS: SettingEntry[] = [
   { label: 'Interface size', ...pick('ui', UI_SIZES, ['85%', '100%', '115%', '130%', '150%']) },
   { label: 'Sea zoom', get: () => `${Math.round(SET.zoom * 100)}%`, change: d => { stepZoom(d > 0 ? 1 : -1); }, help: 'How much of the sea you can see. Bigger ships already see further. While sailing you can also use the mouse wheel, or the - and + keys.' },
   { label: 'Font', ...pick('font', ['pixel', 'plain'], ['Pixel', 'Plain']), help: 'Plain uses a smooth system font that is easier to read.' },
+  { label: 'Chat messages', ...pick('chat', ['show', 'bubbles', 'off'], ['Show', 'Bubbles only', 'Off']), help: 'Show: new messages appear at the bottom left for a few seconds. Bubbles only: just the speech bubbles over boats. Off: no messages, though / still opens chat.' },
   { label: 'Interface while sailing', ...toggle('hud', 'Shown', 'Hidden'), help: 'Press H while sailing to hide the status panel, minimap, quest and hints, for screenshots or calm sailing. Messages and the fishing bars still show.' },
   { label: 'Objective marker', ...toggle('guide'), help: 'Shows where to go next: an arrow on screen and a marker on the minimap and chart.' },
   { head: 'Fishing' },
