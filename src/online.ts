@@ -27,7 +27,10 @@ export function toggleMute(name: string): boolean {
 export function heard(line: ChatLine): void {
   if (line.id !== 'me' && line.id !== 'sys' && isMuted(line.name)) return;
   ONLINE.log = [...ONLINE.log.slice(-49), line];
-  if (line.id !== 'sys') ONLINE.chat.set(line.id, { text: line.text, at: Date.now() });
+  if (line.id === 'sys') return;
+  const now = Date.now();
+  for (const [id, c] of ONLINE.chat) if (now - c.at > 60_000) ONLINE.chat.delete(id);   // relay ids change on every reconnect
+  ONLINE.chat.set(line.id, { text: line.text, at: now });
 }
 
 /** Fishing alongside other sailors pays: +5% per sailor within CREW_RANGE, up to +15%. */

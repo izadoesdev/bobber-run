@@ -2,7 +2,8 @@ import { v } from 'convex/values';
 import { query, type QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { getAuthUserId } from '@convex-dev/auth/server';
-import { adminEmails } from './profiles';
+import { isAdminEmail } from './profiles';
+import { profileOf } from './lib';
 import { MAX_KG, SPECIES_NAMES } from './limits';
 
 const TOP = 20;
@@ -10,9 +11,8 @@ type Row = { name: string; value: number; label?: string; admin?: boolean };
 const by = v.union(v.literal('species'), v.literal('records'), v.literal('heaviest'), v.literal('caught'), v.literal('earned'));
 
 async function rowFor(ctx: QueryCtx, userId: Id<'users'>, value: number, label?: string): Promise<Row> {
-  const [p, u] = await Promise.all([ctx.db.query('profiles').withIndex('by_user', q => q.eq('userId', userId)).unique(), ctx.db.get(userId)]);
-  const admin = !!u?.email && adminEmails().includes(u.email.toLowerCase());
-  return { name: p?.name ?? 'Sailor', value, ...(label ? { label } : {}), ...(admin ? { admin } : {}) };
+  const [p, u] = await Promise.all([profileOf(ctx, userId), ctx.db.get(userId)]);
+  return { name: p?.name ?? 'Sailor', value, ...(label ? { label } : {}), ...(isAdminEmail(u?.email) ? { admin: true } : {}) };
 }
 
 /** The top 20 by a measure, and where the caller stands. */

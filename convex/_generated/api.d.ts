@@ -16,6 +16,7 @@ import type * as fund from "../fund.js";
 import type * as http from "../http.js";
 import type * as islandRules from "../islandRules.js";
 import type * as islands from "../islands.js";
+import type * as jev from "../jev.js";
 import type * as leaderboard from "../leaderboard.js";
 import type * as lib from "../lib.js";
 import type * as limits from "../limits.js";
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   islandRules: typeof islandRules;
   islands: typeof islands;
+  jev: typeof jev;
   leaderboard: typeof leaderboard;
   lib: typeof lib;
   limits: typeof limits;

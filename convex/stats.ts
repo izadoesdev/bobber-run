@@ -24,7 +24,7 @@ export const report = mutation({
   handler: async (ctx, { caught, earned, cheated }) => {
     const userId = await requireUser(ctx);
     if (cheated || !Number.isFinite(caught) || !Number.isFinite(earned) || !await trusted(ctx, userId, GUEST_TRUST_MS)) return;
-    const s = await statsOf(ctx, userId), now = Date.now(), mins = Math.max(0, (now - s.at) / 60_000);
+    const s = await statsOf(ctx, userId), now = Date.now(), mins = Math.min(10, Math.max(0, (now - s.at) / 60_000));   // idle time doesn't bank allowance
     const nextCaught = Math.min(Math.max(s.caught, Math.floor(caught)), s.caught + SLACK_CAUGHT + mins * CAUGHT_PER_MIN);
     const nextEarned = Math.min(Math.max(s.earned, Math.floor(earned)), s.earned + SLACK_EARNED + mins * EARNED_PER_MIN);
     if (nextCaught !== s.caught || nextEarned !== s.earned) await ctx.db.patch(s._id, { caught: Math.floor(nextCaught), earned: Math.floor(nextEarned), at: now });

@@ -1,7 +1,7 @@
 // Online play through Convex: guest sign-in, accounts, cloud saves, world records, the coastwide fund,
 // greetings and other sailors. Without VITE_CONVEX_URL the game stays offline.
 import { h, render } from 'preact';
-import { useEffect } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { ConvexReactClient } from 'convex/react';
 import type { FunctionReference } from 'convex/server';
 import { ConvexAuthProvider, useAuthActions, useAuthToken, useConvexAuth } from '@convex-dev/auth/react';
@@ -29,16 +29,17 @@ export const HAD_ACCOUNT_KEY = 'bobber-run-had-account';
 export const NET = {
   on: !!URL, status: (URL ? 'connecting' : 'offline') as Status, authed: false, busy: false,
   profile: null as Profile | null, records: {} as Record<string, { name: string; kg: number }>, fund: null as Fund | null,
-  news: [] as { id: string; name: string; text: string; at: number }[], err: null as string | null,
-  cloudNote: null as string | null,
 };
 export const EMOTES = ['Ahoy!', 'Nice catch!', 'Follow me!', 'Look over here!', 'Thanks!', 'Fair winds!', 'Good night!', 'Wow!'];
-const errText = (e: unknown) => String((e as Error)?.message ?? e).slice(0, 120);
+const errText = (e: unknown) => String(e instanceof Error ? e.message : e).slice(0, 120);
+type News = { id: string; name: string; text: string; at: number };
 
 let client: ConvexReactClient | null = null;
 let actions: ReturnType<typeof useAuthActions> | null = null, authToken: string | null = null;
 let G: Game | null = null, speciesIds: string[] = [], toast: (s: string, kind?: ToastKind) => void = () => { };
 let signingIn = false, switching = false, naming = false;
+/** Re-runs the guest sign-in check (after an account switch or delete ends signed out, or a failed guest sign-in). */
+let wakeBridge = () => { };
 
 // ---------- subscriptions ----------
 const watches: Record<string, { sig: string; off: () => void }> = {};
@@ -46,27 +47,29 @@ function watch<T>(key: string, ref: FunctionReference<'query'>, args: Record<str
   const sig = JSON.stringify(args); if (!client || watches[key]?.sig === sig) return;
   watches[key]?.off();
   const w = client.watchQuery(ref, args);
-  const pull = () => { try { const r = w.localQueryResult(); if (r !== undefined) cb(r as T); } catch (e) { NET.err = errText(e); } };
+  const pull = () => { try { const r = w.localQueryResult(); if (r !== undefined) cb(r as T); } catch { /* a failed query keeps the last result */ } };
   watches[key] = { sig, off: w.onUpdate(pull) }; pull();
 }
 /** Stop a subscription made with watch(). */
 const unwatch = (key: string) => { watches[key]?.off(); delete watches[key]; };
-const call = <A extends Record<string, unknown>>(ref: FunctionReference<'mutation'>, args: A) =>
-  client!.mutation(ref, args).catch((e: unknown) => { NET.err = errText(e); throw e; });
+const call = <A extends Record<string, unknown>>(ref: FunctionReference<'mutation'>, args: A) => client!.mutation(ref, args);
 
 // ---------- sign-in ----------
 // Signs in as a guest when nobody is signed in (never during an account switch) and tracks the session.
 function Bridge() {
   const a = useAuthActions(), { isLoading, isAuthenticated } = useConvexAuth(), token = useAuthToken();
-  actions = a; authToken = isAuthenticated ? token : null;
+  const [wake, setWake] = useState(0);
+  actions = a; authToken = isAuthenticated ? token : null; wakeBridge = () => setWake(n => n + 1);
   useEffect(() => {
     if (isLoading || isAuthenticated || signingIn || switching) return;
     signingIn = true; NET.status = 'connecting';
-    a.signIn('anonymous').catch(e => { NET.err = errText(e); NET.status = 'offline'; }).finally(() => { signingIn = false; });
-  }, [isLoading, isAuthenticated]);
+    a.signIn('anonymous')
+      .catch(() => { NET.status = 'offline'; setTimeout(wakeBridge, 10_000); })   // try again in a while
+      .finally(() => { signingIn = false; });
+  }, [isLoading, isAuthenticated, wake]);
   useEffect(() => {
-    NET.authed = isAuthenticated; NET.status = isAuthenticated ? 'online' : isLoading ? 'connecting' : NET.status;
-    if (isAuthenticated) void onSignedIn(); else NET.profile = null;
+    NET.authed = isAuthenticated;
+    if (isAuthenticated) { NET.status = 'online'; void onSignedIn(); } else NET.profile = null;
   }, [isAuthenticated]);
   return null;
 }
@@ -86,24 +89,30 @@ async function onSignedIn() {
   });
   watch('records', api.records.world, { species: speciesIds }, r => { NET.records = r as typeof NET.records; });
   watch('fund', api.fund.get, { key: FUND_KEY }, f => { NET.fund = f as Fund; });
-  watch('news', api.sea.news, { since: pageStart - 60_000 }, list => onNews(list as typeof NET.news));
+  watch<News[]>('news', api.sea.news, { since: pageStart - 60_000 }, onNews);
   try { await call(api.sea.join, {}); } catch { /* stays in its last sea */ }
   if (!switching) await syncSave();   // during an account switch, account() decides which save wins
 }
 // coastwide news shows as toasts, once each, newest last
 const seenNews = new Set<string>();
-function onNews(list: typeof NET.news) {
-  NET.news = list;
+function onNews(list: News[]) {
   for (const e of [...list].reverse()) if (!seenNews.has(e.id)) { seenNews.add(e.id); if (e.name !== NET.profile?.name) toast(`${e.name} ${e.text}`, 'good'); }
 }
 
 // ---------- cloud save: whichever copy is newer wins (the cloud copy replaces a local one only on the title screen) ----------
 const localSave = () => { try { const s = localStorage.getItem(SAVE_KEY); return s ? { data: s, at: (JSON.parse(s).savedAt as number) || 0 } : null; } catch { return null; } };
+/**
+ * Set when the cloud has newer progress (another device) but the player is already sailing: uploads wait, so this
+ * device's older save can't overwrite it, and the cloud copy loads the next time the title screen shows.
+ */
+let cloudAhead = false;
 async function syncSave() {
   try {
     const cloud = await client!.query(api.saves.load, {}), local = localSave();
-    if (cloud && (!local || cloud.updatedAt > local.at)) { if (G?.mode === 'title') { localStorage.setItem(SAVE_KEY, cloud.data); NET.cloudNote = 'Loaded your save from the cloud'; } }
-    else if (local) await putSave(local.data, local.at || Date.now());
+    if (cloud && (!local || cloud.updatedAt > local.at)) {
+      if (G?.mode === 'title') { localStorage.setItem(SAVE_KEY, cloud.data); cloudAhead = false; }
+      else if (!cloudAhead) { cloudAhead = true; toast('This account has newer progress from another device. It loads next time you open the title screen'); }
+    } else if (local) await putSave(local.data, local.at || Date.now());
   } catch { /* offline: try again on the next save */ }
 }
 /** Upload a save. The server turns away writes less than 2 s after the last one ("busy"), so retry once after that. */
@@ -115,8 +124,8 @@ async function putSave(data: string, updatedAt: number) {
 let saveTimer = 0;
 /** Called after every local save; uploads at most every few seconds. */
 export function netSaved() {
-  if (!NET.authed || saveTimer) return;
-  saveTimer = window.setTimeout(() => { saveTimer = 0; if (!NET.authed || switching) return; const l = localSave(); if (l) putSave(l.data, l.at || Date.now()).catch(() => { }); }, 4000);
+  if (!NET.authed || saveTimer || cloudAhead) return;
+  saveTimer = window.setTimeout(() => { saveTimer = 0; if (!NET.authed || switching || cloudAhead) return; const l = localSave(); if (l) putSave(l.data, l.at || Date.now()).catch(() => { }); }, 4000);
 }
 // cheat-tainted saves never call these (the server also accepts an optional `cheated` flag, which this client
 // leaves out so it works against older backends too)
@@ -159,11 +168,14 @@ export async function account(flow: 'signUp' | 'signIn', rawEmail: string, passw
   const email = rawEmail.trim().toLowerCase();                       // addresses are case-insensitive; accounts are stored lower case
   if (!/^\S+@\S+\.\S+$/.test(email)) return { ok: false, why: 'Enter a valid email address' };
   if (password.length < 8) return { ok: false, why: 'Use a password of at least 8 characters' };
-  NET.busy = true; NET.err = null; switching = true;
+  if (NET.busy) return { ok: false, why: 'Still working on the last request' };
+  NET.busy = true; switching = true;
+  let timedOut = false;
+  await waitFor(() => !signingIn, 8000);                              // a guest sign-in still in flight would race this one
   const keep = localSave(), oldName = NET.profile?.name, oldUser = NET.profile?.userId;
   try {
     // Convex Auth only re-authenticates the connection on a signed-out -> signed-in change, so leave the guest
-    // session first; otherwise the server keeps seeing the guest. If sign-in then fails, a new guest session starts.
+    // session first; otherwise the server keeps seeing the guest. If sign-in then fails, a new guest session starts (finally).
     if (NET.authed) { await actions.signOut(); await waitFor(() => !NET.authed, 4000); }
     try { await actions.signIn('password', { email, password, flow }); }
     catch (e) {                                                        // accounts made before emails were lower-cased keep their original case
@@ -172,7 +184,7 @@ export async function account(flow: 'signUp' | 'signIn', rawEmail: string, passw
       await actions.signIn('password', { email: typed, password, flow });
     }
     // wait until the server sees the new account (slow connections can take a while)
-    if (!await waitFor(() => !!NET.profile && NET.profile.userId !== oldUser && !NET.profile.guest, 20_000)) return failed(flow, null);
+    if (!await waitFor(() => !!NET.profile && NET.profile.userId !== oldUser && !NET.profile.guest, 20_000)) { timedOut = true; return failed(flow, null); }
     try { localStorage.setItem(HAD_ACCOUNT_KEY, '1'); } catch { /* private mode */ }
     if (flow === 'signUp') {
       if (keep) await putSave(keep.data, Date.now());
@@ -182,12 +194,18 @@ export async function account(flow: 'signUp' | 'signIn', rawEmail: string, passw
     }
     const cloud = await client.query(api.saves.load, {});
     track('account_signed_in', { loaded_cloud_save: !!cloud });
-    if (cloud) { localStorage.setItem(SAVE_KEY, cloud.data); return { ok: true, loaded: true, msg: 'Signed in. Your save is loaded' }; }   // the caller loads it into the game
+    if (cloud) {
+      if (keep) try { localStorage.setItem(`${SAVE_KEY}-guest`, keep.data); } catch { /* full */ }   // the guest's progress, in case it mattered
+      localStorage.setItem(SAVE_KEY, cloud.data); return { ok: true, loaded: true, msg: 'Signed in. Your save is loaded' }; }   // the caller loads it into the game
     if (keep) await putSave(keep.data, Date.now());
     return { ok: true, msg: `Signed in as ${email}` };
   } catch (e) {
     return failed(flow, errText(e));
-  } finally { NET.busy = false; switching = false; }
+  } finally {
+    NET.busy = false; switching = false;
+    if (timedOut && NET.authed) void syncSave();                     // it may still have signed in, just slowly
+    wakeBridge();                                                    // signed out after a failure: start a guest session
+  }
 }
 /** Erase this account and its cloud save, name and gifts on the server (world records stay), then sign out. This device keeps its own save. */
 export async function deleteAccount(): Promise<Result> {
@@ -200,9 +218,16 @@ export async function deleteAccount(): Promise<Result> {
     track('account_deleted', {});
     return { ok: true, msg: 'Your account is deleted. You are sailing as a guest on this device' };
   } catch { return { ok: false, why: 'Could not reach the server. Your account is unchanged' }; }
-  finally { NET.busy = false; switching = false; }
+  finally { NET.busy = false; switching = false; wakeBridge(); }
 }
-export async function signOut() { if (!actions) return; NET.busy = true; try { await actions.signOut(); NET.profile = null; track('signed_out', {}); } finally { NET.busy = false; } }
+/** Sign out; a new guest session starts by itself. */
+export async function signOut(): Promise<Result> {
+  if (!actions) return { ok: false, why: 'You are offline' };
+  NET.busy = true;
+  try { await actions.signOut(); NET.profile = null; track('signed_out', {}); return { ok: true }; }
+  catch { return { ok: false, why: 'Could not reach the server' }; }
+  finally { NET.busy = false; }
+}
 // ---------- leaderboards and the online count ----------
 export type LeaderBy = 'species' | 'records' | 'heaviest' | 'caught' | 'earned';
 export interface Leaders { rows: { name: string; value: number; label?: string; admin?: boolean }[]; me: { rank: number; value: number } | null }
@@ -274,7 +299,7 @@ const cellsAround = (sea: number, x: number, y: number) => {
 };
 type Raw = { id: string; x: number; y: number; a: number; vx: number; vy: number; w: number; boat: string; paint: string; name: string; at: number; emote: number | null; emoteAt: number };
 let lastSent: { x: number; y: number; a: number } | null = null, sendT = 0, inFlight = false, raw: Raw[] = [];
-const seenSailors = new Set<string>();
+const seenSailors = new Set<string>();   // by captain name, so a reconnect isn't announced again
 /**
  * Other boats are drawn a little in the past, between two real reports, so they move smoothly however unevenly
  * reports arrive. Each report carries the boat's velocity and turn rate, so the path between reports curves the way
@@ -282,8 +307,13 @@ const seenSailors = new Set<string>();
  */
 type Snap = { at: number; x: number; y: number; a: number; vx: number; vy: number; w: number };
 const snaps = new Map<string, Snap[]>();
-/** The server clock minus ours, from the freshest report seen (a report can't have been written in our future). */
-let clockAhead = -Infinity;
+/**
+ * The server clock minus ours, from the freshest report seen (a report can't have been written in our future). It
+ * eases down slowly, so one odd report or a jump of our clock doesn't leave it high, and starts over when the source
+ * (relay or Convex, two different clocks) changes.
+ */
+let clockAhead = -Infinity, clockFrom: boolean | null = null;
+const CLOCK_EASE = 0.05;   // seconds per second
 // Convex reports about twice a second, the relay about ten times; draw far enough behind to always have the next one
 const SEND_MOVING_S = 0.5, SEND_STILL_S = 10, RELAY_SEND_S = 0.1, RELAY_STILL_S = 1, COAST_MS = 1500, SNAP_DIST = 200;
 const behindMs = () => relayLive() ? 220 : 600;
@@ -307,9 +337,15 @@ function sample(list: Snap[], t: number): { x: number; y: number; a: number; vx:
   return { x: at('x', 'vx', h), y: at('y', 'vy', h), a: p.a + turn(p.a, q.a) * u, vx: at('x', 'vx', d) / span, vy: at('y', 'vy', d) / span };
 }
 export function netTick(dt: number) {
-  if (!NET.authed || !G || NET.profile?.sea == null) return;
+  relayKeep(NET.authed ? authToken : null, NET.authed ? NET.profile?.userId ?? null : null);
+  if (!NET.authed || !G || NET.profile?.sea == null) {             // signed out: nobody else is drawn
+    if (raw.length || ONLINE.sailors.length) { raw = []; ONLINE.sailors = []; snaps.clear(); }
+    return;
+  }
+  if (cloudAhead && G.mode === 'title') { cloudAhead = false; void syncSave(); }
   const b = G.boat, state = { x: b.x, y: b.y, a: b.a, vx: b.vx, vy: b.vy, w: b.w, boat: G.boatId, paint: G.paint };
-  relayKeep(authToken);
+  if (clockFrom !== relayLive()) { clockFrom = relayLive(); clockAhead = -Infinity; snaps.clear(); }
+  clockAhead -= CLOCK_EASE * dt * 1000;
   sendT += dt;
   const moved = !lastSent || Math.hypot(b.x - lastSent.x, b.y - lastSent.y) > 0.5 || Math.abs(b.a - lastSent.a) > 0.03;
   if (relayLive()) {                                           // realtime: ten reports a second while moving, one when still
@@ -341,7 +377,7 @@ export function netTick(dt: number) {
     else { s.x += (at.x - s.x) * k; s.y += (at.y - s.y) * k; s.a += turn(s.a, at.a) * k; }
     s.vx = at.vx; s.vy = at.vy;
     Object.assign(s, { id: r.boat, paint: r.paint, name: r.name, emote: r.emote, emoteAt: r.emoteAt });   // id = boat model, as the renderer expects
-    if (!seenSailors.has(r.id)) { seenSailors.add(r.id); if (seenSailors.size > 1 || G!.mode === 'play') toast(`${r.name} sailed into view`); }
+    if (!seenSailors.has(r.name)) { seenSailors.add(r.name); if (seenSailors.size > 1 || G!.mode === 'play') toast(`${r.name} sailed into view`); }
     return s;
   });
   for (const id of snaps.keys()) if (!raw.some(r => r.id === id)) snaps.delete(id);

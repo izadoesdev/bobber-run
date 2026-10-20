@@ -22,10 +22,11 @@ const MSGS_PER_S = 30, MAX_PER_USER = 3, MAX_MSG = 4096;   // a sign-in token is
 const CHAT_MAX = 120, CHAT_GAP_MS = 1200, CHAT_BURST = 6, CHAT_WINDOW_MS = 15_000;   // chat: a line every 1.2 s, 6 per 15 s
 
 type Boat = { x: number; y: number; a: number; vx: number; vy: number; w: number; boat: string; paint: string; at: number };
-interface Peer { id: string; userId: string; name: string; sea: number; admin: boolean; token: string; boat: Boat | null; emote: number | null; emoteAt: number; tokens: number; refill: number; chats: number[] }
+interface Peer { id: string; userId: string; name: string; sea: number; admin: boolean; token: string; boat: Boat | null; emote: number | null; emoteAt: number; tokens: number; refill: number; chats: number[]; renamedAt: number }
 type Sock = ServerWebSocket<Peer | null>;
 const seas = new Map<number, Set<Sock>>();
 const perUser = new Map<string, number>();
+const greeting = new WeakSet<Sock>();       // sockets whose hello is still being checked
 
 /** The signed-in player behind a token, as Convex sees them; null if the token or profile doesn't check out. */
 async function player(token: string): Promise<{ userId: string; name: string; sea: number; admin: boolean } | null> {
@@ -69,12 +70,16 @@ async function onMessage(ws: Sock, text: string): Promise<void> {
   try { m = JSON.parse(text); } catch { return; }
   const p = ws.data;
   if (!p) {                                                     // the first message must be hello with a token
+    if (greeting.has(ws)) return;                               // anything sent while hello is checked is dropped
     if (m.t !== 'hello' || typeof m.token !== 'string') return void ws.close(4001, 'hello first');
+    greeting.add(ws);
     const who = await player(m.token);
+    greeting.delete(ws);
+    if (ws.readyState !== 1) return;                            // it closed while we were checking
     if (!who) return void ws.close(4003, 'not signed in');
     if ((perUser.get(who.userId) ?? 0) >= MAX_PER_USER) return void ws.close(4008, 'too many tabs');
     perUser.set(who.userId, (perUser.get(who.userId) ?? 0) + 1);
-    ws.data = { id: crypto.randomUUID().slice(0, 12), ...who, token: m.token, boat: null, emote: null, emoteAt: 0, tokens: MSGS_PER_S, refill: Date.now(), chats: [] };
+    ws.data = { id: crypto.randomUUID().slice(0, 12), ...who, token: m.token, boat: null, emote: null, emoteAt: 0, tokens: MSGS_PER_S, refill: Date.now(), chats: [], renamedAt: 0 };
     if (!seas.has(who.sea)) seas.set(who.sea, new Set());
     seas.get(who.sea)!.add(ws);
     announce(who.sea, `${who.name} joined the sea`, ws);
@@ -100,9 +105,12 @@ async function onMessage(ws: Sock, text: string): Promise<void> {
     for (const o of seas.get(p.sea) ?? []) if (o !== ws && o.data) o.send(line);
     ws.send(JSON.stringify({ t: 'chat', id: 'me', name: p.name, admin: p.admin, text: v.text, at: Date.now(), filtered: v.filtered }));   // like Roblox, you see what others see
   } else if (m.t === 'renamed') {                                // re-read the name from Convex; the client's word isn't taken
+    if (Date.now() - p.renamedAt < 5000) return;
+    p.renamedAt = Date.now();
+    const who = await player(typeof m.token === 'string' ? m.token : p.token);
+    if (who?.userId !== p.userId) return;                       // a token for another account doesn't rename this boat
     if (typeof m.token === 'string') p.token = m.token;
-    const who = await player(p.token);
-    if (who) { p.name = who.name; p.admin = who.admin; }
+    p.name = who.name; p.admin = who.admin;
   } else if (m.t === 'token' && typeof m.token === 'string') {   // sign-in tokens expire; the client hands over fresh ones
     p.token = m.token;
   }
@@ -131,13 +139,21 @@ function broadcast(): void {
   const total = withRoster ? online() : 0;
   for (const [sea, socks] of seas) {
     const names = withRoster ? roster(sea) : null;
-    const boats: { ws: Sock; p: Peer; b: Boat }[] = [];
-    for (const ws of socks) { const p = ws.data; if (p?.boat && now - p.boat.at < STALE_MS) boats.push({ ws, p, b: p.boat }); }
+    // boats bucketed by RANGE-sized cells, so each boat only looks at the 3x3 cells around it
+    const boats: { ws: Sock; p: Peer; b: Boat }[] = [], grid = new Map<string, typeof boats>();
+    const cell = (x: number, y: number) => `${Math.floor(x / RANGE)},${Math.floor(y / RANGE)}`;
+    for (const ws of socks) {
+      const p = ws.data; if (!p?.boat || now - p.boat.at >= STALE_MS) continue;
+      const o = { ws, p, b: p.boat }, k = cell(o.b.x, o.b.y);
+      boats.push(o); (grid.get(k) ?? grid.set(k, []).get(k)!).push(o);
+    }
     for (const ws of socks) {
       const me = ws.data; if (!me) continue;
-      const list = boats.filter(o => o.ws !== ws && (!me.boat || Math.hypot(o.b.x - me.boat.x, o.b.y - me.boat.y) < RANGE))
+      const at = me.boat, cx = at ? Math.floor(at.x / RANGE) : 0, cy = at ? Math.floor(at.y / RANGE) : 0;
+      const around = at ? [-1, 0, 1].flatMap(j => [-1, 0, 1].flatMap(i => grid.get(`${cx + i},${cy + j}`) ?? [])) : boats;
+      const list = around.filter(o => o.ws !== ws && (!at || Math.hypot(o.b.x - at.x, o.b.y - at.y) < RANGE))
         .map(({ p, b }) => ({ id: p.id, name: p.name, emote: p.emote, emoteAt: p.emoteAt, ...b }));
-      const at = me.boat, far = withFar && at ? boats.filter(o => o.ws !== ws).map(({ p, b }) => ({ uid: p.id, name: p.name, x: Math.round(b.x), y: Math.round(b.y), d: Math.hypot(b.x - at.x, b.y - at.y) }))
+      const far = withFar && at ? boats.filter(o => o.ws !== ws).map(({ p, b }) => ({ uid: p.id, name: p.name, x: Math.round(b.x), y: Math.round(b.y), d: Math.hypot(b.x - at.x, b.y - at.y) }))
         .sort((a, b) => a.d - b.d).slice(0, FAR_MAX).map(({ uid, name, x, y }) => ({ uid, name, x, y })) : undefined;
       ws.send(JSON.stringify({ t: 'boats', now, list, ...(names ? { roster: names, total } : {}), ...(far ? { far } : {}) }));
     }
@@ -164,6 +180,7 @@ Bun.serve<Peer | null>({
   websocket: {
     maxPayloadLength: MAX_MSG,
     idleTimeout: 60,
+    backpressureLimit: 512 * 1024, closeOnBackpressureLimit: true,   // a client that can't keep up is dropped (it reconnects)
     message(ws, msg) { if (typeof msg === 'string') void onMessage(ws, msg); },
     close(ws, code, reason) { if (code !== 1000 && code !== 1001) console.log(JSON.stringify({ msg: 'closed', code, reason })); leave(ws); },
   },

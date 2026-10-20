@@ -20,7 +20,8 @@ import { updateLife, LIFE } from './life';
 import { WX, setWeather } from './weather';
 import { initInput, pollPad } from './input';
 import { menuInput } from './menus';
-import { initAnalytics } from './analytics';
+import { initAnalytics, trackFailure } from './analytics';
+let netFailed = false;
 import { initTelemetry, watchGame } from './telemetry';
 import { forceName } from './ui/menus';
 import { baseScale, targetScale, easeScale, shipZoom } from './camera';
@@ -84,7 +85,7 @@ export function tick(dt: number): void {
   if (G.mode === 'map') panChart(dt);
   update(dt);
   updateStory();
-  netTick(dt);
+  try { netTick(dt); } catch { if (!netFailed) { netFailed = true; trackFailure('net_tick'); } }   // a bad network message must never stop the frame
   watchGame(dt);
   forceName();
   updateLife(dt);

@@ -15,10 +15,14 @@ async function erase(ctx: MutationCtx, userId: Id<'users'>) {
     for (const c of await ctx.db.query('authVerificationCodes').withIndex('accountId', q => q.eq('accountId', a._id)).collect()) await ctx.db.delete(c._id);
     await ctx.db.delete(a._id);
   }
-  for (const t of ['profiles', 'saves', 'positions'] as const)
+  for (const t of ['profiles', 'saves', 'positions', 'stats'] as const)
     for (const r of await ctx.db.query(t).withIndex('by_user', q => q.eq('userId', userId)).collect()) await ctx.db.delete(r._id);
   for (const key of FUND_KEYS)
     for (const g of await ctx.db.query('gifts').withIndex('by_key_user', q => q.eq('key', key).eq('userId', userId)).collect()) await ctx.db.delete(g._id);
+  for (const isl of await ctx.db.query('islands').withIndex('by_owner', q => q.eq('ownerId', userId)).collect()) {   // their islands go back on the market
+    if (isl.logo) await ctx.storage.delete(isl.logo);
+    await ctx.db.delete(isl._id);
+  }
   await ctx.db.delete(userId);
 }
 
