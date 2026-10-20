@@ -93,7 +93,7 @@ export function IslandDialog() {
     if (r.ok && f.url.trim() !== (r0.url ?? '')) r = await setIslandUrl(key, f.url.trim());
     if (r.ok && f.logo) r = await uploadIslandLogo(key, f.logo.blob);
     return r;
-  }, 'Saved');
+  }, f.logo ? 'Saved. Others will see the new flag once a moderator approves it' : 'Saved');
   const release = () => {
     if (!f.confirm) { f.confirm = true; say('Release it? Anyone can then buy it, and there is no refund. Press again to release', true); return; }
     void run(() => releaseIsland(key), 'Released');
@@ -111,6 +111,7 @@ export function IslandDialog() {
           </div>
           {row?.url && <button data-track="island-visit" class="btn small-btn" onClick={() => visit(row.url!)}>Visit {host(row.url)} ↗</button>}
         </header>
+        {row?.mine && row.logoPending && <p class="muted small">Your new flag is waiting for review. Other sailors will see it once a moderator approves it.</p>}
         {(!row || row.mine) && <IslandForm f={f} onPick={pick} />}
         {!row && !admin && <p class="muted small">Real money, paid securely with Stripe. Islands cost less the farther they are from Alderhaven, and you can own up to 3. Your name, flag and link show to every sailor.</p>}
         {!row && !admin && <label class="row adult"><input data-track="island-adult" type="checkbox" checked={f.adult} onChange={e => { f.adult = e.currentTarget.checked; }} />

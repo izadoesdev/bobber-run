@@ -562,10 +562,10 @@ function harbourItems(items: Rows): void {
   const f = NET.fund;
   for (const amt of [100, 1000, 10000]) items.push({
     kind: 'fund', key: 'fund' + amt, icon: 'coin', label: `Give ${money(amt)} to the coastwide fund`,
-    sub: f ? `${money(f.total)} of ${money(f.goal)} from ${f.givers} sailor${f.givers === 1 ? '' : 's'}` : NET.authed ? 'Loading' : 'Connecting',
+    sub: f ? `Round ${f.round}: ${money(f.total)} of ${money(f.goal)} from ${f.givers} sailor${f.givers === 1 ? '' : 's'}` : NET.authed ? 'Loading' : 'Connecting',
     cost: amt, right: money(amt), ok: NET.authed && !G.cheated && G.coins >= amt,
     why: G.cheated ? 'Saves that used cheats cannot give to the fund' : !NET.authed ? 'You are offline' : short(amt), action: 'Give', act: () => giveToFund(amt),
-    what: `A gift for the whole coast: every sailor on every server fills this fund together, and when it is full everyone celebrates. It buys nothing for you. Each sailor can give up to ${money(FUND_DAILY)} a day; you have given ${money(f?.mine || 0)} in all.`,
+    what: `A gift for the whole coast: every sailor fills this fund together. When a round fills, the whole coast hears about it and the next round begins with a bigger goal. It buys nothing for you. Each sailor can give up to ${money(FUND_DAILY)} a day; you have given ${money(f?.mine || 0)} in all.`,
   });
 }
 
