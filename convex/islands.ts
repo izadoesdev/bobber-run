@@ -3,7 +3,8 @@ import { query, mutation, action, internalMutation, internalQuery, httpAction, t
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { getAuthUserId } from '@convex-dev/auth/server';
-import { requireUser, nameOf } from './lib';
+import { requireUser, nameOf, envVar } from './lib';
+import { jevYes } from './jev';
 import { cleanName } from './names';
 import { jevAllowsName, isAdminUser } from './profiles';
 import { isClaimable, priceOfKey, MAX_ISLANDS, ISLAND_NAME_MAX, LOGO_MAX_BYTES } from './islandRules';
@@ -14,8 +15,6 @@ import { isClaimable, priceOfKey, MAX_ISLANDS, ISLAND_NAME_MAX, LOGO_MAX_BYTES }
 // claim for free. Islands go back on the market when their owner hasn't been seen for 60 days.
 type Result = { ok: true; price?: number } | { ok: false; why: string };
 const IDLE_MS = 60 * 86_400_000, HOLD_MS = 31 * 60_000;
-// read through globalThis: the browser build also type-checks this file (via convex/_generated), without Node's types
-const env = (k: string) => (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env[k];
 
 const byKey = (ctx: QueryCtx | MutationCtx, key: string) => ctx.db.query('islands').withIndex('by_key', q => q.eq('key', key)).unique();
 /** Owned, or held by someone who is still paying; an expired hold counts as free. */
@@ -99,7 +98,7 @@ export const claim = action({
 export const buy = action({
   args: { key: v.string(), name: v.string() },
   handler: async (ctx, { key, name }): Promise<{ ok: true; url: string; price: number } | { ok: false; why: string }> => {
-    const secret = env('STRIPE_SECRET_KEY'), site = env('SITE_URL');
+    const secret = envVar('STRIPE_SECRET_KEY'), site = envVar('SITE_URL');
     if (!secret || !site) return { ok: false, why: 'Buying islands is not available right now' };
     const b = await buyer(ctx, key, name);
     if (!b.ok) return b;
@@ -150,7 +149,7 @@ export const refunded = internalMutation({
 });
 
 /** Stripe's signature: HMAC-SHA256 of "timestamp.payload" with the endpoint secret, within five minutes. */
-async function signedByStripe(payload: string, header: string | null, secret: string): Promise<boolean> {
+export async function signedByStripe(payload: string, header: string | null, secret: string): Promise<boolean> {
   if (!header) return false;
   const parts = header.split(','), t = parts.find(p => p.startsWith('t='))?.slice(2), sigs = parts.filter(p => p.startsWith('v1=')).map(p => p.slice(3));
   if (!t || !sigs.length || Math.abs(Date.now() / 1000 - Number(t)) > 300) return false;
@@ -160,7 +159,7 @@ async function signedByStripe(payload: string, header: string | null, secret: st
 }
 type StripeEvent = { type: string; data: { object: { id: string; payment_status?: string; amount_total?: number; payment_intent?: string | null; metadata?: Record<string, string> } } };
 export const stripeWebhook = httpAction(async (ctx, req) => {
-  const secret = env('STRIPE_WEBHOOK_SECRET'), payload = await req.text();
+  const secret = envVar('STRIPE_WEBHOOK_SECRET'), payload = await req.text();
   if (!secret || !await signedByStripe(payload, req.headers.get('stripe-signature'), secret)) return new Response('bad signature', { status: 400 });
   const ev = JSON.parse(payload) as StripeEvent, o = ev.data.object, m = o.metadata ?? {};
   if ((ev.type === 'checkout.session.completed' || ev.type === 'checkout.session.async_payment_succeeded') && o.payment_status === 'paid' && m.holdId && m.islandKey && m.userId) {
@@ -193,16 +192,8 @@ function cleanUrl(raw: string): { ok: true; url: string } | { ok: false; why: st
 const LINK_QUESTION = 'Is the website `link.url` likely adult or sexual, gambling, a scam or phishing, malware, drugs, hate or violence, '
   + 'or otherwise unsafe to link from a game played by teenagers?';
 async function jevAllowsLink(url: string): Promise<boolean> {
-  const key = env('AI_GATEWAY_API_KEY');
-  if (!key) return true;
-  try {
-    const r = await fetch('https://ai-gateway.vercel.sh/v1/evaluate', {
-      method: 'POST', signal: AbortSignal.timeout(4000), headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'typesafe-ai/jev-1.14.0', state: { link: { url } }, questions: { unsafe: { type: 'boolean', instructions: LINK_QUESTION } } }),
-    });
-    const p = r.ok ? (await r.json()).answers?.unsafe?.probability : undefined;
-    return typeof p !== 'number' || p < 0.5;
-  } catch { return true; }
+  const p = await jevYes({ link: { url } }, LINK_QUESTION);
+  return p === null || p < 0.5;
 }
 /** Set (or with '' clear) the link on your island's sign. */
 export const setUrl = action({

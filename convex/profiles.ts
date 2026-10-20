@@ -3,7 +3,8 @@ import { query, action, internalMutation, internalQuery, type QueryCtx, type Mut
 import type { Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
 import { getAuthUserId } from '@convex-dev/auth/server';
-import { profileOf } from './lib';
+import { profileOf, envVar } from './lib';
+import { jevYes } from './jev';
 import { cleanName, guestName } from './names';
 import { NAME_MIN_MS } from './limits';
 
@@ -22,19 +23,10 @@ export const me = query({
 const NAME_QUESTION = 'Would Roblox reject `name.text` as a display name? Reject profanity or slurs (including misspellings, spacing, '
   + 'symbols or leetspeak), sexual innuendo or dating, hard drug references, hate, violence, personal information, or pretending to be staff.';
 type NameResult = { ok: true; name: string } | { ok: false; why: string };
+/** Jev's say on a name that passed the local filter; no answer means allowed. */
 export async function jevAllowsName(name: string): Promise<boolean> {
-  // read through globalThis: the browser build also type-checks this file (via convex/_generated), without Node's types
-  const key = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.AI_GATEWAY_API_KEY;
-  if (!key) return true;                                                   // no key configured: the local filter alone decides
-  try {
-    const r = await fetch('https://ai-gateway.vercel.sh/v1/evaluate', {
-      method: 'POST', signal: AbortSignal.timeout(4000),
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'typesafe-ai/jev-1.14.0', state: { name: { text: name } }, questions: { reject: { type: 'boolean', instructions: NAME_QUESTION } } }),
-    });
-    const p = r.ok ? (await r.json()).answers?.reject?.probability : undefined;
-    return typeof p !== 'number' || p < 0.65;
-  } catch { return true; }
+  const p = await jevYes({ name: { text: name } }, NAME_QUESTION);
+  return p === null || p < 0.65;
 }
 export const setName = action({
   args: { name: v.string(), auto: v.optional(v.boolean()) },
@@ -54,7 +46,7 @@ export const setName = action({
   },
 });
 /** Admins are the accounts whose email is listed in ADMIN_EMAILS (comma-separated); their chat and names aren't filtered. */
-export const adminEmails = (): string[] => ((globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.ADMIN_EMAILS ?? '')
+export const adminEmails = (): string[] => (envVar('ADMIN_EMAILS') ?? '')
   .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 export async function isAdminUser(ctx: QueryCtx | MutationCtx, userId: Id<'users'>): Promise<boolean> {
   const u = await ctx.db.get(userId);

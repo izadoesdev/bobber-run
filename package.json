@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit && tsc -p convex --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p convex --noEmit",
+    "test": "bun test tests"
   },
   "dependencies": {
     "@auth/core": "^0.41.1",

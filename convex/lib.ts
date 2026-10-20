@@ -14,6 +14,10 @@ export const profileOf = (ctx: QueryCtx | MutationCtx, userId: Id<'users'>) =>
   ctx.db.query('profiles').withIndex('by_user', q => q.eq('userId', userId)).unique();
 export async function nameOf(ctx: QueryCtx | MutationCtx, userId: Id<'users'>) { return (await profileOf(ctx, userId))?.name ?? 'Sailor'; }
 export const finite = (...n: number[]) => n.every(Number.isFinite);
+// read through globalThis: the browser build also type-checks convex files (via convex/_generated), without Node's types
+export const envVar = (k: string): string | undefined => (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env[k];
+/** True when an HTTP request carries the relay's shared secret (RELAY_SECRET). */
+export const isFromRelay = (req: Request): boolean => { const s = envVar('RELAY_SECRET'); return !!s && req.headers.get('authorization') === `Bearer ${s}`; };
 // signed-up players, or guests who have been around long enough that making them in bulk doesn't pay
 export async function trusted(ctx: QueryCtx | MutationCtx, userId: Id<'users'>, trustMs: number): Promise<boolean> {
   const u = await ctx.db.get(userId);

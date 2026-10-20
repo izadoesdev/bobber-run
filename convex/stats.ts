@@ -2,7 +2,7 @@ import { v } from 'convex/values';
 import { mutation, internalMutation, httpAction, type MutationCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
-import { requireUser, trusted } from './lib';
+import { requireUser, trusted, isFromRelay } from './lib';
 import { GUEST_TRUST_MS, MAX_KG } from './limits';
 
 // Per-player totals for the leaderboards. Species logged and the heaviest fish come from records.submit (the server
@@ -56,11 +56,8 @@ export const setOnline = internalMutation({
     if (m) await ctx.db.patch(m._id, { value: online, at: Date.now() }); else await ctx.db.insert('meta', { key: 'online', value: online, at: Date.now() });
   },
 });
-// read through globalThis: the browser build also type-checks this file (via convex/_generated), without Node's types
-const secret = () => (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.RELAY_SECRET;
 export const onlineFromRelay = httpAction(async (ctx, req) => {
-  const want = secret();
-  if (!want || req.headers.get('authorization') !== `Bearer ${want}`) return new Response('forbidden', { status: 403 });
+  if (!isFromRelay(req)) return new Response('forbidden', { status: 403 });
   try { await ctx.runMutation(internal.stats.setOnline, await req.json()); } catch { return new Response('bad', { status: 400 }); }
   return new Response('ok');
 });
