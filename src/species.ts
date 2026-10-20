@@ -32,11 +32,11 @@ export const SPECIES: Species[] = [
   S('cod', 'Cod', 25, [1, 8], 1, 3, 'any', 'long', ['#6e5f40', '#c8b47c', '#efe9dc', '#9a8a5a'], 'steady', 'Deep water far from home', deep(-0.3, 1100)),
   S('duskfin', 'Duskfin', 48, [0.3, 2], 2, 2, 'twilight', 'slim', ['#7e2c25', '#d8665a', '#f2c8b8', '#f0cf6a'], 'darter', 'Open water at dusk or dawn', deep(-0.1, 800)),
   S('lantern', 'Lanternfish', 45, [0.1, 0.6], 2, 2, 'night', 'glow', ['#14212a', '#2b4566', '#5b7fae', '#f0cf6a'], 'darter', 'Deep water at night', deep(-0.38, 1300)),
-  S('stormeel', 'Thunder Eel', 120, [3, 20], 3, 2, 'any', 'eel', ['#14212a', '#2b4566', '#5b7fae', '#f0cf6a'], 'erratic', 'Open water in storms', deep(-0.3, 1200), { weather: 'storm' }),
-  S('tuna', 'Bluefin Tuna', 60, [20, 250], 3, 2, 'day', 'tuna', ['#1f2c48', '#3f5f8a', '#d3d8da', '#e2b94a'], 'generic', 'Open ocean', deep(-0.42, 2100)),
+  S('stormeel', 'Thunder Eel', 120, [3, 20], 3, 2, 'any', 'eel', ['#14212a', '#2b4566', '#5b7fae', '#f0cf6a'], 'erratic', 'Open water in storms, from a boat with a Storm Keel (Steam Drifter)', deep(-0.3, 1200), { weather: 'storm' }),
+  S('tuna', 'Bluefin Tuna', 60, [20, 250], 3, 2, 'day', 'tuna', ['#1f2c48', '#3f5f8a', '#d3d8da', '#e2b94a'], 'generic', 'Open ocean; spooks at engines, so only under sail on a big deck (Schooner)', deep(-0.42, 2100), { deck: 1 }),
   S('opah', 'Moonfish', 85, [10, 60], 3, 1, 'night', 'round', ['#7e2c25', '#d8665a', '#f0cf6a', '#c0493a'], 'generic', 'Open ocean at night', deep(-0.42, 2400)),
-  S('marlin', 'Marlin', 110, [50, 400], 4, 1, 'day', 'bill', ['#14213a', '#2b4566', '#b3bbc0', '#3f5f8a'], 'jumper', 'Open ocean, very far from home', deep(-0.42, 3200)),
-  S('swordfish', 'Swordfish', 140, [60, 350], 4, 1, 'night', 'bill', ['#26394a', '#5c6670', '#b3bbc0', '#33454f'], 'jumper', 'Open ocean very far from home, at night', deep(-0.42, 3000)),
+  S('marlin', 'Marlin', 110, [50, 400], 4, 1, 'day', 'bill', ['#14213a', '#2b4566', '#b3bbc0', '#3f5f8a'], 'jumper', 'Open ocean, very far from home; only under sail on a big deck (Schooner)', deep(-0.42, 3200), { deck: 1 }),
+  S('swordfish', 'Swordfish', 140, [60, 350], 4, 1, 'night', 'bill', ['#26394a', '#5c6670', '#b3bbc0', '#33454f'], 'jumper', 'Open ocean very far from home, at night, from a big deck with a Storm Keel (Steam Drifter)', deep(-0.42, 3000), { deck: 1 }),
   // ---- temperate home waters ----
   S('perch', 'Perch', 7, [0.2, 1.2], 0, 4, 'day', 'perch', ['#4f7044', '#86a65c', '#e6d6a6', '#c0493a'], 'steady', 'Shallows near home', (h, d) => h > -0.26 && d < 1600, { region: 'temperate' }),
   S('bass', 'Sea Bass', 17, [0.8, 4], 1, 3, 'any', 'perch', ['#33454f', '#8a949c', '#d3d8da', '#5c6670'], 'generic', 'Deeper water away from home', deep(-0.1, 650), { region: 'temperate' }),
@@ -53,15 +53,15 @@ export const SPECIES: Species[] = [
   S('angel', 'Angelfish', 30, [0.2, 1.2], 1, 3, 'day', 'angel', ['#1b2a33', '#e2b94a', '#efe9dc', '#3f5f8a'], 'darter', 'Warm reefs by day', shallow(-0.25), { region: 'warm' }),
   S('barracuda', 'Barracuda', 40, [2, 20], 2, 3, 'any', 'long', ['#5c6670', '#b3bbc0', '#efe9dc', '#26394a'], 'darter', 'Warm open water', deep(-0.12), { region: 'warm' }),
   S('mahi', 'Mahi-mahi', 45, [3, 25], 2, 3, 'day', 'tuna', ['#2f6f3f', '#7fbf4f', '#f0cf6a', '#3f97a3'], 'jumper', 'Warm open water by day', deep(-0.15), { region: 'warm' }),
-  S('sailfish', 'Sailfish', 95, [20, 90], 3, 2, 'day', 'bill', ['#1f2c48', '#3f5f8a', '#d3d8da', '#5b7fae'], 'jumper', 'Far warm ocean', deep(-0.35, 2000), { region: 'warm' }),
+  S('sailfish', 'Sailfish', 95, [20, 90], 3, 2, 'day', 'bill', ['#1f2c48', '#3f5f8a', '#d3d8da', '#5b7fae'], 'jumper', 'Far warm ocean; only under sail on a big deck (Schooner)', deep(-0.35, 2000), { region: 'warm' , deck: 1 }),
   // ---- landmark dwellers ----
   S('moray', 'Moray Eel', 55, [2, 15], 2, 3, 'any', 'eel', ['#4a5a2a', '#6e7a3a', '#a8b070', '#3a4a20'], 'darter', 'Inside sunken wrecks', () => false, { special: 'wreck' }),
   S('grouper', 'Grouper', 60, [5, 60], 2, 3, 'day', 'perch', ['#5e4a36', '#8f7a5a', '#d6c38c', '#4a3a2a'], 'steady', 'Around wrecks by day', () => false, { special: 'wreck' }),
   S('beacon', 'Beaconfish', 62, [0.5, 3], 2, 3, 'night', 'glow', ['#2b4566', '#5b7fae', '#d3d8da', '#fff6d6'], 'darter', 'Below lighthouses at night', () => false, { special: 'light' }),
   // ---- legends ----
   S('ghost', 'Ghost Carp', 180, [5, 30], 4, 1, 'any', 'carp', ['#b3bbc0', '#e6efec', '#fff6d6', '#d3d8da'], 'erratic', 'Near far-off wrecks', () => false, { special: 'wreck', legend: true }),
-  S('oarfish', 'Oarfish', 420, [50, 250], 4, 0.35, 'any', 'eel', ['#8a949c', '#d3d8da', '#efe9dc', '#c0493a'], 'erratic', 'Deep ocean in storms', deep(-0.42, 2600), { weather: 'storm', legend: true }),
-  S('crystal', 'Crystal Squid', 360, [5, 30], 4, 0.35, 'night', 'squid', ['#86b0bf', '#b4d0d8', '#e6efec', '#efe9dc'], 'erratic', 'Far cold ocean at night', deep(-0.42, 2400), { region: 'cold', legend: true }),
+  S('oarfish', 'Oarfish', 420, [50, 250], 4, 0.35, 'any', 'eel', ['#8a949c', '#d3d8da', '#efe9dc', '#c0493a'], 'erratic', 'Deep ocean in storms, from a big deck with a Storm Keel (Steam Drifter)', deep(-0.42, 2600), { weather: 'storm', legend: true , deck: 1 }),
+  S('crystal', 'Crystal Squid', 360, [5, 30], 4, 0.35, 'night', 'squid', ['#86b0bf', '#b4d0d8', '#e6efec', '#efe9dc'], 'erratic', 'Far cold ocean at night, from a boat with a Storm Keel (Steam Drifter)', deep(-0.42, 2400), { region: 'cold', legend: true }),
   S('goldmahi', 'Golden Mahi', 380, [15, 40], 4, 0.35, 'day', 'tuna', ['#a47f22', '#f0cf6a', '#fff6d6', '#e2b94a'], 'jumper', 'Far warm ocean, rarely', deep(-0.4, 2400), { region: 'warm', legend: true }),
   S('oldone', 'The Old One', 2400, [400, 900], 4, 0, 'night', 'levi', ['#14212a', '#33454f', '#8a949c', '#a23d33'], 'boss', 'At its lair (on your chart), at night', () => false, { legend: true }),
   // ---- sea giants: too heavy for a small boat's deck; the Trawler and bigger ships can land them ----
@@ -75,7 +75,7 @@ export const SPECIES: Species[] = [
   S('tang', 'Blue Tang', 24, [0.2, 0.8], 1, 4, 'day', 'angel', ['#1f3f8a', '#3f6fd8', '#e2c46a', '#14213a'], 'darter', 'Coral shallows by day', shallow(-0.26)),
   S('lionfish', 'Lionfish', 42, [0.3, 1.3], 1, 2.5, 'night', 'puffer', ['#7e2c25', '#d8665a', '#efe9dc', '#a23d33'], 'erratic', 'Coral shallows at night', shallow(-0.28)),
   S('octopus', 'Reef Octopus', 52, [1, 8], 2, 3, 'night', 'squid', ['#8a3a52', '#c06a7a', '#f2c8b8', '#5e1f3a'], 'erratic', 'Coral shallows at night', shallow(-0.3)),
-  S('reefshark', 'Reef Shark', 125, [15, 60], 3, 0.4, 'any', 'tuna', ['#4f5a62', '#7f8a92', '#e6efec', '#33454f'], 'jumper', 'Deeper water off the coral shallows', deep(-0.15)),
+  S('reefshark', 'Reef Shark', 95, [15, 60], 3, 0.4, 'any', 'tuna', ['#4f5a62', '#7f8a92', '#e6efec', '#33454f'], 'jumper', 'Deeper water off the coral shallows, from a Trawler or bigger', deep(-0.15), { deck: 1 }),
   S('rockfish', 'Kelp Rockfish', 15, [0.3, 2], 0, 4, 'any', 'perch', ['#5e4a2a', '#8f7a4a', '#d6c38c', '#4a3a20'], 'steady', 'Kelp coasts', shallow(-0.3)),
   S('opaleye', 'Opaleye', 19, [0.4, 2.5], 1, 3, 'day', 'round', ['#2f4f3a', '#4f7a5a', '#b4c8a8', '#26392c'], 'steady', 'Kelp coasts by day', shallow(-0.26)),
   S('kelpbass', 'Kelp Bass', 22, [0.5, 3], 1, 1.8, 'day', 'perch', ['#3a4a2a', '#6e7a3a', '#d6c38c', '#4a5a2a'], 'generic', 'Kelp coasts by day', deep(-0.08)),
@@ -89,7 +89,7 @@ export const SPECIES: Species[] = [
   S('mangsnap', 'Mangrove Snapper', 20, [0.4, 4], 0, 5, 'any', 'perch', ['#5e3a2a', '#a8664a', '#e6c8a6', '#7e2c25'], 'steady', 'Among mangrove roots', shallow(-0.3)),
   S('snook', 'Snook', 28, [1, 10], 1, 4, 'any', 'long', ['#4f5a52', '#b3bbc0', '#efe9dc', '#1b2a33'], 'jumper', 'Mangrove channels', shallow(-0.28)),
   S('mudcrab', 'Mud Crab', 26, [0.5, 3], 1, 3, 'night', 'crab', ['#3a3a2a', '#5e5a3a', '#c8b47c', '#2a2a1f'], 'steady', 'Mangrove mud at night', shallow(-0.24)),
-  S('tarpon', 'Tarpon', 110, [15, 80], 3, 0.8, 'any', 'tuna', ['#5c6670', '#d3d8da', '#f4f2ea', '#3d4c56'], 'jumper', 'Deeper channels off the mangroves', deep(-0.08)),
+  S('tarpon', 'Tarpon', 90, [15, 80], 3, 0.8, 'any', 'tuna', ['#5c6670', '#d3d8da', '#f4f2ea', '#3d4c56'], 'jumper', 'Deeper channels off the mangroves, from a Trawler or bigger', deep(-0.08), { deck: 1 }),
   S('polarcod', 'Polar Cod', 14, [0.1, 0.5], 0, 5, 'any', 'slim', ['#5c6670', '#b3bbc0', '#e6efec', '#8a949c'], 'darter', 'Under the ice floes', shallow(-0.3), { region: 'cold' }),
   S('lumpsucker', 'Lumpsucker', 22, [0.5, 5], 1, 2.5, 'day', 'round', ['#3a5a3a', '#6e9a5a', '#c8d8a8', '#2f4a2f'], 'steady', 'Icy northern shallows by day', shallow(-0.3), { region: 'cold' }),
   S('snowcrab', 'Snow Crab', 34, [0.4, 1.6], 1, 3, 'night', 'crab', ['#c0592b', '#e2945a', '#f2e6c8', '#8a3a22'], 'steady', 'Cold northern seabed at night', deep(-0.15), { region: 'cold' }),
@@ -103,6 +103,15 @@ const HABITAT: Partial<Record<string, keyof BiomeMix>> = {
   mangsnap: 'mangrove', snook: 'mangrove', mudcrab: 'mangrove', tarpon: 'mangrove',
 };
 const HABITAT_MIN = 0.35;
+/**
+ * Ship jobs, so each big ship has fish only it brings home: pelagics that spook at engines need sails (on a deck
+ * big enough, that's the Schooner), and storm and far-cold fish need a Storm Keel to hold position (built into the
+ * Steam Drifter and Flagship, or bought for any boat after the dry dock).
+ */
+export const SHIP_NEED: Partial<Record<string, 'sail' | 'keel'>> = {
+  tuna: 'sail', sailfish: 'sail', marlin: 'sail',
+  stormeel: 'keel', oarfish: 'keel', crystal: 'keel', swordfish: 'keel',
+};
 /** Fish that only live in one part of the sea (a biome, the far north or the far south). */
 export const isRegional = (s: Species): boolean => !!HABITAT[s.id] || s.region === 'warm' || s.region === 'cold';
 /** species id -> index into SPECIES */

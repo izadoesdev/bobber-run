@@ -50,7 +50,7 @@ export const UPGRADES: Record<UpgradeKey, Upgrade> = {
   quarter:  { name: () => 'Quartermaster', cat: 'CREW', costs: [250, 1200], lv: ['Hold 4 contracts at once; contracts pay 15% more', 'Hold 5 contracts at once; contracts pay 30% more'] },
   // dry dock upgrades (need the dry dock project)
   pots:     { name: () => 'Crab Pots', cat: 'VESSEL', req: 'drydock', costs: [800, 3000, 12000], lv: ['Hauls a crab into your hold every 4 minutes', 'Hauls a crab every 2.5 minutes', 'Hauls a crab every minute'] },
-  keel:     { name: () => 'Storm Keel', cat: 'VESSEL', req: 'drydock', costs: [2000, 10000], lv: ['Storm gusts push you half as hard', 'Storms cannot push you at all, and +25% hull'] },
+  keel:     { name: () => 'Storm Keel', cat: 'VESSEL', req: 'drydock', costs: [2000, 10000], lv: ['Hold position in rough water: storm and far-cold fish (Thunder Eel, Oarfish, Crystal Squid) will bite, and gusts push you half as hard', 'Storms cannot push you at all, and +25% hull'] },
   harpoon:  { name: () => 'Harpoon Gun', cat: 'TACKLE', req: 'drydock', costs: [3000, 14000], lv: ['Land ocean giants and legends 25% faster; they pull 12% less', 'Land them 50% faster; they pull 24% less'] },
   bell:     { name: () => 'Diving Bell', cat: 'NAVIGATION', req: 'drydock', costs: [2500, 12000], lv: ['Dive on each salvaged wreck once a day for another 60% of its loot', 'Daily dives bring up 120% of the loot'] },
 };

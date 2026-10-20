@@ -6,6 +6,7 @@ import type { BoatDef, Env, Fish, ProjectId, UpgradeKey, Helper } from '../types
 import type { Fit } from '../models';
 import { G } from './state';
 import { frac } from '../config';
+import { SHIP_NEED } from '../species';
 
 
 // ---------- boat and gear ----------
@@ -22,6 +23,9 @@ export function catchNeed(sp: number): string | null {
   const s = SPECIES[sp];
   if (s.rod > G.up.rod) return `needs a level ${s.rod + 1} rod`;
   if (s.deck > deckLvl()) return `needs a bigger boat: the ${deckBoat(sp).name}${s.deck < 2 ? ' or larger' : ''}`;
+  const need = SHIP_NEED[s.id];
+  if (need === 'sail' && boatDef().prop === 'ENGINE') return 'spooks at engines: needs sails (the Schooner)';
+  if (need === 'keel' && keelLvl() < 1) return 'needs a Storm Keel to hold in rough water (the Steam Drifter has one)';
   return null;
 }
 /** Your rod and boat can land species `sp`. */
