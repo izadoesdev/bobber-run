@@ -1,8 +1,8 @@
-// Shared UI primitives: icons, keycaps, bars, canvases, money, and the pointer-vs-keyboard selection model.
+// Shared UI primitives: icons, keycaps, bars, canvases, boat previews, and the pointer-vs-keyboard selection model.
 import type { ComponentChildren, HTMLAttributes, TargetedMouseEvent } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
 import { W, H, clamp } from '../config';
-import { G } from '../game';
+import { G, hpMax } from '../game';
 import { boundKey } from '../settings';
 import { boatFrame, SHIPPED, NA, PLAIN, type Fit } from '../models';
 import type { BoatId, WeatherState } from '../types';
@@ -50,6 +50,11 @@ export type Tone = '' | 'gold' | 'warn' | 'bad';
 export const Bar = ({ k, tone = '' }: { k: number; tone?: Tone }) =>
   <div class={'bar ' + tone}><i style={{ width: clamp(k, 0, 1) * 100 + '%' }} /></div>;
 
+/** A labelled bar with its reading after it. */
+export const Stat = ({ label, k, tone = '', children }: { label: string; k: number; tone?: Tone; children?: ComponentChildren }) =>
+  <div class="stat"><span class="caps">{label}</span><Bar k={k} tone={tone} /><span class="num">{children}</span></div>;
+export const HullStat = () => <Stat label="Hull" k={G.boat.hp / hpMax()}>{Math.max(0, Math.ceil(G.boat.hp))}/{hpMax()}</Stat>;
+
 export const Pips = ({ n, of }: { n: number; of: number }) => (
   <div class="pips" title={`${n} of ${of}`}>
     {Array.from({ length: of }, (_, i) => <i class={i < n ? 'on' : ''} />)}
@@ -73,14 +78,9 @@ export const keyLabel = (k: string) => KEY_NAMES[k] || (k.length === 1 ? k.toUpp
 export function Key({ k, pad }: { k: string; pad?: string | undefined }) {
   if (G.pad && pad) return <span class="key pad">{pad}</span>;
   const b = boundKey(k);
-  if (b in ARROW) {
-    return (
-      <span class="key">
-        <svg class="kglyph" viewBox="0 0 10 10"><path d="M5 1.5 8.8 8 1.2 8z" transform={`rotate(${ARROW[b]} 5 5)`} /></svg>
-      </span>
-    );
-  }
-  return <span class="key">{keyLabel(b)}</span>;
+  return <span class="key">{b in ARROW
+    ? <svg class="kglyph" viewBox="0 0 10 10"><path d="M5 1.5 8.8 8 1.2 8z" transform={`rotate(${ARROW[b]} 5 5)`} /></svg>
+    : keyLabel(b)}</span>;
 }
 
 /** One or two keycaps followed by what they do. */
@@ -88,7 +88,7 @@ export const Hint = ({ k, k2, pad, children }: { k: string; k2?: string; pad?: s
   <span class="hint"><Key k={k} pad={pad} />{k2 && !(G.pad && pad) && <Key k={k2} />}{children}</span>
 );
 
-// "[E] Dock at X" -> keycap + text
+// prompt tokens -> [default key, pad button]: "[E] Dock at X" -> keycap + text
 const PROMPT_KEYS: Record<string, [string, string]> = { SPACE: [' ', 'A'], E: ['e', 'X'] };
 /**
  * On touch screens the controls are buttons, not keys: "[SPACE] Cast for Perch" reads "Cast for Perch", "Hold [SPACE]
@@ -129,10 +129,7 @@ const thumbs = new Map<BoatId, string>();
 /** A still, unpainted three-quarter view of a boat, cached as a data URL. */
 export function boatThumb(id: BoatId): string {
   let url = thumbs.get(id);
-  if (url === undefined) {
-    url = boatFrame(id, Math.floor(NA * 0.58), SHIPPED, PLAIN).img.toDataURL();
-    thumbs.set(id, url);
-  }
+  if (url === undefined) thumbs.set(id, url = boatFrame(id, Math.floor(NA * 0.58), SHIPPED, PLAIN).img.toDataURL());
   return url;
 }
 
@@ -142,26 +139,13 @@ export const flashing = (id: string | undefined) => !!G.bought && G.bought.id ==
 // ---------- selection: keyboard and pad vs mouse ----------
 // Which device moved the cursor last. Keyboard and pad moves scroll the selection into view; only a mouse that
 // actually moved selects by hovering, so a list scrolling under a resting cursor can't steal the selection.
-let pointer = false;
+let pointer = false, mx = -1, my = -1;
 addEventListener('keydown', () => { pointer = false; }, true);
-let mx = -1, my = -1;
 addEventListener('mousemove', e => {
-  if (e.clientX === mx && e.clientY === my) return;
-  mx = e.clientX;
-  my = e.clientY;
-  pointer = true;
+  if (e.clientX !== mx || e.clientY !== my) { mx = e.clientX; my = e.clientY; pointer = true; }
 }, true);
 /** Wraps a hover handler so it only fires for a real mouse, not while a gamepad is driving. */
 export const byPointer = (fn: () => void) => () => { if (pointer && !G.pad) fn(); };
-
-// keeps the cursor row visible in scrolling lists when moved by keyboard or pad
-function useScrollTo(sel: boolean) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (sel && ref.current && (!pointer || G.pad)) ref.current.scrollIntoView({ block: 'nearest' });
-  }, [sel]);
-  return ref;
-}
 
 interface CellProps {
   sel: boolean;
@@ -173,6 +157,9 @@ interface CellProps {
 }
 /** A list row or grid cell: click activates, keyboard selection scrolls it into view, and with onEnter hover selects. */
 export function Cell({ sel, onEnter, onClick, children, cls = 'item setrow' }: CellProps) {
-  const ref = useScrollTo(sel);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (sel && ref.current && (!pointer || G.pad)) ref.current.scrollIntoView({ block: 'nearest' });
+  }, [sel]);
   return <div ref={ref} class={cls + (sel ? ' sel' : '')} onMouseMove={onEnter && byPointer(onEnter)} onClick={onClick}>{children}</div>;
 }

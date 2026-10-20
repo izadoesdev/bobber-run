@@ -8,7 +8,7 @@ import { mapTile, MT } from '../maptiles';
 import { ONLINE } from '../online';
 import { ISLANDS, watchExtra } from '../islands';
 import type { Point, Poi } from '../types';
-import { waypointRoute } from '../waypoint';
+import { waypointMetres, waypointRoute } from '../waypoint';
 import { dirTo } from '../config';
 
 const COL = { port: '#f0cf6a', light: '#efe9dc', wreck: '#dcb074', dim: '#8a949c', ink: '#1b2a33', red: '#c0493a', green: '#8fd48a' };
@@ -35,6 +35,20 @@ export interface ChartOptions {
 
 type Ctx = CanvasRenderingContext2D;
 type Project = (x: number, y: number) => [number, number];
+const font = (ctx: Ctx, px: number, u: number): void => { ctx.font = `600 ${Math.round(px * u)}px Pixelify, monospace`; };
+/** Chart lettering: dark-outlined so it reads on land and sea. */
+function inked(ctx: Ctx, s: string, x: number, y: number, u: number, fill: string): void {
+  ctx.lineWidth = 3 * u; ctx.strokeStyle = 'rgba(27,42,51,0.85)'; ctx.strokeText(s, x, y);
+  ctx.fillStyle = fill; ctx.fillText(s, x, y);
+}
+/** A closed path through `pts` ([x0, y0, x1, y1, ...]), scaled by `u`. */
+function poly(ctx: Ctx, u: number, ...pts: number[]): void {
+  ctx.beginPath();
+  for (let i = 0; i < pts.length; i += 2) ctx.lineTo(pts[i] * u, pts[i + 1] * u);
+  ctx.closePath();
+}
+/** Fill, then a dark rim. */
+function rimmed(ctx: Ctx, fill: string, lw: number): void { ctx.fillStyle = fill; ctx.fill(); ctx.lineWidth = lw; ctx.strokeStyle = COL.ink; ctx.stroke(); }
 
 /** Draws a chart centred on (cx, cy); `wpp` = world units per canvas pixel. */
 export function drawChart(ctx: Ctx, w: number, h: number, cx: number, cy: number, wpp: number, opt: ChartOptions = {}): void {
@@ -55,16 +69,8 @@ export function drawChart(ctx: Ctx, w: number, h: number, cx: number, cy: number
   drawPois(ctx, pois, S, u, showUncharted);
   drawTreasure(ctx, S, u);
   drawLair(ctx, S, u);
-  if (G.frenzy) {
-    const [x, y] = S(G.frenzy.s.x, G.frenzy.s.y);
-    star(ctx, x, y, 5 * u, Math.floor(G.t * 4) % 2 ? '#f0cf6a' : '#fff6d6');
-  }
-  if (son >= 3) for (const p of pois) {
-    if (p.school && schoolShown(p.school) && SPECIES[p.school.sp].legend) {
-      const [x, y] = S(p.school.x, p.school.y);
-      star(ctx, x, y, 4 * u, '#f0cf6a');
-    }
-  }
+  if (G.frenzy) star(ctx, ...S(G.frenzy.s.x, G.frenzy.s.y), 5 * u, Math.floor(G.t * 4) % 2 ? COL.port : '#fff6d6');
+  if (son >= 3) for (const p of pois) if (p.school && schoolShown(p.school) && SPECIES[p.school.sp].legend) star(ctx, ...S(p.school.x, p.school.y), 4 * u, COL.port);
   if (opt.labels) drawLabels(ctx, pois, S, u, showUncharted);
   if (opt.target) drawTarget(ctx, w, h, S(opt.target.x, opt.target.y), u, !!opt.round);
   drawIslandNames(ctx, cx, cy, Math.max(w, h) * wpp * 0.6, S, u, !!opt.labels, !!opt.islands);
@@ -98,12 +104,10 @@ function drawTarget(ctx: Ctx, w: number, h: number, [x, y]: [number, number], u:
   }
   ctx.save();
   ctx.translate(ex, ey); ctx.rotate(a);
-  ctx.beginPath(); ctx.moveTo(6 * u, 0); ctx.lineTo(-4.5 * u, -5 * u); ctx.lineTo(-2 * u, 0); ctx.lineTo(-4.5 * u, 5 * u); ctx.closePath();
-  ctx.lineWidth = 1.4 * u; ctx.strokeStyle = COL.ink; ctx.fillStyle = COL.port; ctx.fill(); ctx.stroke();
+  poly(ctx, u, 6, 0, -4.5, -5, -2, 0, -4.5, 5); rimmed(ctx, COL.port, 1.4 * u);
   ctx.restore();
 }
 
-// the baked map tiles; tiles not built yet are built while `inBudget()` holds and skipped otherwise
 // ---------- fish zones ----------
 // Where a species lives, worked out from the same rules that place its schools, in world-aligned tiles like the map's
 // (16 samples a side, 8 units apart), cached and built within the frame budget. Landmark fish ring their landmarks.
@@ -154,10 +158,11 @@ function drawZone(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp:
   for (const [px, py] of G.log[s.id]?.at ?? []) {
     const [x, y] = S(px, py);
     ctx.beginPath(); ctx.arc(x, y - 6 * u, 3.4 * u, 0, 7); ctx.moveTo(x, y); ctx.lineTo(x - 2 * u, y - 4 * u); ctx.lineTo(x + 2 * u, y - 4 * u); ctx.closePath();
-    ctx.fillStyle = '#f0cf6a'; ctx.fill(); ctx.lineWidth = 1.2 * u; ctx.strokeStyle = COL.ink; ctx.stroke();
+    rimmed(ctx, COL.port, 1.2 * u);
   }
 }
 
+// the baked map tiles; tiles not built yet are built while `inBudget()` holds and skipped otherwise
 function drawTiles(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp: number, inBudget: () => boolean): void {
   const tpx = MT / wpp, size = Math.ceil(tpx) + 1, tx0 = Math.floor(wx0 / MT), tx1 = Math.floor((wx0 + w * wpp) / MT);
   const ty0 = Math.floor(wy0 / MT), ty1 = Math.floor((wy0 + h * wpp) / MT);
@@ -196,40 +201,22 @@ function drawSchools(ctx: Ctx, cx: number, cy: number, rad: number, S: Project, 
     if (!schoolShown(s) || s.boss) continue;
     const [x, y] = S(s.x, s.y), colour = son >= 2 ? SPECIES[s.sp].c[1] : '#b4d0d8';
     ctx.globalAlpha = schoolMood(s) === 'biting' ? 1 : 0.45;
+    ctx.beginPath(); ctx.arc(x, y, 2.2 * u, 0, 7);
     // shape as well as colour: a filled dot you can catch, a hollow ring your rod can't handle yet
-    const weak = !canLand(s.sp);
-    ctx.beginPath();
-    ctx.arc(x, y, 2.2 * u, 0, 7);
-    ctx.strokeStyle = COL.ink;
-    ctx.lineWidth = u * 0.8;
-    if (weak) {
-      ctx.lineWidth = 2.2 * u;
-      ctx.stroke();
-      ctx.strokeStyle = colour;
-      ctx.lineWidth = 1.1 * u;
-      ctx.stroke();
-    } else {
-      ctx.fillStyle = colour;
-      ctx.fill();
-      ctx.stroke();
-    }
+    if (canLand(s.sp)) rimmed(ctx, colour, 0.8 * u);
+    else { ctx.lineWidth = 2.2 * u; ctx.strokeStyle = COL.ink; ctx.stroke(); ctx.lineWidth = 1.1 * u; ctx.strokeStyle = colour; ctx.stroke(); }
   }
   ctx.globalAlpha = 1;
 }
 
 // an outlined square marker
 function square(ctx: Ctx, x: number, y: number, r: number, u: number, fill: string): void {
-  ctx.fillStyle = COL.ink;
-  ctx.fillRect(x - r - u, y - r - u, (r + u) * 2, (r + u) * 2);
-  ctx.fillStyle = fill;
-  ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  ctx.fillStyle = COL.ink; ctx.fillRect(x - r - u, y - r - u, (r + u) * 2, (r + u) * 2);
+  ctx.fillStyle = fill; ctx.fillRect(x - r, y - r, r * 2, r * 2);
 }
-
-function cross(ctx: Ctx, x: number, y: number, r: number): void {
-  ctx.beginPath();
-  ctx.moveTo(x - r, y - r); ctx.lineTo(x + r, y + r);
-  ctx.moveTo(x + r, y - r); ctx.lineTo(x - r, y + r);
-  ctx.stroke();
+function cross(ctx: Ctx, x: number, y: number, r: number, lw: number, col: string): void {
+  ctx.strokeStyle = col; ctx.lineWidth = lw;
+  ctx.beginPath(); ctx.moveTo(x - r, y - r); ctx.lineTo(x + r, y + r); ctx.moveTo(x + r, y - r); ctx.lineTo(x - r, y + r); ctx.stroke();
 }
 
 function drawPois(ctx: Ctx, pois: Poi[], S: Project, u: number, showUncharted: boolean): void {
@@ -242,27 +229,15 @@ function drawPois(ctx: Ctx, pois: Poi[], S: Project, u: number, showUncharted: b
     }
     if (p.type === 'port') square(ctx, x, y, s3, u, found ? COL.port : COL.dim);
     else if (p.type === 'light') {
-      ctx.fillStyle = COL.ink;
-      ctx.fillRect(x - 2 * u, y - 4 * u, 4 * u, 8 * u);
-      ctx.fillStyle = found ? COL.light : COL.dim;
-      ctx.fillRect(x - u, y - 3 * u, 2 * u, 6 * u);
-      ctx.fillStyle = COL.red;
-      ctx.fillRect(x - u, y - u, 2 * u, 2 * u);
-    } else if (p.type === 'wreck') {
-      ctx.strokeStyle = G.salvaged.has(p.id) ? '#7a5530' : COL.wreck;
-      ctx.lineWidth = 1.6 * u;
-      cross(ctx, x, y, s3);
-    }
+      ctx.fillStyle = COL.ink; ctx.fillRect(x - 2 * u, y - 4 * u, 4 * u, 8 * u);
+      ctx.fillStyle = found ? COL.light : COL.dim; ctx.fillRect(x - u, y - 3 * u, 2 * u, 6 * u);
+      ctx.fillStyle = COL.red; ctx.fillRect(x - u, y - u, 2 * u, 2 * u);
+    } else if (p.type === 'wreck') cross(ctx, x, y, s3, 1.6 * u, G.salvaged.has(p.id) ? '#7a5530' : COL.wreck);
   }
 }
 
 function drawTreasure(ctx: Ctx, S: Project, u: number): void {
-  for (const m of G.maps) {
-    const [x, y] = S(m.x, m.y);
-    ctx.strokeStyle = COL.red;
-    ctx.lineWidth = 2.2 * u;
-    cross(ctx, x, y, 4 * u);
-  }
+  for (const m of G.maps) { const [x, y] = S(m.x, m.y); cross(ctx, x, y, 4 * u, 2.2 * u, COL.red); }
 }
 
 // the Old One's lair, a blinking eye once the logbook is well filled
@@ -270,27 +245,21 @@ function drawLair(ctx: Ctx, S: Project, u: number): void {
   if (logged() < 10 && !G.log.oldone) return;
   const [x, y] = S(LAIR.x, LAIR.y);
   ctx.fillStyle = Math.floor(G.t * 2) % 2 ? COL.red : '#efe9dc';
-  ctx.beginPath();
-  ctx.arc(x, y, 4.5 * u, 0, 7);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(x, y, 4.5 * u, 0, 7); ctx.fill();
   ctx.fillStyle = COL.ink;
   ctx.fillRect(x - 2 * u, y - u, 1.4 * u, 1.4 * u);
   ctx.fillRect(x + 0.6 * u, y - u, 1.4 * u, 1.4 * u);
 }
 
 function drawLabels(ctx: Ctx, pois: Poi[], S: Project, u: number, showUncharted: boolean): void {
-  ctx.font = `600 ${Math.round(12 * u)}px Pixelify, monospace`;
+  font(ctx, 12, u);
   ctx.textBaseline = 'middle';
   for (const p of pois) {
     const found = G.found.has(p.id);
     if ((!found && !showUncharted) || p.type === 'wreck') continue;
     const [x, y] = S(p.x, p.y);
     const s = !found ? '?' : p.type === 'port' ? p.name : p.name.replace(' Light', '');
-    ctx.lineWidth = 3 * u;
-    ctx.strokeStyle = 'rgba(27,42,51,0.85)';
-    ctx.strokeText(s, x + 6 * u, y);
-    ctx.fillStyle = p.type === 'port' ? COL.port : COL.light;
-    ctx.fillText(s, x + 6 * u, y);
+    inked(ctx, s, x + 6 * u, y, u, p.type === 'port' ? COL.port : COL.light);
   }
   // contract destinations
   for (const c of G.active) {
@@ -312,7 +281,7 @@ function flagImg(url: string): HTMLImageElement | null {
 function drawIslandNames(ctx: Ctx, cx: number, cy: number, rad: number, S: Project, u: number, labels: boolean, unclaimed: boolean): void {
   const near = claimableNear(cx, cy, rad);
   if (labels) watchExtra(near.map(c => c.key));            // the full chart asks for every island it shows
-  ctx.font = `600 ${Math.round(12 * u)}px Pixelify, monospace`;
+  font(ctx, 12, u);
   ctx.textAlign = 'center';
   for (const c of near) {
     const row = ISLANDS.get(c.key);
@@ -323,8 +292,7 @@ function drawIslandNames(ctx: Ctx, cx: number, cy: number, rad: number, S: Proje
     const [x, y] = S(c.x, c.y), f = row.logoUrl ? flagImg(row.logoUrl) : null, fs = (labels ? 16 : 10) * u;
     if (f) { ctx.imageSmoothingEnabled = false; ctx.drawImage(f, x - fs / 2, y - fs - (labels ? 8 : 2) * u, fs, fs); }
     if (!labels) continue;
-    ctx.lineWidth = 3 * u; ctx.strokeStyle = 'rgba(27,42,51,0.85)'; ctx.strokeText(row.name, x, y + 4 * u);
-    ctx.fillStyle = row.mine ? '#f0cf6a' : '#f6eedc'; ctx.fillText(row.name, x, y + 4 * u);
+    inked(ctx, row.name, x, y + 4 * u, u, row.mine ? COL.port : '#f6eedc');
   }
   ctx.textAlign = 'start';
 }
@@ -348,21 +316,14 @@ function drawWaypoint(ctx: Ctx, w: number, h: number, S: Project, [x, y]: [numbe
   ctx.save();
   ctx.setLineDash([]);
   ctx.translate(ex, ey);
-  if (inside) {
-    ctx.beginPath(); ctx.moveTo(0, -5 * u); ctx.lineTo(5 * u, 0); ctx.lineTo(0, 5 * u); ctx.lineTo(-5 * u, 0); ctx.closePath();
-  } else {
-    ctx.rotate(Math.atan2(ey - h / 2, ex - w / 2));
-    ctx.beginPath(); ctx.moveTo(5 * u, 0); ctx.lineTo(-4 * u, -4 * u); ctx.lineTo(-4 * u, 4 * u); ctx.closePath();
-  }
-  ctx.fillStyle = WP; ctx.fill(); ctx.lineWidth = 1.2 * u; ctx.strokeStyle = COL.ink; ctx.stroke();
+  if (inside) poly(ctx, u, 0, -5, 5, 0, 0, 5, -5, 0);
+  else { ctx.rotate(Math.atan2(ey - h / 2, ex - w / 2)); poly(ctx, u, 5, 0, -4, -4, -4, 4); }
+  rimmed(ctx, WP, 1.2 * u);
   ctx.restore();
   if (label && inside) {                                   // the full chart says how far and which way
-    let d = 0, ax = G.boat.x, ay = G.boat.y;
-    for (const p of route.length ? route : [label]) { d += Math.hypot(p.x - ax, p.y - ay); ax = p.x; ay = p.y; }
-    const s = `${Math.max(1, Math.round(d / 10))} m ${dirTo(G.boat.x, G.boat.y, label.x, label.y)}`;
-    ctx.font = `600 ${Math.round(12 * u)}px Pixelify, monospace`; ctx.textAlign = 'center';
-    ctx.lineWidth = 3 * u; ctx.strokeStyle = 'rgba(27,42,51,0.85)'; ctx.strokeText(s, x, y - 9 * u);
-    ctx.fillStyle = WP; ctx.fillText(s, x, y - 9 * u); ctx.textAlign = 'start';
+    const s = `${waypointMetres()} m ${dirTo(G.boat.x, G.boat.y, label.x, label.y)}`;
+    font(ctx, 12, u); ctx.textAlign = 'center';
+    inked(ctx, s, x, y - 9 * u, u, WP); ctx.textAlign = 'start';
   }
 }
 
@@ -375,22 +336,13 @@ function sailorMarks(): Mark[] {
 const paintColour = (id?: string): string => PAINTS.find(p => p.id === id)?.ramp?.[2] ?? '#e6efec';
 /** Other players: a dot in their paint (outlined so it reads on land and sea), with their name on the full chart. */
 function drawSailors(ctx: Ctx, w: number, h: number, S: Project, u: number, labels: boolean): void {
-  ctx.font = `600 ${Math.round(11 * u)}px Pixelify, monospace`;
+  font(ctx, 11, u);
   ctx.textAlign = 'center';
   for (const s of sailorMarks()) {
     const [x, y] = S(s.x, s.y);
     if (x < -10 || y < -10 || x > w + 10 || y > h + 10) continue;
-    ctx.beginPath();
-    ctx.arc(x, y, 3.2 * u, 0, 7);
-    ctx.fillStyle = paintColour(s.paint);
-    ctx.fill();
-    ctx.lineWidth = 1.4 * u;
-    ctx.strokeStyle = COL.ink;
-    ctx.stroke();
-    if (labels) {
-      ctx.lineWidth = 3 * u; ctx.strokeStyle = 'rgba(27,42,51,0.85)'; ctx.strokeText(s.name, x, y - 6 * u);
-      ctx.fillStyle = '#f6eedc'; ctx.fillText(s.name, x, y - 6 * u);
-    }
+    ctx.beginPath(); ctx.arc(x, y, 3.2 * u, 0, 7); rimmed(ctx, paintColour(s.paint), 1.4 * u);
+    if (labels) inked(ctx, s.name, x, y - 6 * u, u, '#f6eedc');
   }
   ctx.textAlign = 'start';
 }
@@ -403,38 +355,22 @@ function drawBoat(ctx: Ctx, S: Project, u: number): void {
   ctx.beginPath(); ctx.arc(0, 0, 9 * u, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,246,214,0.28)'; ctx.fill();
   ctx.lineWidth = u; ctx.strokeStyle = 'rgba(27,42,51,0.5)'; ctx.stroke();
   ctx.rotate(b.a);
-  ctx.beginPath();
-  ctx.moveTo(7.5 * u, 0);
-  ctx.lineTo(-5 * u, -4.5 * u);
-  ctx.lineTo(-2.5 * u, 0);
-  ctx.lineTo(-5 * u, 4.5 * u);
-  ctx.closePath();
-  ctx.fillStyle = '#fff6d6';
-  ctx.fill();
-  ctx.lineWidth = 1.2 * u;
-  ctx.strokeStyle = COL.ink;
-  ctx.stroke();
+  poly(ctx, u, 7.5, 0, -5, -4.5, -2.5, 0, -5, 4.5); rimmed(ctx, '#fff6d6', 1.2 * u);
   ctx.restore();
 }
 
 function star(ctx: Ctx, x: number, y: number, r: number, col: string): void {
   ctx.fillStyle = col;
   ctx.beginPath();
-  for (let i = 0; i < 10; i++) {
-    const a = i / 10 * Math.PI * 2 - Math.PI / 2, rr = i % 2 ? r * 0.45 : r;
-    ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
-  }
-  ctx.closePath();
-  ctx.fill();
+  for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 - Math.PI / 2, rr = i % 2 ? r * 0.45 : r; ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+  ctx.closePath(); ctx.fill();
 }
 
 export function compassRose(ctx: Ctx, x: number, y: number, r: number): void {
   const ink = 'rgba(58,42,28,0.75)';
   ctx.save();
   ctx.translate(x, y);
-  ctx.strokeStyle = ink;
-  ctx.fillStyle = ink;
-  ctx.lineWidth = Math.max(1, r / 30);
+  Object.assign(ctx, { strokeStyle: ink, fillStyle: ink, lineWidth: Math.max(1, r / 30) });
   ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.stroke();
   ctx.beginPath(); ctx.arc(0, 0, r * 0.82, 0, 7); ctx.stroke();
   // eight points, the long ones on the cardinals; north (i = 6, pointing up) in red
@@ -445,15 +381,9 @@ export function compassRose(ctx: Ctx, x: number, y: number, r: number): void {
     ctx.lineTo(Math.cos(a) * L, Math.sin(a) * L);
     ctx.lineTo(Math.cos(a + 0.12) * r * 0.12, Math.sin(a + 0.12) * r * 0.12);
     ctx.closePath();
-    if (i === 6) {
-      ctx.fillStyle = '#a0402e';
-      ctx.fill();
-      ctx.fillStyle = ink;
-    } else ctx.fill();
+    ctx.fillStyle = i === 6 ? '#a0402e' : ink; ctx.fill();
   }
-  ctx.font = `${Math.round(r * 0.32)}px Jersey, monospace`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+  Object.assign(ctx, { font: `${Math.round(r * 0.32)}px Jersey, monospace`, textAlign: 'center', textBaseline: 'middle' });
   ctx.fillText('N', 0, -r * 1.2);
   ctx.restore();
 }

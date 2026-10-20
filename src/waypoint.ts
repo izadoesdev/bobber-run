@@ -15,6 +15,14 @@ export function setWaypoint(x: number, y: number): void { G.waypoint = { x, y };
 export function clearWaypoint(): void { G.waypoint = null; route = []; plannedFor = null; }
 /** The corners from the boat to the waypoint, ending at it; empty without a waypoint. */
 export const waypointRoute = (): Point[] => G.waypoint ? route : [];
+/** How far the waypoint is along its route, in whole metres (at least 1). */
+export function waypointMetres(): number {
+  const w = G.waypoint;
+  if (!w) return 0;
+  let d = 0, a: Point = G.boat;
+  for (const p of route.length ? route : [w]) { d += Math.hypot(p.x - a.x, p.y - a.y); a = p; }
+  return Math.max(1, Math.round(d / 10));
+}
 /** Let the autopilot sail the route (the waypoint chip's Sail button). */
 export function sailToWaypoint(): void { if (G.waypoint) setCourse(G.waypoint.x, G.waypoint.y); }
 

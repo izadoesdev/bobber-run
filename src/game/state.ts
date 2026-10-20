@@ -1,6 +1,6 @@
-// The single game state object `G`, and keyboard helpers over it.
+// The single game state object `G`, and keyboard and distance helpers over it.
 import { UPGRADE_KEYS } from '../econ';
-import type { GameState, Stats, UpgradeKey } from '../types';
+import type { GameState, Point, Stats, UpgradeKey } from '../types';
 
 export const freshUpgrades = (): Record<UpgradeKey, number> =>
   Object.fromEntries(UPGRADE_KEYS.map(k => [k, 0])) as Record<UpgradeKey, number>;
@@ -49,3 +49,16 @@ export const inp = {
 };
 /** Was any of these keys pressed this frame? */
 export const hit = (...ks: string[]): boolean => ks.some(k => G.pressed.has(k));
+
+/** How far `p` is from the boat. */
+export const boatDist = (p: Point): number => Math.hypot(p.x - G.boat.x, p.y - G.boat.y);
+/** The closest of `list` to the boat that passes `ok`, if any is nearer than `range`. */
+export function nearest<T extends Point>(list: Iterable<T>, ok: (p: T) => boolean = () => true, range = Infinity): T | null {
+  let best: T | null = null, bd = range;
+  for (const p of list) {
+    if (!ok(p)) continue;
+    const d = boatDist(p);
+    if (d < bd) { bd = d; best = p; }
+  }
+  return best;
+}

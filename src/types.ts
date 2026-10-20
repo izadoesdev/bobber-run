@@ -14,7 +14,7 @@ export type WeatherState = 'clear' | 'cloudy' | 'rain' | 'storm';
 /** Conditions a species checks before it bites (see `activeAt` in econ). */
 export interface Env { night: boolean; twilight: boolean; weather: WeatherState }
 
-// ---------- static data (econ.ts, fishart.ts) ----------
+// ---------- static data (econ.ts, species.ts, fishart.ts) ----------
 export type Region = 'any' | 'temperate' | 'cold' | 'warm';
 export type TimeOfDay = 'any' | 'day' | 'night' | 'twilight';
 /** 'rain' means rain or storm. */
@@ -59,7 +59,7 @@ export interface Species {
 /** Gear that catches on its own, and can be switched off. */
 export type Helper = 'deckhand' | 'net' | 'pots';
 export type BoatId = 'row' | 'skiff' | 'launch' | 'trawler' | 'schooner' | 'drifter' | 'flagship';
-export type Propulsion = 'OARS' | 'SAIL' | 'ENGINE';
+type Propulsion = 'OARS' | 'SAIL' | 'ENGINE';
 export interface BoatDef {
   id: BoatId;
   name: string;
@@ -113,9 +113,9 @@ export type BaitChoice = 'none' | Exclude<BaitKind, 'chum'>;
 export interface Supply { name: string; n: number; cost: number; what: string }
 export interface Paint { id: string; name: string; cost: number; ramp?: [string, string, string] }
 
-// ---------- world (world.js) ----------
-export interface SegmentSolid { kind: 'seg'; ax: number; ay: number; bx: number; by: number; r: number }
-export interface CircleSolid { kind: 'circ'; x: number; y: number; r: number }
+// ---------- world (world.ts) ----------
+interface SegmentSolid { kind: 'seg'; ax: number; ay: number; bx: number; by: number; r: number }
+interface CircleSolid { kind: 'circ'; x: number; y: number; r: number }
 export type Solid = SegmentSolid | CircleSolid;
 
 /** Anything a catch is drawn from: a school, or the stand-in stock used by nets, pots and the deckhand. */
@@ -176,7 +176,7 @@ export interface Fish {
   gold?: boolean;
 }
 
-export type LineStage = 'cast' | 'wait' | 'bite' | 'reel';
+type LineStage = 'cast' | 'wait' | 'bite' | 'reel';
 /** The line while fishing (`G.fish`). Optional fields appear once the fight starts. */
 export interface FishLine {
   st: LineStage;
@@ -223,7 +223,7 @@ export interface FishLine {
 }
 
 export type ParticleKind = 'ring' | 'dot' | 'spark' | 'debris' | 'spout' | 'glow' | 'smoke';
-export interface Particle {
+interface Particle {
   kind: ParticleKind;
   x: number; y: number;
   /** remaining and starting lifetime */
@@ -242,8 +242,8 @@ export interface Particle {
 export type ParticleSpec = Omit<Particle, 'max'>;
 
 export interface Toast { s: string; kind: ToastKind; t: number }
-export interface Caption { s: string; t: number }
-export interface Floater { s: string; t: number; kind: 'good' | 'bad' }
+interface Caption { s: string; t: number }
+interface Floater { s: string; t: number; kind: 'good' | 'bad' }
 
 export interface Contract {
   id: string; from: string; to: string; toName: string; sp: number; n: number; reward: number;
@@ -258,10 +258,10 @@ export interface LogEntry {
   /** where you've caught it: up to 6 spots (rounded world positions), newest first, at least 150 units apart */
   at?: [number, number][];
 }
-export interface FleetBoat { port: string; portName: string; earned: number }
-export interface Frenzy { s: School; until: number }
+interface FleetBoat { port: string; portName: string; earned: number }
+interface Frenzy { s: School; until: number }
 export interface CatchCard { fish: Fish; first: boolean; record: boolean; perfect: boolean; bonus: string | null; t: number }
-export interface CatchAnim { sp: number; t: number; x: number; y: number }
+interface CatchAnim { sp: number; t: number; x: number; y: number }
 export interface Pet { name: string }
 
 export interface Stats {
@@ -271,12 +271,12 @@ export interface Stats {
 
 export type Speaker = 'maren' | 'ida' | 'tobias' | 'wren' | 'nell';
 export type TalkLine = [Speaker, string];
-export interface Talk { lines: TalkLine[]; i: number; then?: (() => void) | undefined; back: Mode }
+export interface Talk { lines: TalkLine[]; i: number; then?: () => void; back: Mode }
 /** Story progress; `base` snapshots the stats when the current quest began. */
 export interface StoryState { i: number; base: Stats; shown: boolean }
 
-export interface PortMenu { tab: number; sel: number; port: Port | null }
-export interface MapView {
+interface PortMenu { tab: number; sel: number; port: Port | null }
+interface MapView {
   x: number; y: number; zoom: number;
   /** the species whose zone and catch spots the chart is showing (index into SPECIES), if any */
   zoneSp?: number | null;
@@ -291,10 +291,10 @@ export interface NetForm {
 
 // ---------- port menu rows (portItems) ----------
 export interface NeedStatus { have: number; want: number; label: string; pick: Fish[]; sp?: number }
-export type PortItemKind =
+type PortItemKind =
   | 'sell' | 'deliver' | 'take' | 'rest' | 'repair' | 'supply' | 'upgrade' | 'boat' | 'paint'
   | 'collect' | 'fleet' | 'note' | 'project' | 'fund' | 'ferry' | 'contract' | 'island';
-export interface PortHeader { kind: 'header'; label: string }
+interface PortHeader { kind: 'header'; label: string }
 export interface PortRow {
   kind: PortItemKind;
   label: string;
@@ -325,7 +325,7 @@ export type PortItem = PortHeader | PortRow;
 
 // ---------- the game state ----------
 /** Progress that goes into the save game. */
-export interface Progress {
+interface Progress {
   coins: number;
   /** lifetime earnings (cheats and refunds don't count) */
   earned: number;
@@ -375,7 +375,7 @@ export interface Progress {
 }
 
 /** The voyage being simulated right now (not saved). */
-export interface Voyage {
+interface Voyage {
   mode: Mode;
   /** seconds since start, including menus */
   t: number;
@@ -397,14 +397,14 @@ export interface Voyage {
 }
 
 /** Countdowns and accumulators for periodic effects. */
-export interface Timers {
+interface Timers {
   crashCd: number; spookCd: number; petCd: number; petT: number;
   wakeAcc: number; idleRing: number; smokeT: number; bilgeT: number;
   saveT: number; netT: number; potT: number;
 }
 
 /** Transient feedback drawn over the world. */
-export interface Feedback {
+interface Feedback {
   toasts: Toast[];
   captions: Caption[];
   floaters: Floater[];
@@ -418,14 +418,14 @@ export interface Feedback {
   myEmote: { i: number; t: number } | null;
 }
 
-export interface CameraState {
+interface CameraState {
   cam: Point;
   /** look-ahead offset in the direction of travel */
   look: Point;
   shake: number; shakeX: number; shakeY: number;
 }
 
-export interface InputState {
+interface InputState {
   /** keys held now, and keys pressed this frame */
   keys: Record<string, boolean>;
   pressed: Set<string>;
@@ -434,7 +434,7 @@ export interface InputState {
 }
 
 /** What the boat is next to this frame, and the hint shown for it. */
-export interface Surroundings {
+interface Surroundings {
   prompt: string | null;
   nearPort: Port | null;
   nearWreck: Wreck | null;
@@ -443,7 +443,7 @@ export interface Surroundings {
 }
 
 /** Menu cursors and where each screen returns to. */
-export interface Screens {
+interface Screens {
   menu: PortMenu;
   map: MapView;
   talk: Talk | null;
@@ -467,6 +467,5 @@ export interface Screens {
   netMsg: { msg: string; bad: boolean } | null;
 }
 
-export interface Cheats { god: boolean; cheated: boolean }
-
-export interface GameState extends Progress, Voyage, Timers, Feedback, CameraState, InputState, Surroundings, Screens, Cheats { }
+// god: the unbreakable-hull cheat is on; cheated: this save has used a cheat (so it stays off world records)
+export interface GameState extends Progress, Voyage, Timers, Feedback, CameraState, InputState, Surroundings, Screens { god: boolean; cheated: boolean }

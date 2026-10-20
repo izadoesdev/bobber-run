@@ -7,7 +7,6 @@ import { logged } from './rules';
 import { addCoins, toast } from './feedback';
 
 interface Goal { text: string; reward: number; done: () => boolean }
-const trophied = (): number => SPECIES.filter(s => G.log[s.id]?.trophy).length;
 const goal = (text: string, reward: number, done: () => boolean): Goal => ({ text, reward, done });
 
 // G.goalsDone stores indexes into this list, so only ever append to it
@@ -36,7 +35,7 @@ const GOALS: Goal[] = [
   goal('Catch 10 trophies', 300, () => G.stats.trophies >= 10),
   goal('Earn $10,000 in total', 500, () => G.earned >= 10000),
   goal('Max out every upgrade', 800, () => UPGRADE_KEYS.every(k => G.up[k] >= UPGRADES[k].costs.length)),
-  goal('Catch a trophy of every species', 3000, () => trophied() >= SPECIES.length),
+  goal('Catch a trophy of every species', 3000, () => SPECIES.every(s => G.log[s.id]?.trophy)),
 ];
 
 export function checkGoals(): void {

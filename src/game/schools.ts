@@ -18,14 +18,16 @@ export const SCATTER_S = 5, DIVE_S = 40;
 const DIVE_HEAT = 2.5, HEAT_FADE_S = 60;
 /** One fish returns to a fished school this often (the Old One takes much longer). */
 const REFILL_S = 35, BOSS_REFILL_S = 1200;
+const refillS = (s: { boss?: boolean }): number => s.boss ? BOSS_REFILL_S : REFILL_S;
 
-export const scattered = (s: School): boolean => s.scatterT !== undefined && G.t - s.scatterT < SCATTER_S;
+/** Scattered within the last `within` seconds (by default: still regrouping). */
+const scattered = (s: School, within = SCATTER_S): boolean => s.scatterT !== undefined && G.t - s.scatterT < within;
 const dived = (s: School): boolean => (s.spooked ?? 0) > G.t;
 /** The school is in the water to be seen: its species is about, and it hasn't dived. Depleted schools still show a straggler. */
 export const schoolShown = (s: School): boolean => activeAt(s.sp, env()) && !dived(s);
 /** The school will take a bait right now. */
 export const schoolActive = (s: School): boolean => s.stock > 0 && schoolShown(s) && !scattered(s);
-export type SchoolMood = 'biting' | 'scattered' | 'empty';
+type SchoolMood = 'biting' | 'scattered' | 'empty';
 export const schoolMood = (s: School): SchoolMood => scattered(s) ? 'scattered' : s.stock > 0 ? 'biting' : 'empty';
 
 const nearScratch: School[] = [];
@@ -47,11 +49,11 @@ export function updateSchools(speed: number, dt: number): void {
 /** A catch takes a fish from the school; they come back one at a time. */
 export function takeFish(s: { stock: number; respawn?: number; boss?: boolean }): void {
   s.stock--;
-  if (!s.respawn || s.respawn < G.t) s.respawn = G.t + (s.boss ? BOSS_REFILL_S : REFILL_S);
+  if (!s.respawn || s.respawn < G.t) s.respawn = G.t + refillS(s);
 }
 // catch up on every fish due since the boat was last near
 function refill(s: School): void {
-  const gap = s.boss ? BOSS_REFILL_S : REFILL_S;
+  const gap = refillS(s);
   while (s.respawn && G.t >= s.respawn && s.stock < s.max) {
     s.stock++;
     s.respawn = s.stock < s.max ? s.respawn + gap : 0;
@@ -59,7 +61,7 @@ function refill(s: School): void {
   }
 }
 const scareable = (s: School): boolean =>
-  !s.boss && schoolShown(s) && G.frenzy?.s !== s && G.fish?.s !== s && !(s.scatterT !== undefined && G.t - s.scatterT < SCATTER_S * 0.6);
+  !s.boss && schoolShown(s) && G.frenzy?.s !== s && G.fish?.s !== s && !scattered(s, SCATTER_S * 0.6);
 /** Fish dart away from the boat and regroup; a few reckless passes in a row and the school dives for a while. */
 function scare(s: School): void {
   const b = G.boat, name = SPECIES[s.sp].name;

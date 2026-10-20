@@ -1,6 +1,6 @@
 // Full-screen documents and panels: the sea chart, the logbook, the ship and hold, and the story journal.
 import { clamp, money } from '../config';
-import { G, logged, cap, hpMax, boatDef, equipment, fishValue, speedMul, deckLvl, deckBoat, ownedLvl, smallFry, releaseSmallFry, toggleHelper, SMALL_FRY, buyFishChart, fishChartPrice, chartable } from '../game';
+import { G, logged, cap, boatDef, equipment, fishValue, speedMul, deckLvl, deckBoat, ownedLvl, smallFry, releaseSmallFry, toggleHelper, SMALL_FRY, buyFishChart, fishChartPrice, chartable } from '../game';
 import { track } from '../analytics';
 import { isRunningNow } from '../tides';
 import { SPECIES, UPGRADES, PAINTS, SUPPLIES, fmtKg } from '../econ';
@@ -13,7 +13,8 @@ import { QUESTS, CHAPTERS, PEOPLE, currentQuest, questProgress, story } from '..
 import { guide, guideOn, stepLine } from '../game/guide';
 import type { UpgradeKey } from '../types';
 import { drawChart, compassRose, zoneKnown } from './chart';
-import { Bar, Canvas, Cell, Fish, Hint, Icon, Key, Pips, boatPreview, type DrawFn } from './parts';
+import { Canvas, Cell, Fish, Hint, HullStat, Icon, Key, Pips, Stat, boatPreview, type DrawFn } from './parts';
+import type { ComponentChildren } from 'preact';
 
 // ---------- chart ----------
 let drag: [number, number] | null = null, moved = 0;
@@ -43,9 +44,7 @@ export function Chart() {
         </div>
       </header>
       <div class="chartwrap">
-        {m.zoneSp != null && <div class="chip zone-on"><Fish sp={m.zoneSp} size="s" /><span>{G.log[SPECIES[m.zoneSp].id] ? SPECIES[m.zoneSp].name : 'Unknown fish'}{zoneKnown(m.zoneSp) ? ': gold water is where it lives' : ''}{G.log[SPECIES[m.zoneSp].id]?.at?.length ? ', pins are where you caught it' : ''}</span>
-          {nearestHome(m.zoneSp) && <button class="btn small-btn" onClick={() => { const p = nearestHome(m.zoneSp!); if (p) setWaypoint(p.x, p.y); }}>Waypoint to nearest</button>}
-          <button class="x" aria-label="Stop showing this fish" onClick={() => { m.zoneSp = null; }}>×</button></div>}
+        {m.zoneSp != null && <ZoneChip sp={m.zoneSp} />}
         <Canvas
           draw={draw}
           onPointerDown={e => { if (e.button !== 0) return; drag = [e.clientX, e.clientY]; moved = 0; e.currentTarget.setPointerCapture(e.pointerId); }}
@@ -69,12 +68,16 @@ export function Chart() {
   );
 }
 
-// ---------- logbook ----------
-const WHEN: Record<string, string> = { any: 'Any time', day: 'By day', night: 'At night', twilight: 'At dusk or dawn' };
-const WX_TXT: Record<string, string> = { any: '', rain: ', in rain', storm: ', in storms' };
-const FIGHTS: Record<string, string> = {
-  steady: 'Pulls steadily', darter: 'Darts off suddenly', generic: 'Pulls hard in bursts', jumper: 'Jumps. Stop reeling while it is in the air', erratic: 'Pulls in random directions', boss: 'Fights in three rounds',
-};
+// the species the chart is showing the waters of
+function ZoneChip({ sp }: { sp: number }) {
+  const e = G.log[SPECIES[sp].id], home = nearestHome(sp);
+  return (
+    <div class="chip zone-on"><Fish sp={sp} size="s" /><span>{e ? SPECIES[sp].name : 'Unknown fish'}{zoneKnown(sp) ? ': gold water is where it lives' : ''}{e?.at?.length ? ', pins are where you caught it' : ''}</span>
+      {home && <button class="btn small-btn" onClick={() => setWaypoint(home.x, home.y)}>Waypoint to nearest</button>}
+      <button class="x" aria-label="Stop showing this fish" onClick={() => { G.map.zoneSp = null; }}>×</button></div>
+  );
+}
+
 // ---------- fish charts ----------
 /** Where to centre the chart for a species: your nearest catch spot, else the nearest water it lives in (searched outward). */
 let homeKey = '', homeAt: { x: number; y: number } | null = null;   // the search below is too slow to repeat every frame
@@ -96,12 +99,12 @@ function findHome(sp: number, spots: [number, number][]): { x: number; y: number
   return null;
 }
 /** Open the sea chart on a species: its waters (if known), your catch spots, centred on the nearest of them. */
-export function showOnChart(sp: number, how: 'logbook' | 'chart' = 'logbook'): void {
+function showOnChart(sp: number): void {
   const m = G.map, p = nearestHome(sp);
   m.zoneSp = sp; m.zoom = 2;
   if (p) { m.x = p.x - G.boat.x; m.y = p.y - G.boat.y; }
   G.mode = 'map';
-  track('fish_chart_opened', { species: SPECIES[sp].id, how });
+  track('fish_chart_opened', { species: SPECIES[sp].id, how: 'logbook' });
 }
 function FishChartRow({ sp }: { sp: number }) {
   const s = SPECIES[sp], e = G.log[s.id], known = zoneKnown(sp), price = fishChartPrice(sp), spots = e?.at?.length ?? 0;
@@ -116,6 +119,12 @@ function FishChartRow({ sp }: { sp: number }) {
     </div>
   );
 }
+// ---------- logbook ----------
+const WHEN: Record<string, string> = { any: 'Any time', day: 'By day', night: 'At night', twilight: 'At dusk or dawn' };
+const WX_TXT: Record<string, string> = { any: '', rain: ', in rain', storm: ', in storms' };
+const FIGHTS: Record<string, string> = {
+  steady: 'Pulls steadily', darter: 'Darts off suddenly', generic: 'Pulls hard in bursts', jumper: 'Jumps. Stop reeling while it is in the air', erratic: 'Pulls in random directions', boss: 'Fights in three rounds',
+};
 export function Logbook() {
   const sel = clamp(G.logSel || 0, 0, SPECIES.length - 1), s = SPECIES[sel], e = G.log[s.id], world = NET.records[s.id];
   return (
@@ -156,6 +165,9 @@ export function Logbook() {
 }
 
 // ---------- ship + hold ----------
+/** A non-interactive list row: icon, name over a line of detail, then whatever goes on the right. */
+const Item = ({ k, name, sub, cls = '', children }: { k: string; name: string; sub: string; cls?: string; children?: ComponentChildren }) =>
+  <div class={'item static' + cls}><Icon k={k} /><div class="grow"><div>{name}</div><div class="sub">{sub}</div></div>{children}</div>;
 // a golden fish (always a trophy too) gets a small gold coin badge in place of the trophy star
 const GOLD_DOT = { display: 'inline-block', width: '0.75em', height: '0.75em', borderRadius: '50%', background: 'radial-gradient(circle at 35% 35%, #fff6d6, #f0cf6a 45%, #b0832a)', boxShadow: '0 0 0 0.1em #1b2a33', verticalAlign: 'middle' } as const;
 const BAITS = ['shrimp', 'glow', 'chum'] as const;
@@ -179,9 +191,9 @@ export function Ship() {
       <div class="body">
         <div class="col side">
           <Canvas cls="preview" draw={boatPreview(bd.id, equipment(), 8)} />
-          <div class="stat"><span class="caps">Speed</span><Bar k={speedMul() / 3.1} /><span class="num">{Math.round(speedMul() * 100)}%</span></div>
-          <div class="stat"><span class="caps">Hull</span><Bar k={G.boat.hp / hpMax()} /><span class="num">{Math.max(0, Math.ceil(G.boat.hp))}/{hpMax()}</span></div>
-          <div class="stat"><span class="caps">Hold</span><Bar k={G.hold.length / cp} tone="gold" /><span class="num">{G.hold.length}/{cp}</span></div>
+          <Stat label="Speed" k={speedMul() / 3.1}>{Math.round(speedMul() * 100)}%</Stat>
+          <HullStat />
+          <Stat label="Hold" k={G.hold.length / cp} tone="gold">{G.hold.length}/{cp}</Stat>
           <div class="row wrap">
             {BAITS.map(k => <span class="row" title={SUPPLIES[k].name}><Icon k={k} size="s" />{G.bait[k] || 0}</span>)}
             <span class="row" title="Treasure maps"><Icon k="map" size="s" />{G.maps.length}</span>
@@ -211,22 +223,14 @@ export function Ship() {
         </div>
         <div class="col side">
           <div class="list-head caps">Upgrades</div>
-          {fitted.map(k => {
-            const u = UPGRADES[k];
-            return (
-              <div class="item static">
-                <Icon k={k} /><div class="grow"><div>{u.name(bd)}</div><div class="sub">{u.lv[G.up[k] - 1]}</div></div><Pips n={G.up[k]} of={u.costs.length} />
-              </div>
-            );
-          })}
+          {fitted.map(k => <Item k={k} name={UPGRADES[k].name(bd)} sub={UPGRADES[k].lv[G.up[k] - 1]}><Pips n={G.up[k]} of={UPGRADES[k].costs.length} /></Item>)}
           {!fitted.length && <p class="muted">No upgrades yet. Buy them in the Outfitter tab at any port.</p>}
           {helpers.length > 0 && <>
             <div class="list-head caps">Helpers</div>
             {helpers.map(([k, name, what]) => (
-              <div class="item static helper">
-                <Icon k={k} /><div class="grow"><div>{name}</div><div class="sub">{what}</div></div>
+              <Item cls=" helper" k={k} name={name} sub={what}>
                 <button data-track={`helper-${k}`} class={'btn small-btn' + (G.gearOff[k] ? '' : ' on')} aria-pressed={!G.gearOff[k]} onClick={() => toggleHelper(k)}>{G.gearOff[k] ? 'Off' : 'On'}</button>
-              </div>
+              </Item>
             ))}
           </>}
         </div>
@@ -254,16 +258,14 @@ export function Journal() {
               <div>
                 <div class="list-head caps">Chapter {ci + 1}: {c}</div>
                 {qs.filter(([, i]) => i <= st.i).map(([q, i]) => (
-                  <div class={'item static' + (i === st.i ? ' sel' : '')}>
-                    <Icon k={q.by} /><div class="grow"><div>{q.title}</div><div class="sub">{i < st.i ? 'Done' : q.goal}</div></div>
+                  <Item cls={i === st.i ? ' sel' : ''} k={q.by} name={q.title} sub={i < st.i ? 'Done' : q.goal}>
                     {i === st.i && pr ? <span class="num">{pr.have}/{pr.want}</span> : <Icon k="star" size="s" />}
-                  </div>
+                  </Item>
                 ))}
               </div>
             );
           })}
-          {!cur && <p class="gold">The story is complete. Nell is home.</p>}
-          {!cur && <p><span class="caps">Next step</span> {stepLine()}</p>}
+          {!cur && <><p class="gold">The story is complete. Nell is home.</p><p><span class="caps">Next step</span> {stepLine()}</p></>}
         </div>
         {cur && (
           <aside class="detail paper">

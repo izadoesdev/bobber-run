@@ -13,7 +13,7 @@ function atClock(frac: number): void {
 }
 
 /** A cheat may return a message to show instead of the default, or 'finale' to jump to the ending. */
-export interface Cheat { code: string; what: string; run: () => string | void }
+interface Cheat { code: string; what: string; run: () => string | void }
 const UNLOCK_SHIPS: ProjectId[] = ['pier', 'market', 'drydock', 'lights'];
 
 export const CHEATS: Cheat[] = [

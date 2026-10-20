@@ -5,7 +5,6 @@ import { coldness, BAIT_KINDS, PROJECTS } from './econ';
 import { sfx } from './audio';
 import type { BaitKind, GameState, ProjectId, Speaker, Stats, StoryState, TalkLine } from './types';
 
-export interface Person { name: string; role: string }
 /**
  * What the guide (game/guide.ts) points the player at for a quest: a kind of place or catch, or a harbour project.
  * school: any catchable school; sell: a port to sell at; port/light: the nearest uncharted one; wreck: an unsalvaged wreck;
@@ -32,7 +31,7 @@ export interface Quest {
   outro: TalkLine[];
 }
 
-export const PEOPLE: Record<Speaker, Person> = {
+export const PEOPLE: Record<Speaker, { name: string; role: string }> = {
   maren: { name: 'Maren', role: 'Harbourmaster of Alderhaven' },
   ida: { name: 'Ida', role: 'Chartmaker' },
   tobias: { name: 'Tobias', role: 'Lighthouse keeper' },
@@ -120,7 +119,7 @@ export function talkNext(skip = false): void {
   if (!t) return;
   if (!skip && ++t.i < t.lines.length) { sfx('move'); return; }
   G.talk = null;
-  G.mode = t.back === 'talk' ? 'play' : t.back;
+  G.mode = t.back;
   t.then?.();
 }
 // The first quest's line doesn't stop the game: it shows as a speech line while you sail, so a new captain is
@@ -131,7 +130,8 @@ const LINE_S = 7;
 export function speech(): { who: Speaker; text: string } | null {
   if (!said) return null;
   const i = Math.floor((G.t - said.at) / LINE_S);
-  if (i >= said.lines.length || G.mode !== 'play') { if (i >= said.lines.length) said = null; return null; }
+  if (i >= said.lines.length) { said = null; return null; }
+  if (G.mode !== 'play') return null;
   const [who, text] = said.lines[i];
   return { who, text };
 }

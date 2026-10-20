@@ -1,15 +1,15 @@
 // Click- and tap-to-sail: the boat steers and throttles itself toward a point on the sea by holding the same
 // virtual steering keys a player would, so physics and the rules for fishing stay exactly as they are.
 // It slows for the shore instead of ramming it, veers around islands in the way, and stops on arrival.
-import { hAt, poisNear } from '../world';
+import { hAt } from '../world';
 import { sfx } from '../audio';
-import type { Poi, Solid } from '../types';
+import type { Point, Solid } from '../types';
 import { G } from './state';
 import { boatDef, boatSpeed, sailEfficiency, speedMul } from './rules';
 import { toast } from './feedback';
 import { wrapAngle } from '../config';
 import { clearLine, findRoute } from './route';
-import type { Point } from '../types';
+import { shapeContact, solidsNear } from './physics';
 
 /** Treated as land: a little deeper than where the hull grounds, so the boat keeps clear of the beach. */
 const LAND = -0.045;
@@ -32,6 +32,7 @@ interface Course {
 }
 let course: Course | null = null;
 const held: Record<SteerKey, boolean> = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
+const arriveR = (): number => 3 + boatDef().B;
 
 /** Where the boat is heading in the end, for the marker; null when not under way. */
 export const courseTarget = (): Point | null => course && (course.rest.at(-1) ?? course);
@@ -39,25 +40,9 @@ export const courseTarget = (): Point | null => course && (course.rest.at(-1) ??
 export const coursePath = (): Point[] => course ? [{ x: course.x, y: course.y }, ...course.rest] : [];
 
 // ---------- obstacles ----------
-const poiScratch: Poi[] = [], solids: Solid[] = [];
-function nearSolids(): void {
-  solids.length = 0;
-  for (const p of poisNear(G.boat.x, G.boat.y, 160, poiScratch)) if (p.solid) solids.push(p.solid);
-}
-function inSolid(x: number, y: number, pad: number): boolean {
-  for (const so of solids) {
-    let cx: number, cy: number;
-    if (so.kind === 'circ') { cx = so.x; cy = so.y; }
-    else {
-      const dx = so.bx - so.ax, dy = so.by - so.ay;
-      const t = Math.max(0, Math.min(1, ((x - so.ax) * dx + (y - so.ay) * dy) / (dx * dx + dy * dy)));
-      cx = so.ax + dx * t; cy = so.ay + dy * t;
-    }
-    if (Math.hypot(x - cx, y - cy) < so.r + pad) return true;
-  }
-  return false;
-}
-const blocked = (x: number, y: number, pad: number): boolean => hAt(x, y) > LAND || inSolid(x, y, pad);
+const solids: Solid[] = [];
+const nearSolids = (): void => solidsNear(160, solids);
+const blocked = (x: number, y: number, pad: number): boolean => hAt(x, y) > LAND || solids.some(so => shapeContact(so, x, y, pad));
 
 /** How far the hull can run from (x, y) along heading a before touching land or a solid, up to `len`. */
 function clearRun(x: number, y: number, a: number, len: number): number {
@@ -86,7 +71,7 @@ export function setCourse(x: number, y: number, quiet = false): boolean {
   let t = d;
   while (t > 0 && blocked(b.x + dx * t, b.y + dy * t, pad)) t -= 2;    // walk back from the shore toward the boat
   if (t < d) t -= bd.L * 0.7;                                          // and keep the bow off it
-  if (t < arriveR()) { if (!quiet) sfx('deny'); if (!course) return false; dropCourse(); return false; }
+  if (t < arriveR()) { if (!quiet) sfx('deny'); if (course) dropCourse(); return false; }
   const prev = course, end = { x: b.x + dx * t, y: b.y + dy * t };
   // a click plans a way round anything in between; a held finger or a followed sailor just steers straight
   const route = !quiet && !clearLine(b, end) ? findRoute(b, end) : null;
@@ -105,8 +90,6 @@ function press(k: SteerKey, on: boolean): void {
   if (held[k] === on) return;
   held[k] = on; G.keys[k] = on;
 }
-
-const arriveR = (): number => 3 + boatDef().B;
 
 /**
  * Drive toward the course for one frame: pick a clear heading, steer onto it, and hold the speed at what the boat

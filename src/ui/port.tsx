@@ -1,14 +1,15 @@
 // The port screen: tabbed shop lists on wood, the selected item's details on parchment.
-import { G, portItems, portTabs, projDone, setTab, leavePort, hpMax, equipment, fishValue, priceAt } from '../game';
+import { G, portItems, portTabs, projDone, setTab, leavePort, equipment, fishValue, priceAt } from '../game';
 import { boatDef, boatStats, builtIn, upgradeStat } from '../game/rules';
 import { saleBonus, sailorsNear } from '../game/port';
 import { SPECIES } from '../econ';
 import { NET } from '../net';
 import { CREW_RANGE } from '../online';
 import { WX } from '../weather';
-import type { BoatDef, Fish as FishT, NeedStatus, Port as PortT, PortItem, PortRow, Project, UpgradeKey } from '../types';
+import type { BoatDef, BoatId, Fish as FishT, NeedStatus, Port as PortT, PortItem, PortRow, Project, UpgradeKey } from '../types';
+import type { Fit } from '../models';
 import { drawChart } from './chart';
-import { Bar, Canvas, Cell, Fish, Hint, Icon, Key, Pips, WX_ICON, boatPreview, boatThumb, cap1, clockText, flashing } from './parts';
+import { Canvas, Cell, Fish, Hint, HullStat, Icon, Key, Pips, WX_ICON, boatPreview, boatThumb, cap1, clockText, flashing } from './parts';
 import { money } from '../config';
 
 const GREET = [
@@ -46,7 +47,7 @@ function Row({ it, i }: { it: PortRow; i: number }) {
 // the fish in the hold grouped by species, with what this port pays for each
 function SellDetail({ p }: { p: PortT }) {
   const groups: Record<number, FishT[]> = {};
-  for (const f of G.hold) (groups[f.sp] = groups[f.sp] || []).push(f);
+  for (const f of G.hold) (groups[f.sp] ||= []).push(f);
   const best = SPECIES.map((s, i) => ({ s, m: p.mult[i] })).filter(o => G.log[o.s.id]).sort((a, b) => b.m - a.m).slice(0, 3);
   const bonus = saleBonus(), mul = (1 + bonus.cook) * (1 + bonus.crew), sailors = sailorsNear(G.boat.x, G.boat.y);
   return (
@@ -98,10 +99,11 @@ function ProjectDetail({ pr, st }: { pr: Project; st: NeedStatus }) {
 }
 
 // the picture at the top of the detail card: a boat preview, the ferry route, or a big icon
+const preview = (id: BoatId, eq: Fit) => <Canvas cls="preview" draw={boatPreview(id, eq)} />;
 function DetailVisual({ p, it }: { p: PortT; it: PortRow }) {
-  if (it.kind === 'upgrade') return <Canvas cls="preview" draw={boatPreview(G.boatId, equipment())} />;
-  if ((it.kind === 'boat' || it.kind === 'fleet') && it.boat) return <Canvas cls="preview" draw={boatPreview(it.boat.id, { ...equipment(), paint: G.paint })} />;
-  if (it.kind === 'paint') return <Canvas cls="preview" draw={boatPreview(G.boatId, { ...equipment(), paint: it.paint ?? G.paint })} />;
+  if (it.kind === 'upgrade') return preview(G.boatId, equipment());
+  if ((it.kind === 'boat' || it.kind === 'fleet') && it.boat) return preview(it.boat.id, { ...equipment(), paint: G.paint });
+  if (it.kind === 'paint') return preview(G.boatId, { ...equipment(), paint: it.paint ?? G.paint });
   if (it.kind === 'ferry' && it.q) {
     const q = it.q;
     return (
@@ -168,29 +170,17 @@ function DetailBody({ it }: { it: PortRow }) {
     case 'boat':
       return it.boat ? <BoatCompare b={it.boat} /> : null;
     case 'repair':
-      return (
-        <>
-          <div class="stat"><span class="caps">Hull</span><Bar k={G.boat.hp / hpMax()} /><span class="num">{Math.max(0, Math.ceil(G.boat.hp))}/{hpMax()}</span></div>
-          <p>{it.what}</p>
-        </>
-      );
+      return <><HullStat /><p>{it.what}</p></>;
     case 'project':
       return it.pr && it.st ? <ProjectDetail pr={it.pr} st={it.st} /> : null;
-    case 'supply':
-    case 'ferry':
+    case 'supply': case 'ferry':
       return (
         <>
           <p>{it.what}.</p><p class="muted">{it.sub}.</p>
           {it.repeat && <p class="muted small">Hold the button down to keep buying.</p>}
         </>
       );
-    case 'rest':
-    case 'paint':
-    case 'fleet':
-    case 'collect':
-    case 'fund':
-    case 'take':
-    case 'contract':
+    case 'rest': case 'paint': case 'fleet': case 'collect': case 'fund': case 'take': case 'contract':
       return <p>{it.what}</p>;
     case 'deliver':
       return <><p>{it.sub}.</p>{it.what && <p class="muted">{it.what}</p>}</>;
@@ -215,7 +205,7 @@ function Detail({ p, it }: { p: PortT; it: PortRow | null }) {
         {it.cost != null && <span class={'price big' + (G.coins < it.cost ? ' short' : '')}>{money(it.cost)}</span>}
         {it.kind !== 'note' && !finished && (
           <button data-track={`port-${it.kind}`} class="btn primary" disabled={!it.ok} onClick={() => it.act()}>
-            {!it.ok && it.why && it.why.startsWith('Fully') ? 'Maxed' : it.action}{it.ok && <Key k=" " pad="A" />}
+            {!it.ok && it.why?.startsWith('Fully') ? 'Maxed' : it.action}{it.ok && <Key k=" " pad="A" />}
           </button>
         )}
       </div>

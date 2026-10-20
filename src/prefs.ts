@@ -3,8 +3,6 @@ const KEY = 'bobber-run-settings';
 
 export type Quality = 'auto' | 'high' | 'medium' | 'low';
 export type PixelStyle = 'chunky' | 'crisp' | 'smooth';
-export type FontStyle = 'pixel' | 'plain';
-export type StrikeTiming = 'normal' | 'relaxed' | 'auto';
 
 export interface Settings {
   /** volumes, 0..10 */
@@ -14,7 +12,7 @@ export interface Settings {
   tilt: boolean; bloom: boolean; shake: boolean;
   /** interface scale */
   ui: number;
-  font: FontStyle;
+  font: 'pixel' | 'plain';
   contrast: boolean; calm: boolean; captions: boolean;
   /** the objective marker: an arrow on screen and a flag on the minimap and chart */
   guide: boolean;
@@ -22,7 +20,7 @@ export interface Settings {
   hud: boolean;
   /** chat: the log fades in at the bottom left, only bubbles over boats, or none at all */
   chat: 'show' | 'bubbles' | 'off';
-  strike: StrikeTiming;
+  strike: 'normal' | 'relaxed' | 'auto';
   reelAssist: boolean; reelToggle: boolean;
   /** camera zoom chosen by the player; 1 = the default view for your ship */
   zoom: number;

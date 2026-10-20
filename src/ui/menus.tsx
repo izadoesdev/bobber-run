@@ -1,13 +1,6 @@
 // Menus and dialogs: title, pause, settings, controls, online, cheats, greeting picker,
 // conversations, the finale and the boat-sank card.
-import type { TargetedMouseEvent, TargetedSubmitEvent } from 'preact';
-
-// The account form's email field takes focus when the form first appears, so typing (and Tab) works at once.
-let focusedForm = false;
-const focusOnce = (el: HTMLInputElement | null) => {
-  if (!el) { focusedForm = false; return; }
-  if (!focusedForm) { focusedForm = true; el.focus(); }
-};
+import type { ComponentChildren, TargetedMouseEvent, TargetedSubmitEvent } from 'preact';
 import { CHEATS_ENABLED } from '../input';
 import { G, hasSave, savedVoyage, dayNum, logged, loadGame, newGame, toast } from '../game';
 import { SPECIES } from '../econ';
@@ -24,21 +17,24 @@ import { money } from '../config';
 export const TITLE_ITEMS = () => [...(hasSave() ? ['CONTINUE'] : []), 'NEW VOYAGE', 'SETTINGS', 'CONTROLS', ...(NET.on ? ['ONLINE'] : [])];
 export const PAUSE_ITEMS = ['RESUME', 'JOURNAL', ...(NET.on ? ['LEADERBOARD'] : []), 'SETTINGS', 'CONTROLS', ...(NET.on ? ['ONLINE'] : []), 'SAVE & QUIT'];
 
-// Mouse picks go through the same input path as the keyboard: select the row, then press a key for main.js.
+// Mouse picks go through the same input path as the keyboard: select the row, then press a key for menus.ts.
 const press = (key: string) => { G.pressed.add(key); };
+const pick = (set: (i: number) => void, i: number) => { set(i); press('Enter'); };
 
-interface MenuProps { items: string[]; sel: number; onPick: (i: number) => void; setSel: (i: number) => void }
-function Menu({ items, sel, onPick, setSel }: MenuProps) {
+function Menu({ items, sel, set }: { items: string[]; sel: number; set: (i: number) => void }) {
   return (
     <div class="menu">
-      {items.map((s, i) => <button data-track={`menu-${s}`} class={'item' + (i === sel ? ' sel' : '')} onMouseMove={byPointer(() => setSel(i))} onClick={() => onPick(i)}>{s}</button>)}
+      {items.map((s, i) => <button data-track={`menu-${s}`} class={'item' + (i === sel ? ' sel' : '')} onMouseMove={byPointer(() => set(i))} onClick={() => pick(set, i)}>{s}</button>)}
     </div>
   );
 }
+/** A list row that a hover selects and a click picks, like Enter on it. */
+const PickCell = ({ i, sel, set, cls, children }: { i: number; sel: number; set: (i: number) => void; cls?: string; children?: ComponentChildren }) =>
+  <Cell cls={cls} sel={i === sel} onEnter={() => set(i)} onClick={() => pick(set, i)}>{children}</Cell>;
 
 // "erase your save?": the answers go through the same keys as the keyboard (menus.ts), keeping the save picked first
 function NewVoyageConfirm() {
-  const v = savedVoyage(), pick = (i: number) => { G.newConfirm = i; press('Enter'); };
+  const v = savedVoyage(), set = (i: number) => { G.newConfirm = i; };
   return (
     <div class="panel rivets menu-box confirm" role="alertdialog" aria-labelledby="new-q">
       <h2 id="new-q">Start a new voyage?</h2>
@@ -46,7 +42,7 @@ function NewVoyageConfirm() {
       <div class="menu row">
         {['Keep my voyage', 'Start over'].map((s, i) => (
           <button data-track={i ? 'new-voyage-confirm' : 'new-voyage-keep'} class={'item' + (i === G.newConfirm ? ' sel' : '') + (i ? ' danger' : '')}
-            onMouseMove={byPointer(() => { G.newConfirm = i; })} onClick={() => pick(i)}>{s}</button>
+            onMouseMove={byPointer(() => set(i))} onClick={() => pick(set, i)}>{s}</button>
         ))}
       </div>
     </div>
@@ -59,7 +55,7 @@ export function Title() {
       <div class="logo">Bobber Run</div>
       <div class="tagline">Fish, sell, upgrade, and sail further</div>
       {G.newConfirm >= 0 ? <NewVoyageConfirm /> : <div class="panel rivets menu-box">
-        <Menu items={TITLE_ITEMS()} sel={G.titleSel || 0} setSel={i => { G.titleSel = i; }} onPick={i => { G.titleSel = i; press('Enter'); }} />
+        <Menu items={TITLE_ITEMS()} sel={G.titleSel || 0} set={i => { G.titleSel = i; }} />
       </div>}
       <AccountCta from="title" />
       <OnlineNow />
@@ -97,7 +93,7 @@ export function Pause() {
     <div class="center dim-bg">
       <div class="logo still">Paused</div>
       <div class="panel rivets menu-box">
-        <Menu items={PAUSE_ITEMS} sel={G.pauseSel || 0} setSel={i => { G.pauseSel = i; }} onPick={i => { G.pauseSel = i; press('Enter'); }} />
+        <Menu items={PAUSE_ITEMS} sel={G.pauseSel || 0} set={i => { G.pauseSel = i; }} />
       </div>
     </div>
   );
@@ -131,7 +127,7 @@ export function Settings() {
                   : <span class="value"><Key k="ArrowLeft" />{r.get()}<Key k="ArrowRight" /></span>}
               </Cell>
             ))}
-          <Cell cls="item center-t" sel={sel === ROWS.length} onEnter={() => { G.setSel = ROWS.length; }} onClick={() => { G.setSel = ROWS.length; press('Enter'); }}>Back</Cell>
+          <PickCell cls="item center-t" i={ROWS.length} sel={sel} set={i => { G.setSel = i; }}>Back</PickCell>
         </div>
         <p class="help">{cur?.help || ' '}</p>
         <footer class="foot">
@@ -146,26 +142,23 @@ export function Settings() {
 
 const CONTROLS_HELP = 'Choose an action and press Enter to change its key. The WASD keys also steer.' + (CHEATS_ENABLED ? ' Press ` or F2 while sailing for the cheat console.' : '') + ' Gamepad: stick steers, A casts, X docks, Y opens the chart, B goes back.';
 export function Controls() {
-  const sel = G.ctlSel || 0;
-  // rows past the actions: reset, then back
-  const extraRow = (i: number, label: string) => (
-    <Cell cls="item center-t" sel={sel === i} onEnter={() => { G.ctlSel = i; }} onClick={() => { G.ctlSel = i; press('Enter'); }}>{label}</Cell>
-  );
+  const sel = G.ctlSel || 0, set = (i: number) => { G.ctlSel = i; };
   return (
     <div class="center dim-bg">
       <div class="panel rivets dialog">
         <h1>Controls</h1>
         <div class="scroll">
           {ACTIONS.map((a, i) => (
-            <Cell sel={i === sel} onEnter={() => { G.ctlSel = i; }} onClick={() => { G.ctlSel = i; press('Enter'); }}>
+            <PickCell i={i} sel={sel} set={set}>
               <span>{a.label}</span>
               <span class="value">{G.rebinding === a.id
                 ? <span class="gold">Press a key</span>
                 : <><Key k={a.key} />{SET.binds[a.id] && <span class="muted small">default {keyLabel(a.key)}</span>}</>}</span>
-            </Cell>
+            </PickCell>
           ))}
-          {extraRow(ACTIONS.length, 'Reset to defaults')}
-          {extraRow(ACTIONS.length + 1, 'Back')}
+          {/* rows past the actions: reset, then back */}
+          <PickCell cls="item center-t" i={ACTIONS.length} sel={sel} set={set}>Reset to defaults</PickCell>
+          <PickCell cls="item center-t" i={ACTIONS.length + 1} sel={sel} set={set}>Back</PickCell>
         </div>
         <p class="help">{G.rebinding ? 'Press the new key, or Esc to cancel.' : CONTROLS_HELP}</p>
         <footer class="foot">
@@ -177,8 +170,6 @@ export function Controls() {
   );
 }
 
-// online status, captain name and accounts. Form fields keep their text in G.netForm, so the
-// per-frame redraw never wipes what you are typing.
 /** After signing in or making an account: sail on with the (possibly just loaded) save. */
 function enterGame(loaded: boolean): void {
   if (loaded || G.accountBack === 'title') {
@@ -188,6 +179,14 @@ function enterGame(loaded: boolean): void {
   G.mode = 'play';
 }
 const hadAccount = (): boolean => { try { return !!localStorage.getItem(HAD_ACCOUNT_KEY); } catch { return false; } };
+// The account form's email field takes focus when the form first appears, so typing (and Tab) works at once.
+let focusedForm = false;
+const focusOnce = (el: HTMLInputElement | null) => {
+  if (!el) { focusedForm = false; return; }
+  if (!focusedForm) { focusedForm = true; el.focus(); }
+};
+// online status, captain name and accounts. Form fields keep their text in G.netForm, so the per-frame redraw never
+// wipes what you are typing.
 export function Online() {
   const p = NET.profile;
   const f: NetForm = (G.netForm ||= { name: null, email: '', pass: '', show: false, mode: hadAccount() ? 'signIn' : 'signUp' });
@@ -220,8 +219,6 @@ export function Online() {
     const r = await deleteAccount();
     if (r.ok) say(r.msg ?? ''); else say(r.why, true);
   };
-  const onEnter = (fn: () => void) => (e: KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); fn(); } };
-  const setMode = (mode: NetForm['mode']) => () => { f.mode = mode; G.netMsg = null; };
   const status = NET.status !== 'online'
     ? (NET.status === 'connecting' ? 'Connecting to the server...' : 'Offline. The game still works, just without online features.')
     : p?.guest ? 'You are sailing as a guest. Make an account to keep your save on any device.'
@@ -235,15 +232,16 @@ export function Online() {
         <div class="form-row">
           <label class="caps" for="net-name">Captain</label>
           <input id="net-name" maxlength={18} autocomplete="off" value={f.name ?? p?.name ?? ''} ref={G.needName ? focusOnce : undefined}
-            onInput={e => { f.name = e.currentTarget.value; }} onKeyDown={onEnter(saveName)} />
+            onInput={e => { f.name = e.currentTarget.value; }} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void saveName(); } }} />
           <button data-track="name-save" class="btn" disabled={f.name === null || f.name === p?.name} onClick={saveName}>Save name</button>
         </div>
       )}
       {!G.needName && (NET.busy || (NET.authed && p?.guest)) && (   /* choosing a name shows just the name; the account can wait */
         <form class="account-box" onSubmit={submit}>
           <div class="seg">
-            <button data-track="mode-sign-up" type="button" class={'seg-btn' + (f.mode === 'signUp' ? ' on' : '')} onClick={setMode('signUp')}>Make an account</button>
-            <button data-track="mode-sign-in" type="button" class={'seg-btn' + (f.mode === 'signIn' ? ' on' : '')} onClick={setMode('signIn')}>I have an account</button>
+            {([['signUp', 'sign-up', 'Make an account'], ['signIn', 'sign-in', 'I have an account']] as const).map(([mode, id, label]) => (
+              <button data-track={`mode-${id}`} type="button" class={'seg-btn' + (f.mode === mode ? ' on' : '')} onClick={() => { f.mode = mode; G.netMsg = null; }}>{label}</button>
+            ))}
           </div>
           <div class="form-grid">
             <label class="caps" for="net-email">Email</label>
@@ -263,8 +261,8 @@ export function Online() {
       )}
       {NET.authed && p && !p.guest && !NET.busy && (
         <p class="row">
-          <button data-track="sign-out" class="btn" disabled={NET.busy} onClick={async () => { const r = await signOut(); if (r.ok) say('Signed out. You are sailing as a guest again'); else say(r.why, true); }}>Sign out</button>
-          <button data-track="account-delete" class={'btn' + (arming ? ' danger' : '')} disabled={NET.busy} onClick={removeAccount}>{arming ? 'Press again to delete' : 'Delete account'}</button>
+          <button data-track="sign-out" class="btn" onClick={async () => { const r = await signOut(); if (r.ok) say('Signed out. You are sailing as a guest again'); else say(r.why, true); }}>Sign out</button>
+          <button data-track="account-delete" class={'btn' + (arming ? ' danger' : '')} onClick={removeAccount}>{arming ? 'Press again to delete' : 'Delete account'}</button>
         </p>
       )}
       {G.netMsg && <p class={G.netMsg.bad ? 'why left' : 'good'}>{G.netMsg.msg}</p>}
@@ -281,9 +279,7 @@ export function EmotePick() {
     <div class="emote-pick panel">
       <div class="caps">Greet nearby sailors</div>
       {EMOTES.map((m, i) => (
-        <Cell sel={i === sel} onEnter={() => { G.emoteSel = i; }} onClick={() => { G.emoteSel = i; press('Enter'); }}>
-          <span class="key">{i + 1}</span><span>{m}</span>
-        </Cell>
+        <PickCell i={i} sel={sel} set={j => { G.emoteSel = j; }}><span class="key">{i + 1}</span><span>{m}</span></PickCell>
       ))}
     </div>
   );

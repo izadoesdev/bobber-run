@@ -9,7 +9,7 @@ const WATER = -0.07;                              // a little deeper than the be
 const MAX_NODES = 40_000;                         // gives up beyond this (a route across most of the known sea)
 const DIAG = Math.SQRT2;
 
-/** Open water at (x, y), with a little room either side. */
+/** Open water at (x, y), deep enough to keep off the beach. */
 const isWater = (x: number, y: number): boolean => heightAt(x, y) < WATER;
 /** Whether a boat can sail straight from a to b (checked every few units). */
 export function clearLine(a: Point, b: Point): boolean {

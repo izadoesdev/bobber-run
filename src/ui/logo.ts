@@ -1,8 +1,7 @@
 // Island logos: any picture the player picks becomes a small pixel-art flag. It's fitted into 32x32 (keeping its
 // shape), the colours are stepped to a few levels per channel, and see-through pixels are made fully clear, so every
 // logo matches the game's look and the upload stays a few kilobytes.
-export const LOGO_PX = 32;
-const LEVELS = 6, MAX_BYTES = 16_000;
+const LOGO_PX = 32, LEVELS = 6, MAX_BYTES = 16_000;
 
 export interface Logo { blob: Blob; url: string }
 export async function pixelLogo(file: Blob): Promise<Logo | { why: string }> {

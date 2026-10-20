@@ -1,6 +1,6 @@
 // Claimable islands. While sailing, only the owners' signs show (flag, name and a link if they've added one). Buying
 // and managing happen in the island card, opened from a port's Islands tab, from the sea chart, or by clicking a sign.
-import { W, H, money } from '../config';
+import { W, H, clamp, money } from '../config';
 import { G, saveGame } from '../game';
 import { claimableNear } from '../world';
 import { sfx } from '../audio';
@@ -12,27 +12,25 @@ import { viewPct } from './parts';
 import { track, bucket, flushAnalytics } from '../analytics';
 
 /** Owners' links open in a new tab, after saying plainly that they leave the game. */
-export function visit(url: string): void {
+function visit(url: string): void {
   if (confirm(`You're leaving Bobber Run to visit:\n${url}`)) window.open(url, '_blank', 'noopener,noreferrer');
 }
 const host = (url: string): string => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; } };
 
 /** The owners' signs over the claimed islands in view. */
 export function IslandSigns() {
-  const out = [];
-  for (const c of claimableNear(G.cam.x + W / 2, G.cam.y + H / 2, Math.hypot(W, H) / 2)) {
+  return <>{claimableNear(G.cam.x + W / 2, G.cam.y + H / 2, Math.hypot(W, H) / 2).map(c => {
     const row = ISLANDS.get(c.key);
-    if (!row) continue;
+    if (!row) return null;
     // over the island's middle, or held at the edge of the view while some of the island is on screen
-    const [cx, cy] = viewPct(c.x, c.y - c.R * 0.35), x = Math.min(90, Math.max(10, cx)), y = Math.min(85, Math.max(30, cy));   // clear of the top HUD
-    out.push(
+    const [cx, cy] = viewPct(c.x, c.y - c.R * 0.35), x = clamp(cx, 10, 90), y = clamp(cy, 30, 85);   // clear of the top HUD
+    return (
       <div class={'island-sign' + (row.mine ? ' mine' : '')} key={c.key} style={{ left: x + '%', top: y + '%' }}>
         <button data-track="island-sign" class="sign-main" onClick={() => openIsland(c.key, 'play')}>{row.logoUrl && <img src={row.logoUrl} alt="" />}<span>{row.name}</span></button>
         {row.url && <button data-track="island-sign-visit" class="sign-link" title={row.url} onClick={() => visit(row.url!)}>visit ↗</button>}
-      </div>,
+      </div>
     );
-  }
-  return <>{out}</>;
+  })}</>;
 }
 
 // ---------- the island card ----------
@@ -60,7 +58,6 @@ export function IslandDialog() {
     const r = await job();
     f.busy = false;
     if (r.ok) { say(done); sfx('coin'); } else { say(r.why ?? 'Something went wrong. Try again', true); sfx('deny'); }
-    return r.ok;
   };
   const pick = async (e: Event) => {
     const file = (e.currentTarget as HTMLInputElement).files?.[0];
@@ -78,7 +75,7 @@ export function IslandDialog() {
       if (r.ok && f.url.trim()) await setIslandUrl(key, f.url.trim());
       return r;
     }
-    const r = await buyIsland(key, f.name.trim(), admin || f.adult);
+    const r = await buyIsland(key, f.name.trim(), f.adult);
     if (!r.ok) return r;
     if (f.logo) await stashLogo(key, f.logo.blob);
     saveGame();
@@ -113,9 +110,9 @@ export function IslandDialog() {
         </header>
         {row?.mine && row.logoPending && <p class="muted small">Your new flag is waiting for review. Other sailors will see it once a moderator approves it.</p>}
         {(!row || row.mine) && <IslandForm f={f} onPick={pick} />}
-        {!row && !admin && <p class="muted small">Real money, paid securely with Stripe. Islands cost less the farther they are from Alderhaven, and you can own up to 3. Your name, flag and link show to every sailor.</p>}
-        {!row && !admin && <label class="row adult"><input data-track="island-adult" type="checkbox" checked={f.adult} onChange={e => { f.adult = e.currentTarget.checked; }} />
-          <span class="small">I'm 18 or older, or a parent or guardian said yes. <a href="/privacy.html#purchases" target="_blank" rel="noopener">About purchases</a></span></label>}
+        {!row && !admin && <><p class="muted small">Real money, paid securely with Stripe. Islands cost less the farther they are from Alderhaven, and you can own up to 3. Your name, flag and link show to every sailor.</p>
+          <label class="row adult"><input data-track="island-adult" type="checkbox" checked={f.adult} onChange={e => { f.adult = e.currentTarget.checked; }} />
+          <span class="small">I'm 18 or older, or a parent or guardian said yes. <a href="/privacy.html#purchases" target="_blank" rel="noopener">About purchases</a></span></label></>}
         {!row && NET.profile?.guest && <p class="why left">Sign in to buy islands, so yours stay yours on any device.</p>}
         {f.msg && <p class={f.msg.bad ? 'why left' : 'good'}>{f.msg.s}</p>}
         <footer class="foot">

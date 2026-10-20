@@ -13,7 +13,6 @@ import { boatDef, hpMax, keelLvl, speedMul, sailEfficiency, windAngle, toWorld }
 import { spawn, toast, jitter, burst } from './feedback';
 import { cancelFishing } from './fishing';
 
-
 // the hull outline as 18 points on an ellipse, slightly blunter at the stern
 const hullCache: Record<string, [number, number][]> = {};
 function hullPoints(): [number, number][] {
@@ -29,16 +28,19 @@ function hullPoints(): [number, number][] {
 }
 
 const RESTITUTION = 0.2, FRICTION = 0.35, DRAFT = 0.028;
-/** Piers and wrecks near the boat; refreshed once per frame rather than every physics step. */
-const solids: Solid[] = [], nearPois: Poi[] = [];
-export function refreshSolids(): void {
-  solids.length = 0;
-  for (const p of poisNear(G.boat.x, G.boat.y, 140, nearPois)) if (p.solid) solids.push(p.solid);
+const nearPois: Poi[] = [];
+/** The piers and wrecks within `rad` of the boat, into `out`. */
+export function solidsNear(rad: number, out: Solid[]): void {
+  out.length = 0;
+  for (const p of poisNear(G.boat.x, G.boat.y, rad, nearPois)) if (p.solid) out.push(p.solid);
 }
+/** Piers and wrecks near the boat; refreshed once per frame rather than every physics step. */
+const solids: Solid[] = [];
+export const refreshSolids = (): void => solidsNear(140, solids);
 
 interface Contact { pen: number; nx: number; ny: number }
-/** Penetration of point (px, py) into a pier segment or wreck circle, with the push-out normal. */
-function shapeContact(so: Solid, px: number, py: number): Contact | null {
+/** Penetration of point (px, py) into a pier segment or wreck circle grown by `pad`, with the push-out normal. */
+export function shapeContact(so: Solid, px: number, py: number, pad = 0): Contact | null {
   let cx: number, cy: number;
   if (so.kind === 'circ') { cx = so.x; cy = so.y; }
   else {
@@ -47,7 +49,7 @@ function shapeContact(so: Solid, px: number, py: number): Contact | null {
     cx = so.ax + dx * t; cy = so.ay + dy * t;
   }
   const d = Math.hypot(px - cx, py - cy);
-  if (d >= so.r) return null;
+  if (!(d < so.r + pad)) return null;                       // NaN (a zero-length pier) is no contact
   const inv = d > 1e-4 ? 1 / d : 0;
   return { pen: so.r - d, nx: (px - cx) * inv, ny: (py - cy) * inv };
 }

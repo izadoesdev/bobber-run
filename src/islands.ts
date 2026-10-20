@@ -5,10 +5,9 @@ import { G } from './game';
 import { claimableNear } from './world';
 import { NET, watchIslands, uploadIslandLogo, type IslandRow } from './net';
 import { toast } from './game/feedback';
-import { islandPrice } from '../convex/islandRules';
 import { track } from './analytics';
 
-export { islandPrice };
+export { islandPrice } from '../convex/islandRules';
 /** Owner, name and logo by island key ("i,j"); islands nobody owns are absent. */
 export const ISLANDS = new Map<string, IslandRow>();
 

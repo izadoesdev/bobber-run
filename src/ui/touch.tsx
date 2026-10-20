@@ -75,8 +75,9 @@ function sailorAt(x: number, y: number): string | null {
 function onSeaDown(e: PointerEvent): void {
   if (pinch(e, 'down')) return;
   if (e.button !== 0 || steering !== null || G.mode !== 'play' || overHud(e.clientX, e.clientY)) return;
-  if (boatClick) { const uid = sailorAt(...seaPoint(e.clientX, e.clientY)); if (uid) { boatClick(uid); return; } }
-  if (!setCourse(...seaPoint(e.clientX, e.clientY))) return;
+  const at = seaPoint(e.clientX, e.clientY), uid = boatClick && sailorAt(...at);
+  if (uid) { boatClick!(uid); return; }
+  if (!setCourse(...at)) return;
   steering = e.pointerId; sx = e.clientX; sy = e.clientY;
   canvas!.setPointerCapture(e.pointerId);
 }
@@ -111,12 +112,7 @@ function frame(): void {
 
 function Layer() {
   const c = G.mode === 'play' ? courseTarget() : null;
-  return (
-    <>
-      {c && <Pin x={c.x} y={c.y} />}
-      {touch && <Controls />}
-    </>
-  );
+  return <>{c && <Pin x={c.x} y={c.y} />}{touch && <Controls />}</>;
 }
 
 /** The course target: a small buoy-ring on the water. */
@@ -168,11 +164,11 @@ const MENU_GLYPH = <svg class="tglyph" viewBox="0 0 10 10"><path d="M1.5 2.5h7M1
 const CLOSE_GLYPH = <svg class="tglyph" viewBox="0 0 10 10"><path d="M2.5 2.5l5 5M7.5 2.5l-5 5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>;
 
 function Controls() {
-  const m = G.mode;
+  const m = G.mode, close = (label: string) => <Btn k="Escape" label={label}>{CLOSE_GLYPH}</Btn>;
   if (m === 'play') return <PlayControls />;
-  if (m === 'map') return <div class="tcorner"><Btn k="z" label="Zoom"><span class="tglyph text">{G.map.zoom === 1 ? '+' : '-'}</span></Btn><Btn k="Escape" label="Close">{CLOSE_GLYPH}</Btn></div>;
-  if (m === 'log' || m === 'ship' || m === 'journal' || m === 'emote') return <div class="tcorner"><Btn k="Escape" label="Close">{CLOSE_GLYPH}</Btn></div>;
-  if (m === 'talk') return <div class="tcorner top"><Btn k="Escape" label="Skip">{CLOSE_GLYPH}</Btn></div>;
+  if (m === 'map') return <div class="tcorner"><Btn k="z" label="Zoom"><span class="tglyph text">{G.map.zoom === 1 ? '+' : '-'}</span></Btn>{close('Close')}</div>;
+  if (m === 'log' || m === 'ship' || m === 'journal' || m === 'emote') return <div class="tcorner">{close('Close')}</div>;
+  if (m === 'talk') return <div class="tcorner top">{close('Skip')}</div>;
   return null;
 }
 

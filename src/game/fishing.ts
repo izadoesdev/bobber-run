@@ -8,8 +8,8 @@ import { sfx } from '../audio';
 import { SET } from '../prefs';
 import { netCatch } from '../net';
 import { track, bucket } from '../analytics';
-import type { BaitChoice, CatchCard, FightStyle, Fish, FishLine, FishStock, School, Species, TreasureMap } from '../types';
-import { G, hit, held } from './state';
+import type { BaitChoice, FightStyle, Fish, FishLine, FishStock, School, Species, TreasureMap } from '../types';
+import { G, boatDist, hit, held, nearest } from './state';
 import { boatDef, canLand, cap, catchNeed, crewLvl, env, harpoonLvl, isNight, lineMax, logged } from './rules';
 import { addCoins, burst, jitter, spawn, toast } from './feedback';
 import { placeAtPort, saveGame } from './save';
@@ -26,7 +26,7 @@ export const idleOk = (sp: Species): boolean => !sp.legend && sp.diff < 0.45;
 
 export const castRange = (): number => 50 + boatDef().L * 0.5;
 /** A new captain's first few fish can't get away: they hook themselves and the line never snaps. */
-export const learning = (): boolean => G.stats.caught < 3;
+const learning = (): boolean => G.stats.caught < 3;
 
 /**
  * A new voyage starts a few boat lengths from a school that bites now, bow pointing at it, so the first cast comes
@@ -44,28 +44,19 @@ export function placeByStarterSchool(): void {
   }
   placeAtPort(hp);
 }
-function nearestWhere(ok: (s: School) => boolean, range: number): School | null {
-  const b = G.boat;
-  let best: School | null = null, bestD = range;
-  for (const s of schoolsNear(b.x, b.y, 90)) {
-    if (!ok(s)) continue;
-    const d = Math.hypot(s.x - b.x, s.y - b.y);
-    if (d < bestD) { bestD = d; best = s; }
-  }
-  return best;
-}
 /** The closest biting school within casting range. */
-export const nearestSchool = (): School | null => nearestWhere(schoolActive, castRange());
+export const nearestSchool = (): School | null => nearest(schoolsNear(G.boat.x, G.boat.y, 90), schoolActive, castRange());
 
 export function cancelFishing(msg?: string): void {
   if (G.fish && msg) toast(msg);
   G.fish = null;
 }
+const deny = (msg: string): void => { toast(msg, 'bad'); sfx('deny'); };
 export function tryCast(s: School): void {
   const sp = SPECIES[s.sp];
-  if (G.hold.length >= cap()) { toast('Your hold is full. Sell your fish at a port', 'bad'); sfx('deny'); return; }
+  if (G.hold.length >= cap()) return deny('Your hold is full. Sell your fish at a port');
   const need = catchNeed(s.sp);
-  if (need) { toast(`${sp.name} ${need}`, 'bad'); sfx('deny'); return; }
+  if (need) return deny(`${sp.name} ${need}`);
   const bait = G.baitSel !== 'none' && G.bait[G.baitSel] > 0 ? G.baitSel : null;
   if (bait) G.bait[bait]--;
   G.fish = {
@@ -125,7 +116,7 @@ function castStage(f: FishLine): void {
   const rod = G.up.rod, sp = SPECIES[f.s.sp];
   const baitMul = (f.bait === 'glow' && isNight() ? 0.5 : f.bait ? 0.75 : 1) * (f.bait === favBait(sp) ? 0.8 : 1);
   f.wait = Math.max(0.4, 1 - 0.15 * G.dry) * (1.4 + Math.random() * 2.6) * (1 - 0.1 * rod) * (f.frenzy ? 0.4 : 1) * baitMul * biteMul() * (1 - 0.12 * G.up.tackle)
-    * (isRunningNow(SPECIES[f.s.sp].id) ? 0.75 : 1);           // this week's running fish bite sooner
+    * (isRunningNow(sp.id) ? 0.75 : 1);           // this week's running fish bite sooner
   f.teases = TEASES[sp.fight]().filter(before => before < f.wait - 0.3);
   spawn({ kind: 'ring', x: f.tx, y: f.ty, life: 0.9, r0: 1, grow: 5 });
   sfx('plop', 0.5);
@@ -176,16 +167,11 @@ function biteStage(f: FishLine, strike: boolean): void {
   const [perfectWin, biteWin] = f.win ??= strikeWindows();
   const auto = (crewLvl() >= 2 && f.t > 0.42) || (SET.strike === 'auto' && f.t > 0.3) || (learning() && f.t > Math.min(0.6, biteWin * 0.6));
   if (strike || auto) {
-    f.st = 'reel'; f.perfect = f.t < perfectWin; f.t = 0;
-    f.tension = f.perfect ? 0.1 : 0.25; f.prog = f.perfect ? 0.25 : 0.08; f.reeling = true; G.dry = 0;
-    sfx(f.perfect ? 'perfect' : 'plop');
-    hooked(f);
+    f.perfect = f.t < perfectWin; f.reeling = true;
+    hooked(f, f.perfect ? 0.1 : 0.25, f.perfect ? 0.25 : 0.08);
   } else if (f.t > biteWin) {
-    if (idleOk(sp)) {                                   // small fish hook themselves
-      f.st = 'reel'; f.t = 0; f.tension = 0.15; f.prog = 0.05; f.selfHooked = true; G.dry = 0;
-      sfx('plop');
-      hooked(f);
-    } else {
+    if (idleOk(sp)) { f.selfHooked = true; hooked(f, 0.15, 0.05); }   // small fish hook themselves
+    else {
       toast('It got away');
       track('fish_lost', { species: sp.id, reason: 'missed_strike' });
       f.st = 'wait'; f.t = 0;
@@ -194,8 +180,10 @@ function biteStage(f: FishLine, strike: boolean): void {
   }
 }
 
-/** The fish is on: make a perfect strike unmistakable (the reel panel names a golden fish). */
-function hooked(f: FishLine): void {
+/** The fish is on and the fight starts; a perfect strike is made unmistakable (the reel panel names a golden fish). */
+function hooked(f: FishLine, tension: number, prog: number): void {
+  f.st = 'reel'; f.t = 0; f.tension = tension; f.prog = prog; G.dry = 0;
+  sfx(f.perfect ? 'perfect' : 'plop');
   f.fx = f.tx; f.fy = f.ty;
   if (f.perfect) {
     burst('spark', f.tx, f.ty, 14, 34, 0.8);
@@ -279,19 +267,18 @@ function reelStage(f: FishLine, dt: number, strike: boolean): void {
 /** Weight, value and trophy roll; good strikes, bait, frenzies, storms and bad luck streaks help. */
 function rollCatch(spIdx: number, f: FishLine | null, small = false): Fish {
   const s = SPECIES[spIdx], gold = !!f?.gold;
-  let r = Math.pow(Math.random(), 2.2);
-  if (small) {                                          // the deckhand's catch: a small one, about 60% of the usual value, no trophy roll
-    r *= 0.4;
-    return { sp: spIdx, kg: Math.round((s.kg[0] + (s.kg[1] - s.kg[0]) * r) * 100) / 100, value: Math.max(1, Math.round(s.base * (0.55 + 0.9 * r) * 0.75)), trophy: false, t: G.clock };
+  let r = Math.pow(Math.random(), 2.2), trophy = false;
+  if (small) r *= 0.4;                                  // the deckhand's catch: a small one, about 60% of the usual value, no trophy roll
+  else {
+    if (f?.perfect) r = Math.min(1, r + 0.1);
+    const baitBonus = f?.bait === 'shrimp' ? 0.05 : f?.bait === 'glow' ? 0.12 : 0;
+    const chance = Math.min(0.3, 0.04 + G.pity * 0.006) + baitBonus + (f?.frenzy ? 0.1 : 0) + (f?.perfect ? 0.04 : 0) + trophyBonus();
+    trophy = gold || Math.random() < chance;                        // a golden fish is always a trophy, and worth more
+    if (trophy) { r = Math.max(r, 0.82 + Math.random() * 0.18); G.pity = 0; }
+    else G.pity++;
   }
-  if (f?.perfect) r = Math.min(1, r + 0.1);
-  const baitBonus = f?.bait === 'shrimp' ? 0.05 : f?.bait === 'glow' ? 0.12 : 0;
-  const chance = Math.min(0.3, 0.04 + G.pity * 0.006) + baitBonus + (f?.frenzy ? 0.1 : 0) + (f?.perfect ? 0.04 : 0) + trophyBonus();
-  const trophy = gold || Math.random() < chance;                    // a golden fish is always a trophy, and worth more
-  if (trophy) { r = Math.max(r, 0.82 + Math.random() * 0.18); G.pity = 0; }
-  else G.pity++;
   const kg = Math.round((s.kg[0] + (s.kg[1] - s.kg[0]) * r) * 100) / 100;
-  const fish: Fish = { sp: spIdx, kg, value: Math.max(1, Math.round(s.base * (0.55 + 0.9 * r) * (gold ? GOLD_VALUE : trophy ? 1.8 : 1))), trophy, t: G.clock };
+  const fish: Fish = { sp: spIdx, kg, value: Math.max(1, Math.round(s.base * (0.55 + 0.9 * r) * (small ? 0.75 : gold ? GOLD_VALUE : trophy ? 1.8 : 1))), trophy, t: G.clock };
   if (gold) fish.gold = true;
   return fish;
 }
@@ -306,7 +293,7 @@ function spotsWith(was: [number, number][] | undefined, stock: FishStock): [numb
   return [here, ...rest].slice(0, SPOTS);
 }
 /** Put a fish in the hold and update stock, logbook, records and stats. Returns what the card shows. */
-function recordCatch(spIdx: number, stock: FishStock, f: FishLine | null, method: 'rod' | 'net' | 'deckhand' | 'pots'): { fish: Fish; first: boolean; record: boolean; firstTrophy: boolean } {
+function recordCatch(spIdx: number, stock: FishStock, f: FishLine | null, method: Method): { fish: Fish; first: boolean; record: boolean; firstTrophy: boolean } {
   const sp = SPECIES[spIdx], fish = rollCatch(spIdx, f, method === 'deckhand');
   G.hold.push(fish);
   takeFish(stock);
@@ -314,7 +301,7 @@ function recordCatch(spIdx: number, stock: FishStock, f: FishLine | null, method
   const prev = G.log[sp.id];
   const first = !prev, record = !!prev && fish.kg > prev.best, firstTrophy = fish.trophy && !prev?.trophy;
   G.log[sp.id] = { n: (prev?.n || 0) + 1, best: Math.max(prev?.best || 0, fish.kg), trophy: !!(prev?.trophy || fish.trophy), at: spotsWith(prev?.at, stock) };
-  if (!prev || fish.kg > prev.best) netCatch(sp.id, fish.kg, G.cheated);          // a personal best goes on the world record board
+  if (first || record) netCatch(sp.id, fish.kg, G.cheated);          // a personal best goes on the world record board
   G.stats.caught++;
   track('fish_caught', { species: sp.id, method, kg_bucket: bucket(fish.kg), trophy: !!fish.trophy, golden: !!fish.gold, legend: !!sp.legend,
     first, perfect: !!f?.perfect, rod: G.up.rod });
@@ -348,9 +335,7 @@ function landHooked(f: FishLine): void {
   const spIdx = f.s.sp, sp = SPECIES[spIdx];
   const { fish, first, record } = recordCatch(spIdx, f.s, f, 'rod');
   if (fish.gold) f.s.gold = false;
-  const bonus = bottleBonus(sp);
-  const card: CatchCard = { fish, first, record, perfect: f.perfect, bonus, t: 0 };
-  G.card = card;
+  G.card = { fish, first, record, perfect: f.perfect, bonus: bottleBonus(sp), t: 0 };
   sfx(fish.trophy || first ? 'fanfare' : 'catch');
   if (G.pet && Math.random() < 0.35) setTimeout(() => sfx('meow', 0.6), 900);   // the cat approves
   G.catchAnim = { sp: spIdx, t: 0, x: f.fx ?? f.tx, y: f.fy ?? f.ty };
@@ -360,12 +345,13 @@ function landHooked(f: FishLine): void {
   saveGame();
 }
 
-export type Catcher = 'NETTED' | 'DECKHAND' | 'POTS';
+type Method = 'rod' | 'net' | 'deckhand' | 'pots';
+/** How each catch made without the rod is tracked, and how its toast starts. */
+const CATCHERS = { NETTED: ['net', 'Your drift net caught'], DECKHAND: ['deckhand', 'Your deckhand landed'], POTS: ['pots', 'Your crab pots hauled'] } as const;
 /** A catch made without the rod: the drift net, crab pots or the deckhand. */
-export function landNetted(spIdx: number, stock: FishStock, who: Catcher = 'NETTED'): void {
-  const sp = SPECIES[spIdx];
-  const { fish, firstTrophy } = recordCatch(spIdx, stock, null, who === 'DECKHAND' ? 'deckhand' : who === 'POTS' ? 'pots' : 'net');
-  const by = who === 'DECKHAND' ? 'Your deckhand landed' : who === 'POTS' ? 'Your crab pots hauled' : 'Your drift net caught';
+export function landNetted(spIdx: number, stock: FishStock, who: keyof typeof CATCHERS = 'NETTED'): void {
+  const sp = SPECIES[spIdx], [method, by] = CATCHERS[who];
+  const { fish, firstTrophy } = recordCatch(spIdx, stock, null, method);
   // the drift net works every few seconds, so it only speaks up for a trophy; the deckhand and pots always say so
   if (who !== 'NETTED' || firstTrophy) toast(`${by} ${firstTrophy ? 'a trophy ' : ''}${sp.name}, ${fmtKg(fish.kg)}`, firstTrophy ? 'good' : 'info');
   sfx('coin', 0.5);
@@ -415,9 +401,8 @@ export function updateFrenzy(dt: number): void {
     G.nextFrenzy = G.t + (70 + Math.random() * 50) * (G.up.radio ? 0.65 : 1);
   }
   if (!G.frenzy && G.t > G.nextFrenzy) {
-    const b = G.boat;
-    const cands = schoolsNear(b.x, b.y, 420).filter(s => {
-      const d = Math.hypot(s.x - b.x, s.y - b.y);
+    const cands = schoolsNear(G.boat.x, G.boat.y, 420).filter(s => {
+      const d = boatDist(s);
       return d > 120 && d < 420 && activeAt(s.sp, env()) && canLand(s.sp) && frenzyOk(s);
     });
     if (cands.length) {
@@ -429,10 +414,9 @@ export function updateFrenzy(dt: number): void {
   }
 }
 export function useChum(): void {
-  if (!(G.bait.chum > 0)) { toast('No chum. Buy some at a port', 'bad'); sfx('deny'); return; }
-  const b = G.boat, dist = (q: School) => Math.hypot(q.x - b.x, q.y - b.y);
-  const s = schoolsNear(b.x, b.y, 170).filter(q => schoolActive(q) && frenzyOk(q)).sort((p, q) => dist(p) - dist(q))[0];
-  if (!s) { toast('No school close enough to chum', 'bad'); sfx('deny'); return; }
+  if (!(G.bait.chum > 0)) return deny('No chum. Buy some at a port');
+  const s = nearest(schoolsNear(G.boat.x, G.boat.y, 170), q => schoolActive(q) && frenzyOk(q));
+  if (!s) return deny('No school close enough to chum');
   G.bait.chum--;
   startFrenzy(s, 45);
   sfx('splash'); sfx('gulls');

@@ -4,9 +4,9 @@
 import { SPECIES, SP, UPGRADES, PROJECTS, BOATS } from '../econ';
 import { poisNear, schoolsNear, homePort, LAIR } from '../world';
 import { SET } from '../prefs';
-import { currentQuest, type Quest, type QuestTarget } from '../story';
-import type { BoatDef, Point, Port, Project, ProjectId, School, UpgradeKey } from '../types';
-import { G } from './state';
+import { currentQuest, type Quest } from '../story';
+import type { BoatDef, Poi, Point, Port, Project, ProjectId, School, UpgradeKey } from '../types';
+import { G, boatDist, nearest } from './state';
 import { boatDef, canLand, cap, hpMax, isNight, dayFrac, DAYLEN, logged, projDone } from './rules';
 import { needStatus, nextProject } from './port';
 import { castRange } from './fishing';
@@ -14,7 +14,7 @@ import { portById } from './save';
 import { schoolActive, schoolShown } from './schools';
 import { dirTo, money } from '../config';
 
-// The player's setting for the objective marker: `guide` in Settings (lead-owned), on unless set to false.
+/** Whether the objective marker is on (the `guide` setting). */
 export const guideOn = (): boolean => SET.guide;
 
 export interface Step {
@@ -29,21 +29,13 @@ export interface Step {
 }
 
 // ---------- places ----------
-const dist = (p: Point): number => Math.hypot(p.x - G.boat.x, p.y - G.boat.y);
-function nearest<T extends Point>(list: Iterable<T>, ok: (p: T) => boolean = () => true): T | null {
-  let best: T | null = null, bd = Infinity;
-  for (const p of list) {
-    if (!ok(p)) continue;
-    const d = dist(p);
-    if (d < bd) { bd = d; best = p; }
-  }
-  return best;
-}
+const chartedPorts = (): Port[] => [...G.found].filter(id => id.startsWith('port:')).map(portById);
 /** The nearest charted port. */
-export function nearestPort(): Port {
-  return nearest([...G.found].filter(id => id.startsWith('port:')).map(portById)) || homePort();
-}
+const nearestPort = (): Port => nearest(chartedPorts()) || homePort();
 const SEARCH = 2600;
+/** The nearest landmark within SEARCH that passes `ok`. */
+const poiNear = (ok: (p: Poi) => boolean): Poi | null => nearest(poisNear(G.boat.x, G.boat.y, SEARCH), ok);
+const full = (): boolean => G.hold.length >= cap();
 const dockNear = (): number => 30 + boatDef().L;
 const canCatch = (s: School): boolean => !s.boss && canLand(s.sp);
 /** The nearest school that will bite now and that your rod can land, optionally of a kind. */
@@ -55,6 +47,8 @@ function nearestSchool(ok: (s: School) => boolean = () => true, rad = 700): Scho
 const at = (text: string, p: Point | null | undefined, icon: string, near: number): Step => p ? { text, at: { x: p.x, y: p.y }, icon, near } : { text, icon, near };
 const clock = (s: number): string => s >= 60 ? `${Math.round(s / 60)} min` : `${Math.max(1, Math.round(s))} s`;
 const fishN = (n: number): string => n === 1 ? '1 fish' : `${n} fish`;
+/** A step at `p`, or when there is none, the `lost` text with nowhere to point. */
+const seek = (p: Point | null | undefined, text: string, lost: string, icon: string, near: number): Step => p ? at(text, p, icon, near) : { text: lost, icon, near: 0 };
 
 function sellStep(): Step {
   const p = nearestPort();
@@ -62,12 +56,10 @@ function sellStep(): Step {
 }
 /** Go fishing for `text`; a full hold means selling first. `ok` narrows the schools worth sailing to. */
 function fishStep(text: string, ok?: (s: School) => boolean, rad?: number): Step {
-  if (G.hold.length >= cap()) return sellStep();
-  const s = nearestSchool(ok, rad);
-  return s ? at(text, s, 'rod', castRange()) : { text: `${text}. Look for ripples`, icon: 'rod', near: 0 };
+  return full() ? sellStep() : seek(nearestSchool(ok, rad), text, `${text}. Look for ripples`, 'rod', castRange());
 }
 function earnStep(amount: number, what: string): Step {
-  if (G.hold.length >= cap() || (G.hold.length > 0 && dist(nearestPort().end) < dockNear() * 1.5)) return sellStep();
+  if (full() || (G.hold.length > 0 && boatDist(nearestPort().end) < dockNear() * 1.5)) return sellStep();
   return fishStep(`Catch and sell fish to earn ${money(amount)} more for ${what}`);
 }
 function buyStep(k: UpgradeKey, what: string): Step {
@@ -95,31 +87,23 @@ function projectStep(pr: Project): Step {
     if ('trophy' in nd) return fishStep(`Catch ${left} more trophy fish for ${name}`);
     if (nd.sp === 'oldone') return lairStep();
     const sp = SP[nd.sp];
-    const r = rodFor(sp);
-    if (r) return r;
-    if (nd.sp === 'beacon') return beaconStep(left);
-    return fishStep(`Catch ${left} more ${SPECIES[sp].name}`, s => s.sp === sp, SEARCH / 2);
+    return rodFor(sp) ?? (nd.sp === 'beacon' ? beaconStep(left) : fishStep(`Catch ${left} more ${SPECIES[sp].name}`, s => s.sp === sp, SEARCH / 2));
   }
   return at(`Fund ${name} in the Harbour tab at ${home.name}`, home.end, 'anchor', dockNear());
 }
 function beaconStep(left: number): Step {
-  if (G.hold.length >= cap()) return sellStep();
-  const lights = poisNear(G.boat.x, G.boat.y, SEARCH).filter(p => p.type === 'light' && G.found.has(p.id) && p.school);
-  const L = nearest(lights), s = L?.school;
-  const what = `Catch ${left} more Beaconfish`;
-  if (!s) return { text: `${what} below a lighthouse at night`, icon: 'glow', near: 0 };
-  if (!isNight()) return at(`${what} below ${L.name} after dark, in ${clock(untilNight())}`, s, 'glow', castRange());
-  return at(`${what} below ${L.name}`, s, 'glow', castRange());
+  if (full()) return sellStep();
+  const L = poiNear(p => p.type === 'light' && G.found.has(p.id) && !!p.school), what = `Catch ${left} more Beaconfish`;
+  if (!L?.school) return { text: `${what} below a lighthouse at night`, icon: 'glow', near: 0 };
+  return at(`${what} below ${L.name}${isNight() ? '' : ` after dark, in ${clock(untilNight())}`}`, L.school, 'glow', castRange());
 }
 function lairStep(): Step {
-  const r = rodFor(SP.oldone);
-  if (r) return r;
-  if (!isNight()) return at(`Sail to the Old One's lair. It comes up at night, in ${clock(untilNight())}`, LAIR, 'moon', castRange());
-  return at('Catch the Old One at its lair', LAIR, 'moon', castRange());
+  return rodFor(SP.oldone) ?? at(isNight() ? 'Catch the Old One at its lair'
+    : `Sail to the Old One's lair. It comes up at night, in ${clock(untilNight())}`, LAIR, 'moon', castRange());
 }
 
 function questStep(q: Quest): Step {
-  const t: QuestTarget = q.target, b = G.boat;
+  const t = q.target, b = G.boat;
   if (typeof t === 'object') {
     const pr = PROJECTS.find(p => p.id === t.project);
     return pr ? projectStep(pr) : { text: q.goal, icon: 'star', near: 0 };
@@ -127,41 +111,29 @@ function questStep(q: Quest): Step {
   switch (t) {
     case 'school': return fishStep('Catch fish at the school');
     case 'sell': return G.hold.length ? sellStep() : fishStep('Catch a fish to sell');
-    case 'port': {
-      const p = nearest(poisNear(b.x, b.y, SEARCH), p => p.type === 'port' && !G.found.has(p.id));
-      return p ? at('Sail close to the new port to chart it', p, 'anchor', 60) : { text: 'Explore the coast to find another port', icon: 'anchor', near: 0 };
-    }
-    case 'light': {
-      const p = nearest(poisNear(b.x, b.y, SEARCH), p => p.type === 'light' && !G.found.has(p.id));
-      return p ? at('Sail close to the lighthouse to chart it', p, 'lantern', 60) : { text: 'Explore the coast to find lighthouses', icon: 'lantern', near: 0 };
-    }
-    case 'wreck': {
-      const p = nearest(poisNear(b.x, b.y, SEARCH), p => p.type === 'wreck' && !G.salvaged.has(p.id));
-      return p ? at('Salvage the wreck', p, 'map', 30 + boatDef().L * 0.5) : { text: 'Explore the coast to find a wreck', icon: 'map', near: 0 };
-    }
-    case 'night':
-      if (!isNight()) return fishStep(`Night falls in ${clock(untilNight())}. Fish until then`);
-      return fishStep('Catch a fish while it is night');
+    case 'port': return seek(poiNear(p => p.type === 'port' && !G.found.has(p.id)), 'Sail close to the new port to chart it', 'Explore the coast to find another port', 'anchor', 60);
+    case 'light': return seek(poiNear(p => p.type === 'light' && !G.found.has(p.id)), 'Sail close to the lighthouse to chart it', 'Explore the coast to find lighthouses', 'lantern', 60);
+    case 'wreck': return seek(poiNear(p => p.type === 'wreck' && !G.salvaged.has(p.id)), 'Salvage the wreck', 'Explore the coast to find a wreck', 'map', 30 + boatDef().L * 0.5);
+    case 'night': return fishStep(isNight() ? 'Catch a fish while it is night' : `Night falls in ${clock(untilNight())}. Fish until then`);
     case 'north': return at('Sail north into the cold water', { x: b.x, y: Math.min(b.y - 200, -1950) }, 'arrow', 0);
     case 'species': return speciesStep();
     case 'trophy': return fishStep(G.baitSel === 'none' ? 'Catch a trophy fish. Bait helps' : 'Catch a trophy fish');
     case 'ghost': {
       const r = rodFor(SP.ghost);
       if (r) return r;
-      if (G.hold.length >= cap()) return sellStep();
-      const w = nearest(poisNear(b.x, b.y, SEARCH), p => p.type === 'wreck' && p.school?.sp === SP.ghost && schoolShown(p.school));
-      return w?.school ? at('Fish for the Ghost Carp by the wreck', w.school, 'map', castRange())
-        : { text: 'Search far-off wrecks for the Ghost Carp', icon: 'map', near: 0 };
+      if (full()) return sellStep();
+      const w = poiNear(p => p.type === 'wreck' && p.school?.sp === SP.ghost && schoolShown(p.school));
+      return seek(w?.school, 'Fish for the Ghost Carp by the wreck', 'Search far-off wrecks for the Ghost Carp', 'map', castRange());
     }
     case 'lair': return lairStep();
   }
 }
 function speciesStep(): Step {
   const fresh = (s: School): boolean => !G.log[SPECIES[s.sp].id];
-  const s = G.hold.length < cap() ? nearestSchool(fresh, 900) : null;
+  if (full()) return sellStep();
+  const s = nearestSchool(fresh, 900), rodCost = UPGRADES.rod.costs[G.up.rod];
   if (s) return at('Catch a new species for your logbook', s, 'rod', castRange());
-  if (G.hold.length >= cap()) return sellStep();
-  if (UPGRADES.rod.costs[G.up.rod] !== undefined && G.coins >= UPGRADES.rod.costs[G.up.rod]) return buyStep('rod', 'rod');
+  if (rodCost !== undefined && G.coins >= rodCost) return buyStep('rod', 'rod');
   return { text: isNight() ? 'Fish in new places to find new species' : 'Fish in new places, or wait for night', icon: 'rod', near: 0 };
 }
 // after the story: the next harbour project, else the next upgrade you can afford, else the logbook
@@ -172,13 +144,13 @@ const nextBoat = (): BoatDef | undefined => BOATS.find(b => !G.owned.includes(b.
 /** Buy the next boat at a shipyard, or earn toward it. The bigger ships open sea giants (Trawler) and the very largest (Flagship). */
 function boatStep(b: BoatDef): Step {
   if (G.coins < b.cost) return earnStep(b.cost - G.coins, `the ${b.name}`);
-  const yards = [...G.found].filter(id => id.startsWith('port:')).map(portById).filter(p => p.shipyard), p = nearest(yards) || homePort();
+  const p = nearest(chartedPorts(), p => !!p.shipyard) || homePort();
   return at(`Buy the ${b.name} at ${p.name}'s shipyard for ${money(b.cost)}`, p.end, 'anchor', dockNear());
 }
 function freeStep(): Step {
   const pr = nextProject();
   if (pr) return projectStep(pr);
-  if (G.hold.length >= cap()) return sellStep();
+  if (full()) return sellStep();
   const k = UPGRADE_ORDER.find(k => { const u = UPGRADES[k], c = u.costs[G.up[k]]; return c !== undefined && c <= G.coins && (!u.req || projDone(u.req)); });
   if (k) return buyStep(k, UPGRADES[k].name(boatDef()).toLowerCase());
   const b = nextBoat();
@@ -206,7 +178,7 @@ export function guide(): Step {
 /** "120 m north-east" from the boat, or '' when the place is right here. */
 export function whereText(s: Step): string {
   if (!s.at) return '';
-  const d = Math.hypot(s.at.x - G.boat.x, s.at.y - G.boat.y);
+  const d = boatDist(s.at);
   if (d < Math.max(s.near, 25)) return '';
   return `${Math.max(1, Math.round(d / 10))} m ${dirTo(G.boat.x, G.boat.y, s.at.x, s.at.y)}`;
 }
@@ -218,12 +190,12 @@ export function stepLine(s: Step = guide()): string {
 /** Whether the marker should show: on, a place to show, not fishing, not already there. */
 export function markerTarget(s: Step = guide()): Point | null {
   if (!guideOn() || !s.at || G.fish || G.card || G.mode !== 'play') return null;
-  return dist(s.at) < s.near ? null : s.at;
+  return boatDist(s.at) < s.near ? null : s.at;
 }
 
 // ---------- first-session tips ----------
 const TIP_KEY = 'bobber-run-tips';
-export type TipId = 'hull' | 'night';
+type TipId = 'hull' | 'night';
 // only what no prompt or toast already says: the cast and dock prompts teach fishing and selling, and the weather
 // and a full hold get their own toasts
 const TIPS: { id: TipId; text: string; when: () => boolean }[] = [
