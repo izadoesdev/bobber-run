@@ -25,6 +25,10 @@ import { initTelemetry, watchGame } from './telemetry';
 import { forceName } from './ui/menus';
 import { baseScale, targetScale, easeScale, shipZoom } from './camera';
 
+// dev builds with ?stats: GPU and CPU time per frame (stats-gl), to find what makes laptops run hot. Never in production.
+let perf: { begin(): void; end(): void; update(): void } | null = null;
+if (import.meta.env.DEV && new URLSearchParams(location.search).has('stats'))
+  void import('stats-gl').then(async ({ default: Stats }) => { const s = new Stats({ trackGPU: true }); await s.init(document.getElementById('screen')); document.body.appendChild(s.dom); perf = s; });
 let netFailed = false;                                // reported once: a network error must not flood analytics
 const screen = document.getElementById('screen') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLDivElement;
@@ -95,8 +99,9 @@ export function tick(dt: number): void {
   if (G.mode === 'play' && (trimT -= dt) <= 0) { trimT = 2; trimWorld(G.cam.x + W / 2, G.cam.y + H / 2, Math.max(W, H)); }   // forget the sea far behind (not while the chart looks far afield)
   if (noRender) return;
   if (!SET.shake) { G.shakeX = 0; G.shakeY = 0; }
-  render(alpha);
+  perf?.begin(); render(alpha); perf?.end();
   drawUI();
+  perf?.update();
   prefetch(3);
 }
 // Frame pacing: 120 Hz screens would otherwise draw twice as often as anyone can see, which is what makes laptops run
