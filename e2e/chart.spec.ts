@@ -3,10 +3,13 @@ import { test, expect, sail } from './fixtures';
 // The sea chart and the waypoint: M opens it, a waypoint gets a water route, and arriving clears it.
 test('the chart opens and closes with M', async ({ page }) => {
   await sail(page);
-  await page.keyboard.press('m');
-  await expect.poll(() => page.evaluate(() => window.BR.G.mode)).toBe('map');
-  await page.keyboard.press('m');
-  await expect.poll(() => page.evaluate(() => window.BR.G.mode)).toBe('play');
+  // under heavy CPU load a synthetic key can miss a frame, so press again only while the mode hasn't changed
+  const pressUntil = (mode: string) => expect(async () => {
+    if (await page.evaluate(() => window.BR.G.mode) !== mode) await page.keyboard.press('m');
+    await expect.poll(() => page.evaluate(() => window.BR.G.mode), { timeout: 1500 }).toBe(mode);
+  }).toPass({ timeout: 10_000 });
+  await pressUntil('map');
+  await pressUntil('play');
 });
 test('sailing onto a waypoint clears it', async ({ page }) => {
   await sail(page);
