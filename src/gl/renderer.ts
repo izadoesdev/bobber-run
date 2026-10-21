@@ -10,7 +10,7 @@ import { SPECIES, BOATS, activeAt } from '../econ';
 import { biomeMix, coldness, warmth } from '../biome';
 import { schoolLook } from '../species';
 import { DIVE_S, SCATTER_S, schoolDrawR } from '../game/schools';
-import { landmarkKind, onGrounds } from '../landmarks';
+import { LAMP_Z, landmarkKind, onGrounds } from '../landmarks';
 import { G, darkness, lightR, schoolActive, isNight, dayFrac, equipment, windAngle, boatDef, env } from '../game';
 import { WX } from '../weather';
 import { LIFE, type Whale, type Giant } from '../life';
@@ -791,8 +791,6 @@ function environment(cy: number): Env {
 
 // ---------- point lights and lighthouse beams (uniform arrays, reused every frame) ----------
 const MAX_LIGHTS = 16, MAX_BEAMS = 6;
-/** Lamp height of each lighthouse design in landmarks.ts (the lantern rooms sit at z 28, 27 and 30, lamp +2.5). */
-const LAMP_Z = [30.5, 29.5, 32.5];
 const LT = {
   /** x, y, radius, strength per light; rgb and height per light; x, y, angle, length and height per beam */
   L: new Float32Array(MAX_LIGHTS * 4), LC: new Float32Array(MAX_LIGHTS * 3), LZ: new Float32Array(MAX_LIGHTS),
