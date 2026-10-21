@@ -75,12 +75,18 @@ function refill(mesh: Mesh, data: Float32Array, n: number): void {
   if (n) gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW, 0, n);
   mesh.count = n / VERT;
 }
-/** Draws n instances (INST floats each, from the start of inst). */
-export function drawInstances(mesh: Mesh, inst: Float32Array, n: number): void {
-  if (!n || !mesh.count) return;
+/** Uploads a frame's instances once (INST floats each), for drawInstances to draw slices of. */
+export function uploadInstances(inst: Float32Array, n: number): void {
   gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
   gl.bufferData(gl.ARRAY_BUFFER, inst, gl.STREAM_DRAW, 0, n * INST);
+}
+/** Draws n instances starting at instance `first` of the frame's upload: the mesh's instance attributes are pointed
+ *  at that slice (WebGL2 has no base-instance draw), so a frame uploads once instead of once per mesh and pass. */
+export function drawInstances(mesh: Mesh, first: number, n: number): void {
+  if (!n || !mesh.count) return;
   gl.bindVertexArray(mesh.vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  for (let k = 0; k < 3; k++) gl.vertexAttribPointer(3 + k, 4, gl.FLOAT, false, INST * 4, (first * INST + k * 4) * 4);
   if (mesh.ibo) gl.drawElementsInstanced(gl.TRIANGLES, mesh.count, mesh.itype, 0, n);
   else gl.drawArraysInstanced(gl.TRIANGLES, 0, mesh.count, n);
   gl.bindVertexArray(null);

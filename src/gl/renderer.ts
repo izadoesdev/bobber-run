@@ -419,7 +419,7 @@ function room(arr: Float32Array<ArrayBuffer>, need: number): Float32Array<ArrayB
 }
 
 // ---------- instance pools ----------
-interface Pool { mesh: MS.Mesh; arr: Float32Array<ArrayBuffer>; n: number }
+interface Pool { mesh: MS.Mesh; arr: Float32Array<ArrayBuffer>; n: number; first: number }
 const POOLS = [new Map<MS.Mesh, Pool>(), new Map<MS.Mesh, Pool>()];   // [casts shadow, no shadow]
 // tint: a brightness or an [r,g,b]; glow: how strongly the mesh's glowable voxels shine (lamps 1, sea life by night);
 // clear: how slowly it fades into the water below the waterline (1 for hulls; sea life shows through a little more)
@@ -427,7 +427,7 @@ function inst(mesh: MS.Mesh, x: number, y: number, yaw = 0, scale = 1, z = 0, pi
   tint: number | readonly number[] = 1, glow = 1, clear = 1): void {
   const pool = POOLS[noShadow ? 1 : 0];
   let e = pool.get(mesh);
-  if (!e) { e = { mesh, arr: new Float32Array(MS.INST * 32), n: 0 }; pool.set(mesh, e); }
+  if (!e) { e = { mesh, arr: new Float32Array(MS.INST * 32), n: 0, first: 0 }; pool.set(mesh, e); }
   const A = e.arr = room(e.arr, (e.n + 1) * MS.INST), o = e.n * MS.INST, mono = typeof tint === 'number';
   A[o] = x; A[o + 1] = y; A[o + 2] = yaw; A[o + 3] = scale;
   A[o + 4] = z; A[o + 5] = pitch; A[o + 6] = roll; A[o + 7] = glow;
@@ -1007,7 +1007,18 @@ const viewPois: Poi[] = [];
 // other players' boats, gathered once per frame
 const fleet: Sailor[] = [];
 function gatherFleet(): void { fleet.length = 0; for (const s of ONLINE.sailors) fleet.push(s); }
-const drawPool = (e: Pool) => MS.drawInstances(e.mesh, e.arr, e.n);
+// every pool's instances (and the oars' one) go up in one upload per frame; each draw points at its own slice
+let packed = new Float32Array(MS.INST * 1024), dynFirst = 0;
+function uploadPools(): void {
+  let n = 1;
+  for (const P of POOLS) P.forEach(e => { n += e.n; });
+  if (n * MS.INST > packed.length) { let L = packed.length; while (L < n * MS.INST) L *= 2; packed = new Float32Array(L); }
+  let at = 0;
+  for (const P of POOLS) P.forEach(e => { e.first = at; packed.set(e.arr.subarray(0, e.n * MS.INST), at * MS.INST); at += e.n; });
+  dynFirst = at; packed.set(DYN, at * MS.INST); at++;
+  MS.uploadInstances(packed, at);
+}
+const drawPool = (e: Pool) => MS.drawInstances(e.mesh, e.first, e.n);
 function drawMeshes(mode: 0 | 1, F: Field, E: Env, Lt: Lights): void {
   const pg = PG.mesh;
   gl.useProgram(pg.p);
@@ -1018,7 +1029,7 @@ function drawMeshes(mode: 0 | 1, F: Field, E: Env, Lt: Lights): void {
   }
   POOLS[0].forEach(drawPool);
   if (mode === 0) POOLS[1].forEach(drawPool);       // sea life and other no-shadow meshes skip the shadow pass
-  MS.drawInstances(MS.dynMesh(DYN[0], DYN[1]), DYN, 1);
+  MS.drawInstances(MS.dynMesh(DYN[0], DYN[1]), dynFirst, 1);
 }
 // the share of each frame buffer this frame uses (its view can be smaller than the buffers)
 const UVS = [1, 1];
@@ -1083,6 +1094,7 @@ export function render(alpha: number): void {
   const fw = Math.ceil(((CAM[2] + PAD * 2 + SNAP) / fs + 2) * FR), fh = Math.ceil(((CAM[3] + PAD * 2 + SNAP) / fs + 2) * FR);
   gl.enable(gl.SCISSOR_TEST); gl.scissor(0, 0, fw, fh);
   into(F.shadow); gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  uploadPools();
   drawMeshes(1, F, E, Lt);
   // 2. foam / ripple stamps
   into(F.foam); gl.clear(gl.COLOR_BUFFER_BIT);
