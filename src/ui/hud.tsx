@@ -2,6 +2,7 @@
 // the day on its ring) top right, and the rest only when it matters: hull when damaged, bait by a school, contracts
 // while you hold some, key hints until the first catches. The reel gauge, catch card and toasts sit at the bottom;
 // what sits on the sea itself is in overlay.tsx.
+import type { JSX } from 'preact';
 import { clamp, money, dirTo } from '../config';
 import { G, cap, hpMax, boatDef, isNight, dayNum, dayFrac, windAngle, sailEfficiency, lineMax, fishValue } from '../game';
 import { SPECIES, fmtKg } from '../econ';
@@ -146,37 +147,71 @@ function WindVane({ sail, eff }: { sail: boolean; eff: number }) {
 }
 
 // line tension: colour plus position, tick marks, a pattern and a word, so it reads without colour
-function Reel({ f }: { f: FishLine }) {
-  const sp = SPECIES[f.s.sp], lm = lineMax(), t = clamp(f.tension / lm, 0, 1), prog = clamp(f.prog, 0, 1);
-  const surge = (f.cue ?? 0) > 0, warn = surge || f.warn || f.jump || f.jumpWarn;   // the surge telegraph flashes before the pull
-  const [word, tone] = t > 0.8 ? ['Danger', 'bad'] : t > 0.55 ? ['Strain', 'warn'] : ['Safe', 'good'];
+// The fishing dial: a brass ship's instrument at the bottom, the same size from cast to landing, faded out when you
+// aren't fishing. In a fight its needle reads the strain on the line over green, amber and a painted red; the outer
+// rim fills gold as the fish comes in (red while it takes line back). At the bite the dial becomes the strike
+// window: a sweep running down, brightest while a strike would be perfect. A plaque under the needle names the fish
+// and the key; hints and warnings float above, so nothing in the dial changes size.
+// (taking, kg, fakeT, grace and redAt come from the fight rework and are read here before they reach FishLine)
+type Fight = FishLine & { taking?: boolean; kg?: number; fakeT?: number; grace?: number; redAt?: number };
+const R0 = 62, R1 = 76, RP = 84;                             // zone band inner/outer radius, progress ring radius
+const ang = (v: number) => Math.PI * (1 - clamp(v, 0, 1));    // 0 at the left end of the dial, 1 at the right
+const pt = (r: number, v: number) => `${(r * Math.cos(ang(v))).toFixed(2)} ${(-r * Math.sin(ang(v))).toFixed(2)}`;
+/** An annular slice of the dial from value a to b between radii r0 and r1. */
+const band = (a: number, b: number, r0 = R0, r1 = R1) => b <= a ? '' : `M${pt(r1, a)} A${r1} ${r1} 0 0 1 ${pt(r1, b)} L${pt(r0, b)} A${r0} ${r0} 0 0 0 ${pt(r0, a)} Z`;
+const ring = (a: number, b: number, r: number) => b <= a ? '' : `M${pt(r, a)} A${r} ${r} 0 0 1 ${pt(r, b)}`;
+let lastFish: Fight | null = null;
+function FishPanel() {
+  const live: Fight | null = G.fish && G.mode === 'play' ? G.fish : null;
+  if (live) lastFish = live;
+  const f = live ?? lastFish;                                // as it fades out, the dial keeps showing the last fight
+  if (!f) return null;
+  const sp = SPECIES[f.s.sp], lm = lineMax(), reel = f.st === 'reel', bite = f.st === 'bite', surge = reel && (f.cue ?? 0) > 0;
+  const warn = reel && (surge || f.warn || f.jump || f.jumpWarn), red = clamp(f.redAt ?? 0.8 / lm, 0.56, 0.99);   // new captains get a later red
+  const grace = reel && (f.grace ?? 0) > 0;                  // the first moments after the hook: the strain can't pass the amber
+  let needle = 0, icon: JSX.Element = <Icon k="rod" size="s" />, title: string = f.st === 'cast' ? 'Casting' : 'Waiting for a bite', right: JSX.Element | null = null;
+  let face: JSX.Element;
+  if (bite) {
+    const [perfect, total] = f.win ?? [0.3, 1], left = SET.strike === 'auto' ? 1 : clamp(1 - f.t / total, 0, 1), cut = 1 - perfect / total, now = f.t < perfect;
+    needle = left; icon = <Icon k="warn" size="s" />; title = 'Bite!';
+    right = <><Key k=" " pad="A" /><span class={now ? 'gold' : 'good'}>{now ? 'Perfect' : 'Strike'}</span></>;
+    face = <>
+      <path class="trk" d={band(0, 1)} />
+      <path class="sweep" d={band(0, Math.min(left, cut))} /><path class="sweep perfect" d={band(cut, left)} />
+      <path class="tick big" d={`M${pt(R0 - 4, cut)} L${pt(R1 + 3, cut)}`} />
+    </>;
+  } else if (reel) {
+    const t = clamp(f.tension / lm, 0, 1), prog = clamp(f.prog, 0, 1);
+    needle = t; icon = <Fish sp={f.s.sp} />; title = sp.name + (f.kg ? ` ~${fmtKg(f.kg)}` : '');
+    const spool = f.tow ? clamp(1 - f.tow.len / SPOOL, 0, 1) : null;
+    right = warn ? <span class="bad">{f.jump || f.jumpWarn ? 'Jump!' : 'Surge!'}</span> : spool != null ? <span class={spool < 0.15 ? 'bad' : 'muted'}>Spool {Math.round(spool * 100)}%</span>
+      : f.stars ? <span class="stars" title={`${f.stars} of 3 stars`}>{'★'.repeat(f.stars)}<span class="off">{'★'.repeat(3 - f.stars)}</span></span> : null;
+    face = <>
+      <path class="z safe" d={band(0, 0.55)} /><path class="z strain" d={band(0.55, red)} /><path class="z danger" d={band(red, 1)} />
+      <path class="prog-bg" d={ring(0, 1, RP)} /><path class={'prog' + (f.taking ? ' taking' : '')} d={ring(0, Math.max(0.001, prog), RP)} />
+    </>;
+  } else {
+    if (f.fakeT != null && G.t - f.fakeT < 0.7) right = <span class="bad">Not yet</span>;   // a fake-out dip: striking costs time
+    face = <path class="trk" d={band(0, 1)} />;
+  }
+  const tip = live && G.prompt;
   return (
-    <div class={'reel panel' + (warn ? ' alert' : '') + (surge ? ' surge' : '') + (f.stars === 3 ? ' q3' : '')}>
-      <div class="row">
-        <Fish sp={f.s.sp} /><span class="title">{sp.name}</span>
-        {f.stars && <span class="stars" title={`${f.stars} of 3 stars`}>{'★'.repeat(f.stars)}<span class="off">{'★'.repeat(3 - f.stars)}</span></span>}
-        {f.gold && <span class="gold"><Icon k="star" size="s" />Golden</span>}
-        {f.back && <span class="gold">Got away on day {f.back.day}</span>}
-        {f.perfect && f.t < 2.5 && !f.gold && <span class="gold">Perfect strike</span>}
-        <span class="grow" />
-        {warn ? <Icon k="warn" size="s" /> : SET.reelToggle && <span class="muted small">{f.reelOn ? 'Reeling' : 'Paused'}</span>}
+    <>
+      <div class={'fishtip' + (tip ? '' : ' off') + (live && (bite || warn) ? ' hot' : '')} aria-live="polite"><span>{tip ? keyed(tip) : ''}</span></div>
+      <div class={'fishdial' + (live ? '' : ' off') + (warn ? ' alert' : '') + (surge ? ' surge' : '') + (bite ? ' bite' : '') + (grace ? ' grace' : '') + (reel && f.stars === 3 ? ' q3' : '')} aria-hidden={!live}>
+        <svg viewBox="-96 -96 192 104" class="dial">
+          <path class="bezel" d={band(0, 1, 80, 95)} />
+          <path class="face" d={`M-79 0 A79 79 0 0 1 79 0 Z`} />
+          {face}
+          {Array.from({ length: 11 }, (_, k) => <path key={k} class={'tick' + (k % 5 ? '' : ' big')} d={`M${pt(R0 - (k % 5 ? 5 : 8), k / 10)} L${pt(R0 - 1, k / 10)}`} />)}
+          <g class="needle" style={{ transform: `rotate(${(needle * 180 - 90).toFixed(1)}deg)` }}>
+            <path d="M-2.6 0 L0 -70 L2.6 0 Z" /><circle class="hook" cy="-70" r="2.4" />
+          </g>
+          <circle class="hub" r="8" /><circle class="hub-in" r="3.2" />
+        </svg>
+        <div class="plaque"><span class="ic">{icon}</span><span class="title">{title}</span><span class="grow" /><span class="right">{right}</span></div>
       </div>
-      <div class="meter">
-        <span class="caps">Line</span>
-        <div class={'gauge ' + tone}>
-          <div class="zone" style={{ width: (1 - 0.8 / lm) * 100 + '%' }} />
-          <i style={{ width: t * 100 + '%' }} />
-          <b style={{ left: '55%' }} /><b style={{ left: '80%' }} />
-        </div>
-        <span class={'state ' + tone}>{word}</span>
-      </div>
-      {f.tow && <Spool tow={f.tow} />}
-      <div class="meter">
-        <span class="caps">Catch</span>
-        <div class="gauge gold"><i style={{ width: prog * 100 + '%' }} /></div>
-        <span class="state">{Math.round(prog * 100)}%</span>
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -280,47 +315,13 @@ function Tip() {
 }
 
 // the strike window as a draining bar: the gold stretch at the start is a perfect strike
-function StrikeMeter({ f }: { f: FishLine }) {
-  const [perfect, total] = f.win ?? [0.3, 1], perfectNow = f.t < perfect;
-  return (
-    <div class="reel panel" style={{ width: '17em' }}>
-      <div class="meter">
-        <span class={'caps' + (perfectNow ? ' gold' : '')}>{perfectNow ? 'Perfect' : 'Strike'}</span>
-        <div class={'gauge ' + (perfectNow ? 'gold' : 'good')}>
-          <i style={{ width: clamp(1 - f.t / total, 0, 1) * 100 + '%' }} />
-          <b style={{ left: (1 - perfect / total) * 100 + '%' }} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// the catch card, captions, the reel or strike gauge and the fishing prompt; shown even with the interface hidden (H)
-// a towing fish takes line off the reel; when the spool runs out the strain goes on the line
-function Spool({ tow }: { tow: NonNullable<FishLine['tow']> }) {
-  const out = clamp(tow.len / SPOOL, 0, 1), tone = out > 0.85 ? 'bad' : out > 0.6 ? 'warn' : 'good';
-  return (
-    <div class="meter">
-      <span class="caps">Spool</span>
-      <div class={'gauge ' + tone}><i style={{ width: (1 - out) * 100 + '%' }} /></div>
-      <span class={'state ' + tone}>{out > 0.85 ? 'Empty' : 'Towing'}</span>
-    </div>
-  );
-}
-
+// the catch card, captions and the fishing panel; shown even with the interface hidden (H)
 function Fishing() {
-  const f = G.fish;
   return (
     <>
       {G.card && <CatchCard c={G.card} />}
-      <div class="bottom-stack">
-        <Captions />
-        {f?.st === 'reel' && <Reel f={f} />}
-        {f?.st === 'bite' && SET.strike !== 'auto' && <StrikeMeter f={f} />}
-        {G.prompt && G.mode === 'play' && f && (
-          <div class={'prompt panel' + (f.st === 'bite' || f.warn ? ' hot' : '')}>{keyed(G.prompt)}</div>
-        )}
-      </div>
+      <div class="captions-stack"><Captions /></div>
+      <FishPanel />
     </>
   );
 }

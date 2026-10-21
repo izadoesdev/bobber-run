@@ -108,9 +108,34 @@ h2, .title { font-size: var(--fs-xl); }
 .mini .compass { width: 100%; height: 100%; display: block; border-radius: 50%; cursor: pointer; pointer-events: auto; }
 .mini .compass .cpt { font: 13px var(--font-head); fill: #f0d27a; fill-opacity: 0.85; text-anchor: middle; dominant-baseline: central; }
 .mini .n { position: absolute; top: -0.15em; left: 50%; transform: translateX(-50%); font-family: var(--font-head); color: #2a1f17; background: #f0d27a; border-radius: 0.3em; padding: 0 0.3em; }
-.bottom-stack { position: absolute; left: 50%; bottom: 1.2em; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 0.5em; }
-.prompt { padding: 0.45em 1em; white-space: nowrap; }
-.prompt.hot { color: var(--gold); animation: pulse 0.9s ease-in-out infinite alternate; }
+/* the fishing dial: a brass ship's instrument, the same size at every stage; hints float above it */
+.fishdial { position: absolute; left: 50%; bottom: 0.8em; transform: translateX(-50%); width: 15em; transition: opacity 0.3s ease; filter: drop-shadow(0 0.25em 0.4em rgba(0,0,0,0.45)); }
+.fishdial.off, .fishtip.off { opacity: 0; pointer-events: none; }
+.fishdial .dial { display: block; width: 100%; height: auto; overflow: visible; }
+.fishdial .bezel { fill: #b8862e; stroke: #5a3a10; stroke-width: 1.6; }
+.fishdial .face { fill: #f2e6c4; stroke: #7a5530; stroke-width: 1; }
+.fishdial .trk { fill: #d9caa3; }
+.fishdial .z.safe { fill: #7fb86a; } .fishdial .z.strain { fill: #e2b94a; }
+.fishdial.grace .z.safe { fill: #9ad98f; filter: drop-shadow(0 0 3px #b4ec9c); } .fishdial.grace .z.strain, .fishdial.grace .z.danger { opacity: 0.45; }   /* the hook's grace: only the green counts yet */
+.fishdial .z.danger { fill: #c0493a; } .fishdial.surge .z.danger { animation: danger-flash 0.24s steps(2) infinite; } @keyframes danger-flash { 50% { fill: #ff8a6a; } }
+.fishdial .sweep { fill: #7fb86a; } .fishdial .sweep.perfect { fill: #f0cf6a; animation: perfect-glow 0.5s ease-in-out infinite alternate; } @keyframes perfect-glow { to { fill: #fff2b0; } }
+.fishdial .prog-bg { fill: none; stroke: #3a2810; stroke-width: 7; stroke-linecap: round; }
+.fishdial .prog { fill: none; stroke: #ffe08a; stroke-width: 5; filter: drop-shadow(0 0 2px #f0cf6a); stroke-linecap: round; transition: d 0.15s linear; } .fishdial .prog.taking { stroke: #ef8a72; }
+.fishdial .tick { stroke: #4a3624; stroke-width: 1.2; } .fishdial .tick.big { stroke-width: 2.2; }
+.fishdial .needle { transform-origin: 0 0; transition: transform 0.12s ease-out; } .fishdial .needle path { fill: #7e2c25; stroke: #2a1f17; stroke-width: 0.8; } .fishdial .needle .hook { fill: #2a1f17; }
+.fishdial.surge .needle path { fill: #c0493a; }
+.fishdial .hub { fill: #b8862e; stroke: #5a3a10; stroke-width: 1.4; } .fishdial .hub-in { fill: #5a3a10; }
+.fishdial.alert .bezel { fill: #d9a040; } .fishdial.q3 .bezel { fill: #f0cf6a; filter: drop-shadow(0 0 3px #f0cf6a); }
+.fishdial.bite .bezel { animation: bite-pulse 0.45s ease-in-out infinite alternate; } @keyframes bite-pulse { to { fill: #f0cf6a; } }
+.fishdial .plaque { position: relative; margin: -0.15em auto 0; width: 100%; height: 1.5em; display: flex; align-items: center; gap: 0.3em; padding: 0 0.5em; white-space: nowrap; overflow: hidden;
+  font-size: var(--fs-s); color: #fff6dc; background: linear-gradient(#5a3a10, #3a2810); border: 0.1em solid #b8862e; border-radius: 0.3em; }
+.fishdial .plaque .ic { width: 1.5em; height: 1.4em; display: inline-flex; align-items: center; justify-content: center; flex: none; } .fishdial .plaque .ic > * { max-height: 1.3em; width: auto; }
+.fishdial .plaque .title { font-size: inherit; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.fishdial .plaque .right { flex: none; display: inline-flex; align-items: center; gap: 0.3em; }
+.fishdial .stars { color: var(--gold); letter-spacing: 0.05em; } .fishdial .stars .off { opacity: 0.3; }
+.fishtip { position: absolute; left: 50%; bottom: 10.4em; transform: translateX(-50%); width: 24em; text-align: center; color: #fff6dc; text-shadow: 0 0.08em 0 #000, 0 0 0.4em #000c; transition: opacity 0.25s ease; pointer-events: none; }
+.fishtip > span { font-size: var(--fs-s); } .fishtip.hot { color: var(--gold); }   /* sized on the span, so the offset above is in the strip's units */
+.captions-stack { position: absolute; left: 50%; bottom: 12.6em; transform: translateX(-50%); }
 @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.03); } }
 .hints { position: absolute; left: 0.8em; bottom: 0.9em; display: flex; flex-wrap: nowrap; white-space: nowrap; row-gap: 0.35em; font-size: var(--fs-s); text-shadow: 0 0.1em 0 #000a; }
 .shadowed { font-size: var(--fs-s); background: var(--chip); padding: 0.25em 0.6em; border-radius: var(--r); }
@@ -122,12 +147,6 @@ h2, .title { font-size: var(--fs-xl); }
 @keyframes slidein { from { transform: translateY(-0.4em); opacity: 0; } to { transform: none; opacity: 1; } }
 .captions { display: flex; flex-direction: column; align-items: center; gap: 0.2em; }
 .caption { background: rgba(0,0,0,0.78); color: #fff; padding: 0.15em 0.6em; border-radius: 0.2em; }
-.reel { width: 23em; padding: 0.6em 0.8em; display: flex; flex-direction: column; gap: 0.35em; }
-.reel .title { font-size: var(--fs-l); }
-.reel.alert { border-color: var(--hint); animation: glow 0.7s ease-in-out infinite alternate; }
-.reel.surge { animation: surge-flash 0.22s steps(2) infinite; } @keyframes surge-flash { 50% { border-color: #fff6dc; box-shadow: 0 0 0 0.12em #f0cf6a; } }
-.reel.q3 { box-shadow: 0 0 0 0.12em var(--gold), 0 0 1.2em rgba(240,207,106,0.45); }
-.reel .stars { color: var(--gold); letter-spacing: 0.05em; } .reel .stars .off { opacity: 0.25; }
 .chip.easy-offer { gap: 0.45em; pointer-events: auto; white-space: normal; max-width: 24em; }
 .chip.easy-offer .go { pointer-events: auto; cursor: pointer; color: var(--gold); border: 1px solid rgba(240,207,106,0.6); border-radius: var(--r); padding: 0 0.45em; }
 .chip.easy-offer .x { pointer-events: auto; cursor: pointer; color: var(--muted); font-size: 1.15em; line-height: 1; padding: 0 0.2em; }
@@ -355,11 +374,11 @@ html.touch .chart-ctl .btn[aria-label] { display: none; }   /* the touch layer h
 /* phone-sized text and tap targets: never smaller than 12px (scaled by Interface size), at least 44px to tap */
 html.touch #ui > .app { font-size: max(1em, calc(12px * var(--ui-k, 1))); }
 html.touch #ui :is(.item:not(.static), .btn, .tab, .seg-btn) { min-height: 44px; }
-html.touch #ui :is(.dialog, .card, .talk, .online, .cheats, .finale, .sunk-card, .emote-pick, .reel) { max-width: calc(100vw - 1.2em); }
+html.touch #ui :is(.dialog, .card, .talk, .online, .cheats, .finale, .sunk-card, .emote-pick) { max-width: calc(100vw - 1.2em); }
 /* the on-screen buttons replace keyboard hints; keycaps inside prompts and buttons would only confuse */
 html.touch #ui :is(.hint, .tnum), html.touch #ui :is(.prompt, .prompt-world, .btn, .tabs) > .key { display: none; }
-html.touch #ui .prompt { white-space: normal; text-align: center; max-width: calc(100vw - 2em); }
-html.touch #ui .bottom-stack { bottom: 76px; }
+
+html.touch #ui .fishdial { bottom: 70px; } html.touch #ui .fishtip { bottom: calc(70px + 9.6em); max-width: calc(100vw - 2em); } html.touch #ui .captions-stack { bottom: calc(70px + 11.8em); }
 /* room in the footer for the Close (and chart Zoom) buttons; the port has its own Set off button */
 html.touch #ui .screen:not(:has(.tabs)) .foot { min-height: 52px; padding-right: 64px; }
 html.touch #ui .screen.flush .foot { padding-right: 76px; }
@@ -376,7 +395,7 @@ html.touch #ui .screen:has(.chartwrap) .foot { padding-right: 130px; }
 /* phones held upright: side-by-side panels stack, and the action buttons sit above the bar */
 @media (orientation: portrait) {
   html.touch .tact { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 66px); }
-  html.touch #ui .bottom-stack { bottom: 250px; width: calc(100vw - 1.6em); }
+  html.touch #ui .fishdial { bottom: 250px; } html.touch #ui .fishtip { bottom: calc(250px + 9.6em); } html.touch #ui .captions-stack { bottom: calc(250px + 11.8em); }
   html.touch #ui .chat-float .fade:not(:last-child) { display: none; }
   html.touch #ui .toasts { top: 32%; }
   html.touch #ui .toasts:not(.low) { left: 50%; right: auto; transform: translateX(-50%); align-items: center; max-width: calc(100vw - 2em); }
