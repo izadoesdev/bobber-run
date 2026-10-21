@@ -155,7 +155,7 @@ function broadcast(): void {
         .map(({ p, b }) => ({ id: p.id, name: p.name, emote: p.emote, emoteAt: p.emoteAt, ...b }));
       const far = withFar && at ? boats.filter(o => o.ws !== ws).map(({ p, b }) => ({ uid: p.id, name: p.name, x: Math.round(b.x), y: Math.round(b.y), d: Math.hypot(b.x - at.x, b.y - at.y) }))
         .sort((a, b) => a.d - b.d).slice(0, FAR_MAX).map(({ uid, name, x, y }) => ({ uid, name, x, y })) : undefined;
-      ws.send(JSON.stringify({ t: 'boats', now, list, ...(names ? { roster: names, total } : {}), ...(far ? { far } : {}) }));
+      ws.send(JSON.stringify({ t: 'boats', now, list, ...(names ? { roster: names, total } : {}), ...(far ? { far } : {}) }), true);   // compressed: the bulk of the traffic
     }
   }
 }
@@ -181,6 +181,7 @@ Bun.serve<Peer | null>({
     maxPayloadLength: MAX_MSG,
     idleTimeout: 60,
     backpressureLimit: 512 * 1024, closeOnBackpressureLimit: true,   // a client that can't keep up is dropped (it reconnects)
+    perMessageDeflate: true,                                          // about a third of the bytes for boats updates
     message(ws, msg) { if (typeof msg === 'string') void onMessage(ws, msg); },
     close(ws, code, reason) { if (code !== 1000 && code !== 1001) console.log(JSON.stringify({ msg: 'closed', code, reason })); leave(ws); },
   },

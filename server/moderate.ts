@@ -3,6 +3,8 @@
 // information, moving the chat off the game, sexual content, hate, threats and self-harm, scams), and one question per
 // word so milder words are masked with # the way Roblox does, instead of dropping the message. If Jev is slow or
 // unreachable, a small local filter masks the obvious cases instead.
+import { RegExpMatcher, englishDataset, englishRecommendedTransformers } from 'obscenity';
+
 const KEY = process.env.AI_GATEWAY_API_KEY;
 const ENDPOINT = 'https://ai-gateway.vercel.sh/v1/evaluate', MODEL = 'typesafe-ai/jev-1.14.0';
 // a little more relaxed than Roblox's under-13 filter: mild words and friendly teasing pass, but personal info and
@@ -37,14 +39,22 @@ async function ask(state: Record<string, unknown>, questions: Record<string, { t
 }
 
 const mask = (w: string) => w.replace(/[^\s]/g, '#');
-// The local fallback: obvious profanity and slurs per word, and contact details for the whole message.
-const LOCAL_WORDS = /^(f+u+c*k+\w*|sh+i+t+\w*|b+i+t+c+h+\w*|c+u+n+t+\w*|n+i+g+\w*|f+a+g+\w*|d+i+c+k+\w*|c+o+c+k+\w*|p+u+s+s+y+\w*|a+s+s+h+o+l+e+\w*|k+y+s+|r+a+p+e+\w*|s+l+u+t+\w*|w+h+o+r+e+\w*|r+e+t+a+r+d+\w*|p+o+r+n+\w*)$/i;
+// The local fallback, when Jev can't answer: obscenity's English list catches profanity and slurs through leetspeak,
+// spacing tricks and look-alike letters; the whole word is masked, as Roblox does. Contact details, and telling
+// someone to hurt themselves, hide the whole message.
+const PROFANITY = new RegExpMatcher({ ...englishDataset.build(), ...englishRecommendedTransformers, whitelistedTerms: ['shiitake', 'shitake', 'penistone', 'scunthorpe', 'assassin', 'assess', 'assist', 'assum', 'dickens', 'analyst', 'cumin'] });
 const CONTACT = /(https?:\/\/|www\.|\.com\b|\.gg\b|discord|snap(chat)?|insta(gram)?|tiktok|@\w{3,}|\d[\d\s-]{6,}\d)/i;
-function local(text: string): Verdict {
-  if (CONTACT.test(text)) return { text: mask(text), filtered: true, whole: true, source: 'local' };
-  let filtered = false;
-  const out = text.split(/(\s+)/).map(w => { const bare = w.replace(/[^a-z0-9]/gi, '').replace(/[013457@$]/g, c => ({ 0: 'o', 1: 'i', 3: 'e', 4: 'a', 5: 's', 7: 't', '@': 'a', $: 's' } as Record<string, string>)[c]);
-    if (bare && LOCAL_WORDS.test(bare)) { filtered = true; return mask(w); } return w; }).join('');
+const SELF_HARM = /\bk+\s*y+\s*s+\b|\bkill\s+(your|ur)\s*self/i;
+export function local(text: string): Verdict {
+  if (CONTACT.test(text) || SELF_HARM.test(text)) return { text: mask(text), filtered: true, whole: true, source: 'local' };
+  const hit = new Set<number>();
+  for (const m of PROFANITY.getAllMatches(text)) for (let i = m.startIndex; i <= m.endIndex; i++) hit.add(i);
+  let at = 0, filtered = false;
+  const out = text.split(/(\s+)/).map(w => {
+    const start = at; at += w.length;
+    if (!w.trim() || ![...w].some((_, k) => hit.has(start + k))) return w;
+    filtered = true; return mask(w);
+  }).join('');
   return { text: out, filtered, whole: false, source: 'local' };
 }
 
