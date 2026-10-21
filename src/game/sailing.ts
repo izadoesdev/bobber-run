@@ -118,7 +118,7 @@ function tickSound(dt: number): void {
     luff: playing && bd.prop === 'SAIL' && G.throttle && sailEfficiency() < 0.6 ? 1 : 0, mute: G.mode === 'sunk', port: G.mode === 'port',
     deep: deepness(), calm: SET.calm,
   }, dt);
-  music(dt, G.musicOn, isNight());
+  music(G.musicOn, isNight());
 }
 const WEATHER_NEWS: Record<WeatherState, string> = {
   storm: 'A storm rolls in. Trophy fish bite more often', rain: 'Rain. Rain Trout come out', cloudy: '', clear: '',

@@ -734,39 +734,44 @@ export function soundscape(s: SoundscapeState, dt: number): void {
 const DAY: Chord[] = [[0, 4, 7], [9, 12, 16], [5, 9, 12], [7, 11, 14]];
 const NIGHT: Chord[] = [[9, 12, 16], [4, 7, 11], [5, 9, 12], [0, 4, 7]];
 const PENTA = [0, 2, 4, 7, 9];
-let bar = 0, beat = 0, nextBeat = 1.5, chordIdx = 0;
+let bar = 0, beat = 0, beatAt = -1, chordIdx = 0;
+const AHEAD = 0.15;                                              // beats are booked this far ahead on the audio clock
 
-export function music(dt: number, on: boolean, night: boolean): void {
+/** Called every frame: books the beats due in the next AHEAD seconds at their exact times, so the rhythm holds steady
+ * however uneven the frames are (a background tab runs at 15 fps). */
+export function music(on: boolean, night: boolean): void {
   if (!ac || ac.state !== 'running') return;
-  if (loops) loops.hiss.g.gain.setTargetAtTime(on ? 0.003 : 0, ac.currentTime, 0.5);   // tape hiss only while music plays
-  if (!on) return;
-  if ((nextBeat -= dt) > 0) return;
-  const tempo = night ? 0.75 : 0.6;
-  nextBeat = tempo;
+  const now = ac.currentTime;
+  if (loops) loops.hiss.g.gain.setTargetAtTime(on ? 0.003 : 0, now, 0.5);   // tape hiss only while music plays
+  if (!on) { beatAt = -1; return; }
+  if (beatAt < now) beatAt = now + (beatAt < 0 ? 1.5 : 0.05);  // starting, or back from a stall: pick up, don't catch up
   curBus = 'music';
-  try {
-    const prog = night ? NIGHT : DAY, base = night ? 0 : 12;
-    if (beat === 0) {                                            // new bar: a warm pad chord and its root in the bass every 2 bars
-      if (bar % 2 === 0) {
-        chordIdx = (chordIdx + 1) % 4;
-        const chord = prog[chordIdx], root = chord[0];
-        for (const s of chord) for (const cents of [-5, 5]) {
-          tone(ac, { f: N(base - 12 + s) * Math.pow(2, cents / 1200), a: 1.5, hold: tempo * 5, d: 2.6, vol: 0.011, type: 'triangle', lp: 700, rev: 0.6 });
-        }
-        tone(ac, { f: N(root - (root >= 4 ? 24 : 12)), a: 0.4, hold: tempo * 4, d: 2.5, vol: 0.04, type: 'triangle', lp: 380 });
-      }
-      bar++;
-    }
-    harmony = prog[chordIdx];                                    // what the pitched sound effects voice on
-    if (Math.random() < (night ? 0.35 : 0.45)) {
-      const s = Math.random() < 0.6
-        ? harmony[Math.floor(Math.random() * 3)]
-        : PENTA[Math.floor(Math.random() * 5)] + (Math.random() < 0.15 ? 12 : 0);
-      mallet(ac, N(base + s), 0, night ? 0.05 : 0.06, 1.1, 0.55);
-    }
-    beat = (beat + 1) % 4;
-  } catch { /* a missed note is harmless */ }
+  for (; beatAt < now + AHEAD; beatAt += night ? 0.75 : 0.6) {
+    try { playBeat(ac, beatAt - now, night); } catch { /* a missed note is harmless */ }
+  }
   curBus = 'sfx';
+}
+function playBeat(c: AudioContext, t: number, night: boolean): void {
+  const tempo = night ? 0.75 : 0.6, prog = night ? NIGHT : DAY, base = night ? 0 : 12;
+  if (beat === 0) {                                              // new bar: a warm pad chord and its root in the bass every 2 bars
+    if (bar % 2 === 0) {
+      chordIdx = (chordIdx + 1) % 4;
+      const chord = prog[chordIdx], root = chord[0];
+      for (const s of chord) for (const cents of [-5, 5]) {
+        tone(c, { f: N(base - 12 + s) * Math.pow(2, cents / 1200), t, a: 1.5, hold: tempo * 5, d: 2.6, vol: 0.011, type: 'triangle', lp: 700, rev: 0.6 });
+      }
+      tone(c, { f: N(root - (root >= 4 ? 24 : 12)), t, a: 0.4, hold: tempo * 4, d: 2.5, vol: 0.04, type: 'triangle', lp: 380 });
+    }
+    bar++;
+  }
+  harmony = prog[chordIdx];                                      // what the pitched sound effects voice on
+  if (Math.random() < (night ? 0.35 : 0.45)) {
+    const s = Math.random() < 0.6
+      ? harmony[Math.floor(Math.random() * 3)]
+      : PENTA[Math.floor(Math.random() * 5)] + (Math.random() < 0.15 ? 12 : 0);
+    mallet(c, N(base + s), t, night ? 0.05 : 0.06, 1.1, 0.55);
+  }
+  beat = (beat + 1) % 4;
 }
 
 // ---------- offline rendering, used by tests to inspect levels and spectra ----------
