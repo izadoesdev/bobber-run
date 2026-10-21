@@ -3,8 +3,10 @@
 // while you hold some, key hints until the first catches. The reel gauge, catch card and toasts sit at the bottom;
 // what sits on the sea itself is in overlay.tsx.
 import { clamp, money, dirTo } from '../config';
-import { G, cap, hpMax, boatDef, isNight, dayNum, dayFrac, windAngle, sailEfficiency, lineMax } from '../game';
+import { G, cap, hpMax, boatDef, isNight, dayNum, dayFrac, windAngle, sailEfficiency, lineMax, fishValue } from '../game';
 import { SPECIES, fmtKg } from '../econ';
+import { VARIANTS, type VariantId } from '../species';
+import { featuredToday } from '../today';
 import { WX } from '../weather';
 import { SET } from '../settings';
 import { savePrefs } from '../prefs';
@@ -204,22 +206,24 @@ function EasyReelOffer() {
 
 function CatchCard({ c }: { c: CatchCardState }) {
   const f = c.fish, sp = SPECIES[f.sp], firstEver = G.stats.caught === 1 && !G.stats.sold;
+  const worth = money(fishValue(f)), vr = f.variant ? VARIANTS[f.variant as VariantId]?.name : null;   // what the market pays: today's featured x2 and the variant included
   return (
     <div class={'card paper' + (firstEver ? ' first' : '')}>
       <Fish sp={f.sp} size="xl" />
       <div class="grow">
-        <div class={'title' + (sp.legend ? ' gold' : '')}>{sp.name}</div>
-        <div class="row">{fmtKg(f.kg)}{!firstEver && <span class="gold">{money(f.value)}</span>}</div>
+        <div class={'title' + (sp.legend ? ' gold' : '')}>{vr && <span class="gold">{vr} </span>}{sp.name}{c.stars && <span class="stars" title={`${c.stars} of 3 stars`}> {'★'.repeat(c.stars)}<span class="off">{'★'.repeat(3 - c.stars)}</span></span>}</div>
+        <div class="row">{fmtKg(f.kg)}{!firstEver && <span class="gold">{worth}</span>}</div>
         <div>
           {c.first && <span class="stamp bad">New species</span>}
           {c.record && <span class="stamp good">New best</span>}
           {f.trophy && <span class="stamp gold">Trophy</span>}
           {c.perfect && <span class="stamp sea">Perfect</span>}
           {f.gold && <span class="stamp gold">Golden</span>}
+          {featuredToday(f.sp) && <span class="stamp good" title="Today's featured fish sell for double">×2 today</span>}
         </div>
         {c.back && <div class="small gold">The one that got away! It broke your line on day {c.back.day}{c.back.lost > 1 ? `, ${c.back.lost} times,` : ''} and still has your hook</div>}
         {c.bonus && <div class="small gold">{c.bonus}</div>}
-        {firstEver && <div class="small">Your first catch! Worth <span class="gold">{money(f.value)}</span> at the market</div>}
+        {firstEver && <div class="small">Your first catch! Worth about <span class="gold">{worth}</span> at the market</div>}
         <ShareButton c={c} />
       </div>
     </div>
