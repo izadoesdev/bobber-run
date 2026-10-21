@@ -205,8 +205,6 @@ export interface FishLine {
   perfect: boolean;
   reeling?: boolean;
   reelOn?: boolean;
-  selfHooked?: boolean;
-  idle?: boolean;
   /** boss fights go three rounds */
   stage?: number;
   /** nibbles still to come before the bite, as seconds before it; and the game time of the last one */
@@ -242,6 +240,17 @@ export interface FishLine {
   strained?: boolean;
   /** the next surge has been announced and hasn't passed yet */
   cued?: boolean;
+  /** the fish, rolled at the hook: its size (0..1 across the species' range), weight, and whether it's a trophy */
+  size?: number; kg?: number; trophy?: boolean;
+  /** seconds of steady reeling the fight takes, from the fish's weight and how far the rod outclasses it */
+  len?: number;
+  /** seconds left of the grace after the hook (no surge, tension held under the amber line), and where the red zone
+   *  starts as a share of the line's strength (later for new captains) */
+  grace?: number; redAt?: number;
+  /** the fish is taking line back (surging against a slack reel): the catch slips, and at nothing it shakes the hook */
+  taking?: boolean;
+  /** which of the nibbles still to come is a fake-out (a big dip that isn't the take), and when the last one was */
+  fake?: number; fakeT?: number;
 }
 /** A fish that broke your line after a real fight: it stays with its school, wearing your hook, until you land it. */
 export interface Escapee {

@@ -19,8 +19,15 @@ import { schoolActive, takeFish } from './schools';
 import { isRunningNow } from '../tides';
 import { biomeAt } from '../biome';
 
-/** Fight tuning: how hard tension climbs while reeling, and how much surges add. Exposed on BR for tweaking. */
-export const TUNE = { k: 1.5, surge: 0.55 };
+/**
+ * Fight tuning, exposed on BR for tweaking. Reeling raises tension by `reel` a second plus `surge` times the fish's
+ * surge and power; a slack reel lets it fall by `relax`, and a surge against a slack reel takes back `take` of the catch.
+ */
+export const TUNE = { reel: 0.22, surge: 0.95, relax: 0.7, take: 0.05 };
+/** Seconds after the hook with no surge and the tension held under the amber line; the opening seconds build tension gently. */
+const GRACE = 1.5, OPENING = 3;
+/** A new captain (fewer catches than this) gets a wider strike window and a later red zone. */
+const NEW_CAPTAIN = 10;
 
 /** Chance the golden fish of a school is the one that bites, and what it is worth over a trophy. */
 const GOLD_BITE = 0.4, GOLD_VALUE = 2.5;
@@ -33,8 +40,6 @@ const STAR_ROLL = [0.07, 0.35], STAR_VALUE = [1, 1.25, 1.6];
 /** The world holds still this long when a fish is hooked, and when a 3-star or legendary one is landed. */
 const HITSTOP = 0.1;
 export const hitstop = (): boolean => G.t - G.hookT < HITSTOP;
-// idle fishing: easy, non-legendary fish land on their own if you leave the line alone
-export const idleOk = (sp: Species): boolean => !sp.legend && sp.diff < 0.45;
 
 export const castRange = (): number => 50 + boatDef().L * 0.5;
 /** A new captain's first few fish can't get away: they hook themselves and the line never snaps. */
@@ -104,7 +109,7 @@ export function updateFishing(dt: number): void {
   if (!f) return;
   f.t += dt;
   const b = G.boat;
-  if (!f.tow && Math.hypot(f.tx - b.x, f.ty - b.y) > 80) { cancelFishing('You sailed too far from your bobber, so you reeled in'); return; }
+  if (f.st !== 'reel' && Math.hypot(f.tx - b.x, f.ty - b.y) > 80) { cancelFishing('You sailed too far from your bobber, so you reeled in'); return; }   // a hooked fish keeps the line
   const strike = hit(' ');
   if (f.st === 'cast') castStage(f);
   else if (f.st === 'wait') waitStage(f, dt, strike);
@@ -122,23 +127,36 @@ const TEASES: Record<FightStyle, () => number[]> = {
   boss: () => [2.4, 1.3],
 };
 const RUNS: ReadonlySet<FightStyle> = new Set<FightStyle>(['generic', 'boss']);
+/** Chance one of the nibbles is a fake-out instead: a big dip, a splash, no thump. */
+const FAKE_OUT: Record<FightStyle, number> = { steady: 0.05, darter: 0.2, generic: 0.15, jumper: 0.15, erratic: 0.3, boss: 0.25 };
 
 function castStage(f: FishLine): void {
   if (f.t < 0.55) return;
   f.st = 'wait'; f.t = 0;
   const rod = G.up.rod, sp = SPECIES[f.s.sp];
-  const baitMul = (f.bait === 'glow' && isNight() ? 0.5 : f.bait ? 0.75 : 1) * (f.bait === favBait(sp) ? 0.8 : 1);
-  f.wait = Math.max(0.4, 1 - 0.15 * G.dry) * (1.4 + Math.random() * 2.6) * (1 - 0.1 * rod) * (f.frenzy ? 0.4 : 1) * baitMul * biteMul() * (1 - 0.12 * G.up.tackle)
+  const fits = f.bait === favBait(sp), wrong = !!f.bait && !fits;   // the bait it loves comes sooner; the wrong one is picked at
+  const baitMul = (f.bait === 'glow' && isNight() ? 0.5 : f.bait ? 0.75 : 1) * (fits ? 0.8 : wrong ? 1.15 : 1);
+  f.wait = Math.max(0.4, 1 - 0.15 * G.dry) * (2.5 + Math.random() * 4.5) * (1 - 0.1 * rod) * (f.frenzy ? 0.4 : 1) * baitMul * biteMul() * (1 - 0.12 * G.up.tackle)
     * (isRunningNow(sp.id) ? 0.75 : 1);           // this week's running fish bite sooner
   if (f.s.gold) f.wait *= 0.6;                                  // a golden school bites quickly, and never teases
-  f.teases = f.s.gold ? [] : TEASES[sp.fight]().filter(before => before < f.wait - 0.3);
+  const teases = [...TEASES[sp.fight](), ...(wrong || !f.bait ? [0.6 + Math.random() * 0.5] : [])].sort((p, q) => q - p);
+  f.teases = f.s.gold ? [] : teases.filter(before => before < f.wait - 0.3);
+  f.fake = !f.s.gold && f.teases.length > 0 && Math.random() < FAKE_OUT[sp.fight] ? Math.floor(Math.random() * f.teases.length) : undefined;
   spawn({ kind: 'ring', x: f.tx, y: f.ty, life: 0.9, r0: 1, grow: 5 });
   sfx('plop', 0.5);
 }
 
-/** A nibble: the bobber twitches (and jumpers swirl at the surface), but it isn't the bite yet. */
-function tease(f: FishLine, sp: Species): void {
+/** A nibble: the bobber twitches (and jumpers swirl at the surface), but it isn't the bite yet. A fake-out dips it
+ *  right under, with a splash but no bite's thump. */
+function tease(f: FishLine, sp: Species, fake: boolean): void {
   f.teaseT = G.t;
+  if (fake) {
+    f.fakeT = G.t;
+    spawn({ kind: 'ring', x: f.tx, y: f.ty, life: 0.7, r0: 1, grow: 7 });
+    burst('dot', f.tx, f.ty, 8, 22, 0.4);
+    sfx('plop', 0.7);
+    return;
+  }
   spawn({ kind: 'ring', x: f.tx, y: f.ty, life: 0.6, r0: 1, grow: 3 });
   if (sp.fight === 'jumper') {
     const x = f.tx + jitter(6), y = f.ty + jitter(4);
@@ -149,14 +167,14 @@ function tease(f: FishLine, sp: Species): void {
 }
 
 function waitStage(f: FishLine, dt: number, strike: boolean): void {
-  const nibbling = f.teaseT !== undefined && G.t - f.teaseT < 0.8;
+  const nibbling = f.teaseT !== undefined && G.t - f.teaseT < 0.8, faked = f.fakeT !== undefined && G.t - f.fakeT < 0.8;
   if (strike) {
-    toast(nibbling ? 'Just a nibble' : 'Too early');
-    f.wait += 1.2; sfx('deny', 0.5); G.dry++;
+    toast(faked ? 'A fake-out! Wait for the thump' : nibbling ? 'Just a nibble' : 'Too early');
+    f.wait += faked ? 2 : 1.2; sfx('deny', 0.5); G.dry++;
   }
   if (Math.random() < dt * 0.8) spawn({ kind: 'ring', x: f.tx, y: f.ty, life: 0.8, r0: 2, grow: 3 });
   const next = f.teases?.[0];
-  if (next !== undefined && f.t >= f.wait - next) { f.teases!.shift(); tease(f, SPECIES[f.s.sp]); }
+  if (next !== undefined && f.t >= f.wait - next) { tease(f, SPECIES[f.s.sp], f.fake === 0); f.teases!.shift(); f.fake = f.fake ? f.fake - 1 : undefined; }
   if (f.t >= f.wait) startBite(f);
 }
 
@@ -171,13 +189,21 @@ function startBite(f: FishLine): void {
   spawn({ kind: 'ring', x: f.tx, y: f.ty, life: 0.8, r0: 1, grow: 9 });   // the bobber plunges: unmistakable
   burst('dot', f.tx, f.ty, 12, 28, 0.5);
 }
+/** 0 for a sprat up to 1 for half a tonne: how much a fish's weight makes its fight longer and its surges harder. */
+const heft = (kg: number): number => clamp(Math.log10(kg + 1) / Math.log10(500), 0, 1);
+/** Seconds of steady reeling a fish takes: a few for a small one, half a minute for a giant; each rod level beyond what
+ *  the species needs, the reel and the harpoon shorten it. */
+function fightLength(sp: Species, kg: number): number {
+  const big = sp.legend || sp.rod >= 3, edge = Math.min(3, Math.max(0, G.up.rod - sp.rod));
+  return (3.5 + 27 * heft(kg)) * (1 - 0.08 * edge) / (1 + 0.12 * G.up.reel) / (1 + 0.25 * (big ? harpoonLvl() : 0));
+}
 /** Does the fight pattern surge (above 0.9) within the next CUE_S, at `rate` of phase per second? */
-const surgeWithin = (pattern: (ph: number) => number, ph: number, rate: number): boolean =>
-  Array.from({ length: 11 }, (_, i) => pattern(ph + rate * CUE_S * i / 10)).some(v => v > 0.9);
+const surgeWithin = (pattern: (ph: number) => number, ph: number, rate: number, secs: number): boolean =>
+  Array.from({ length: 31 }, (_, i) => pattern(ph + rate * secs * i / 30)).some(v => v > 0.9);
 /** [perfect, any] strike windows in seconds; relaxed strikes and each recent miss widen both, rarer fish narrow them a little. */
 function strikeWindows(sp: Species): [number, number] {
   const rod = G.up.rod, rare = clamp(0.7 + 0.06 * sp.w, 0.75, 1);
-  const relaxed = (SET.strike === 'relaxed' ? 1.6 : 1) * (1 + 0.2 * Math.min(3, G.dry)) * rare;   // pity: each miss widens the window
+  const relaxed = (SET.strike === 'relaxed' ? 1.6 : 1) * (1 + 0.2 * Math.min(3, G.dry)) * rare * (G.stats.caught < NEW_CAPTAIN ? 1.5 : 1);   // pity: each miss widens the window
   const perfect = ((G.boatId === 'row' ? 0.32 : 0.2) + 0.03 * rod + 0.05 * Math.max(0, G.up.tackle - 1)) * relaxed;
   return [perfect, (0.75 + 0.12 * rod) * relaxed];
 }
@@ -188,15 +214,12 @@ function biteStage(f: FishLine, strike: boolean): void {
   const auto = (crewLvl() >= 2 && f.t > 0.42) || (SET.strike === 'auto' && f.t > 0.3) || (learning() && f.t > Math.min(0.6, biteWin * 0.6));
   if (strike || auto) {
     f.perfect = f.t < perfectWin; f.reeling = true;
-    hooked(f, f.perfect ? 0.1 : 0.25, f.perfect ? 0.25 : 0.08);
+    hooked(f, f.perfect ? 0.1 : 0.25, f.perfect ? 0.2 : 0.08);
   } else if (f.t > biteWin) {
-    if (idleOk(sp)) { f.selfHooked = true; hooked(f, 0.15, 0.05); }   // small fish hook themselves
-    else {
-      toast('It got away');
-      track('fish_lost', { species: sp.id, reason: 'missed_strike' });
-      f.st = 'wait'; f.t = 0;
-      f.wait = (1.5 + Math.random() * 2.5) * Math.max(0.4, 1 - 0.15 * ++G.dry);
-    }
+    toast('It got away');
+    track('fish_lost', { species: sp.id, reason: 'missed_strike' });
+    f.st = 'wait'; f.t = 0;
+    f.wait = (2 + Math.random() * 3) * Math.max(0.4, 1 - 0.15 * ++G.dry);
   }
 }
 
@@ -206,11 +229,16 @@ function hooked(f: FishLine, tension: number, prog: number): void {
   sfx(f.perfect ? 'perfect' : 'plop');
   f.fx = f.tx; f.fy = f.ty;
   const sp = SPECIES[f.s.sp], b = G.boat, r = Math.random();
-  // a fight never opens inside a surge's warning: start where the next CUE_S is calm, so the first surge is announced too
-  for (let k = 0; k < 200 && surgeWithin(FIGHT[sp.fight], f.ph, 1.5 + sp.diff * 2.5); k++) f.ph += 0.05;
-  // what's on the line shows from the hook: its quality (a perfect strike adds a star) and any variant
-  f.stars = Math.min(3, (r < STAR_ROLL[0] ? 3 : r < STAR_ROLL[1] ? 2 : 1) + (f.perfect ? 1 : 0)) as 1 | 2 | 3;
+  // a grace after the hook: start where the next GRACE seconds are calm, so the first surge comes later and is announced
+  for (let k = 0; k < 300 && surgeWithin(FIGHT[sp.fight], f.ph, 1.5 + sp.diff * 2.5, GRACE); k++) f.ph += 0.05;
+  f.grace = GRACE; f.redAt = G.stats.caught < NEW_CAPTAIN ? 0.85 : 0.8;
+  // what's on the line shows from the hook: its quality (a perfect strike, or the bait it loves, helps) and any variant,
+  // its size, and so how long the fight will be
+  f.stars = Math.min(3, (r * (f.bait === favBait(sp) ? 0.8 : 1) < STAR_ROLL[0] ? 3 : r < STAR_ROLL[1] ? 2 : 1) + (f.perfect ? 1 : 0)) as 1 | 2 | 3;
   if (!f.back) f.variant = rollVariant(f.s.sp, { storm: WX.state === 'storm', biome: biomeAt(b.x, b.y), night: isNight() }, Math.random()) ?? undefined;
+  Object.assign(f, rollSize(f.s.sp, f));
+  f.kg = f.back?.kg ?? kgOf(sp, f.size!, f.variant);
+  f.len = fightLength(sp, f.kg) * (1 - 0.35 * sp.diff) * (sp.fight === 'boss' ? 0.45 : 1);   // hard fish surge often, which slows them anyway; the Old One fights three rounds
   if (sp.deck >= 1 || sp.legend) f.tow = { len: clamp(Math.hypot(f.tx - b.x, f.ty - b.y), 20, 50), h: Math.atan2(f.ty - b.y, f.tx - b.x) + jitter(1.6), turnT: 2 + Math.random() * 2 };
   if (f.back) toast(`It's the ${sp.name} that broke your line on day ${f.back.day}!`, 'good');
   if (f.perfect) {
@@ -313,10 +341,10 @@ function reelStage(f: FishLine, dt: number, strike: boolean): void {
   const sp = SPECIES[f.s.sp], rod = G.up.rod, diff = sp.diff;
   const pattern = FIGHT[sp.fight], stage = f.stage || 0;
   f.ph += dt * (1.5 + diff * 2.5);
-  const assist = SET.reelAssist ? 0.7 : 1;
-  const big = sp.legend || sp.rod >= 3, hk = big ? harpoonLvl() : 0;   // the harpoon gun tires big fish faster
-  const surge = pattern(f.ph), easy = SET.reelAssist;
-  const pull = diff * (0.3 + surge * TUNE.surge * assist) * (1 + 0.1 * stage) * (1 - 0.12 * hk) * (f.back ? 1.2 : 1);   // it has learned
+  const surge = pattern(f.ph), easy = SET.reelAssist, big = sp.legend || sp.rod >= 3;
+  // how hard it pulls: heavier fish harder, each round of the Old One harder still, a fish that got away before harder
+  // (it has learned), the harpoon gun and easy reel softer
+  const power = (0.45 + 0.55 * heft(f.kg ?? 1)) * (1 + 0.1 * stage) * (1 - 0.12 * (big ? harpoonLvl() : 0)) * (f.back ? 1.2 : 1) * (easy ? 0.7 : 1);
   if (SET.reelToggle && strike) { f.reeling = !f.reeling; sfx('move', 0.4); }
   f.surge = surge;
   telegraph(f, pattern(f.ph + (1.5 + diff * 2.5) * CUE_S), surge, dt);
@@ -327,20 +355,18 @@ function reelStage(f: FishLine, dt: number, strike: boolean): void {
   if (f.tow) runWithLine(f, f.tow, dt, surge, diff, reeling);
   swimFish(f, dt, surge);
   f.reelOn = reeling;
+  f.taking = !reeling && surge > 0.9;
+  f.grace = Math.max(0, (f.grace ?? 0) - dt);
   if (reeling) {
-    f.tension += (0.36 + pull * TUNE.k - rod * 0.05) * dt * (SET.reelAssist ? 0.85 : 1);
-    f.prog += (0.4 - diff * 0.24 + rod * 0.025) * (1 + 0.12 * G.up.reel) * (1 + 0.25 * hk) * dt * (1 - Math.min(0.6, surge * 0.35))
-      * (f.tow ? 0.45 / towHeft(f) : 1)              // a towing giant is mostly won by letting it tire itself on the boat
-      * (easy ? 0.6 : 1);
+    f.tension += (TUNE.reel + TUNE.surge * surge * power - 0.03 * rod) * dt * Math.min(1, 0.6 + 0.4 * f.t / OPENING);   // the opening builds gently
+    f.prog += dt / (f.len ?? 6) * (1 - Math.min(0.6, surge * 0.35)) * (easy ? 0.6 : 1);
     if ((f.reelT += dt) > 0.07) { f.reelT = 0; sfx('reel'); }
   } else {
-    f.tension += (pull * 0.2 - 0.75 - rod * 0.05) * dt;
-    if (idleOk(sp)) { f.prog += (0.06 + 0.05 * (1 - diff)) * dt; f.idle = true; }   // small fish tire themselves out
-    else f.prog = Math.max(0, f.prog - 0.035 * dt);
+    f.tension -= (TUNE.relax + 0.03 * rod) * dt;
+    if (f.taking) f.prog -= (surge - 0.9) * TUNE.take * power * dt;     // it runs against a slack reel and takes line back
   }
-  f.tension = Math.max(0, f.tension);
-  if (learning() || easy) f.tension = Math.min(f.tension, lineMax() * 0.9);   // first fish, and easy reel, strain the line but never snap it
-  if (f.tension > lineMax() * 0.8) f.strained = true;                        // into the red: the catch loses a star
+  f.tension = clamp(f.tension, 0, lineMax() * (f.grace ? 0.55 : learning() || easy ? 0.9 : Infinity));   // the grace, first fish and easy reel never snap
+  if (f.tension > lineMax() * (f.redAt ?? 0.8)) f.strained = true;           // into the red: the catch loses a star
   if (surge > 1) G.shake = Math.max(G.shake, 0.6);
   if (Math.random() < dt * (3 + surge * 10)) spawn({ kind: 'dot', x: (f.fx ?? f.tx) + jitter(4), y: (f.fy ?? f.ty) + jitter(3), vx: jitter(18), vy: jitter(18), life: 0.35 });
   if (f.tension >= lineMax()) {
@@ -348,6 +374,11 @@ function reelStage(f: FishLine, dt: number, strike: boolean): void {
     const kept = remember(f);
     toast(kept ? `The ${sp.name} got away with your hook. It's still out there, marked on your chart` : f.jump ? 'It threw the hook' : 'Your line snapped', 'bad');
     track('fish_lost', { species: sp.id, reason: f.jump ? 'threw_hook' : 'snapped', towed: !!f.tow, remembered: kept, again: !!f.back });
+    G.fish = null;
+  } else if (f.prog <= 0 && f.t > 1.5) {
+    sfx('snap', 0.5);
+    toast('It shook the hook. Reel in when it calms', 'bad');
+    track('fish_lost', { species: sp.id, reason: 'shook_off', towed: !!f.tow, remembered: false, again: !!f.back });
     G.fish = null;
   } else if (f.prog >= 1 && sp.fight === 'boss' && stage < 2) {
     f.stage = stage + 1; f.prog = 0.12; f.tension = Math.min(f.tension, 0.4); G.shake = 4;
@@ -357,7 +388,21 @@ function reelStage(f: FishLine, dt: number, strike: boolean): void {
 }
 
 // ---------- landing a catch ----------
-/** Weight, value and trophy roll; good strikes, bait, frenzies, storms and bad luck streaks help. */
+/** Size (0..1 across the species' range) and the trophy roll; good strikes, bait, frenzies, storms and bad luck streaks help. */
+function rollSize(spIdx: number, f: FishLine | null, small = false): { size: number; trophy: boolean } {
+  let r = Math.pow(Math.random(), 2.2);
+  if (small) return { size: r * 0.4, trophy: false };   // the deckhand's catch: a small one, about 60% of the usual value, no trophy roll
+  if (f?.perfect) r = Math.min(1, r + 0.1);
+  const baitBonus = (f?.bait === 'shrimp' ? 0.05 : f?.bait === 'glow' ? 0.12 : 0) + (f && f.bait === favBait(SPECIES[spIdx]) ? 0.04 : 0);
+  const chance = Math.min(0.3, 0.04 + G.pity * 0.006) + baitBonus + (f?.frenzy ? 0.1 : 0) + (f?.perfect ? 0.04 : 0) + trophyBonus();
+  const trophy = !!f?.gold || Math.random() < chance;              // a golden fish is always a trophy, and worth more
+  if (trophy) { r = Math.max(r, 0.82 + Math.random() * 0.18); G.pity = 0; }
+  else G.pity++;
+  return { size: r, trophy };
+}
+const kgOf = (s: Species, r: number, variant?: string): number =>
+  Math.round((s.kg[0] + (s.kg[1] - s.kg[0]) * r) * (variant ? VARIANTS[variant as VariantId].sizeMul : 1) * 100) / 100;
+/** Weight and value of a catch, from the size rolled at the hook (or now, for nets and the deckhand). */
 function rollCatch(spIdx: number, f: FishLine | null, small = false): Fish {
   const s = SPECIES[spIdx], gold = !!f?.gold;
   if (f?.back) {                                        // the one that got away: the weight it had, and a story worth paying for
@@ -365,17 +410,8 @@ function rollCatch(spIdx: number, f: FishLine | null, small = false): Fish {
     if (gold) fish.gold = true;
     return fish;
   }
-  let r = Math.pow(Math.random(), 2.2), trophy = false;
-  if (small) r *= 0.4;                                  // the deckhand's catch: a small one, about 60% of the usual value, no trophy roll
-  else {
-    if (f?.perfect) r = Math.min(1, r + 0.1);
-    const baitBonus = f?.bait === 'shrimp' ? 0.05 : f?.bait === 'glow' ? 0.12 : 0;
-    const chance = Math.min(0.3, 0.04 + G.pity * 0.006) + baitBonus + (f?.frenzy ? 0.1 : 0) + (f?.perfect ? 0.04 : 0) + trophyBonus();
-    trophy = gold || Math.random() < chance;                        // a golden fish is always a trophy, and worth more
-    if (trophy) { r = Math.max(r, 0.82 + Math.random() * 0.18); G.pity = 0; }
-    else G.pity++;
-  }
-  const variant = f?.variant, kg = Math.round((s.kg[0] + (s.kg[1] - s.kg[0]) * r) * (variant ? VARIANTS[variant as VariantId].sizeMul : 1) * 100) / 100;
+  const { size: r, trophy } = f?.size !== undefined ? { size: f.size, trophy: !!f.trophy } : rollSize(spIdx, f, small);
+  const variant = f?.variant, kg = f?.kg ?? kgOf(s, r, variant);
   const value = s.base * (0.55 + 0.9 * r) * (small ? 0.75 : gold ? GOLD_VALUE : trophy ? 1.8 : 1) * STAR_VALUE[(f?.stars ?? 1) - 1];
   const fish: Fish = { sp: spIdx, kg, value: Math.max(1, Math.round(value)), trophy, t: G.clock };
   if (gold) fish.gold = true;

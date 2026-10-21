@@ -14,7 +14,7 @@ export type Screen = 'chart' | 'logbook' | 'journal' | 'ship' | 'settings' | 'co
 type Events = {
   voyage_started: { kind: 'new' | 'continue'; day: number };
   fish_caught: { species: string; method: Method; kg_bucket: string; trophy: boolean; golden: boolean; legend: boolean; first: boolean; perfect: boolean; rod: number; towed: boolean; got_back: boolean; variant: string; stars: number };
-  fish_lost: { species: string; reason: 'snapped' | 'threw_hook' | 'missed_strike'; towed?: boolean; remembered?: boolean; again?: boolean };
+  fish_lost: { species: string; reason: 'snapped' | 'threw_hook' | 'missed_strike' | 'shook_off'; towed?: boolean; remembered?: boolean; again?: boolean };
   species_logged: { species: string; logged: number };
   catch_sold: { fish: number; value_bucket: string; port: string; sold_kept: boolean };
   hull_repaired: { cost_bucket: string; full: boolean };

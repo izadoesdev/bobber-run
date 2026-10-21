@@ -13,7 +13,7 @@ import { boatDef, boatSpeed, cap, catchNeed, dayNum, fishValue, hpMax, isNight, 
 import { addCoins, burst, celebrate, jitter, spawn, toast } from './feedback';
 import { checkGoals } from './goals';
 import { placeAtPort, portById, saveGame } from './save';
-import { SPOOL, endlessStock, hitstop, idleOk, landNetted, nearestSchool, towStretch, tryCast, updateFishing, updateFrenzy, useChum } from './fishing';
+import { SPOOL, endlessStock, hitstop, landNetted, nearestSchool, towStretch, tryCast, updateFishing, updateFrenzy, useChum } from './fishing';
 import { schoolActive, swimSchools, updateSchools } from './schools';
 import { dock, keptBack, updateFleet } from './port';
 import { track } from '../analytics';
@@ -211,13 +211,14 @@ function promptFor(speed: number): string | null {
       if (f.jump || f.jumpWarn) return 'It is jumping. Stop reeling!';
       if (f.warn) return 'It is about to pull hard. Stop reeling!';
       if (tow) return tow;
+      if (f.taking) return 'It is running and taking line. Reel in when it calms';
       if (G.stats.caught >= 3) return null;      // the reel gauge says the rest once you know it
       if (SET.reelToggle) return 'Press [SPACE] to start or stop reeling';
-      if (idleOk(SPECIES[f.s.sp]) && !f.reelOn) return 'It will tire itself out. Hold [SPACE] to reel faster';
-      return 'Hold [SPACE] to reel. Let go when the line gets tight, or it snaps';
+      return 'Hold [SPACE] to reel. Let go when the rod creaks or the line gets tight';
     }
     if (f.st === 'bite') return f.run !== undefined ? 'It is swimming off with the bait. Strike now! [SPACE]' : 'Strike now! [SPACE]';
     if (f.st === 'wait') {
+      if (f.fakeT !== undefined && G.t - f.fakeT < 0.9) return 'A fake-out! Wait for the thump';
       if (f.teaseT !== undefined && G.t - f.teaseT < 0.9) return 'A nibble... wait for the real bite';
       return f.hint ? `Wait for the bobber to dip. ${f.hint}` : G.stats.caught < 3 ? 'Wait for the bobber to dip' : null;
     }

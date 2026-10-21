@@ -9,7 +9,7 @@ export {
 export { caption, toast, spawn } from './game/feedback';
 export { saveGame, hasSave, savedVoyage, placeAtPort, newGame, loadGame, wipeSave } from './game/save';
 export { refreshSolids, physicsStep, sink } from './game/physics';
-export { cancelFishing, TUNE, idleOk, bonusFromDeckhand } from './game/fishing';
+export { cancelFishing, TUNE, bonusFromDeckhand } from './game/fishing';
 export { schoolActive } from './game/schools';
 export {
   priceAt, fleetTotal, portTabs, portItems, leavePort, setTab, portMenuInput, buyFishChart, fishChartPrice, chartable, dockGrade, dock,
