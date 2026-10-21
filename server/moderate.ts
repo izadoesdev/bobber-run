@@ -22,7 +22,7 @@ const WHOLE = {
 };
 const WORD = (i: number) => `Is the word \`msg.w${i}\` in \`msg.text\` strong profanity, a slur, or a sexual word that a 13+ chat filter would hide? Mild words like damn, hell, crap, wtf, stupid or idiot are fine.`;
 
-export type Verdict = { text: string; filtered: boolean; whole: boolean; source: 'jev' | 'local' };
+type Verdict = { text: string; filtered: boolean; whole: boolean; source: 'jev' | 'local' };
 
 type Answers = Record<string, { type: string; probability: number }>;
 async function ask(state: Record<string, unknown>, questions: Record<string, { type: 'boolean'; instructions: string }>): Promise<Answers | null> {

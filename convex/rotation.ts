@@ -29,4 +29,3 @@ export function runningSpecies(week: number): string[] {
   }
   return out;
 }
-export const isRunning = (species: string, ms: number): boolean => runningSpecies(weekOf(ms)).includes(species);
