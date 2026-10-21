@@ -90,18 +90,17 @@ test('@phone a tap on the chart sets the waypoint there, and the chip gives its 
   await expect(page.locator('.chart-chips .chip.waypoint')).toContainText(`${m} m`);
 });
 
-// FIXME(iza-1b): never settles on CI's Linux runners (passes on macOS), even with 90 s: something keeps changing the
-// chart canvas there. Re-enable once the cause is found; a pending-chunk count on BR would be steadier than screenshots.
-test.fixme("a fish's waters on the chart settle once drawn, even zoomed all the way out", async ({ page }) => {
+test("a fish's waters on the chart are built once, even zoomed all the way out", async ({ page }) => {
   test.setTimeout(120_000);                                          // CI renders on 2 CPU cores at a few frames a second
   await sail(page);
   await page.evaluate(() => {
-    const { G, SET, SPECIES } = window.BR; SET.calm = true;          // calm stills the ripple round the boat, so only a rebuild would change the chart
-    G.talk = null; G.story = { i: 99, base: {}, shown: true }; G.zones.mackerel = true;
+    const { G, SPECIES } = window.BR; G.talk = null; G.story = { i: 99, base: {}, shown: true }; G.zones.mackerel = true;
     G.map.x = G.map.y = 0; G.map.zoom = 2; G.map.zoneSp = SPECIES.findIndex((s: { id: string }) => s.id === 'mackerel'); G.mode = 'map';
   });
-  const chart = page.locator('.chartwrap canvas');
-  let last = Buffer.alloc(0);
-  await expect.poll(async () => { const now = await chart.screenshot(); const same = now.equals(last); last = now; return same; },
-    { timeout: 90_000, intervals: [2000] }).toBe(true);
+  // the chunks get built, then building stops: an endless rebuild (tiles on screen evicting each other) never stops
+  const built = () => page.evaluate(() => window.BR.ZONES.built as number);
+  let last = -1;
+  await expect.poll(async () => { const n = await built(); const still = n > 0 && n === last; last = n; return still; }, { timeout: 90_000, intervals: [3000] }).toBe(true);
+  await page.waitForTimeout(4000);
+  expect(await built()).toBe(last);
 });

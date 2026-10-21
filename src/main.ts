@@ -23,6 +23,7 @@ import { menuInput } from './menus';
 import { initAnalytics, trackFailure } from './analytics';
 import { initTelemetry, watchGame } from './telemetry';
 import { forceName } from './ui/menus';
+import { zoneStats } from './ui/chart';
 import { baseScale, targetScale, easeScale, shipZoom } from './camera';
 
 // dev builds with ?stats: GPU and CPU time per frame (stats-gl), to find what makes laptops run hot. Never in production.
@@ -135,6 +136,6 @@ declare global { interface Window { BR: Record<string, unknown> } }
 window.BR = {
   NET, NETAPI, ONLINE, render, SET, apply: () => { applySettings(); fit(); }, AUDIO: { renderOffline, SFX_NAMES },
   WX, setWeather, LIFE, LAIR, BOSS, MODELS, GAME, TUNE, G, guide, tick, sim: (dt: number) => { noRender = true; tick(dt); noRender = false; },
-  homePort, schoolsNear, poisNear, hAt, SPECIES, R, worldCaches,
+  homePort, schoolsNear, poisNear, hAt, SPECIES, R, worldCaches, ZONES: zoneStats,
 };
 requestAnimationFrame(frame);

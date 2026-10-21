@@ -8,7 +8,7 @@ import { NET, buyIsland, claimIsland, renameIsland, releaseIsland, uploadIslandL
 import { ISLANDS, islandPrice, stashLogo } from '../islands';
 import { setWaypoint } from '../waypoint';
 import { pixelLogo, type Logo } from './logo';
-import { viewPct } from './parts';
+import { edgeFade, viewPct } from './parts';
 import { track, bucket, flushAnalytics } from '../analytics';
 
 /** Owners' links open in a new tab, after saying plainly that they leave the game. */
@@ -22,11 +22,12 @@ export function IslandSigns() {
   return <>{claimableNear(G.cam.x + W / 2, G.cam.y + H / 2, Math.hypot(W, H) / 2).map(c => {
     const row = ISLANDS.get(c.key);
     if (!row) return null;
-    // over the island's middle, only while that is in view (and clear of the top HUD), so signs never crowd the edges
-    const [x, y] = viewPct(c.x, c.y - c.R * 0.35);
-    if (x < 8 || x > 92 || y < 26 || y > 88) return null;
+    // over the island's middle while that is in view (and clear of the top HUD), fading near the edges so signs
+    // never crowd them or blink out
+    const [x, y] = viewPct(c.x, c.y - c.R * 0.35), a = edgeFade(x, y, 6, 94, 24, 90);
+    if (!a) return null;
     return (
-      <div class={'island-sign' + (row.mine ? ' mine' : '')} key={c.key} style={{ left: x + '%', top: y + '%' }}>
+      <div class={'island-sign' + (row.mine ? ' mine' : '')} key={c.key} style={{ left: x + '%', top: y + '%', opacity: a, pointerEvents: a < 0.5 ? 'none' : undefined }}>
         <button data-track="island-sign" class="sign-main" onClick={() => openIsland(c.key, 'play')}>{row.logoUrl && <img src={row.logoUrl} alt="" />}<span>{row.name}</span></button>
         {row.url && <button data-track="island-sign-visit" class="sign-link" title={row.url} onClick={() => visit(row.url!)}>visit ↗</button>}
       </div>

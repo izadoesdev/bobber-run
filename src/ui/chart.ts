@@ -132,6 +132,8 @@ function drawTarget(ctx: Ctx, w: number, h: number, [x, y]: [number, number], u:
 const ZC = 16, ZCH = 512, ZK = ZCH / ZC, ZPX = 4, ZS = ZK * ZPX;   // cell size, chunk size, cells per chunk side, canvas px per cell, canvas size
 const ZONE_CAP = 600, zoneTiles = new Map<string, HTMLCanvasElement | null>();
 let zoneDrawnAt = 0;
+/** How many chunks have been built since the page loaded (window.BR.ZONES, for the tests: a settled chart builds none). */
+export const zoneStats = { built: 0 };
 const HATCH = [250, 218, 112, 165], TINT = [240, 207, 106, 60], EDGE = [255, 236, 168, 240];
 /** Whether the chart may shade species `sp`'s zone: its chart was bought, or you've caught it 5 times. */
 export const zoneKnown = (sp: number): boolean => !!G.zones[SPECIES[sp].id] || (G.log[SPECIES[sp].id]?.n ?? 0) >= 5;
@@ -164,7 +166,7 @@ function zoneTile(sp: number, tx: number, ty: number, build: boolean): HTMLCanva
     }
     g.putImageData(img, 0, 0);
   }
-  zoneTiles.set(k, c);
+  zoneTiles.set(k, c); zoneStats.built++;
   if (zoneTiles.size > ZONE_CAP) zoneTiles.delete(zoneTiles.keys().next().value!);   // oldest first; a far view needs about 70
   return c;
 }

@@ -10,6 +10,12 @@ import { icon, fishIcon } from './icons';
 
 /** World position -> percent of the view, for things pinned over the canvas. */
 export const viewPct = (x: number, y: number): [number, number] => [(x - G.cam.x) / W * 100, (y - G.cam.y) / H * 100];
+/**
+ * How much of a label at view % (x, y) shows: all of it inside the box [x0, x1] x [y0, y1], fading out over `band` %
+ * at its edges, so labels slide away as the view moves instead of blinking out at a hard line.
+ */
+export const edgeFade = (x: number, y: number, x0: number, x1: number, y0: number, y1: number, band = 5): number =>
+  Math.max(0, Math.min(1, Math.min(x - x0, x1 - x, y - y0, y1 - y) / band));
 
 /** Draws into a canvas sized to its CSS box at device resolution. */
 export type DrawFn = (ctx: CanvasRenderingContext2D, w: number, h: number, dpr: number) => void;

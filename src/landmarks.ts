@@ -181,6 +181,9 @@ export const HARBOURS: (() => Vox)[] = [harbourVillage, harbourQuay, harbourStil
 
 // ---------- lighthouses ----------
 const LR = 16, LZ = 42;
+/** Where each lighthouse design's lantern room starts; the renderer hangs its lamp and beam at LAMP_Z. */
+const LANTERN_Z = [28, 27, 30];
+export const LAMP_Z = LANTERN_Z.map(z => z + 2.5);
 /** A tower of rings from z0 to z1, its radius tapering from r0 to r1; `paint(z, u, v)` picks each voxel's material. */
 function tower(V: Vox, z0: number, z1: number, r0: number, r1: number, paint: (z: number, u: number, v: number) => number): void {
   for (let z = z0; z <= z1; z++) {
@@ -219,7 +222,7 @@ function lightClassic(): Vox {
   V.box(-1, 1, 6, 8, 2, 2, M.stone); V.box(-1, 1, 6, 7, 3, 3, M.stone);        // steps up to the door
   tower(V, 4, 27, 4.9, 3.7, z => Math.floor((z - 4) / 4) % 2 ? M.redp : M.white);
   V.box(-1, 1, 4, 4, 4, 7, M.door); for (const z of [13, 20]) V.box(0, 0, 4, 4, z, z + 1, L.lit);
-  lantern(V, 28, M.iron, M.roof, L.roofD);
+  lantern(V, LANTERN_Z[0], M.iron, M.roof, L.roofD);
   cottage(V, 6, -12, M.white, L.slate, L.slateD);
   picket(V, 4, 15, -14, -5); for (let u = 7; u <= 13; u += 2) { V.set(u, -6, 2, L.flower); V.set(u + 1, -6, 2, L.flower2); }
   barrel(V, -7, -5, 3); crate(V, -8, -8, 3);
@@ -232,7 +235,7 @@ function lightStone(): Vox {
   tower(V, 3, 26, 5.4, 4.1, (z, u, v) => (Math.floor(z / 2) + Math.floor((Math.atan2(v, u) + 4) * 2.2)) % 3 === 0 ? L.stone2 : M.stone);
   V.box(-1, 1, 5, 5, 4, 8, M.door); V.box(-1, 1, 5, 5, 9, 9, L.stone2);
   for (const z of [12, 18, 23]) V.box(0, 0, -5, -5, z, z + 1, L.lit);
-  lantern(V, 27, M.iron, L.verd, L.verd);
+  lantern(V, LANTERN_Z[1], M.iron, L.verd, L.verd);
   // a lean-to store and a woodpile against the rocks
   walls(V, -13, -7, 4, 9, 2, 6, M.stone); V.box(-7, -7, 6, 7, 2, 5, M.door);
   for (let k = 0; k <= 4; k++) V.box(-14, -6, 3 + k, 3 + k, 7 + Math.floor(k / 2), 7 + Math.floor(k / 2), k % 2 ? L.slateD : L.slate);
@@ -246,7 +249,7 @@ function lightSpiral(): Vox {
   rocks(V, 0, 0, 7, 2, 29);
   tower(V, 3, 29, 4.4, 3.3, (z, u, v) => ((Math.atan2(v, u) / (Math.PI * 2) + z / 14) % 1 + 1) % 1 < 0.3 ? L.navyS : M.white);
   V.box(-1, 1, 4, 4, 3, 6, M.door);
-  lantern(V, 30, L.navyS, L.navyS, M.iron);
+  lantern(V, LANTERN_Z[2], L.navyS, L.navyS, M.iron);
   // the boat shed with a dinghy run out on the sand
   walls(V, 5, 13, 4, 10, 1, 5, L.wall2); V.box(13, 13, 5, 9, 1, 4, M.door);
   gable(V, 4, 14, 3, 11, 6, M.roof, L.roofD, M.redp);

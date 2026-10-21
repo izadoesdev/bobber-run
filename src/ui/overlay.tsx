@@ -14,7 +14,7 @@ import { waypointRoute } from '../waypoint';
 import { coursePath } from '../game/autopilot';
 import { BIOME_NAME, biomeAt, type BiomeId } from '../biome';
 import { IslandSigns } from './island';
-import { Fish, Icon, forTouch, keyed, viewPct } from './parts';
+import { Fish, Icon, edgeFade, forTouch, keyed, viewPct } from './parts';
 
 /** Everything drawn over the sea while sailing. `wp` is the player's waypoint, which takes the arrow from the guide. */
 export function SeaLayer({ step, wp }: { step: Step; wp: Step | null }) {
@@ -165,19 +165,18 @@ function ChatBubble({ text, at, x, y, mine }: { text: string; at: number; x: num
 // and your own greeting
 function worldLabels(): JSX.Element[] {
   const labels: JSX.Element[] = [];
+  // the spyglass reaches 120 units: fish fade in over its last 30, and at the view's edges, rather than blinking
   if (G.up.spyglass >= 2 && !G.fish) for (const s of schoolsNear(G.boat.x, G.boat.y, 120)) {
     if (!schoolActive(s) || s.boss) continue;
-    const [x, y] = viewPct(s.x, s.y - 6);
-    if (x > 4 && x < 96 && y > 30 && y < 92) {
-      labels.push(<div class="label-world bare" style={{ left: x + '%', top: y + '%' }} title={SPECIES[s.sp].name}><Fish sp={s.sp} size="s" /></div>);
-    }
+    const [x, y] = viewPct(s.x, s.y - 6), a = edgeFade(x, y, 4, 96, 30, 92) * Math.min(1, (120 - Math.hypot(s.x - G.boat.x, s.y - G.boat.y)) / 30);
+    if (a > 0) labels.push(<div class="label-world bare" key={'f' + s.id} style={{ left: x + '%', top: y + '%', opacity: 0.7 * a }} title={SPECIES[s.sp].name}><Fish sp={s.sp} size="s" /></div>);
   }
   // other sailors: a name tag, plus a speech bubble for a few seconds after they greet or chat (the newer wins)
   const now = Date.now(), fresh = (at: number) => now - at < 4500, said = SET.chat === 'off' ? new Map<string, { text: string; at: number }>() : ONLINE.chat;
   for (const s of ONLINE.sailors) {
-    const [x, y] = viewPct(s.x, s.y - 22);
-    if (x < 2 || x > 98 || y < 6 || y > 96) continue;
-    labels.push(<div class="label-world chip sailor" key={'n' + s.uid} style={{ left: x + '%', top: y + '%' }}>{s.name}</div>);
+    const [x, y] = viewPct(s.x, s.y - 22), a = edgeFade(x, y, 2, 98, 6, 96, 3);
+    if (!a) continue;
+    labels.push(<div class="label-world chip sailor" key={'n' + s.uid} style={{ left: x + '%', top: y + '%', opacity: a }}>{s.name}</div>);
     const line = said.get(s.uid), talking = line && now - line.at < CHAT_MS && (s.emote == null || line.at > s.emoteAt);
     if (talking) labels.push(<ChatBubble key={'c' + s.uid} text={line.text} at={line.at} x={x} y={y - 6.5} />);
     else if (s.emote != null && fresh(s.emoteAt)) {
