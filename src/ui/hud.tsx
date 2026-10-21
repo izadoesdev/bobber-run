@@ -45,17 +45,22 @@ function Captions() {
   return G.captions.length > 0 && <div class="captions">{G.captions.map(c => <div class="caption">[{c.s}]</div>)}</div>;
 }
 
+// hull, bait and chum stay in the bar and fold away when they don't matter, so showing one slides the bar open
+// instead of jumping everything after it; bait and chum linger a moment after a school, so sailing past doesn't flicker them
+let fishSeen = -99;
 function Status() {
-  const b = G.boat, cp = cap(), k = clamp(b.hp / hpMax(), 0, 1), bait = G.baitSel, full = G.hold.length >= cp;
-  const fishing = !!G.fish || !!G.nearSchool;               // bait and chum only matter by a school
+  const b = G.boat, cp = cap(), k = clamp(b.hp / hpMax(), 0, 1), bait = G.baitSel, full = G.hold.length >= cp, chum = G.bait.chum || 0;
+  if (G.fish || G.nearSchool) fishSeen = G.t;
+  const fishing = G.t - fishSeen < 2;
+  const opt = (on: boolean, cls = '') => ({ class: `seg opt ${cls}` + (on ? '' : ' off'), 'aria-hidden': !on });
   return (
     <div class="hud-bar chip">
       <span class="seg"><Icon k="coin" size="s" /><span class="coins">{money(G.coinsShown)}</span>
         {G.floaters.map((f, i) => <span key={i} class={'floater ' + f.kind}>{f.s}</span>)}</span>
       <span class={'seg' + (full ? ' bad' : '')} title="Fish in your hold"><Icon k="hold" size="s" />{G.hold.length}/{cp}{G.hold.some(f => f.gold) && <span class="gold"> ★</span>}</span>
-      {k < 1 && <span class="seg" title="Hull"><Icon k="hull" size="s" /><span class="mini-bar"><Bar k={k} tone={k > 0.5 ? '' : k > 0.25 ? 'warn' : 'bad'} /></span></span>}
-      {fishing && <span class="seg small" title="Bait (B to switch)"><Icon k={bait === 'none' ? 'rod' : bait} size="s" />{bait === 'none' ? 'No bait' : `×${G.bait[bait] || 0}`}<Key k="b" pad="RB" /></span>}
-      {fishing && (G.bait.chum || 0) > 0 && <span class="seg small" title="Chum (C)"><Icon k="chum" size="s" />{G.bait.chum}<Key k="c" /></span>}
+      <span {...opt(k < 1)} title="Hull"><Icon k="hull" size="s" /><span class="mini-bar"><Bar k={k} tone={k > 0.5 ? '' : k > 0.25 ? 'warn' : 'bad'} /></span></span>
+      <span {...opt(fishing, 'small')} title="Bait (B to switch)"><Icon k={bait === 'none' ? 'rod' : bait} size="s" />{bait === 'none' ? 'No bait' : `×${G.bait[bait] || 0}`}<Key k="b" pad="RB" /></span>
+      <span {...opt(fishing && chum > 0, 'small')} title="Chum (C)"><Icon k="chum" size="s" />{chum}<Key k="c" /></span>
     </div>
   );
 }

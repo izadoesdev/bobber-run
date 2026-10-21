@@ -385,10 +385,15 @@ html.touch #ui .screen:has(.chartwrap) .foot { padding-right: 130px; }
 }
 
 /* ---------- the quiet HUD: one status bar, one objective line, the minimap with wind and day on its ring ---------- */
-.hud-bar { gap: 0.9em; padding: 0.3em 0.7em; font-size: 1em; width: max-content; max-width: calc(100vw - 1.6em); }
-.hud-bar .seg { display: inline-flex; align-items: center; gap: 0.35em; position: relative; }
+.hud-bar { gap: 0; padding: 0.3em 0.7em; font-size: 1em; width: max-content; max-width: calc(100vw - 1.6em); }
+.hud-bar .seg { display: inline-flex; align-items: center; gap: 0.35em; position: relative; margin: 0 0 0 0.9em; white-space: nowrap; }
+.hud-bar .seg:first-child { margin-left: 0; }
+/* hull, bait and chum fold away (the padding keeps the key's shadow from being clipped) */
+.hud-bar .seg.opt { max-width: 10em; overflow: hidden; padding-block: 0.25em; margin-block: -0.25em; transition: max-width 0.35s ease, margin-left 0.35s ease, opacity 0.25s; }
+.hud-bar .seg.opt.off { max-width: 0; margin-left: 0; opacity: 0; }
 .hud-bar .seg.bad { color: var(--bad); }
-.hud-bar .coins { font-size: 1.25em; line-height: 1; }
+.hud-bar .coins { font-size: 1.25em; line-height: 1; font-variant-numeric: tabular-nums; }
+.hud-bar .floater { position: absolute; left: 1.6em; top: -0.2em; white-space: nowrap; pointer-events: none; }
 .hud-bar .mini-bar { width: 4em; display: inline-block; }
 .hud-bar .key { font-size: 0.8em; }
 .chip.objective { text-align: left; cursor: pointer; pointer-events: auto; max-width: 24em; white-space: normal; align-items: flex-start; }
