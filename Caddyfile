@@ -23,9 +23,9 @@
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Strict-Transport-Security "max-age=31536000"
 		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
-		# Preact sets inline style attributes; the Convex client talks to *.convex.cloud over https and wss;
+		# Preact sets inline style attributes; island logos load from Convex file storage; the Convex client talks to *.convex.cloud over https and wss;
 		# Databuddy's tracker loads from its CDN and sends to basket; boat positions stream from the relay service
-		Content-Security-Policy "default-src 'self'; script-src 'self' https://cdn.databuddy.cc; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.convex.site https://basket.databuddy.cc wss://relay-production-a8ce.up.railway.app; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		Content-Security-Policy "default-src 'self'; script-src 'self' https://cdn.databuddy.cc; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.convex.cloud; font-src 'self'; connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.convex.site https://basket.databuddy.cc wss://relay-production-a8ce.up.railway.app; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 	}
 
 	root * {{.DIST_DIR}}

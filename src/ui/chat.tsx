@@ -59,6 +59,17 @@ function onlineText(): string {
   return total ? `${total} online${near ? ` · ${near} nearby` : ''}` : near ? `${near} nearby` : 'Online';
 }
 
+// the open log follows the newest line, unless you've scrolled up to read older ones; opening it starts at the bottom
+let logEl: HTMLDivElement | null = null, logEnd = '';
+function followLog(el: HTMLDivElement | null): void {
+  if (!el) return;
+  const last = ONLINE.log.at(-1), end = last ? `${last.id}${last.at}` : '';
+  if (el === logEl && end === logEnd) return;
+  const fresh = el !== logEl, nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 64;
+  if (fresh || nearBottom) el.scrollTop = el.scrollHeight;
+  logEl = el; logEnd = end;
+}
+
 export function Chat() {
   if (G.mode !== 'play' || !NET.on) return null;
   const now = Date.now(), live = relayLive() && canChat();
@@ -73,7 +84,7 @@ export function Chat() {
             <span class="muted">{ONLINE.roster.length ? `In your sea: ${ONLINE.roster.join(', ')}` : onlineText()}</span>
             <button data-track="chat-close" class="chat-x" aria-label="Close chat" onPointerDown={e => e.preventDefault()} onClick={closeChat}>×</button>
           </header>
-          <div class="chat-log">{ONLINE.log.slice(-12).map(l => <Line key={`${l.id}${l.at}`} l={l} live />)}</div>
+          <div class="chat-log" ref={el => followLog(el)}>{ONLINE.log.slice(-12).map(l => <Line key={`${l.id}${l.at}`} l={l} live />)}</div>
           {ONLINE.note && <p class="chat-note" onClick={() => { ONLINE.note = null; }}>{ONLINE.note}</p>}
           {relayLive()
             ? <input class="chat-input" maxlength={MAX_LEN} value={draft} placeholder="Say something. Enter sends, Esc closes"
