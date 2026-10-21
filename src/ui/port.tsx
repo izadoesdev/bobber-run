@@ -1,5 +1,5 @@
 // The port screen: tabbed shop lists on wood, the selected item's details on parchment.
-import { G, portItems, portTabs, projDone, setTab, leavePort, equipment, fishValue, priceAt } from '../game';
+import { G, portItems, portTabs, projDone, setTab, leavePort, equipment, fishValue, priceAt, catchNeed } from '../game';
 import { boatDef, boatStats, builtIn, upgradeStat } from '../game/rules';
 import { saleBonus, sailorsNear } from '../game/port';
 import { SPECIES } from '../econ';
@@ -11,6 +11,7 @@ import type { Fit } from '../models';
 import { drawChart } from './chart';
 import { Canvas, Cell, Fish, Hint, HullStat, Icon, Key, Pips, WX_ICON, boatPreview, boatThumb, cap1, clockText, flashing } from './parts';
 import { money } from '../config';
+import { today, FEATURED_PRICE } from '../today';
 
 const GREET = [
   'The harbourmaster tips his cap.', 'Gulls squabble over the pilings.', 'The smell of tar and salt hangs in the air.',
@@ -225,6 +226,38 @@ function Forecast() {
   );
 }
 
+const inTime = (ms: number): string => { const m = Math.max(1, Math.ceil(ms / 60_000)); return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`; };
+/** What to bring, cut from catchNeed's own wording; only ship and deck needs make rumours (a rod is no secret). */
+function rumourNeed(need: string | null): string | null {
+  const boat = need && /^needs a bigger boat: the (.+)$/.exec(need), sails = need && /needs sails \(the (.+)\)/.exec(need);
+  return boat ? `a ${boat[1]}` : sails ? `sails, the ${sails[1]}` : need && /needs a Storm Keel/.test(need) ? 'a Storm Keel' : null;
+}
+/** One dockside rumour of a valuable fish your ship can't land yet, fixed per port and day; legends only once logged. */
+function rumour(p: PortT, day: number): string | null {
+  const locked = SPECIES.map((s, i) => ({ s, what: s.w > 0 && (!s.legend || G.log[s.id]) ? rumourNeed(catchNeed(i)) : null }))
+    .filter(o => o.what).sort((a, b) => b.s.base - a.s.base).slice(0, 3);
+  if (!locked.length) return null;
+  const o = locked[hashStr(p.id + ':' + day) % locked.length];
+  return `Rumour: big ${o.s.name} past the shelf, needs ${o.what}`;
+}
+// the market's notice board: kept to one clipped line (two on phones) so it never pushes the item list off a small screen
+function Board({ p }: { p: PortT }) {
+  const t = today(), now = Date.now(), on = t.frenzy.start <= now, rum = rumour(p, t.day);
+  return (
+    <div class="port-board">
+      <div class="chip today" title={`Today these sell for ${FEATURED_PRICE}× everywhere: ${t.featured.map(sp => SPECIES[sp].name).join(', ')}`}>
+        <span class="caps">Today</span>
+        {t.featured.map(sp => <span class="feat" title={SPECIES[sp].name}><Fish sp={sp} size="s" /></span>)}
+        <span class="gold">×{FEATURED_PRICE}</span>
+      </div>
+      <div class={'chip today' + (on ? ' on' : '')} title="A feeding frenzy for every sailor at once, everywhere at sea">
+        <Icon k="star" size="s" /><span>{on ? `Frenzy now, ${inTime(t.frenzy.end - now)} left` : `Frenzy in ${inTime(t.frenzy.start - now)}`}</span>
+      </div>
+      {rum && <span class="rumour" title={rum}>{rum}</span>}
+    </div>
+  );
+}
+
 export function Port({ p }: { p: PortT }) {
   const tabs = portTabs(p), items = portItems(p), cur = items[G.menu.sel], it = isRow(cur) ? cur : null;
   return (
@@ -238,6 +271,7 @@ export function Port({ p }: { p: PortT }) {
         {tabs.map((t, i) => <button data-track={`port-tab-${t}`} class={'tab' + (i === G.menu.tab ? ' on' : '')} onClick={() => setTab(i)}><span class="tnum">{i + 1}</span>{t}</button>)}
         <Key k="e" pad="RB" />
       </nav>
+      {G.menu.tab === 0 && <Board p={p} />}
       <div class="body">
         <div class="list well">{items.map((x, i) => isRow(x) ? <Row it={x} i={i} /> : <div class="list-head caps">{x.label}</div>)}</div>
         <Detail p={p} it={it} />

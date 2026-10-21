@@ -10,7 +10,7 @@ import { SET } from '../settings';
 import { sfx } from '../audio';
 import { currentQuest, questProgress } from '../story';
 import { guide, guideOn, stepLine, tip, whereText, type Step } from '../game/guide';
-import type { CatchCard as CatchCardState, FishLine, Toast } from '../types';
+import type { CatchCard as CatchCardState, FishLine, Point, Toast } from '../types';
 import { drawChart, nearestUncharted } from './chart';
 import { SeaLayer } from './overlay';
 import { clearWaypoint, sailToWaypoint, tickWaypoint, waypointMetres } from '../waypoint';
@@ -68,8 +68,28 @@ function Status() {
 // the minimap redraws when the boat has moved a minimap pixel or turned a little, and ten times a second for what
 // animates on it (schools, sailors, the frenzy star); every frame it cost as much CPU as the rest of the UI
 const miniKey = (): string => { const b = G.boat; return `${Math.round(b.x / 2.2)},${Math.round(b.y / 2.2)},${Math.round(b.a * 20)},${Math.floor(G.t * 10)},${G.waypoint?.x},${G.waypoint?.y}`; };
+/**
+ * The compass, the default dial: north up, your heading, and on the rim a gold chevron toward the next step, the
+ * white diamond of your waypoint and (with the sextant) a grey square toward the nearest uncharted place, the same
+ * marks as the chart. The minimap setting swaps in the map.
+ */
+function CompassFace({ target, un, onClick }: { target: Point | null; un: Point | null; onClick: () => void }) {
+  const b = G.boat, at = (p: Point) => `rotate(${Math.atan2(p.y - b.y, p.x - b.x) * 180 / Math.PI})`, far = (p: Point) => Math.hypot(p.x - b.x, p.y - b.y) > 20;
+  return (
+    <svg class="compass" viewBox="-50 -50 100 100" role="img" aria-label="Compass: open the sea chart (M)" onClick={onClick} data-track="compass-open">
+      <circle r="47" fill="#1b2a33" fill-opacity="0.78" />
+      {Array.from({ length: 16 }, (_, i) => { const a = i * Math.PI / 8, r0 = i % 4 ? 42 : 37; return <line key={i} x1={Math.cos(a) * r0} y1={Math.sin(a) * r0} x2={Math.cos(a) * 46} y2={Math.sin(a) * 46} stroke="#f0d27a" stroke-opacity={i % 4 ? 0.35 : 0.8} stroke-width={i % 4 ? 1 : 2} />; })}
+      {([['E', 30, 0], ['S', 0, 30], ['W', -30, 0]] as const).map(([l, x, y]) => <text key={l} x={x} y={y} class="cpt">{l}</text>)}
+      <g transform={`rotate(${b.a * 180 / Math.PI})`}><path d="M18 0 L-10 -7 L-5 0 L-10 7 Z" fill="#ff9a6b" stroke="#1b2a33" stroke-width="2" stroke-linejoin="round" /></g>
+      {un && <g transform={at(un)}><rect x="37" y="-3.5" width="7" height="7" fill="#b8c0c6" stroke="#1b2a33" stroke-width="1.5" /></g>}
+      {G.waypoint && far(G.waypoint) && <g transform={at(G.waypoint)}><path d="M41 -5.5 L46.5 0 L41 5.5 L35.5 0 Z" fill="#e6efec" stroke="#1b2a33" stroke-width="1.5" /></g>}
+      {target && far(target) && <g transform={at(target)}><path d="M48 0 L36 -8 L39 0 L36 8 Z" fill="#f0cf6a" stroke="#1b2a33" stroke-width="1.8" stroke-linejoin="round" /></g>}
+    </svg>
+  );
+}
+/** The dial top right: the compass, or the minimap if the player chose it; both open the chart. */
 function Minimap({ step }: { step: Step }) {
-  const un = G.up.sextant > 0 ? nearestUncharted() : null, target = guideOn() ? step.at : null;
+  const un = G.up.sextant > 0 ? nearestUncharted() : null, target = guideOn() ? step.at ?? null : null;
   const draw: DrawFn = (ctx, w, h, dpr) => {
     const b = G.boat;
     drawChart(ctx, w, h, b.x, b.y, 300 / w, { dpr, budget: 4, target, round: true, waypoint: G.waypoint });
@@ -87,7 +107,9 @@ function Minimap({ step }: { step: Step }) {
   const part = night ? ', night' : c > 0.55 ? ', dusk' : '';   // the icon already shows it; the words go in the tooltip so the label never grows into the wind dial
   return (
     <div class="mini">
-      <div class="ring"><Canvas draw={draw} when={miniKey} onClick={open} title="Open the sea chart (M)" data-track="minimap-open" /><span class="n">N</span>
+      <div class="ring">
+        {SET.minimap ? <Canvas draw={draw} when={miniKey} onClick={open} title="Open the sea chart (M)" data-track="minimap-open" /> : <CompassFace target={target} un={un?.p ?? null} onClick={open} />}
+        <span class="n">N</span>
         <div class={'wind' + (sail ? '' : ' quiet')} title={`${windWord()}${sail ? `, sails at ${Math.round(eff * 100)}%` : ''}`}>
           <WindVane sail={sail} eff={eff} />
           {sail && <span class={'pct ' + (eff > 0.9 ? 'good' : eff > 0.6 ? '' : 'bad')}>{Math.round(eff * 100)}%</span>}

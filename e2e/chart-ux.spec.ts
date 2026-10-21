@@ -7,7 +7,7 @@ import type { Page } from '@playwright/test';
 async function openChart(page: Page): Promise<void> {
   await sail(page);
   await page.evaluate(() => { const { G, homePort } = window.BR; G.found.add(homePort().id); G.waypoint = null; G.talk = null; G.story = { i: 99, base: {}, shown: true }; });
-  await page.locator('.mini canvas').click();
+  await page.locator('.mini :is(canvas, .compass)').click();
   await expect.poll(() => page.evaluate(() => window.BR.G.mode)).toBe('map');
 }
 /** Where world point (x, y) is on screen, by the chart's own projection. */
