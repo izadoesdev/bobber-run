@@ -1,7 +1,8 @@
 // Voxel models -> GPU meshes (flat-shaded cubes with per-vertex ambient occlusion), plus procedural
 // trees, fish, sea life and a per-frame builder for thin dynamic parts (oars, rod, fishing line).
 import { Vox, RGB, EMISSIVE, mat, type Vec3 } from '../voxel';
-import { M, decorate, eqSig, LIGHTHOUSE, HARBOUR, WRECK, CRATE, type Fit } from '../models';
+import { M, decorate, eqSig, CRATE, type Fit } from '../models';
+import { HARBOURS, LIGHTHOUSES, WRECKS } from '../landmarks';
 import { SPECIES } from '../econ';
 import { schoolLook } from '../species';
 import { FISH_T } from '../fishart';
@@ -127,9 +128,9 @@ function lazy(key: string, build: () => Vox, dz = 0): () => Mesh {
   let m: Mesh | null = null, g = -1;
   return () => { if (g !== gen) { m = cached(key, build, dz); g = gen; } return m!; };
 }
-export const lighthouseMesh = lazy('lighthouse', () => LIGHTHOUSE);
-export const harbourMesh = lazy('harbour', () => HARBOUR);
-export const wreckMesh = lazy('wreck', () => WRECK);
+export const lighthouseMesh = family((k: number) => 'lighthouse' + k, k => LIGHTHOUSES[k]);
+export const harbourMesh = family((k: number) => 'harbour' + k, k => HARBOURS[k]);
+export const wreckMesh = family((k: number) => 'wreck' + k, k => WRECKS[k]);
 export const crateMesh = lazy('crate', () => CRATE);
 
 // ---------- procedural voxel trees ----------

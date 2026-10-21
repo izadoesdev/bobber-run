@@ -1,4 +1,4 @@
-// Voxel models: rowboat (with animated oars), sailing and steam boats, lighthouse, harbour, wreck, crate.
+// Voxel models: rowboat (with animated oars), sailing and steam boats, and the floating crate (landmarks are in landmarks.ts).
 // Boats are decorated with the player's fitted gear (decorate) and either rendered to sprites (boatFrame, for the UI)
 // or meshed for the GL renderer (gl/meshes).
 import { Vox, mat, RGB, renderVox, type Vec3, type VoxFrame, type VoxLine, type VoxPoint } from './voxel';
@@ -33,6 +33,11 @@ export const M = {
   navr: mat(['#a8302a', '#e04a3a', '#ff8a7a'], true), navg: mat(['#2a7a3a', '#3ab05a', '#8ae09a'], true),
 };
 const PAINT_MAT: Record<string, number> = Object.fromEntries(PAINTS.flatMap(p => p.ramp ? [[p.id, mat(p.ramp)]] : []));
+/** '#rrggbb' darkened to k of itself */
+const shade = (c: string, k: number): string => '#' + [1, 3, 5].map(i => Math.round(parseInt(c.slice(i, i + 2), 16) * k).toString(16).padStart(2, '0')).join('');
+const seamOf = (r: readonly [string, string, string]): number => mat([shade(r[0], 0.86), shade(r[1], 0.86), shade(r[2], 0.86)]);
+/** the rowboat's clinker seams: a shade darker than its paint, whatever the paint */
+const SEAM = seamOf(['#a9a291', '#d3cbb9', '#efe9dc']), PAINT_SEAM: Record<string, number> = Object.fromEntries(PAINTS.flatMap(p => p.ramp ? [[p.id, seamOf(p.ramp)]] : []));
 
 // ---------- rowboat ----------
 const HL = 14, HB = 6.2, HZ = 5;
@@ -55,9 +60,13 @@ const BOAT = new Vox(-17, 17, -10, 10, 15);
     if (z === ztop(u)) m = in1 ? M.gun : M.paint;
     else if (z === 1 && in2) m = (v + 21) % 3 === 0 ? M.plank2 : M.floor;          // floorboards with dark seams
     else if (in1 && z >= 1) m = (u + 30) % 3 === 0 ? M.plank2 : M.lining;          // ribs inside the hull
-    else m = z <= 1 ? M.bottom : z === ztop(u) - 1 ? M.stripe : M.paint;
+    else m = z <= 1 ? M.bottom : z === ztop(u) - 1 ? M.stripe : z % 2 ? M.paint : SEAM;          // clinker planks, each lap a shade darker
     B.set(u, v, z, m);
   }
+  // a painted eye either side of the bow, a rope fender on the stem, the name board across the stern
+  for (const v of [-1, 1]) for (let u = 12; u <= 14; u++) { const hw = hullHW(u, 4); if (hw > 0) B.set(u, Math.round(v * (hw + 0.3)), 4, u === 13 ? M.white : M.stripe); }
+  for (let u = 15; u <= 17; u++) for (let z = 2; z <= 6; z++) if (B.get(u, 0, z) && !B.get(u + 1, 0, z)) { B.set(u, 0, z, z === 4 || z === 5 ? M.rope : B.get(u, 0, z)); }
+  for (let v = -3; v <= 3; v++) for (let u = -17; u <= -10; u++) if (B.get(u, v, 4) && !B.get(u - 1, v, 4)) { B.set(u, v, 4, M.plank2); if (Math.abs(v) <= 1) B.set(u, v, 5, M.plank2); break; }
   // a stem post at the bow and a coil of rope on the floor aft of the rower
   for (let u = 17; u > 0; u--) if (B.get(u, 0, ztop(u))) { B.set(u, 0, ztop(u) + 1, M.gun); break; }
   for (let u = -6; u <= -4; u++) for (let v = -1; v <= 1; v++) B.set(u, v, 2, u === -5 && v === 0 ? M.ropeD : M.rope);
@@ -447,7 +456,7 @@ function lookExtras(eq: Fit, put: Put): void {
 // paint jobs swap the hull material; plating swaps the bottom and the waterline band; better sails get red cloth
 function recolour(id: BoatId, eq: Fit, V: Vox): void {
   const bm = BOAT_MODELS[id], remap = new Map<number, number>();
-  if (eq.paint !== 'classic' && PAINT_MAT[eq.paint]) remap.set(bm.hull, PAINT_MAT[eq.paint]);
+  if (eq.paint !== 'classic' && PAINT_MAT[eq.paint]) { remap.set(bm.hull, PAINT_MAT[eq.paint]); if (id === 'row') remap.set(SEAM, PAINT_SEAM[eq.paint]); }
   const lk = id === 'row' ? lookOf(eq.look) : null;
   if (lk) { remap.set(M.coat, lk.coat); remap.set(M.hat, lk.hat); remap.set(M.stripe, lk.trim); }
   if (eq.plate > 0) { remap.set(M.bottom, PLATE[eq.plate]); remap.set(STRIPE[id], PLATE[eq.plate]); }
@@ -623,59 +632,6 @@ export function boatFrame(id: BoatId, ai: number, pose: number, eq: Fit = PLAIN)
   }
   return f;
 }
-
-// ---------- lighthouse ----------
-export const LIGHTHOUSE = new Vox(-13, 13, -13, 13, 35);
-(() => {
-  const L = LIGHTHOUSE;
-  for (let u = -8; u <= 8; u++) for (let v = -8; v <= 8; v++) { const d = Math.hypot(u, v); if (d <= 7.2) { const top = d < 5.8 ? 2 : 1 + (hash01(u, v, 3) < 0.5 ? 1 : 0); for (let z = 0; z <= top; z++) L.set(u, v, z, M.stone); } }
-  for (let z = 3; z <= 24; z++) { const r = 4.6 - (z - 3) * 0.065; for (let u = -6; u <= 6; u++) for (let v = -6; v <= 6; v++) if (Math.hypot(u, v) <= r) L.set(u, v, z, Math.floor((z - 3) / 4) % 2 ? M.redp : M.white); }
-  L.box(-1, 0, 3, 4, 3, 5, M.door);
-  for (const z of [11, 18]) L.box(0, 0, 3, 4, z, z + 1, M.window);
-  for (let u = -6; u <= 6; u++) for (let v = -6; v <= 6; v++) { const d = Math.hypot(u, v); if (d <= 5.4) L.set(u, v, 25, M.iron); if (d > 4.6 && d <= 5.6 && (u + v) % 2 === 0) L.set(u, v, 26, M.iron); }
-  for (let z = 26; z <= 29; z++) for (let u = -3; u <= 3; u++) for (let v = -3; v <= 3; v++) if (Math.hypot(u, v) <= 2.6) L.set(u, v, z, (u === 0 || v === 0) && Math.hypot(u, v) > 2 ? M.iron : M.glass);
-  for (const [z, r] of [[30, 3.4], [31, 2.4], [32, 1.4]]) for (let u = -4; u <= 4; u++) for (let v = -4; v <= 4; v++) if (Math.hypot(u, v) <= r) L.set(u, v, z, M.roof);
-  L.set(0, 0, 33, M.iron); L.set(0, 0, 34, M.iron);
-  // keeper's cottage
-  L.box(6, 12, -4, 2, 1, 6, M.white); L.box(8, 9, 3, 3, 1, 3, M.door); L.box(11, 11, 3, 3, 3, 4, M.window); L.box(12, 12, -2, -1, 3, 4, M.window);
-  for (let z = 7; z <= 10; z++) { const hw = 4.6 - (z - 7) * 1.3; for (let v = -6; v <= 4; v++) if (Math.abs(v + 1) <= hw) L.box(5, 13, v, v, z, z, M.roof); }
-  L.box(11, 11, -3, -3, 7, 12, M.stone);
-  L.finalize();
-})();
-
-// ---------- harbour: pier pointing +u, boathouse inland ----------
-export const HARBOUR = new Vox(-20, 29, -9, 9, 16);
-(() => {
-  const P = HARBOUR;
-  for (let u = 0; u <= 27; u++) for (let v = -2; v <= 2; v++) P.set(u, v, 3, (u >> 1) % 2 ? M.plank : M.plank2);
-  for (const u of [2, 9, 16, 23, 27]) for (const v of [-3, 3]) P.box(u, u, v, v, 0, 4, M.post);
-  P.box(-6, 0, -5, 5, 1, 3, M.plank2);
-  P.box(20, 21, 1, 2, 4, 5, M.redp); P.box(6, 7, -2, -1, 4, 5, M.crate); P.set(6, -2, 6, M.crate);
-  P.box(27, 27, 2, 2, 5, 8, M.iron); P.set(27, 2, 9, M.lamp); P.set(27, 3, 8, M.iron);
-  P.box(-19, -8, -6, 5, 1, 7, M.white); P.box(-19, -8, -6, 5, 0, 0, M.stone);
-  P.box(-8, -8, -1, 0, 1, 4, M.door); P.box(-8, -8, 3, 3, 4, 5, M.window); P.box(-8, -8, -4, -4, 4, 5, M.window); P.box(-14, -12, 5, 5, 4, 5, M.window);
-  for (let z = 8; z <= 12; z++) { const hw = 7.6 - (z - 8) * 1.7; for (let v = -8; v <= 7; v++) if (Math.abs(v + 0.5) <= hw) P.box(-20, -7, v, v, z, z, M.roof); }
-  P.box(-6, -6, 7, 7, 1, 15, M.iron); P.box(-5, -1, 7, 7, 12, 14, M.flag); P.box(-3, -1, 7, 7, 13, 13, M.redp);
-  P.finalize();
-})();
-
-// ---------- wreck: tilted, half sunk, broken mast ----------
-export const WRECK = new Vox(-24, 24, -12, 12, 16);
-(() => {
-  const Wk = WRECK, L = 19, Bm = 8;
-  for (let u = -22; u <= 22; u++) for (let v = -11; v <= 11; v++) for (let z0 = 0; z0 <= 7; z0++) {
-    const zf = Math.min(z0, 7) / 7, len = L * (0.8 + 0.2 * zf), t = u / len; if (t > 1 || t < -1) continue;
-    const hw = (t >= 0 ? Bm * Math.pow(1 - t * t, 0.6) : Bm * Math.pow(1 - Math.pow(-t, 4), 0.45)) * (0.45 + 0.55 * zf);
-    if (Math.abs(v) > hw + 0.3) continue;
-    const shell = !(Math.abs(v) <= hw - 1.3 && Math.abs(u) <= len - 1.8);
-    if (!shell && z0 > 1) continue;
-    if (shell && z0 > 1 && hash01(u, v * 7 + z0, 11) < (u < -6 ? 0.45 : 0.12)) continue;
-    const z = z0 + Math.round(u * 0.22) - 3; if (z < 0) continue;
-    Wk.set(u, v, z, z0 === 7 ? M.wet : z0 >= 4 ? M.wetp : M.wet);
-  }
-  Wk.line([3, 0, 3], [9, 5, 13], M.wet); Wk.line([4, 0, 3], [10, 5, 13], M.wet); Wk.line([8, 4, 11], [12, -2, 10], M.post);
-  Wk.finalize();
-})();
 
 // ---------- floating crate ----------
 export const CRATE = new Vox(-3, 3, -3, 3, 5);

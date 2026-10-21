@@ -10,6 +10,7 @@ import { SPECIES, BOATS, activeAt } from '../econ';
 import { biomeMix, coldness, warmth } from '../biome';
 import { schoolLook } from '../species';
 import { DIVE_S, SCATTER_S, schoolDrawR } from '../game/schools';
+import { landmarkKind, onGrounds } from '../landmarks';
 import { G, darkness, lightR, schoolActive, isNight, dayFrac, equipment, windAngle, boatDef, env } from '../game';
 import { WX } from '../weather';
 import { LIFE, type Whale, type Giant } from '../life';
@@ -284,10 +285,13 @@ function eachTile(x0: number, y0: number, x1: number, y1: number, fn: (tx: numbe
 const KINDS = MS.TREE_KINDS;
 const KI: Record<string, number> = Object.fromEntries(KINDS.map((k, i) => [k, i]));
 // one candidate per 6x6 cell, chosen by height band and climate; cached on the tile as [x, y, kind, scale, yaw] runs
+const groundsScratch: Poi[] = [];
 function tileTrees(t: HeightTile): number[] {
   if (t.trees) return t.trees;
   const L: number[] = [], x0 = t.tx * TS, y0 = t.ty * TS;
+  const near = poisNear(x0 + TS / 2, y0 + TS / 2, TS + 40, groundsScratch);       // harbours and lighthouses keep their grounds clear
   tileSpots(t, 6, 42, (px, py, gx, gy, v) => {
+    if (near.length && onGrounds(near, px, py)) return;
     const r = hash01(gx, gy, 41);
     if (v < 0.03) {                                                         // mangroves stand out in the shallows
       if (v < -0.06) return;
@@ -624,9 +628,10 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
   });
   // landmarks, flotsam, treasure buoys
   for (const p of pois) {
-    if (p.type === 'light') inst(MS.lighthouseMesh(), p.x, p.y);
-    else if (p.type === 'port') inst(MS.harbourMesh(), p.x, p.y, p.ang);
-    else inst(MS.wreckMesh(), p.x, p.y, p.dir / 16 * Math.PI * 2, 1, -0.6);
+    const k = landmarkKind(p);
+    if (p.type === 'light') inst(MS.lighthouseMesh(k), p.x, p.y);
+    else if (p.type === 'port') inst(MS.harbourMesh(k), p.x, p.y, p.ang);
+    else inst(MS.wreckMesh(k), p.x, p.y, p.dir / 16 * Math.PI * 2, 1, -0.6);
   }
   for (const c of cratesNear(cx, cy, viewReach(30), sceneCrates)) if (!c.taken) inst(MS.crateMesh(), c.x, c.y, c.ph, 1, -1.3 + Math.sin(G.t * 2 + c.ph) * 0.35, Math.sin(G.t * 1.3 + c.ph) * 0.1);
   for (const m of G.maps) if (Math.abs(m.x - cx) < W && Math.abs(m.y - cy) < H) inst(MS.buoyMesh(), m.x, m.y, 0, 1, -1.2 + Math.sin(G.t * 2 + m.x) * 0.3, Math.sin(G.t * 1.7) * 0.08);
