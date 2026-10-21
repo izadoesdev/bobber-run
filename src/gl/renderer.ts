@@ -802,13 +802,41 @@ const LT = {
 type Lights = typeof LT;
 const AMBER = [1.0, 0.62, 0.26], PORT_LAMP = [1.0, 0.58, 0.24], LIGHTHOUSE_LAMP = [1.0, 0.72, 0.38], FRENZY_GLOW = [1.0, 0.9, 0.6];
 const EEL_GLOW = [0.35, 0.7, 1.0], SEA_GLOW = [0.3, 0.95, 0.95];
+// Lights and beams are gathered as candidates, then the ones nearest the middle of the view are kept up to the
+// shader's limit. When there are more lights than that (a busy coast zoomed out), the kept ones dim over the last
+// FADE units before the first one cut, so as the camera moves a far lamp fades away instead of switching off.
+interface LightCand { x: number; y: number; r: number; k: number; c0: number; c1: number; c2: number; z: number; d: number }
+interface BeamCand { x: number; y: number; a: number; len: number; z: number; d: number }
+const lightCands: LightCand[] = [], beamCands: BeamCand[] = [];
+let nLight = 0, nBeam = 0, viewX = 0, viewY = 0;
 function addLight(x: number, y: number, r: number, k: number, c: readonly number[], z = 7): void {
-  if (LT.nl >= MAX_LIGHTS || k <= 0.01) return;
-  const o = LT.nl * 4, oc = LT.nl * 3;
-  LT.LZ[LT.nl] = z;
-  LT.L[o] = x; LT.L[o + 1] = y; LT.L[o + 2] = r; LT.L[o + 3] = k;
-  LT.LC[oc] = c[0]; LT.LC[oc + 1] = c[1]; LT.LC[oc + 2] = c[2];
-  LT.nl++;
+  if (k <= 0.01) return;
+  const e = lightCands[nLight] ?? (lightCands[nLight] = { x: 0, y: 0, r: 0, k: 0, c0: 0, c1: 0, c2: 0, z: 0, d: 0 });
+  e.x = x; e.y = y; e.r = r; e.k = k; e.c0 = c[0]; e.c1 = c[1]; e.c2 = c[2]; e.z = z; e.d = Math.hypot(x - viewX, y - viewY);
+  nLight++;
+}
+function addBeam(x: number, y: number, a: number, len: number, z: number): void {
+  const e = beamCands[nBeam] ?? (beamCands[nBeam] = { x: 0, y: 0, a: 0, len: 0, z: 0, d: 0 });
+  e.x = x; e.y = y; e.a = a; e.len = len; e.z = z; e.d = Math.hypot(x - viewX, y - viewY);
+  nBeam++;
+}
+const byDist = (a: { d: number }, b: { d: number }): number => a.d - b.d;
+const FADE = 80;
+function finishLights(): void {
+  const L = lightCands.slice(0, nLight).sort(byDist), n = Math.min(nLight, MAX_LIGHTS);
+  const dCut = nLight > MAX_LIGHTS ? L[MAX_LIGHTS].d : Infinity;
+  for (let i = 0; i < n; i++) {
+    const e = L[i], o = i * 4, oc = i * 3, w = smooth01((dCut - e.d) / FADE);
+    LT.L[o] = e.x; LT.L[o + 1] = e.y; LT.L[o + 2] = e.r; LT.L[o + 3] = e.k * w;
+    LT.LC[oc] = e.c0; LT.LC[oc + 1] = e.c1; LT.LC[oc + 2] = e.c2; LT.LZ[i] = e.z;
+  }
+  LT.nl = n;
+  const B = beamCands.slice(0, nBeam).sort(byDist), nb = Math.min(nBeam, MAX_BEAMS);
+  for (let i = 0; i < nb; i++) {
+    const e = B[i], o = i * 4;
+    LT.B[o] = e.x; LT.B[o + 1] = e.y; LT.B[o + 2] = e.a; LT.B[o + 3] = e.len; LT.BZ[i] = e.z;
+  }
+  LT.nb = nb;
 }
 // jelly swarms light as one source per 48-unit cell; entries are pooled and reused
 interface SwarmLight { x: number; y: number; n: number; g: number; c: Vec3; used: boolean }
@@ -821,6 +849,7 @@ function swarmEntry(): SwarmLight {
 }
 function lightsFor(bs: BoatPose, pois: Poi[], dk: number): Lights {
   LT.L.fill(0); LT.LC.fill(0); LT.LZ.fill(7); LT.B.fill(0); LT.BZ.fill(0); LT.nl = 0; LT.nb = 0;
+  nLight = 0; nBeam = 0; viewX = G.cam.x + W / 2; viewY = G.cam.y + H / 2;
   // warm amber (#ffb860) pools; the shader's falloff is soft, so radii run large
   addLight(bs.x, bs.y, lightR() * 1.6, 0.8 * dk, AMBER);
   for (const p of pois) {
@@ -828,11 +857,7 @@ function lightsFor(bs: BoatPose, pois: Poi[], dk: number): Lights {
     else if (p.type === 'light') {
       const lz = LAMP_Z[landmarkKind(p)] ?? 31;          // the lantern room of this lighthouse design
       addLight(p.x, p.y, 54, 0.8 * dk, LIGHTHOUSE_LAMP, lz);
-      if (LT.nb < MAX_BEAMS) {
-        const o = LT.nb * 4;
-        LT.B[o] = p.x; LT.B[o + 1] = p.y; LT.B[o + 2] = G.t * 0.5 + p.beam; LT.B[o + 3] = 150; LT.BZ[LT.nb] = lz;
-        LT.nb++;
-      }
+      addBeam(p.x, p.y, G.t * 0.5 + p.beam, 150, lz);
     }
   }
   if (G.frenzy) addLight(G.frenzy.s.x, G.frenzy.s.y, 20, 0.25, FRENZY_GLOW);
@@ -857,6 +882,7 @@ function lightsFor(bs: BoatPose, pois: Poi[], dk: number): Lights {
     addLight(best.x / best.n, best.y / best.n, 22 + 7 * Math.sqrt(best.n), Math.min(0.55, 0.1 * best.g), swarmC);
   }
   for (const sh of fleet) if (near(sh, cx, cy, mx, my)) addLight(sh.x, sh.y, 34, 0.55 * dk, AMBER);
+  finishLights();
   return LT;
 }
 
@@ -1003,7 +1029,7 @@ export function prefetch(budgetMs = 4): void {
 // ---------- frame ----------
 // per-frame rectangles in world units, reused: the camera CAM, the foam/shadow buffers HR and the heights texture HT (x, y, w, h)
 const CAM = [0, 0, 0, 0], HR = [0, 0, 0, 0], HT = [0, 0, 0, 0], SHXY = [0, 0];
-const viewPois: Poi[] = [];
+const viewPois: Poi[] = [], lightPois: Poi[] = [];
 // other players' boats, gathered once per frame
 const fleet: Sailor[] = [];
 function gatherFleet(): void { fleet.length = 0; for (const s of ONLINE.sailors) fleet.push(s); }
@@ -1086,7 +1112,9 @@ export function render(alpha: number): void {
   // every landmark that could reach into view (a harbour is the widest model), nearest first so the closest get the lamps
   const pcx = camX + W / 2, pcy = camY + H / 2, pois = poisNear(pcx, pcy, viewReach(120), viewPois);
   pois.sort((a, b) => Math.hypot(a.x - pcx, a.y - pcy) - Math.hypot(b.x - pcx, b.y - pcy));
-  const Lt = lightsFor(bs, pois, E.dk);
+  // lamps light past their landmark and beams reach 150 out at lantern height: gather those wider, so none switches
+  // on already in view (lightsFor keeps the nearest and fades the rest)
+  const Lt = lightsFor(bs, poisNear(pcx, pcy, viewReach(200), lightPois), E.dk);
   buildScene(bs, pois, camX, camY);
   SHXY[0] = E.sun[0] / Math.max(0.25, E.sun[2]); SHXY[1] = E.sun[1] / Math.max(0.25, E.sun[2]);   // shadow offset per unit height
   gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
