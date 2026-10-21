@@ -13,7 +13,7 @@ import { boatDef, boatSpeed, cap, catchNeed, dayNum, fishValue, hpMax, isNight, 
 import { addCoins, burst, celebrate, jitter, spawn, toast } from './feedback';
 import { checkGoals } from './goals';
 import { placeAtPort, portById, saveGame } from './save';
-import { endlessStock, idleOk, landNetted, nearestSchool, tryCast, updateFishing, updateFrenzy, useChum } from './fishing';
+import { SPOOL, endlessStock, idleOk, landNetted, nearestSchool, towStretch, tryCast, updateFishing, updateFrenzy, useChum } from './fishing';
 import { schoolActive, swimSchools, updateSchools } from './schools';
 import { dock, keptBack, updateFleet } from './port';
 import { track } from '../analytics';
@@ -102,7 +102,7 @@ function tickFeedback(dt: number): void {
   if (G.catchAnim && (G.catchAnim.t += dt) > 0.7) G.catchAnim = null;
   if (G.card) {
     G.card.t += dt;
-    const life = G.stats.caught === 1 ? 7 : 3.2;          // the very first catch gets a longer look
+    const life = G.stats.caught === 1 || G.card.back ? 7 : 3.2;   // the very first catch, and a fish that got away, get a longer look
     if (G.card.t > life || (G.card.t > 0.6 && hit(' ', 'Enter'))) { G.card = null; G.pressed.delete(' '); }
   }
 }
@@ -114,7 +114,7 @@ function tickSound(dt: number): void {
   let shore = 0;
   for (let k = 0; k < 8; k++) { const a = k / 8 * 6.283; if (hAt(b.x + Math.cos(a) * 40, b.y + Math.sin(a) * 40) > -0.05) shore += 0.125; }
   soundscape({
-    speed: playing ? boatSpeed() : 0, shore, wind: WX.wind, rain: WX.rain, engine: playing && bd.prop === 'ENGINE', throttle: G.throttle ? 1 : 0,
+    speed: playing ? boatSpeed() : 0, shore, wind: WX.wind, rain: WX.rain, engine: playing && bd.prop === 'ENGINE', throttle: Math.abs(b.thr),   // the engine spools up and down with the throttle
     luff: playing && bd.prop === 'SAIL' && G.throttle && sailEfficiency() < 0.6 ? 1 : 0, mute: G.mode === 'sunk', port: G.mode === 'port',
     deep: deepness(), calm: SET.calm,
   }, dt);
@@ -198,6 +198,7 @@ function promptFor(speed: number): string | null {
     if (f.st === 'reel') {
       if (f.jump || f.jumpWarn) return 'It is jumping. Stop reeling!';
       if (f.warn) return 'It is about to pull hard. Stop reeling!';
+      if (f.tow && towStretch(f, f.tow) > 0) return f.tow.len > SPOOL * 0.85 ? 'It has nearly all your line. Chase it!' : 'It is towing you! Steer after it. Braking tires it, but strains the line';
       if (G.stats.caught >= 3) return null;      // the reel gauge says the rest once you know it
       if (SET.reelToggle) return 'Press [SPACE] to start or stop reeling';
       if (idleOk(SPECIES[f.s.sp]) && !f.reelOn) return 'It will tire itself out. Hold [SPACE] to reel faster';

@@ -15,6 +15,7 @@ import { drawChart, nearestUncharted } from './chart';
 import { SeaLayer } from './overlay';
 import { clearWaypoint, sailToWaypoint, tickWaypoint, waypointMetres } from '../waypoint';
 import { courseTarget } from '../game/autopilot';
+import { SPOOL } from '../game/fishing';
 import { tickIslands } from '../islands';
 import { Bar, Canvas, Fish, Hint, Icon, Key, WX_ICON, cap1, clockText, keyed, type DrawFn } from './parts';
 
@@ -150,6 +151,7 @@ function Reel({ f }: { f: FishLine }) {
       <div class="row">
         <Fish sp={f.s.sp} /><span class="title">{sp.name}</span>
         {f.gold && <span class="gold"><Icon k="star" size="s" />Golden</span>}
+        {f.back && <span class="gold">Got away on day {f.back.day}</span>}
         {f.perfect && f.t < 2.5 && !f.gold && <span class="gold">Perfect strike</span>}
         <span class="grow" />
         {warn ? <Icon k="warn" size="s" /> : SET.reelToggle && <span class="muted small">{f.reelOn ? 'Reeling' : 'Paused'}</span>}
@@ -163,6 +165,7 @@ function Reel({ f }: { f: FishLine }) {
         </div>
         <span class={'state ' + tone}>{word}</span>
       </div>
+      {f.tow && <Spool tow={f.tow} />}
       <div class="meter">
         <span class="caps">Catch</span>
         <div class="gauge gold"><i style={{ width: prog * 100 + '%' }} /></div>
@@ -187,6 +190,7 @@ function CatchCard({ c }: { c: CatchCardState }) {
           {c.perfect && <span class="stamp sea">Perfect</span>}
           {f.gold && <span class="stamp gold">Golden</span>}
         </div>
+        {c.back && <div class="small gold">The one that got away! It broke your line on day {c.back.day}{c.back.lost > 1 ? `, ${c.back.lost} times,` : ''} and still has your hook</div>}
         {c.bonus && <div class="small gold">{c.bonus}</div>}
         {firstEver && <div class="small">Your first catch! Worth <span class="gold">{money(f.value)}</span> at the market</div>}
       </div>
@@ -260,6 +264,18 @@ function StrikeMeter({ f }: { f: FishLine }) {
 }
 
 // the catch card, captions, the reel or strike gauge and the fishing prompt; shown even with the interface hidden (H)
+// a towing fish takes line off the reel; when the spool runs out the strain goes on the line
+function Spool({ tow }: { tow: NonNullable<FishLine['tow']> }) {
+  const out = clamp(tow.len / SPOOL, 0, 1), tone = out > 0.85 ? 'bad' : out > 0.6 ? 'warn' : 'good';
+  return (
+    <div class="meter">
+      <span class="caps">Spool</span>
+      <div class={'gauge ' + tone}><i style={{ width: (1 - out) * 100 + '%' }} /></div>
+      <span class={'state ' + tone}>{out > 0.85 ? 'Empty' : 'Towing'}</span>
+    </div>
+  );
+}
+
 function Fishing() {
   const f = G.fish;
   return (

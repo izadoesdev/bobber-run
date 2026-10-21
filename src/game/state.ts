@@ -12,16 +12,17 @@ export const G: GameState = {
   coins: 0, earned: 0, boatId: 'row', owned: ['row'], up: freshUpgrades(), paint: 'classic', paints: ['classic'],
   bait: { shrimp: 0, glow: 0, chum: 0 }, baitSel: 'shrimp', hold: [], log: {}, found: new Set(), salvaged: new Set(),
   lastPort: null, stats: freshStats(), story: null, gifts: {}, pet: null, projects: [], fleet: {}, dives: {},
-  goalsDone: [], maps: [], waypoint: null, gearOff: {}, zones: {}, docks: {}, streak: 0, musicOn: true, offers: {}, active: [], pity: 0, clock: 0,
+  goalsDone: [], maps: [], escaped: [], waypoint: null, gearOff: {}, zones: {}, docks: {}, streak: 0, musicOn: true, offers: {}, active: [], pity: 0, clock: 0,
   // the voyage
   mode: 'title', t: 0,
-  boat: { x: 0, y: 0, a: 0, vx: 0, vy: 0, w: 0, px: 0, py: 0, pa: 0, phaseL: 0.5, phaseR: 0.5, hp: 100 },
+  boat: { x: 0, y: 0, a: 0, vx: 0, vy: 0, w: 0, px: 0, py: 0, pa: 0, phaseL: 0.5, phaseR: 0.5, hp: 100,
+    helm: 0, thr: 0, heel: { x: 0, v: 0 }, trim: { x: 0, v: 0 } },
   coinsShown: 0, sat: {}, dry: 0, fish: null, frenzy: null, nextFrenzy: 50, throttle: 0,
   lairTold: false, sunkT: 0, sunkMsg: '',
   // timers
   crashCd: 0, spookCd: 0, petCd: 0, petT: 0, wakeAcc: 0, idleRing: 0, smokeT: 0, bilgeT: 0, saveT: 0, netT: 0, potT: 0,
   // feedback
-  toasts: [], captions: [], floaters: [], parts: [], card: null, catchAnim: null, bought: null, confirm: null, myEmote: null,
+  toasts: [], captions: [], floaters: [], parts: [], card: null, hookT: -1e9, catchAnim: null, bought: null, confirm: null, myEmote: null,
   // camera
   cam: { x: 0, y: 0 }, look: { x: 0, y: 0 }, shake: 0, shakeX: 0, shakeY: 0,
   // input

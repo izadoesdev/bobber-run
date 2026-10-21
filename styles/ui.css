@@ -206,6 +206,7 @@ h2, .title { font-size: var(--fs-xl); }
 .lg.you { width: 0; height: 0; box-shadow: none; border: 0.4em solid transparent; border-left: 0.75em solid #ff9a6b; border-right: 0; filter: drop-shadow(0 0 0.08em #1b2a33); }
 .lg.target { background: none; border: 0.18em solid #f0cf6a; border-radius: 50%; box-shadow: 0 0 0 0.08em #1b2a33; }
 .lg.school, .lg.sailor { border-radius: 50%; width: 0.5em; height: 0.5em; background: #b4d0d8; } .lg.sailor { width: 0.6em; height: 0.6em; background: #e6efec; }
+.lg.escaped { background: none; border: 0.16em solid #c0493a; border-radius: 50%; box-shadow: 0 0 0 0.08em #1b2a33; }
 .lg.island { background: none; box-shadow: none; border: 0.12em dashed rgba(58,42,28,0.7); border-radius: 50%; }
 /* your waypoint everywhere (chart, minimap, sea, chips): a white diamond */
 .wp-glyph { display: inline-block; flex: none; width: 0.55em; height: 0.55em; background: #e6efec; transform: rotate(45deg); box-shadow: 0 0 0 0.1em #1b2a33; margin: 0 0.15em; }

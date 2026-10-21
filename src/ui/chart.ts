@@ -38,7 +38,7 @@ type Ctx = CanvasRenderingContext2D;
 type Project = (x: number, y: number) => [number, number];
 /** Notes that a kind of mark was drawn at canvas point (x, y), for the legend. */
 type Seen = (k: Legend, x: number, y: number) => void;
-export type Legend = 'you' | 'port' | 'light' | 'wreck' | 'treasure' | 'owned' | 'frenzy' | 'uncharted' | 'target' | 'waypoint' | 'sailor' | 'island' | 'school';
+export type Legend = 'you' | 'port' | 'light' | 'wreck' | 'treasure' | 'escaped' | 'owned' | 'frenzy' | 'uncharted' | 'target' | 'waypoint' | 'sailor' | 'island' | 'school';
 /** The kinds of mark the last full chart showed, so its legend only explains what's on it. */
 export const drawn = new Set<Legend>();
 const font = (ctx: Ctx, px: number, u: number): void => { ctx.font = `600 ${Math.round(px * u)}px Pixelify, monospace`; };
@@ -280,6 +280,12 @@ function drawPois(ctx: Ctx, pois: Poi[], S: Project, u: number, showUncharted: b
 
 function drawTreasure(ctx: Ctx, S: Project, u: number, seen: Seen): void {
   for (const m of G.maps) { const [x, y] = S(m.x, m.y); cross(ctx, x, y, 4 * u, 2.2 * u, COL.red); seen('treasure', x, y); }
+  for (const e of G.escaped) {                                       // the fish that got away: a red ring where it lives
+    const [x, y] = S(e.x, e.y);
+    ctx.lineWidth = 2.6 * u; ctx.strokeStyle = COL.ink; ctx.beginPath(); ctx.arc(x, y, 4 * u, 0, 7); ctx.stroke();
+    ctx.lineWidth = 1.4 * u; ctx.strokeStyle = COL.red; ctx.stroke();
+    seen('escaped', x, y);
+  }
 }
 
 // the Old One's lair, a blinking eye once the logbook is well filled
@@ -474,6 +480,8 @@ export function chartAt(x: number, y: number, r: number, target: { at: Point; te
   }
   const map = G.maps.find(near);
   if (map) return { title: 'Treasure', sub: `Marked on a treasure map · ${away(map)}`, act: SAIL, snap: map };
+  const esc = G.escaped.find(near);
+  if (esc) return { title: `The ${SPECIES[esc.sp].name} that got away`, sub: `Broke your line on day ${esc.day} · ${away(esc)}`, act: SAIL, snap: esc };
   if ((logged() >= 10 || G.log.oldone) && near(LAIR)) return { title: "The Old One's lair", sub: away(LAIR), act: SAIL, snap: LAIR };
   const isle = islandAt(x, y);
   if (isle) {

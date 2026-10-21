@@ -125,7 +125,7 @@ export function dock(p: Port): void {
   G.menu = { tab: 0, sel: 1, port: p };   // opens on Market with "Sell your catch" selected
   G.lastPort = p.id; G.fish = null;
   const b = G.boat;
-  b.vx = b.vy = b.w = 0;
+  b.vx = b.vy = b.w = b.helm = b.thr = 0;
   sfx('dock');
   track('port_docked', { port: p.name, home: p.id === homePort().id });
   harbourGift(p);

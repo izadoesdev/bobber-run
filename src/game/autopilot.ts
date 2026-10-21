@@ -61,7 +61,7 @@ function clearRun(x: number, y: number, a: number, len: number): number {
  */
 export function setCourse(x: number, y: number, quiet = false): boolean {
   const f = G.fish;
-  if (G.mode !== 'play' || (f && f.st !== 'cast' && f.st !== 'wait')) return false;   // never yank a hooked fish
+  if (G.mode !== 'play' || (f && f.st !== 'cast' && f.st !== 'wait' && !f.tow)) return false;   // never yank a hooked fish (unless it's towing you)
   nearSolids();
   const b = G.boat, bd = boatDef(), pad = bd.B + 2;
   let dx = x - b.x, dy = y - b.y;

@@ -162,7 +162,13 @@ export interface Boat {
   /** oar stroke phases (rowboat only) */
   phaseL: number; phaseR: number;
   hp: number;
+  /** the helm (-1 hard left .. 1 hard right) and throttle (-1 astern .. 1 ahead), easing towards the controls */
+  helm: number; thr: number;
+  /** how far the hull heels (roll) and trims (pitch, bow up), swinging on springs */
+  heel: Sway; trim: Sway;
 }
+/** An angle that swings towards a target and overshoots a little, like a hull settling in the water. */
+export interface Sway { x: number; v: number }
 
 /** A caught fish in the hold. */
 export interface Fish {
@@ -174,6 +180,8 @@ export interface Fish {
   t?: number;
   /** the golden fish of its school */
   gold?: boolean;
+  /** a variant of its species (a VariantId from species.ts) */
+  variant?: string;
 }
 
 type LineStage = 'cast' | 'wait' | 'bite' | 'reel';
@@ -220,6 +228,24 @@ export interface FishLine {
   jumpT?: number;
   jump?: { t: number; dir: -1 | 1 } | null;
   jumpWarn?: boolean;
+  /** a sea giant or legend tows the boat: how much line is out, and the heading it runs on */
+  tow?: { len: number; h: number; turnT: number };
+  /** the remembered fish that once broke your line took the bait */
+  back?: Escapee;
+  /** quality, rolled at the hook and shown while reeling */
+  stars?: 1 | 2 | 3;
+  /** a variant of its species (a VariantId from species.ts), rolled at the hook */
+  variant?: string;
+  /** seconds left in the telegraph before the next surge; 0 or undefined when none is coming */
+  cue?: number;
+}
+/** A fish that broke your line after a real fight: it stays with its school, wearing your hook, until you land it. */
+export interface Escapee {
+  /** the school it lives with, and where that school is (for the chart) */
+  school: string; x: number; y: number;
+  sp: number; kg: number; gold?: boolean;
+  /** the game day it first got away, and how many times it has */
+  day: number; lost: number;
 }
 
 export type ParticleKind = 'ring' | 'dot' | 'spark' | 'debris' | 'spout' | 'glow' | 'smoke';
@@ -257,10 +283,12 @@ export interface LogEntry {
   n: number; best: number; trophy?: boolean;
   /** where you've caught it: up to 6 spots (rounded world positions), newest first, at least 150 units apart */
   at?: [number, number][];
+  /** the variants of this species you've caught (VariantIds) */
+  vars?: string[];
 }
 interface FleetBoat { port: string; portName: string; earned: number }
 interface Frenzy { s: School; until: number }
-export interface CatchCard { fish: Fish; first: boolean; record: boolean; perfect: boolean; bonus: string | null; t: number }
+export interface CatchCard { fish: Fish; first: boolean; record: boolean; perfect: boolean; bonus: string | null; t: number; back?: Escapee; stars?: 1 | 2 | 3 }
 interface CatchAnim { sp: number; t: number; x: number; y: number }
 export interface Pet { name: string }
 
@@ -354,6 +382,8 @@ interface Progress {
   dives: Record<string, number>;
   goalsDone: number[];
   maps: TreasureMap[];
+  /** fish that broke your line and are still out there */
+  escaped: Escapee[];
   /** a spot the player marked on the chart: a line to it on the minimap and chart, cleared on arrival */
   waypoint: Point | null;
   /** helpers the player switched off (they still own them): the deckhand, the drift net, the crab pots */
@@ -410,6 +440,8 @@ interface Feedback {
   floaters: Floater[];
   parts: Particle[];
   card: CatchCard | null;
+  /** game time of the last hook, or of landing a 3-star or legendary fish (for the hitstop, camera nudge and splash) */
+  hookT: number;
   catchAnim: CatchAnim | null;
   /** last purchase, for a flash on the bought row */
   bought: { id: string; t: number } | null;

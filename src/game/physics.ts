@@ -1,5 +1,5 @@
 // Boat physics: thrust, drag, steering, wind gusts, contacts with land and solids, crashes and sinking.
-import { clamp, frac } from '../config';
+import { clamp, frac, smooth01 } from '../config';
 import { hBil, poisNear } from '../world';
 import { WX } from '../weather';
 import { sfx } from '../audio';
@@ -7,11 +7,11 @@ import { track, bucket } from '../analytics';
 import { OAR } from '../models';
 import { BOATS } from '../econ';
 import { ONLINE } from '../online';
-import type { Poi, Solid } from '../types';
+import type { Poi, Solid, Sway } from '../types';
 import { G, inp } from './state';
 import { boatDef, hpMax, keelLvl, speedMul, sailEfficiency, windAngle, toWorld } from './rules';
 import { spawn, toast, jitter, burst } from './feedback';
-import { cancelFishing } from './fishing';
+import { cancelFishing, towStretch } from './fishing';
 
 // the hull outline as 18 points on an ellipse, slightly blunter at the stern
 const hullCache: Record<string, [number, number][]> = {};
@@ -53,33 +53,57 @@ export function shapeContact(so: Solid, px: number, py: number, pad = 0): Contac
   const inv = d > 1e-4 ? 1 / d : 0;
   return { pen: so.r - d, nx: (px - cx) * inv, ny: (py - cy) * inv };
 }
-/** Deepest penetration of a hull point into land (from the height gradient) or any solid. */
-function deepestContact(px: number, py: number, rx: number, ry: number): Contact {
-  let best: Contact = { pen: 0, nx: 0, ny: 0 };
+/** Penetration of a hull point into land, pushed out along the height gradient. */
+function landContact(px: number, py: number, rx: number, ry: number): Contact | null {
   const h = hBil(px, py);
-  if (h > -DRAFT) {
-    const gx = hBil(px + 1.5, py) - hBil(px - 1.5, py), gy = hBil(px, py + 1.5) - hBil(px, py - 1.5), gl = Math.hypot(gx, gy);
-    if (gl > 1e-6) best = { nx: -gx / gl, ny: -gy / gl, pen: Math.min(2.5, (h + DRAFT) / (gl / 3) + 0.05) };
-    else { const l = Math.hypot(rx, ry) || 1; best = { nx: -rx / l, ny: -ry / l, pen: 0.5 }; }   // flat ground: push back towards the centre
-  }
-  for (const so of solids) {
-    const r = shapeContact(so, px, py);
-    if (r && r.pen > best.pen) best = r;
-  }
-  return best;
+  if (h <= -DRAFT) return null;
+  const gx = hBil(px + 1.5, py) - hBil(px - 1.5, py), gy = hBil(px, py + 1.5) - hBil(px, py - 1.5), gl = Math.hypot(gx, gy);
+  if (gl > 1e-6) return { nx: -gx / gl, ny: -gy / gl, pen: Math.min(2.5, (h + DRAFT) / (gl / 3) + 0.05) };
+  const l = Math.hypot(rx, ry) || 1;
+  return { nx: -rx / l, ny: -ry / l, pen: 0.5 };                                    // flat ground: push back towards the centre
+}
+/**
+ * The point of hull edge (ax, ay)-(bx, by) closest to a pier's core segment (or a wreck's centre), and its contact.
+ * Piers are tested against edges, not hull points: on a long hull the points are wider apart than a pier end.
+ */
+interface Hit { px: number; py: number; c: Contact }
+/** The hull outline in world space, rewritten each contact iteration. */
+const hullWorld: [number, number][] = Array.from({ length: 18 }, () => [0, 0]);
+function edgeContact(so: Solid, ax: number, ay: number, bx: number, by: number): Hit | null {
+  const [cx, cy, dx, dy] = so.kind === 'circ' ? [so.x, so.y, 0, 0] : [so.ax, so.ay, so.bx - so.ax, so.by - so.ay];
+  const ex = bx - ax, ey = by - ay, wx = ax - cx, wy = ay - cy;
+  const ee = ex * ex + ey * ey, dd = dx * dx + dy * dy, ed = ex * dx + ey * dy, ew = ex * wx + ey * wy, dw = dx * wx + dy * wy;
+  // closest points of two segments (Ericson): s along the edge, t along the core
+  let s = clamp(dd > 1e-9 ? (ed * dw - ew * dd) / Math.max(1e-9, ee * dd - ed * ed) : -ew / ee, 0, 1);
+  let t = dd > 1e-9 ? (ed * s + dw) / dd : 0;
+  if (t < 0 || t > 1) { t = clamp(t, 0, 1); s = clamp((ed * t - ew) / ee, 0, 1); }
+  const px = ax + ex * s, py = ay + ey * s, qx = cx + dx * t, qy = cy + dy * t, d = Math.hypot(px - qx, py - qy);
+  if (!(d < so.r)) return null;
+  const [nx, ny] = d > 1e-4 ? [(px - qx) / d, (py - qy) / d] : [-ey / Math.sqrt(ee), ex / Math.sqrt(ee)];   // core on the edge: push the hull inward
+  return { px, py, c: { pen: so.r - d, nx, ny } };
 }
 /** Resolve hull contacts with impulses (restitution + friction), a few iterations deep. */
 function contacts(): void {
   const b = G.boat, inertia = 200 * Math.pow(boatDef().L / 13.5, 2);
   let impact = 0, at: { x: number; y: number; nx: number; ny: number } | null = null;
+  const hull = hullPoints(), n = hull.length;
   for (let it = 0; it < 3; it++) {
-    const c = Math.cos(b.a), s = Math.sin(b.a);
-    let any = false;
-    for (const [u, v] of hullPoints()) {
-      const rx = u * c - v * s, ry = u * s + v * c, px = b.x + rx, py = b.y + ry;
-      const { pen, nx, ny } = deepestContact(px, py, rx, ry);
-      if (pen <= 0) continue;
-      any = true;
+    const c = Math.cos(b.a), s = Math.sin(b.a), hits: Hit[] = [];
+    hull.forEach(([u, v], i) => {
+      const px = b.x + u * c - v * s, py = b.y + u * s + v * c, land = landContact(px, py, px - b.x, py - b.y);
+      hullWorld[i][0] = px; hullWorld[i][1] = py;
+      if (land) hits.push({ px, py, c: land });
+    });
+    for (const so of solids) {                       // each pier or wreck touches the hull at its deepest edge
+      let deepest: Hit | null = null;
+      for (let i = 0; i < n; i++) {
+        const e = edgeContact(so, ...hullWorld[i], ...hullWorld[(i + 1) % n]);
+        if (e && e.c.pen > (deepest?.c.pen ?? 0)) deepest = e;
+      }
+      if (deepest) hits.push(deepest);
+    }
+    for (const { px, py, c: { pen, nx, ny } } of hits) {
+      const rx = px - b.x, ry = py - b.y;
       b.x += nx * pen * 0.4; b.y += ny * pen * 0.4;
       const vpx = b.vx - b.w * ry, vpy = b.vy + b.w * rx, vn = vpx * nx + vpy * ny;
       if (vn >= 0) continue;
@@ -90,7 +114,7 @@ function contacts(): void {
       b.vx += jt * tx; b.vy += jt * ty; b.w += rt * jt / inertia;
       if (-vn > impact) { impact = -vn; at = { x: px, y: py, nx, ny }; }
     }
-    if (!any) break;
+    if (!hits.length) break;
   }
   if (at) onImpact(impact, at);
 }
@@ -147,19 +171,26 @@ export function physicsStep(dt: number): void {
   b.px = b.x; b.py = b.y; b.pa = b.a;
   const thr = inp.up() ? 1 : 0, rev = inp.down() ? 1 : 0;
   const steer = ((inp.right() ? 1 : 0) - (inp.left() ? 1 : 0)) * (G.fish ? 0.6 : 1);   // you can still turn with a line out
-  if (G.fish && (thr || rev)) cancelFishing('You started sailing, so you reeled in your line');
-  // forward / sideways velocity in the boat frame; shallow water drags harder
+  const towing = G.fish?.st === 'reel' && !!G.fish.tow;            // a towing fight is sailed: the throttle chases or brakes
+  if (G.fish && !towing && (thr || rev)) cancelFishing('You started sailing, so you reeled in your line');
+  // the helm and throttle ease towards the controls, and bigger hulls answer them more slowly
+  const heft = Math.sqrt(bd.L / 13.5), rowing = bd.prop === 'OARS';
+  b.helm = ease(b.helm, steer, (steer ? 6 : 8) / heft, dt);
+  b.thr = ease(b.thr, G.fish && !towing ? 0 : thr - rev, (rowing ? 5 : bd.prop === 'SAIL' ? 1.6 : 2.5) / heft, dt);   // sails take a moment to fill
+  // forward / sideways velocity in the boat frame; shallow water and hard turns drag harder
   let c = Math.cos(b.a), s = Math.sin(b.a);
   let vf = b.vx * c + b.vy * s, vs = -b.vx * s + b.vy * c;
-  const shallow = clamp((hBil(b.x, b.y) + 0.1) / 0.09, 0, 1), k = 0.6 * bd.accel;
-  vf *= Math.exp(-(k + 2.2 * shallow) * dt);
+  const vf0 = vf, shallow = clamp((hBil(b.x, b.y) + 0.1) / 0.09, 0, 1), k = 0.6 * bd.accel;
+  vf *= Math.exp(-(k + 2.2 * shallow + 0.12 * Math.abs(b.w)) * dt);
   vs *= Math.exp(-(3.2 + 3 * shallow) * dt);
   let push = 20 * speedMul() * bd.accel;
   if (bd.prop === 'SAIL') push *= sailEfficiency() * (1 + 0.3 * WX.wind);
-  if (!G.fish) vf += (thr * push - rev * push * 0.45) * dt;
-  const turnT = steer * 1.25 * bd.turn * (0.6 + 0.4 * Math.min(1, Math.abs(vf) / 22));
-  b.w += (turnT - b.w) * (1 - Math.exp(-4 * dt));
+  vf += b.thr * push * (b.thr < 0 ? 0.45 : 1) * dt;
+  // a rudder needs water flowing past it, so ships barely turn from a standstill; oars can spin a rowboat in place
+  const still = rowing ? 0.7 : 0.4, steerage = still + (1 - still) * smooth01(Math.abs(vf) / 22);
+  b.w = ease(b.w, b.helm * 1.25 * bd.turn * steerage, 5 / heft, dt);
   b.a += b.w * dt;
+  swayHull(dt, heft, vf, (vf - vf0) / dt);
   c = Math.cos(b.a); s = Math.sin(b.a);
   b.vx = vf * c - vs * s; b.vy = vf * s + vs * c;
   // storm gusts push the boat unless it is anchored; long hulls and storm keels resist
@@ -169,11 +200,42 @@ export function physicsStep(dt: number): void {
     const gust = (WX.wind - 0.3) * 10 * (0.6 + 0.4 * Math.sin(G.t * 0.8)) * 13.5 / bd.L * Math.max(0, 1 - 0.5 * keelLvl());
     b.vx += Math.cos(wa) * gust * dt; b.vy += Math.sin(wa) * gust * dt;
   }
+  towBoat(dt, heft);
   b.x += b.vx * dt; b.y += b.vy * dt;
   contacts();
   bumpSailors();
   G.throttle = thr || rev;
   if (bd.id === 'row' && !G.fish) rowOars(dt, thr, rev, steer);
+}
+
+/** A sea giant on the line drags the boat after it while the line is stretched (see runWithLine in fishing). */
+function towBoat(dt: number, heft: number): void {
+  const f = G.fish;
+  if (f?.st !== 'reel' || !f.tow) return;
+  const b = G.boat, stretch = towStretch(f, f.tow);
+  if (stretch <= 0) return;
+  const dx = (f.fx ?? f.tx) - b.x, dy = (f.fy ?? f.ty) - b.y, d = Math.hypot(dx, dy), pull = Math.min(stretch, 12) * 2.6 / (heft * heft);
+  b.vx += dx / d * pull * dt; b.vy += dy / d * pull * dt;
+}
+/** `v` eased towards `target` at `rate` per second (exponential, so it never overshoots). */
+const ease = (v: number, target: number, rate: number, dt: number): number => v + (target - v) * (1 - Math.exp(-rate * dt));
+/** A lightly damped spring: the angle swings towards `target` at `hz` and rocks back a little before it settles. */
+function swing(s: Sway, target: number, hz: number, dt: number): void {
+  const w = 2 * Math.PI * hz;
+  s.v += (w * w * (target - s.x) - 2 * 0.35 * w * s.v) * dt;
+  s.x += s.v * dt;
+}
+/**
+ * The hull heels out of a turn and away from the wind under sail, squats with the bow up under power and noses down
+ * when it slows; big ships move less and more slowly. Purely for show: physics ignores it.
+ */
+function swayHull(dt: number, heft: number, vf: number, accel: number): void {
+  const b = G.boat, bd = boatDef();
+  const sails = bd.prop === 'SAIL' ? Math.sin(windAngle() - b.a) * WX.wind * Math.max(0, b.thr) * 0.12 : 0;
+  const heel = clamp(b.w * vf * 0.004, -0.1, 0.1) - sails;
+  const trim = clamp(accel * 0.0025, -0.05, 0.06) + (bd.prop === 'ENGINE' ? Math.min(1, Math.abs(vf) / 60) * 0.035 : 0);
+  swing(b.heel, heel / Math.sqrt(heft), 0.55 / heft, dt);
+  swing(b.trim, trim / heft, 0.7 / heft, dt);
 }
 
 // Each oar has its own stroke: forward rows both; turning right pulls the left oar while the right one rests

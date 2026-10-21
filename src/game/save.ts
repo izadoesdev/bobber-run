@@ -4,7 +4,7 @@ import { hAt, homePort, cellPois, nearestWater, WORLD } from '../world';
 import { SP, retiredRefund } from '../econ';
 import { toast } from './feedback';
 import { netSaved, reportStats } from '../net';
-import type { BoatId, Contract, Fish, GameState, LogEntry, Pet, Port, ProjectId, Stats, StoryState, TreasureMap, UpgradeKey, BaitKind, BaitChoice } from '../types';
+import type { BoatId, Contract, Escapee, Fish, GameState, LogEntry, Pet, Port, ProjectId, Stats, StoryState, TreasureMap, UpgradeKey, BaitKind, BaitChoice } from '../types';
 import { G, freshStats, freshUpgrades } from './state';
 import { DAYLEN, cap, hpMax } from './rules';
 
@@ -19,7 +19,7 @@ interface SaveData {
   found: string[]; salvaged: string[]; lastPort: string | null; x: number; y: number; a: number;
   stats: Stats; story: StoryState | null; gifts: Record<string, number>; pet: Pet | null; projects: ProjectId[];
   fleet: GameState['fleet']; dives: Record<string, number>; goalsDone: number[]; cheated?: boolean;
-  maps: TreasureMap[]; waypoint?: { x: number; y: number } | null; gearOff?: GameState['gearOff']; zones?: Record<string, true>; docks?: Record<string, number>; streak?: number; musicOn: boolean; offers: Record<string, Contract[]>; active: Contract[]; pity: number; clock: number;
+  maps: TreasureMap[]; escaped?: Escapee[]; waypoint?: { x: number; y: number } | null; gearOff?: GameState['gearOff']; zones?: Record<string, true>; docks?: Record<string, number>; streak?: number; musicOn: boolean; offers: Record<string, Contract[]>; active: Contract[]; pity: number; clock: number;
 }
 /** The v2 save, migrated on first load. */
 interface OldSave {
@@ -34,7 +34,7 @@ export function saveGame(): void {
       savedAt: Date.now(), world: WORLD, coins: G.coins, earned: G.earned, up: G.up, hp: b.hp, hold: G.hold, log: G.log, boatId: G.boatId, owned: G.owned,
       bait: G.bait, baitSel: G.baitSel, paint: G.paint, paints: G.paints, found: [...G.found], salvaged: [...G.salvaged], lastPort: G.lastPort, x: b.x, y: b.y, a: b.a,
       stats: G.stats, story: G.story, gifts: G.gifts, pet: G.pet, projects: G.projects, fleet: G.fleet, dives: G.dives,
-      goalsDone: G.goalsDone, cheated: G.cheated, maps: G.maps, waypoint: G.waypoint, gearOff: G.gearOff, zones: G.zones, docks: G.docks, streak: G.streak, musicOn: G.musicOn, offers: G.offers, active: G.active, pity: G.pity, clock: G.clock,
+      goalsDone: G.goalsDone, cheated: G.cheated, maps: G.maps, escaped: G.escaped, waypoint: G.waypoint, gearOff: G.gearOff, zones: G.zones, docks: G.docks, streak: G.streak, musicOn: G.musicOn, offers: G.offers, active: G.active, pity: G.pity, clock: G.clock,
     };
     localStorage.setItem(KEY, JSON.stringify(data));
     netSaved();
@@ -65,7 +65,7 @@ export function portById(id: string | null): Port {
 export function placeAtPort(p: Port): void {
   const b = G.boat;
   b.x = p.dock.x; b.y = p.dock.y; b.a = p.ang;
-  b.vx = b.vy = b.w = 0;
+  b.vx = b.vy = b.w = b.helm = b.thr = 0;
   b.px = b.x; b.py = b.y; b.pa = b.a;
   G.cam.x = b.x - W / 2; G.cam.y = b.y - H / 2;
   G.look.x = G.look.y = 0;
@@ -93,7 +93,7 @@ export function newGame(): void {
   const fresh: Partial<GameState> = {
     coins: 15, coinsShown: 15, earned: 0, paint: 'classic', paints: ['classic'], up: freshUpgrades(), bait: { shrimp: 3, glow: 0, chum: 1 }, baitSel: 'shrimp',
     hold: [], log: {}, found: new Set(), salvaged: new Set(), sat: {}, fish: null, parts: [], toasts: [], floaters: [], boatId: 'row', owned: ['row'],
-    stats: freshStats(), goalsDone: [], cheated: false, maps: [], waypoint: null, gearOff: {}, zones: {}, docks: {}, streak: 0, offers: {}, active: [], pity: 0,
+    stats: freshStats(), goalsDone: [], cheated: false, maps: [], escaped: [], waypoint: null, gearOff: {}, zones: {}, docks: {}, streak: 0, offers: {}, active: [], pity: 0,
     clock: DAYLEN * 0.08, frenzy: null, nextFrenzy: 45, card: null, projects: [], fleet: {}, dives: {}, gifts: {}, pet: null, dry: 0, story: null, talk: null,
   };
   Object.assign(G, fresh);
@@ -115,7 +115,7 @@ function forNewWorld(d: Partial<SaveData>): Partial<SaveData> {
   const log = Object.fromEntries(Object.entries(d.log || {}).map(([k, e]) => { const { at: _, ...rest } = e; return [k, rest]; }));
   const fleet = Object.fromEntries(Object.entries(d.fleet || {}).map(([k, f]) => [k, { ...f, port: home.id, portName: home.name }]));
   return {
-    ...d, world: WORLD, found: [home.id], salvaged: [], dives: {}, offers: {}, active: [], maps: [], waypoint: null, lastPort: home.id,
+    ...d, world: WORLD, found: [home.id], salvaged: [], dives: {}, offers: {}, active: [], maps: [], escaped: [], waypoint: null, lastPort: home.id,
     docks: {}, gifts: {}, log, fleet, x: undefined, y: undefined,
   };
 }
@@ -148,7 +148,7 @@ export function loadGame(): void {
       paint: d.paint || 'classic', paints: d.paints || ['classic'],
       found: new Set(d.found || []), salvaged: new Set(d.salvaged || []), lastPort: d.lastPort || G.lastPort, stats: { ...G.stats, ...d.stats },
       story: d.story || null, gifts: d.gifts || {}, pet: d.pet || null, projects: d.projects || [], fleet: d.fleet || {}, dives: d.dives || {},
-      goalsDone: d.goalsDone || [], cheated: !!d.cheated, maps: d.maps || [], gearOff: d.gearOff || {}, zones: d.zones || {}, docks: d.docks || {}, streak: Math.min(5, int(d.streak)), waypoint: d.waypoint && Number.isFinite(d.waypoint.x) && Number.isFinite(d.waypoint.y) ? { x: d.waypoint.x, y: d.waypoint.y } : null, musicOn: d.musicOn ?? true,
+      goalsDone: d.goalsDone || [], cheated: !!d.cheated, maps: d.maps || [], escaped: d.escaped || [], gearOff: d.gearOff || {}, zones: d.zones || {}, docks: d.docks || {}, streak: Math.min(5, int(d.streak)), waypoint: d.waypoint && Number.isFinite(d.waypoint.x) && Number.isFinite(d.waypoint.y) ? { x: d.waypoint.x, y: d.waypoint.y } : null, musicOn: d.musicOn ?? true,
       offers: d.offers || {}, active: d.active || [], pity: int(d.pity), clock: d.clock ?? G.clock,
     };
     Object.assign(G, loaded);

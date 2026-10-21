@@ -740,9 +740,11 @@ function W3(q: readonly number[], out: number[]): number[] {
 function drawPlayerBoat(bs: BoatPose): void {
   const eq: Fit = equipment(), wob = 1 + WX.wind * 2.2;
   eq.look = myLook();
-  let bz = Math.sin(G.t * 1.6) * (0.2 + WX.wind * 0.45) - 0.4, roll = Math.sin(G.t * 1.3 + 1) * 0.035 * wob;
+  const b = G.boat, chop = Math.min(1, Math.hypot(b.vx, b.vy) / 50);      // under way the hull slaps through the chop
+  let bz = Math.sin(G.t * 1.6) * (0.2 + WX.wind * 0.45) + Math.sin(G.t * 6.1) * chop * 0.2 - 0.4;
+  let roll = Math.sin(G.t * 1.3 + 1) * 0.035 * wob + b.heel.x;
   if (G.mode === 'sunk') { bz -= G.sunkT * 3; roll += G.sunkT * 0.2; }
-  const pitch = Math.sin(G.t * 1.1) * 0.025 * wob;
+  const pitch = Math.sin(G.t * 1.1) * 0.025 * wob + Math.sin(G.t * 4.7 + 2) * chop * 0.012 + b.trim.x;
   inst(MS.boatMesh(G.boatId, eq), bs.x, bs.y, bs.a, 1, bz, pitch, roll);
   b3x = bs.x; b3y = bs.y; b3c = Math.cos(bs.a); b3s = Math.sin(bs.a); b3z = bz;
   if (hasOars(G.boatId)) {
