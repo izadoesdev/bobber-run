@@ -204,7 +204,7 @@ function lantern(V: Vox, z: number, rail: number, dome: number, domeB: number): 
   return top + 4;
 }
 /** A keeper's cottage beside the tower, door facing +v. */
-function cottage(V: Vox, u0: number, v0: number, wall: number, roofA: number, roofB: number): void {
+export function cottage(V: Vox, u0: number, v0: number, wall: number, roofA: number, roofB: number): void {
   walls(V, u0, u0 + 7, v0, v0 + 5, 1, 5, wall);
   V.box(u0 + 3, u0 + 4, v0 + 5, v0 + 5, 1, 3, M.door); V.box(u0 + 1, u0 + 1, v0 + 5, v0 + 5, 3, 4, L.lit); V.box(u0 + 6, u0 + 6, v0 + 5, v0 + 5, 3, 4, L.lit);
   gable(V, u0 - 1, u0 + 8, v0 - 1, v0 + 6, 6, roofA, roofB);

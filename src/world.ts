@@ -525,6 +525,27 @@ export function claimableNear(x: number, y: number, rad: number): Claimable[] {
   }
   return out;
 }
+// An owned island's homestead (flag pole, cottage, bunting) stands on meadow toward its south shore, so its hills don't
+// hide it from the camera, and well clear of a harbour or lighthouse; on an island with no meadow, on any dry ground.
+// The pole is at the returned point, the cottage to its west (homesteadMesh in gl/meshes.ts); null only for an island
+// with no room at all. The chart hangs its pennant here too.
+const sites = new Map<string, Point | null>();
+export function homesteadSite(c: Claimable): Point | null {
+  if (!sites.has(c.key)) sites.set(c.key, siteIn(c, 0.16, 0.45) ?? siteIn(c, 0.05, 0.9));   // meadow, else any dry ground
+  return sites.get(c.key)!;
+}
+function siteIn(c: Claimable, lo: number, hi: number): Point | null {
+  const ok = (x: number, y: number): boolean => { const v = heightAt(x, y); return v > lo && v < hi; };
+  const pois = poisNear(c.x, c.y, c.R * 1.5 + 60);
+  let best: Point | null = null, score = -Infinity;
+  for (let dy = -0.8 * c.R; dy <= 0.9 * c.R; dy += 8) for (let dx = -0.8 * c.R; dx <= 0.8 * c.R; dx += 8) {
+    const x = c.x + dx, y = c.y + dy, s = dy - 0.6 * Math.abs(dx);
+    if (s <= score || Math.hypot(dx, dy) > 0.9 * c.R || !ok(x, y) || !ok(x - 9, y) || !ok(x - 18, y - 7) || !ok(x - 13, y - 3) || !ok(x - 27, y + 6)) continue;
+    if (pois.some(p => p.type !== 'wreck' && Math.hypot(p.x - (x - 10), p.y - y) < 55)) continue;
+    best = { x, y }; score = s;
+  }
+  return best;
+}
 /** The nearest point of open water (depth beyond `depth`) to (x, y), searching outward in rings; (x, y) if none. */
 export function nearestWater(x: number, y: number, depth = -0.12): Point {
   if (heightAt(x, y) < depth) return { x, y };

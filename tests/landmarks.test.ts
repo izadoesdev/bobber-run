@@ -3,7 +3,7 @@
 // claimable island its centre; and piers reach water, lights stand on land, wrecks lie in the sea. Changing the world
 // on purpose means bumping WORLD in world.ts (older saves then forget places) and re-recording the fixture with it.
 import { describe, expect, test } from 'bun:test';
-import { WORLD, cellPois, claimableNear, heightAt } from '../src/world';
+import { WORLD, cellPois, claimableNear, heightAt, homesteadSite } from '../src/world';
 import fixture from './fixtures/landmarks.json';
 
 const R = 7;
@@ -36,5 +36,18 @@ describe('landmarks', () => {
       if (p.type === 'wreck' && heightAt(p.x, p.y) > -0.04) bad.push(p.id);
     }
     expect(bad).toEqual([]);
+  });
+  test("an owned island's homestead stands on its own land, clear of harbours and lighthouses", () => {
+    const claims = claimableNear(280, 280, R * 560 + 280), bad: string[] = [];
+    let placed = 0;
+    for (const c of claims) {
+      const s = homesteadSite(c);
+      if (!s) continue;
+      placed++;
+      if (heightAt(s.x, s.y) < 0.05 || heightAt(s.x - 13, s.y - 3) < 0.05 || Math.hypot(s.x - c.x, s.y - c.y) > c.R) bad.push(c.key);
+      for (const p of live.values()) if (p.type !== 'wreck' && Math.hypot(p.x - s.x, p.y - s.y) < 40) bad.push(`${c.key} by ${p.id}`);
+    }
+    expect(bad).toEqual([]);
+    expect(placed / claims.length).toBeGreaterThan(0.97);       // nearly every island has room for one
   });
 });

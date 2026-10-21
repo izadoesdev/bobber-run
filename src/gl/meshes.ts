@@ -2,7 +2,7 @@
 // trees, fish, sea life and a per-frame builder for thin dynamic parts (oars, rod, fishing line).
 import { Vox, RGB, EMISSIVE, mat, type Vec3 } from '../voxel';
 import { M, decorate, eqSig, CRATE, type Fit } from '../models';
-import { HARBOURS, LIGHTHOUSES, WRECKS } from '../landmarks';
+import { HARBOURS, LIGHTHOUSES, WRECKS, cottage } from '../landmarks';
 import { SPECIES } from '../econ';
 import { schoolLook } from '../species';
 import { FISH_T } from '../fishart';
@@ -540,8 +540,72 @@ export const bobberMesh = lazy('bobber', () => { const V = new Vox(-1, 1, -1, 1,
 export const buoyMesh = lazy('buoy', () => { const V = new Vox(-2, 3, -2, 2, 10); V.box(-1, 1, -1, 1, 0, 1, M.redp); V.box(-1, 1, -1, 1, 2, 2, M.white); V.box(0, 0, 0, 0, 3, 8, M.iron); V.box(1, 2, 0, 0, 7, 8, M.redp); V.set(0, 0, 9, M.lamp); return V.finalize(); });
 
 /** After a lost WebGL context is restored: forget every mesh (their buffers died with the context); each rebuilds on next use. */
+// ---------- owned islands: the owner's flag on a tall pole, a cottage roofed in the island's colour, bunting ----------
+/** Height of the flag's top edge; the pole's gilt cap and lamp sit just above it. */
+export const POLE = 47;
+const tones = new Map<string, number>();
+/** A material for any '#rrggbb' (logo pixels, island colours), made once per colour. */
+function toneOf(c: string): number {
+  let m = tones.get(c);
+  if (m === undefined) { const [r, g, b] = hex(c); tones.set(c, m = mat([toHex([r * 0.72, g * 0.72, b * 0.72]), c, toHex([r * 1.15, g * 1.15, b * 1.15])])); }
+  return m;
+}
+// a string of pennants sagging from a to b
+function bunting(V: Vox, a: Vec3, b: Vec3, c: string): void {
+  const cols = [M.redp, M.white, toneOf(c), M.gilt], n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]));
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, u = Math.round(a[0] + (b[0] - a[0]) * t), v = Math.round(a[1] + (b[1] - a[1]) * t);
+    const z = Math.round(a[2] + (b[2] - a[2]) * t - Math.sin(Math.PI * t) * 3);
+    V.set(u, v, z, M.rope);
+    if (i % 3 === 1) { const m = cols[Math.floor(i / 3) % 4]; V.set(u, v, z - 1, m); V.set(u, v, z - 2, m); }
+  }
+}
+/** Pole, cottage and bunting for an island of colour c (the flag is separate, so it can sway). */
+export const homesteadMesh = family<string>(c => 'homestead:' + c, c => () => {
+  const V = new Vox(-28, 2, -9, 8, POLE + 5);
+  cottage(V, -17, -7, M.white, toneOf(c), toneOf(toHex(hex(c).map(v => v * 0.8))));
+  V.box(-1, 1, -1, 1, 0, 1, M.stone); V.box(0, 0, 0, 0, 2, POLE + 1, M.post);
+  V.set(0, 0, POLE + 2, M.gilt); V.set(0, 0, POLE + 3, M.lamp);
+  V.box(-27, -27, 6, 6, 0, 7, M.post);
+  bunting(V, [0, 1, 30], [-9, -2, 9], c); bunting(V, [-18, -1, 8], [-27, 6, 7], c);
+  return V.finalize();
+}, 0, true);
+const flagCache = new Map<string, Mesh>();
+/**
+ * An island's flag, hanging from the pole at u = 0: its 32x32 logo (RGBA, one voxel per pixel, on the island's colour
+ * where the logo is clear), or a plain pennant in that colour while there is none; edged gilt on your own island.
+ */
+export function flagMesh(sig: string, c: string, logo: Uint8ClampedArray | null, mine: boolean): Mesh {
+  let m = flagCache.get(sig);
+  if (m) { flagCache.delete(sig); flagCache.set(sig, m); return m; }
+  const V = new Vox(0, 35, 0, 0, POLE + 1), field = toneOf(c), edge = mine ? M.gilt : M.iron;
+  if (logo) {
+    for (let u = 1; u <= 34; u++) for (let z = POLE - 33; z <= POLE; z++) V.set(u, 0, z, u === 1 || u === 34 || z === POLE - 33 || z === POLE ? edge : field);
+    for (let py = 0; py < 32; py++) for (let px = 0; px < 32; px++) {
+      const o = (py * 32 + px) * 4;
+      if (logo[o + 3] < 128) continue;
+      const q = (k: number) => (logo[o + k] >> 4) * 17;                  // 16 levels a channel keeps the materials few
+      V.set(px + 2, 0, POLE - 1 - py, toneOf(toHex([q(0), q(1), q(2)])));
+    }
+  } else {
+    const L = 28, mid = POLE - 8;
+    for (let u = 1; u <= L; u++) {
+      const hh = Math.round(8 * (1 - (u - 1) / L));
+      for (let z = mid - hh; z <= mid + hh; z++) V.set(u, 0, z, u === 1 || Math.abs(z - mid) >= hh ? edge : field);
+    }
+  }
+  const g = voxGeometry(V.finalize());
+  m = upload(g.verts, g.idx);
+  flagCache.set(sig, m);
+  while (flagCache.size > 16) {
+    const [k, old] = flagCache.entries().next().value!;
+    gl.deleteBuffer(old.vbo); gl.deleteBuffer(old.ibo); gl.deleteVertexArray(old.vao); flagCache.delete(k);
+  }
+  return m;
+}
+
 export function reset(): void {
-  gen++; cache.clear(); boatCache.clear(); dyn = null; dynReady = false;
+  gen++; cache.clear(); boatCache.clear(); flagCache.clear(); dyn = null; dynReady = false;
   for (const memo of families) memo.clear();
 }
 

@@ -4,7 +4,7 @@
 import { W, H, clamp, lerp, frac, smooth01 } from '../config';
 import { ONLINE, type Sailor } from '../online';
 import { SET, type Quality, type PixelStyle } from '../prefs';
-import { TS, TN, getTile, hasTile, hAt, poisNear, schoolsNear, cratesNear, type HeightTile } from '../world';
+import { TS, TN, getTile, hasTile, hAt, poisNear, schoolsNear, cratesNear, claimableNear, homesteadSite, type HeightTile } from '../world';
 import { hash01 } from '../noise';
 import { SPECIES, BOATS, activeAt } from '../econ';
 import { biomeMix, coldness, warmth } from '../biome';
@@ -16,6 +16,7 @@ import { WX } from '../weather';
 import { LIFE, type Whale, type Giant } from '../life';
 import { hasOars, oarGeom, BOAT_MODELS, NP, SHIPPED, PLAIN, lookSeed, lookCoat, type Fit } from '../models';
 import { NET } from '../net';
+import { ISLANDS, islandColour } from '../islands';
 import { program, texture, target, msTarget, free, type Program, type Target, type MsTarget } from './glutil';
 import * as SH from './shaders';
 import * as MS from './meshes';
@@ -592,6 +593,50 @@ function oarsFor(poseL: number, prop: number, poseR: number, coat: number): Retu
   if (!g) { g = oarGeom(poseL, prop, poseR, coat); oarCache.set(key, g); }
   return g;
 }
+// ---------- owned islands ----------
+// Each owned island in reach gets its homestead (see homesteadSite): the owner's flag on a tall pole, a cottage, bunting,
+// and a lamp on the pole by night. Gathered once a frame for the scene and the lights.
+interface Owned { key: string; x: number; y: number }
+const owned: Owned[] = [];
+function gatherOwned(cx: number, cy: number, reach: number): void {
+  owned.length = 0;
+  if (!ISLANDS.size) return;
+  for (const c of claimableNear(cx, cy, reach)) {
+    const at = ISLANDS.has(c.key) ? homesteadSite(c) : null;
+    if (at) owned.push({ key: c.key, x: at.x, y: at.y });
+  }
+}
+// the homestead's ground (cottage west of the pole, the flag east of it): trees there are left out while it is owned
+const inYard = (x: number, y: number): boolean => owned.some(o => x > o.x - 34 && x < o.x + 38 && y > o.y - 14 && y < o.y + 18);
+// logos as 32x32 RGBA, read once per URL (Convex storage sends CORS headers, so the canvas stays readable)
+const logos = new Map<string, Uint8ClampedArray | null>();
+function logoPixels(url: string): Uint8ClampedArray | null {
+  if (logos.has(url)) return logos.get(url)!;
+  logos.set(url, null);                                   // a plain pennant until it loads, and for good if it can't
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
+    ctx.canvas.width = ctx.canvas.height = 32;
+    ctx.drawImage(img, 0, 0, 32, 32);
+    try { logos.set(url, ctx.getImageData(0, 0, 32, 32).data); } catch { /* tainted: keep the pennant */ }
+  };
+  img.src = url;
+  return null;
+}
+function drawOwned(): void {
+  for (const o of owned) {
+    const row = ISLANDS.get(o.key), c = islandColour(o.key);
+    if (!row) continue;
+    const logo = row.logoUrl ? logoPixels(row.logoUrl) : null;
+    inst(MS.homesteadMesh(c), o.x, o.y);
+    // the flag swings a little about its pole, more in a wind, but keeps facing the camera
+    const sway = Math.sin(G.t * 1.7 + o.x * 0.1) * (0.04 + WX.wind * 0.08) + Math.sin(G.t * 4.1 + o.y) * 0.015;
+    inst(MS.flagMesh(`${o.key}|${row.mine}|${logo ? row.logoUrl : ''}`, c, logo, row.mine), o.x, o.y, sway);
+  }
+}
+
 // the rod and fishing line, in world space (scratch, rebuilt each frame)
 const ROD_RGB = [94, 68, 48], LINE_RGB = [236, 232, 220];
 const hand = [0, 0, 0], tip = [0, 0, 0], bob = [0, 0, 0], linePrev = [0, 0, 0], lineNext = [0, 0, 0];
@@ -605,7 +650,7 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
     const L = tileTrees(t);
     for (let i = 0; i < L.length; i += 5) {
       const x = L[i], y = L[i + 1];
-      if (x < camX - 24 || x > camX + W + 24 || y < camY - 12 || y > camY + H + 50) continue;
+      if (x < camX - 24 || x > camX + W + 24 || y < camY - 12 || y > camY + H + 50 || (owned.length && inYard(x, y))) continue;
       inst(MS.treeMesh(KINDS[L[i + 2]]), x, y, L[i + 4], L[i + 3]);
     }
   });
@@ -636,6 +681,7 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
     else if (p.type === 'port') inst(MS.harbourMesh(k), p.x, p.y, p.ang);
     else inst(MS.wreckMesh(k), p.x, p.y, p.dir / 16 * Math.PI * 2, 1, -0.6);
   }
+  drawOwned();
   for (const c of cratesNear(cx, cy, viewReach(30), sceneCrates)) if (!c.taken) inst(MS.crateMesh(), c.x, c.y, c.ph, 1, -1.3 + Math.sin(G.t * 2 + c.ph) * 0.35, Math.sin(G.t * 1.3 + c.ph) * 0.1);
   for (const m of G.maps) if (Math.abs(m.x - cx) < W && Math.abs(m.y - cy) < H) inst(MS.buoyMesh(), m.x, m.y, 0, 1, -1.2 + Math.sin(G.t * 2 + m.x) * 0.3, Math.sin(G.t * 1.7) * 0.08);
   // fish schools swim under the surface; at night glowing fish and the ones in your light show clearly, others as dim shapes nearby
@@ -858,6 +904,8 @@ function lightsFor(bs: BoatPose, pois: Poi[], dk: number): Lights {
       addBeam(p.x, p.y, G.t * 0.5 + p.beam, 150, lz);
     }
   }
+  // the pole's lamp shines down on the flag's face (it hangs east of the pole, facing the camera), and the cottage's windows glow
+  for (const o of owned) { addLight(o.x + 17, o.y + 8, 42, 0.7 * dk, LIGHTHOUSE_LAMP, MS.POLE - 8); addLight(o.x - 13, o.y + 1, 22, 0.4 * dk, PORT_LAMP, 4); }
   if (G.frenzy) addLight(G.frenzy.s.x, G.frenzy.s.y, 20, 0.25, FRENZY_GLOW);
   // sea life: glowing giants, jelly swarms (one light per cluster) and the lamps of passing boats
   const cx = G.cam.x + W / 2, cy = G.cam.y + H / 2, mx = W / 2 + 60, my = H / 2 + 60;
@@ -1112,6 +1160,7 @@ export function render(alpha: number): void {
   pois.sort((a, b) => Math.hypot(a.x - pcx, a.y - pcy) - Math.hypot(b.x - pcx, b.y - pcy));
   // lamps light past their landmark and beams reach 150 out at lantern height: gather those wider, so none switches
   // on already in view (lightsFor keeps the nearest and fades the rest)
+  gatherOwned(pcx, pcy, viewReach(120));
   const Lt = lightsFor(bs, poisNear(pcx, pcy, viewReach(200), lightPois), E.dk);
   buildScene(bs, pois, camX, camY);
   SHXY[0] = E.sun[0] / Math.max(0.25, E.sun[2]); SHXY[1] = E.sun[1] / Math.max(0.25, E.sun[2]);   // shadow offset per unit height
