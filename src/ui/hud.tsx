@@ -147,17 +147,15 @@ function WindVane({ sail, eff }: { sail: boolean; eff: number }) {
 // rim fills gold as the fish comes in (red while it takes line back). At the bite the dial becomes the strike
 // window: a sweep running down, brightest while a strike would be perfect. A plaque under the needle names the fish
 // and the key; hints and warnings float above, so nothing in the dial changes size.
-// (taking, kg, fakeT, grace and redAt come from the fight rework and are read here before they reach FishLine)
-type Fight = FishLine & { taking?: boolean; kg?: number; fakeT?: number; grace?: number; redAt?: number };
 const R0 = 62, R1 = 76, RP = 84;                             // zone band inner/outer radius, progress ring radius
 const ang = (v: number) => Math.PI * (1 - clamp(v, 0, 1));    // 0 at the left end of the dial, 1 at the right
 const pt = (r: number, v: number) => `${(r * Math.cos(ang(v))).toFixed(2)} ${(-r * Math.sin(ang(v))).toFixed(2)}`;
 /** An annular slice of the dial from value a to b between radii r0 and r1. */
 const band = (a: number, b: number, r0 = R0, r1 = R1) => b <= a ? '' : `M${pt(r1, a)} A${r1} ${r1} 0 0 1 ${pt(r1, b)} L${pt(r0, b)} A${r0} ${r0} 0 0 0 ${pt(r0, a)} Z`;
 const ring = (a: number, b: number, r: number) => b <= a ? '' : `M${pt(r, a)} A${r} ${r} 0 0 1 ${pt(r, b)}`;
-let lastFish: Fight | null = null;
+let lastFish: FishLine | null = null;
 function FishPanel() {
-  const live: Fight | null = G.fish && G.mode === 'play' ? G.fish : null;
+  const live: FishLine | null = G.fish && G.mode === 'play' ? G.fish : null;
   if (live) lastFish = live;
   const f = live ?? lastFish;                                // as it fades out, the dial keeps showing the last fight
   if (!f) return null;
