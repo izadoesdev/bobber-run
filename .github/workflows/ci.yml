@@ -6,6 +6,9 @@ on:
     branches: [main]
   pull_request:
 
+# a newer push supersedes an older run on the same branch (on main, Railway then deploys only the newest)
+concurrency: { group: ci-${{ github.ref }}, cancel-in-progress: true }
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -22,12 +25,13 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    strategy: { fail-fast: false, matrix: { shard: [1/2, 2/2] } }   # two machines at once: SwiftShader renders on the CPU
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      - run: bunx playwright install --with-deps chromium
-      - run: bun run e2e
+      - run: bunx playwright install --with-deps --only-shell chromium
+      - run: bun run e2e --shard=${{ matrix.shard }}
       - uses: actions/upload-artifact@v4
         if: failure()
-        with: { name: playwright-report, path: playwright-report, retention-days: 7 }
+        with: { name: playwright-report-${{ strategy.job-index }}, path: playwright-report, retention-days: 7 }
