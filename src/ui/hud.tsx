@@ -195,7 +195,7 @@ function EasyReelOffer() {
   if (!easyOffer || G.fish || SET.reelAssist) return null;
   return (
     <div class="chip easy-offer" role="status">
-      <Icon k="reel" size="s" /><span>Line snapped. Easy reel makes fish pull less hard</span>
+      <Icon k="reel" size="s" /><span>Line snapped. Easy reel winds by itself and never snaps</span>
       <button data-track="easy-reel-on" class="go" onClick={() => { SET.reelAssist = true; savePrefs(); easyOffer = false; }}>Turn on</button>
       <button data-track="easy-reel-no" class="x" aria-label="No thanks" onClick={() => { easyOffer = false; }}>×</button>
     </div>

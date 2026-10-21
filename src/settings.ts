@@ -81,7 +81,7 @@ export const ROWS: SettingEntry[] = [
   { label: 'Objective marker', ...toggle('guide'), help: 'Shows where to go next: an arrow on screen and a marker on the compass, minimap and chart.' },
   { head: 'Fishing' },
   { label: 'Strike timing', ...pick('strike', ['normal', 'relaxed', 'auto'], ['Normal', 'Relaxed', 'Automatic']), help: 'Relaxed gives you more time to strike. Automatic sets the hook for you.' },
-  { label: 'Easy reel', ...toggle('reelAssist'), help: 'Fish pull less hard, and you stop reeling by yourself while a fish jumps.' },
+  { label: 'Easy reel', ...toggle('reelAssist'), help: 'Reels by itself between surges and never snaps. Fights take longer, and catches top out at 2 stars.' },
   { label: 'Reeling', ...pick('reelToggle', [false, true], ['Hold button', 'Press to toggle']), help: 'Press to toggle: tap once to start reeling and again to stop. Hold button: reel while you hold it.' },
 ];
 
