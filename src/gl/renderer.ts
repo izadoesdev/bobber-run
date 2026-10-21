@@ -512,6 +512,8 @@ const shownCount = new WeakMap<School, number>();   // eased number of fish on s
 // with the hour or weather, or they come into sight in the dark. Schools are drawn from beyond the view's edge, so
 // new ones never appear on screen; ones already on screen rise from the deep.
 const shownVis = new WeakMap<School, number>();
+/** How far from the view's centre things must be gathered so none appear on screen: its half-diagonal plus `pad` for their size. */
+const viewReach = (pad: number): number => Math.hypot(W, H) / 2 + pad;
 let visEase = 0;
 let sceneT = 0, schoolEase = 0;
 const GOLD_TINT = 1.2;
@@ -626,7 +628,7 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
     else if (p.type === 'port') inst(MS.harbourMesh(), p.x, p.y, p.ang);
     else inst(MS.wreckMesh(), p.x, p.y, p.dir / 16 * Math.PI * 2, 1, -0.6);
   }
-  for (const c of cratesNear(cx, cy, 230, sceneCrates)) if (!c.taken) inst(MS.crateMesh(), c.x, c.y, c.ph, 1, -1.3 + Math.sin(G.t * 2 + c.ph) * 0.35, Math.sin(G.t * 1.3 + c.ph) * 0.1);
+  for (const c of cratesNear(cx, cy, viewReach(30), sceneCrates)) if (!c.taken) inst(MS.crateMesh(), c.x, c.y, c.ph, 1, -1.3 + Math.sin(G.t * 2 + c.ph) * 0.35, Math.sin(G.t * 1.3 + c.ph) * 0.1);
   for (const m of G.maps) if (Math.abs(m.x - cx) < W && Math.abs(m.y - cy) < H) inst(MS.buoyMesh(), m.x, m.y, 0, 1, -1.2 + Math.sin(G.t * 2 + m.x) * 0.3, Math.sin(G.t * 1.7) * 0.08);
   // fish schools swim under the surface; at night glowing fish and the ones in your light show clearly, others as dim shapes nearby
   const night = isNight(), lr = lightR() + 14;
@@ -641,7 +643,9 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
     const d = Math.hypot(s.x - G.boat.x, s.y - G.boat.y);
     const lit = !night || G.frenzy?.s === s || schoolLook(s.sp).glow || d < lr;
     const want = activeAt(s.sp, env()) ? (lit ? 1 : clamp((110 - d) / 30, 0, 1)) : 0;   // unlit schools at night fade with distance
-    const was = shownVis.get(s) ?? 0, vis = was + (want - was) * visEase;
+    // a school first met out of sight is simply there; the fade is for changes you can see (dusk, a school waking)
+    const off = s.x < camX - 20 || s.x > camX + W + 20 || s.y < camY - 20 || s.y > camY + H + 20;
+    const was = shownVis.get(s) ?? (off ? want : 0), vis = was + (want - was) * visEase;
     shownVis.set(s, vis);
     if (vis > 0.01) drawSchool(s, night, lit, vis);
     else shownCount.delete(s);
@@ -938,7 +942,7 @@ function partPoints(): void {
     else if (p.kind === 'spout') point(p.x, p.y, 2, 1.6, 1.3, 1.35, 1.4, k * 0.9);
   }
   // legendary fish and frenzies glint at the surface
-  for (const s of schoolsNear(G.cam.x + W / 2, G.cam.y + H / 2, 230, nearSchools)) if (schoolActive(s) && (SPECIES[s.sp].legend || G.frenzy?.s === s)) {
+  for (const s of schoolsNear(G.cam.x + W / 2, G.cam.y + H / 2, viewReach(30), nearSchools)) if (schoolActive(s) && (SPECIES[s.sp].legend || G.frenzy?.s === s)) {
     for (let k = 0; k < 3; k++) {
       const q = Math.floor(G.t * 5) + k * 13;
       if (hash01(q, s.ph * 100 | 0, 3) < 0.55) point(s.x + (hash01(q, 1, 9) - 0.5) * 16, s.y + (hash01(q, 2, 9) - 0.5) * 10, 0.3, 1.2, 2.0, 1.7, 0.8, 0.9);
@@ -1056,7 +1060,10 @@ export function render(alpha: number): void {
   HT[0] = Math.floor(F.V[0] / F.TW) * HT[2] - fs / 2; HT[1] = Math.floor(F.V[1] / F.TH) * HT[3] - fs / 2;
   const E = environment(camY + H / 2);
   gatherFleet();
-  const pois = poisNear(camX + W / 2, camY + H / 2, 300, viewPois), Lt = lightsFor(bs, pois, E.dk);
+  // every landmark that could reach into view (a harbour is the widest model), nearest first so the closest get the lamps
+  const pcx = camX + W / 2, pcy = camY + H / 2, pois = poisNear(pcx, pcy, viewReach(120), viewPois);
+  pois.sort((a, b) => Math.hypot(a.x - pcx, a.y - pcy) - Math.hypot(b.x - pcx, b.y - pcy));
+  const Lt = lightsFor(bs, pois, E.dk);
   buildScene(bs, pois, camX, camY);
   SHXY[0] = E.sun[0] / Math.max(0.25, E.sun[2]); SHXY[1] = E.sun[1] / Math.max(0.25, E.sun[2]);   // shadow offset per unit height
   gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
