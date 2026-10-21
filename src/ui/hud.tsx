@@ -7,12 +7,14 @@ import { G, cap, hpMax, boatDef, isNight, dayNum, dayFrac, windAngle, sailEffici
 import { SPECIES, fmtKg } from '../econ';
 import { WX } from '../weather';
 import { SET } from '../settings';
+import { savePrefs } from '../prefs';
 import { sfx } from '../audio';
 import { currentQuest, questProgress } from '../story';
 import { guide, guideOn, stepLine, tip, whereText, type Step } from '../game/guide';
 import type { CatchCard as CatchCardState, FishLine, Point, Toast } from '../types';
 import { drawChart, nearestUncharted } from './chart';
 import { SeaLayer } from './overlay';
+import { ShareButton, ShareChip } from './share';
 import { clearWaypoint, sailToWaypoint, tickWaypoint, waypointMetres } from '../waypoint';
 import { courseTarget } from '../game/autopilot';
 import { SPOOL } from '../game/fishing';
@@ -144,12 +146,13 @@ function WindVane({ sail, eff }: { sail: boolean; eff: number }) {
 // line tension: colour plus position, tick marks, a pattern and a word, so it reads without colour
 function Reel({ f }: { f: FishLine }) {
   const sp = SPECIES[f.s.sp], lm = lineMax(), t = clamp(f.tension / lm, 0, 1), prog = clamp(f.prog, 0, 1);
-  const warn = f.warn || f.jump || f.jumpWarn;
+  const surge = (f.cue ?? 0) > 0, warn = surge || f.warn || f.jump || f.jumpWarn;   // the surge telegraph flashes before the pull
   const [word, tone] = t > 0.8 ? ['Danger', 'bad'] : t > 0.55 ? ['Strain', 'warn'] : ['Safe', 'good'];
   return (
-    <div class={'reel panel' + (warn ? ' alert' : '')}>
+    <div class={'reel panel' + (warn ? ' alert' : '') + (surge ? ' surge' : '') + (f.stars === 3 ? ' q3' : '')}>
       <div class="row">
         <Fish sp={f.s.sp} /><span class="title">{sp.name}</span>
+        {f.stars && <span class="stars" title={`${f.stars} of 3 stars`}>{'★'.repeat(f.stars)}<span class="off">{'★'.repeat(3 - f.stars)}</span></span>}
         {f.gold && <span class="gold"><Icon k="star" size="s" />Golden</span>}
         {f.back && <span class="gold">Got away on day {f.back.day}</span>}
         {f.perfect && f.t < 2.5 && !f.gold && <span class="gold">Perfect strike</span>}
@@ -175,6 +178,30 @@ function Reel({ f }: { f: FishLine }) {
   );
 }
 
+// After a line snaps (the fish was on and the line at breaking strain), offer Easy reel once, unless it's on
+const OFFER_KEY = 'bobber-easy-reel-offered';
+let reeling: FishLine | null = null, easyOffer = false;
+function EasyReelOffer() {
+  if (G.fish?.st === 'reel') reeling = G.fish;
+  else if (reeling) {
+    let asked = true;
+    try { asked = !!localStorage.getItem(OFFER_KEY); } catch { }
+    if (!G.fish && !G.card && reeling.tension >= lineMax() * 0.97 && !SET.reelAssist && !asked) {
+      easyOffer = true;
+      try { localStorage.setItem(OFFER_KEY, '1'); } catch { }
+    }
+    reeling = null;
+  }
+  if (!easyOffer || G.fish || SET.reelAssist) return null;
+  return (
+    <div class="chip easy-offer" role="status">
+      <Icon k="reel" size="s" /><span>Line snapped. Easy reel makes fish pull less hard</span>
+      <button data-track="easy-reel-on" class="go" onClick={() => { SET.reelAssist = true; savePrefs(); easyOffer = false; }}>Turn on</button>
+      <button data-track="easy-reel-no" class="x" aria-label="No thanks" onClick={() => { easyOffer = false; }}>×</button>
+    </div>
+  );
+}
+
 function CatchCard({ c }: { c: CatchCardState }) {
   const f = c.fish, sp = SPECIES[f.sp], firstEver = G.stats.caught === 1 && !G.stats.sold;
   return (
@@ -193,6 +220,7 @@ function CatchCard({ c }: { c: CatchCardState }) {
         {c.back && <div class="small gold">The one that got away! It broke your line on day {c.back.day}{c.back.lost > 1 ? `, ${c.back.lost} times,` : ''} and still has your hook</div>}
         {c.bonus && <div class="small gold">{c.bonus}</div>}
         {firstEver && <div class="small">Your first catch! Worth <span class="gold">{money(f.value)}</span> at the market</div>}
+        <ShareButton c={c} />
       </div>
     </div>
   );
@@ -312,6 +340,8 @@ export function Hud() {
           </div>
         )}
         <Tip />
+        <ShareChip />
+        <EasyReelOffer />
       </div>
       <Minimap step={step} />
       <Fishing />

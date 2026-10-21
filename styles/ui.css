@@ -125,6 +125,12 @@ h2, .title { font-size: var(--fs-xl); }
 .reel { width: 23em; padding: 0.6em 0.8em; display: flex; flex-direction: column; gap: 0.35em; }
 .reel .title { font-size: var(--fs-l); }
 .reel.alert { border-color: var(--hint); animation: glow 0.7s ease-in-out infinite alternate; }
+.reel.surge { animation: surge-flash 0.22s steps(2) infinite; } @keyframes surge-flash { 50% { border-color: #fff6dc; box-shadow: 0 0 0 0.12em #f0cf6a; } }
+.reel.q3 { box-shadow: 0 0 0 0.12em var(--gold), 0 0 1.2em rgba(240,207,106,0.45); }
+.reel .stars { color: var(--gold); letter-spacing: 0.05em; } .reel .stars .off { opacity: 0.25; }
+.chip.easy-offer { gap: 0.45em; pointer-events: auto; white-space: normal; max-width: 24em; }
+.chip.easy-offer .go { pointer-events: auto; cursor: pointer; color: var(--gold); border: 1px solid rgba(240,207,106,0.6); border-radius: var(--r); padding: 0 0.45em; }
+.chip.easy-offer .x { pointer-events: auto; cursor: pointer; color: var(--muted); font-size: 1.15em; line-height: 1; padding: 0 0.2em; }
 @keyframes glow { from { box-shadow: 0 0 0 rgba(244,195,106,0); } to { box-shadow: 0 0 1.2em rgba(244,195,106,0.55); } }
 .meter { display: grid; grid-template-columns: 4em 1fr 4.2em; align-items: center; gap: 0.5em; }
 .meter .state { font-size: var(--fs-s); text-align: right; }
@@ -474,6 +480,9 @@ html.touch .prompt-world.first-hint { display: none; }
 .speech b { margin-right: 0.3em; }
 html.touch #ui .speech { bottom: auto; top: 12%; }   /* phones are short: up where the welcome title was */
 /* the first catch gets a little more of a moment */
+.card .share { margin-top: 0.4em; pointer-events: auto; }
+.chip.share-chip { pointer-events: auto; cursor: pointer; gap: 0.4em; border-color: rgba(240,207,106,0.6); animation: region-in 0.4s ease-out; }
+.chip.share-chip:hover { background: rgba(240,207,106,0.15); }
 .card.first { box-shadow: 0 0 0 0.15em var(--gold), 0 0.4em 1.4em #0008; }
 .region-title.welcome { font-size: 3.4em; top: 10%; }
 /* the port market's notice board (not the leaderboards' .board): today's featured fish and world frenzy, then one dockside rumour, clipped to one line */
@@ -483,3 +492,6 @@ html.touch #ui .speech { bottom: auto; top: 12%; }   /* phones are short: up whe
 .port-board .rumour { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-style: italic; color: var(--muted); }
 .chip.today.on { border-color: var(--good); color: var(--good); }
 @media (orientation: portrait) { .port-board { flex-wrap: wrap; row-gap: 0.3em; } }
+/* the logbook's variants: caught ones named, the rest as silhouettes */
+.variants { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35em 0.6em; margin-top: 0.7em; font-size: var(--fs-s); }
+.variants .var { display: inline-flex; align-items: center; gap: 0.2em; color: var(--muted); } .variants .var.got { color: var(--gold); }

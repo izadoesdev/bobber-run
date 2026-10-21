@@ -5,7 +5,7 @@ import { track } from '../analytics';
 import { isRunningNow } from '../tides';
 import { SPECIES, UPGRADES, PAINTS, SUPPLIES, fmtKg } from '../econ';
 import { homePort, heightAt } from '../world';
-import { livesAt } from '../species';
+import { livesAt, VARIANTS, type VariantId } from '../species';
 import { setWaypoint, clearWaypoint, sailToWaypoint, waypointMetres } from '../waypoint';
 import { openIsland } from './island';
 import { NET } from '../net';
@@ -198,6 +198,7 @@ export function Logbook() {
             {e && <><dt>Caught</dt><dd>{e.n}</dd><dt>Your best</dt><dd>{fmtKg(e.best)}</dd></>}
             {world && <><dt>World record</dt><dd class="gold">{fmtKg(world.kg)} by {world.name}</dd></>}
           </dl>
+          {e && !s.legend && <Variants sp={sel} got={e.vars ?? []} />}
           <FishChartRow sp={sel} />
         </div>
       </div>
@@ -210,6 +211,15 @@ export function Logbook() {
 }
 
 // ---------- ship + hold ----------
+/** Every variant a species can come in: the ones you've caught by name, the rest as silhouettes to look for. */
+function Variants({ sp, got }: { sp: number; got: readonly string[] }) {
+  return (
+    <div class="variants"><span class="caps">Variants {got.length}/{VARIANT_IDS.length}</span>
+      {VARIANT_IDS.map(v => { const has = got.includes(v); return <span class={'var' + (has ? ' got' : '')} title={has ? VARIANTS[v].name : 'Not caught yet'}><Fish sp={sp} size="s" cls={has ? '' : 'sil'} />{has ? VARIANTS[v].name : '?'}</span>; })}
+    </div>
+  );
+}
+const VARIANT_IDS = Object.keys(VARIANTS) as VariantId[];
 /** A non-interactive list row: icon, name over a line of detail, then whatever goes on the right. */
 const Item = ({ k, name, sub, cls = '', children }: { k: string; name: string; sub: string; cls?: string; children?: ComponentChildren }) =>
   <div class={'item static' + cls}><Icon k={k} /><div class="grow"><div>{name}</div><div class="sub">{sub}</div></div>{children}</div>;
