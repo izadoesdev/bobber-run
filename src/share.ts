@@ -5,6 +5,7 @@ import { SPECIES, fmtKg } from './species';
 import { cleanName } from '../convex/names';
 import { G, toast, hasSave } from './game';
 import { setWaypoint } from './waypoint';
+import { nearestWater } from './world';
 import { track } from './analytics';
 
 const SHARE_KEYS = new Set(['catch', 'v', 'kg', 'at', 'by']);
@@ -19,7 +20,8 @@ function read(): SharedCatch | null {
   history.replaceState(null, '', location.pathname + (kept.length ? `?${kept.join('&')}` : '') + location.hash);
   const species = SPECIES.findIndex(s => s.id === id);
   if (species < 0 || !Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) > 1e6 || Math.abs(y) > 1e6) return null;
-  return { species, name: SPECIES[species].name, variant, kg: Number.isFinite(kg) && kg > 0 ? kg : 0, at: { x, y }, by: by.ok ? by.name : null };
+  // real shares carry the bobber's spot; a hand-edited one may point at land, so it moves out to the nearest open water
+  return { species, name: SPECIES[species].name, variant, kg: Number.isFinite(kg) && kg > 0 ? kg : 0, at: nearestWater(x, y), by: by.ok ? by.name : null };
 }
 /** The catch this visit was shared from, if the page opened on a share link. */
 export const SHARED: SharedCatch | null = read();

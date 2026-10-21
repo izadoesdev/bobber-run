@@ -18,21 +18,25 @@ test('a share link for a fish that does not exist is ignored', async ({ page }) 
   await page.waitForTimeout(1000);
   expect(await page.evaluate(() => window.BR.G.waypoint)).toBeNull();
 });
-test('a first-time visitor from a share link starts out by the shared spot', async ({ page, browser }) => {
-  test.setTimeout(120_000);
-  // find open water well away from Alderhaven, then arrive there through a link in a fresh browser
+test('a first-time visitor from a share link starts out by the shared spot', async ({ page }) => {
+  // find open water well away from Alderhaven, then arrive there through a link as someone with no save
   await sail(page);
   const spot = await page.evaluate(() => {
     const { hAt, homePort } = window.BR, h = homePort();
-    for (let r = 1400; r < 3000; r += 100) for (let a = 0; a < 6.28; a += 0.4) { const x = Math.round(h.x + Math.cos(a) * r), y = Math.round(h.y + Math.sin(a) * r); if (hAt(x, y) < -0.3) return { x, y, home: Math.hypot(x - h.x, y - h.y) }; }
+    for (let r = 1400; r < 3000; r += 100) for (let a = 0; a < 6.28; a += 0.4) { const x = Math.round(h.x + Math.cos(a) * r), y = Math.round(h.y + Math.sin(a) * r); if (hAt(x, y) < -0.3) return { x, y }; }
     return null;
   });
   expect(spot).not.toBeNull();
-  const fresh = await (await browser.newContext()).newPage();
-  await fresh.route(/(cdn|basket|api)\.databuddy\.cc/, r => r.abort());
-  await fresh.goto(`/?offline&catch=mackerel&at=${spot!.x},${spot!.y}&by=Tester`);
-  await expect.poll(() => fresh.evaluate(() => window.BR?.G?.mode), { timeout: 30_000 }).toBe('play');
-  const where = await fresh.evaluate(([x, y]) => { const { G, homePort } = window.BR, h = homePort(); return { toSpot: Math.hypot(G.boat.x - x, G.boat.y - y), toHome: Math.hypot(G.boat.x - h.x, G.boat.y - h.y) }; }, [spot!.x, spot!.y]);
+  await page.evaluate(() => { localStorage.clear(); window.BR.G.mode = 'title'; });   // no save, and leaving doesn't write one
+  await page.goto(`/?offline&catch=mackerel&at=${spot!.x},${spot!.y}&by=Tester`);
+  await expect.poll(() => page.evaluate(() => window.BR?.G?.mode), { timeout: 30_000 }).toBe('play');
+  const where = await page.evaluate(([x, y]) => { const { G, homePort } = window.BR, h = homePort(); return { toSpot: Math.hypot(G.boat.x - x, G.boat.y - y), toHome: Math.hypot(G.boat.x - h.x, G.boat.y - h.y) }; }, [spot!.x, spot!.y]);
   expect(where.toSpot).toBeLessThan(800);
   expect(where.toHome).toBeGreaterThan(600);
+});
+test('a share link pointing at land puts the waypoint on the nearest water', async ({ page }) => {
+  await sail(page, '?offline&catch=perch&at=900,-300&by=Tester');
+  const w = await page.evaluate(() => { const { G, hAt } = window.BR; return G.waypoint && { h: hAt(G.waypoint.x, G.waypoint.y) }; });
+  expect(w).not.toBeNull();
+  expect(w!.h).toBeLessThan(-0.05);                 // water, not forest
 });
