@@ -6,7 +6,8 @@ import type { BoatDef, Env, Fish, ProjectId, UpgradeKey, Helper } from '../types
 import type { Fit } from '../models';
 import { G } from './state';
 import { frac } from '../config';
-import { SHIP_NEED } from '../species';
+import { SHIP_NEED, VARIANTS, type VariantId } from '../species';
+import { FEATURED_PRICE, featuredToday } from '../today';
 
 
 // ---------- boat and gear ----------
@@ -34,9 +35,15 @@ export const canLand = (sp: number): boolean => catchNeed(sp) === null;
 export function boatStats(bd: BoatDef = boatDef()): { speed: number; hold: number; hp: number; turn: number; accel: number } {
   const keel = Math.max(G.up.keel, bd.keel ?? 0);
   return {
-    speed: bd.speed * (1 + PROP_STEP * G.up.prop), hold: bd.hold + HOLD_STEP * G.up.hold,
+    speed: bd.speed * (1 + PROP_STEP * G.up.prop), hold: bd.hold + HOLD_STEP * G.up.hold + chartPerks().hold,
     hp: Math.round(bd.hp * (1 + HULL_STEP * G.up.hull) * (keel >= 2 ? 1.25 : 1)), turn: bd.turn, accel: bd.accel,
   };
+}
+/** What charting the coast is worth: +1% sailing speed per landmark charted beyond home (up to +12%, for the
+ *  physics to apply), and a hold slot per 4 lighthouses charted (up to +3). */
+export function chartPerks(): { speed: number; hold: number } {
+  const lights = [...G.found].filter(id => id.startsWith('light:')).length;
+  return { speed: Math.min(0.12, 0.01 * Math.max(0, G.found.size - 1)), hold: Math.min(3, Math.floor(lights / 4)) };
 }
 export const cap = (): number => boatStats().hold;
 export const hpMax = (): number => boatStats().hp;
@@ -57,8 +64,10 @@ export const speedMul = (): number => boatStats().speed;
 export const lightR = (): number => 21 + 19 * G.up.lantern;
 export const lineMax = (): number => 1 + LINE_STEP * G.up.line;
 export const contractSlots = (): number => 3 + G.up.quarter;
-// fish never spoil; the ice box keeps them prime and worth a little more
-export const fishValue = (f: Fish): number => Math.round(f.value * (1 + ICE_STEP * G.up.ice));
+// fish never spoil; the ice box keeps them prime and worth a little more. Today's featured fish sell double, and
+// variants (big, albino...) at their own rate.
+export const fishValue = (f: Fish): number => Math.round(f.value * (1 + ICE_STEP * G.up.ice)
+  * (featuredToday(f.sp) ? FEATURED_PRICE : 1) * (f.variant ? VARIANTS[f.variant as VariantId]?.valueMul ?? 1 : 1));
 export const logged = (): number => SPECIES.filter(s => G.log[s.id]).length;
 
 // ---------- what an upgrade level amounts to (the outfitter's "now -> next" line) ----------
@@ -70,7 +79,7 @@ const pct = (n: number): string => `${Math.round(n * 100)}%`;
 const UPGRADE_STAT: Record<UpgradeKey, [string, (l: number) => string]> = {
   prop: ['Top speed', l => pct(boatDef().speed * (1 + PROP_STEP * l))],
   hull: ['Hull', l => `${Math.round(boatDef().hp * (1 + HULL_STEP * l) * (keelLvl() >= 2 ? 1.25 : 1))} points`],
-  hold: ['Hold', l => `${boatDef().hold + HOLD_STEP * l} fish`],
+  hold: ['Hold', l => `${boatDef().hold + HOLD_STEP * l + chartPerks().hold} fish`],
   bilge: ['Pump', l => ['off', '1 hull point / 4 s', '1 hull point / 1.4 s'][l]],
   anchor: ['Anchor', l => l ? 'holds you still' : 'none'],
   net: ['Drift net', l => ['none', '1 fish / 3.6 s', '1 fish / 2.9 s', '1 fish / 2.2 s'][l]],
