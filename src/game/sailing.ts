@@ -8,12 +8,12 @@ import { sfx, soundscape, music } from '../audio';
 import { SET } from '../prefs';
 import { FUNNEL } from '../models';
 import type { BaitChoice, Crate, Fish, Helper, Poi, School, TreasureMap, WeatherState, Wreck } from '../types';
-import { G, hit } from './state';
+import { G, hit, nearest } from './state';
 import { boatDef, boatSpeed, cap, catchNeed, dayNum, fishValue, hpMax, isNight, logged, netLvl, potsLvl, sailEfficiency, toWorld, windAngle } from './rules';
 import { addCoins, burst, celebrate, jitter, spawn, toast } from './feedback';
 import { checkGoals } from './goals';
 import { placeAtPort, portById, saveGame } from './save';
-import { SPOOL, endlessStock, idleOk, landNetted, nearestSchool, towStretch, tryCast, updateFishing, updateFrenzy, useChum } from './fishing';
+import { SPOOL, endlessStock, hitstop, idleOk, landNetted, nearestSchool, towStretch, tryCast, updateFishing, updateFrenzy, useChum } from './fishing';
 import { schoolActive, swimSchools, updateSchools } from './schools';
 import { dock, keptBack, updateFleet } from './port';
 import { track } from '../analytics';
@@ -109,6 +109,12 @@ function tickFeedback(dt: number): void {
 // soundscape follows the boat: speed wash, nearby surf, weather, engine, luffing sails, and the deep ocean far out
 /** 0 near home or over shallow water, 1 over the deep ocean well offshore. */
 const deepness = (): number => { const b = G.boat, hp = homePort(); return smooth01((-hAt(b.x, b.y) - 0.3) / 0.12) * smooth01((Math.hypot(b.x - hp.x, b.y - hp.y) - 900) / 1500); };
+/** How close the nearest biting school is, 0 (none within 80) to 1 (on top of it): its bubbling guides a new captain in. */
+function schoolNearness(): number {
+  const b = G.boat, s = nearest(schoolsNear(b.x, b.y, 80, soundScratch), schoolActive, 80);
+  return s ? 1 - Math.hypot(s.x - b.x, s.y - b.y) / 80 : 0;
+}
+const soundScratch: School[] = [];
 function tickSound(dt: number): void {
   const b = G.boat, bd = boatDef(), playing = G.mode === 'play';
   let shore = 0;
@@ -116,7 +122,7 @@ function tickSound(dt: number): void {
   soundscape({
     speed: playing ? boatSpeed() : 0, shore, wind: WX.wind, rain: WX.rain, engine: playing && bd.prop === 'ENGINE', throttle: Math.abs(b.thr),   // the engine spools up and down with the throttle
     luff: playing && bd.prop === 'SAIL' && G.throttle && sailEfficiency() < 0.6 ? 1 : 0, mute: G.mode === 'sunk', port: G.mode === 'port',
-    deep: deepness(), calm: SET.calm,
+    deep: deepness(), calm: SET.calm, school: playing ? schoolNearness() : 0,
   }, dt);
   music(G.musicOn, isNight());
 }
@@ -142,7 +148,7 @@ export function update(dt: number): void {
     () => setTimeout(() => sfx('thunder'), 200 + Math.random() * 900));
   if (logged() >= 10 && !G.lairTold) { G.lairTold = true; toast('Sailors talk of a giant fish, the Old One. Its lair is now marked on your chart', 'bad'); }
   const speed = boatSpeed();
-  updateFishing(dt);
+  if (!hitstop()) updateFishing(dt);
   updateFrenzy(dt);
   autoCatches(dt, speed);
   scanSurroundings();
@@ -172,6 +178,7 @@ function autoCatches(dt: number, speed: number): void {
   }
 }
 
+const glinted = new Set<string>();
 /** Chart landmarks in sight and note what the boat is next to; pick up flotsam on the way. */
 function scanSurroundings(): void {
   const b = G.boat, bd = boatDef();
@@ -184,6 +191,9 @@ function scanSurroundings(): void {
     if (p.type === 'wreck' && (!G.salvaged.has(p.id) || (G.up.bell > 0 && G.dives[p.id] !== dayNum())) && d < 30 + bd.L * 0.5) G.nearWreck = p;
   }
   G.nearSchool = G.fish ? null : nearestSchool();
+  for (const s of schoolsNear(b.x, b.y, 60, netScratch)) {          // a golden school glints the first time you come near
+    if (s.gold && schoolActive(s) && !glinted.has(s.id) && Math.hypot(s.x - b.x, s.y - b.y) < 60) { glinted.add(s.id); sfx('glint'); }
+  }
   G.nearTreasure = G.maps.find(m => Math.hypot(m.x - b.x, m.y - b.y) < 16 + bd.L * 0.6) || null;
   for (const c of cratesNear(b.x, b.y, 120, crateScratch)) {
     if (c.taken) { if (G.t > c.respawn) c.taken = false; continue; }
@@ -196,9 +206,11 @@ function promptFor(speed: number): string | null {
   const f = G.fish;
   if (f) {
     if (f.st === 'reel') {
+      const tow = f.tow && towStretch(f, f.tow) > 0 ? (f.tow.len > SPOOL * 0.85 ? 'It has nearly all your line. Chase it!' : 'It is towing you! Steer after it. Braking tires it, but strains the line') : null;
+      if (SET.reelAssist) return tow ?? (G.stats.caught < 3 ? 'Easy reel is reeling for you' : null);   // easy reel minds the line itself
       if (f.jump || f.jumpWarn) return 'It is jumping. Stop reeling!';
       if (f.warn) return 'It is about to pull hard. Stop reeling!';
-      if (f.tow && towStretch(f, f.tow) > 0) return f.tow.len > SPOOL * 0.85 ? 'It has nearly all your line. Chase it!' : 'It is towing you! Steer after it. Braking tires it, but strains the line';
+      if (tow) return tow;
       if (G.stats.caught >= 3) return null;      // the reel gauge says the rest once you know it
       if (SET.reelToggle) return 'Press [SPACE] to start or stop reeling';
       if (idleOk(SPECIES[f.s.sp]) && !f.reelOn) return 'It will tire itself out. Hold [SPACE] to reel faster';

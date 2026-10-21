@@ -9,9 +9,9 @@ import { BOATS } from '../econ';
 import { ONLINE } from '../online';
 import type { Poi, Solid, Sway } from '../types';
 import { G, inp } from './state';
-import { boatDef, hpMax, keelLvl, speedMul, sailEfficiency, windAngle, toWorld } from './rules';
+import { boatDef, chartPerks, hpMax, keelLvl, speedMul, sailEfficiency, windAngle, toWorld } from './rules';
 import { spawn, toast, jitter, burst } from './feedback';
-import { cancelFishing, towStretch } from './fishing';
+import { cancelFishing, hitstop, towStretch } from './fishing';
 
 // the hull outline as 18 points on an ellipse, slightly blunter at the stern
 const hullCache: Record<string, [number, number][]> = {};
@@ -169,6 +169,7 @@ function bumpSailors(): void {
 export function physicsStep(dt: number): void {
   const b = G.boat, bd = boatDef();
   b.px = b.x; b.py = b.y; b.pa = b.a;
+  if (hitstop()) return;                                          // the world holds still for a hook or a big landing
   const thr = inp.up() ? 1 : 0, rev = inp.down() ? 1 : 0;
   const steer = ((inp.right() ? 1 : 0) - (inp.left() ? 1 : 0)) * (G.fish ? 0.6 : 1);   // you can still turn with a line out
   const towing = G.fish?.st === 'reel' && !!G.fish.tow;            // a towing fight is sailed: the throttle chases or brakes
@@ -183,7 +184,7 @@ export function physicsStep(dt: number): void {
   const vf0 = vf, shallow = clamp((hBil(b.x, b.y) + 0.1) / 0.09, 0, 1), k = 0.6 * bd.accel;
   vf *= Math.exp(-(k + 2.2 * shallow + 0.12 * Math.abs(b.w)) * dt);
   vs *= Math.exp(-(3.2 + 3 * shallow) * dt);
-  let push = 20 * speedMul() * bd.accel;
+  let push = 20 * speedMul() * bd.accel * (1 + chartPerks().speed);   // a well-charted coast is a faster one
   if (bd.prop === 'SAIL') push *= sailEfficiency() * (1 + 0.3 * WX.wind);
   vf += b.thr * push * (b.thr < 0 ? 0.45 : 1) * dt;
   // a rudder needs water flowing past it, so ships barely turn from a standstill; oars can spin a rowboat in place

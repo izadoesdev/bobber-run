@@ -3,7 +3,7 @@ import { nA } from '../noise';
 import { hAt, heightAt, homePort, schoolsNear } from '../world';
 import { WX, biteMul, trophyBonus } from '../weather';
 import { SPECIES, activeAt, fmtKg } from '../econ';
-import { favBait } from '../species';
+import { favBait, rollVariant, VARIANTS, type VariantId } from '../species';
 import { sfx } from '../audio';
 import { SET } from '../prefs';
 import { netCatch } from '../net';
@@ -17,6 +17,7 @@ import { addCoins, burst, jitter, spawn, toast } from './feedback';
 import { placeAtPort, saveGame } from './save';
 import { schoolActive, takeFish } from './schools';
 import { isRunningNow } from '../tides';
+import { biomeAt } from '../biome';
 
 /** Fight tuning: how hard tension climbs while reeling, and how much surges add. Exposed on BR for tweaking. */
 export const TUNE = { k: 1.5, surge: 0.55 };
@@ -25,6 +26,13 @@ export const TUNE = { k: 1.5, surge: 0.55 };
 const GOLD_BITE = 0.4, GOLD_VALUE = 2.5;
 /** Chance the fish that once broke your line is the one that bites at its school; how many are remembered at once. */
 const BACK_BITE = 0.5, MAX_ESCAPED = 4;
+/** Seconds of warning (a rod creak, the reel panel flashing) before every surge lands. */
+const CUE_S = 0.5;
+/** Quality at the hook: below 0.1 three stars, below 0.45 two, else one; and what each is worth. */
+const STAR_ROLL = [0.1, 0.45], STAR_VALUE = [1, 1.25, 1.6];
+/** The world holds still this long when a fish is hooked, and when a 3-star or legendary one is landed. */
+const HITSTOP = 0.1;
+export const hitstop = (): boolean => G.t - G.hookT < HITSTOP;
 // idle fishing: easy, non-legendary fish land on their own if you leave the line alone
 export const idleOk = (sp: Species): boolean => !sp.legend && sp.diff < 0.45;
 
@@ -36,8 +44,8 @@ const learning = (): boolean => G.stats.caught < 3;
  * A new voyage starts a few boat lengths from a school that bites now, bow pointing at it, so the first cast comes
  * within seconds (no school in reach: at the pier, as before).
  */
-export function placeByStarterSchool(): void {
-  const hp = homePort(), b = G.boat, r = castRange() * 0.5;
+export function placeByStarterSchool(anchor?: { x: number; y: number }): void {
+  const hp = anchor ?? homePort(), b = G.boat, r = castRange() * 0.5;
   const starter = (s: School): boolean => schoolActive(s) && !s.boss && SPECIES[s.sp].rod === 0 && !SPECIES[s.sp].legend;
   const near = [...schoolsNear(hp.x, hp.y, 700)].filter(starter).sort((p, q) => Math.hypot(p.x - hp.x, p.y - hp.y) - Math.hypot(q.x - hp.x, q.y - hp.y));
   for (const s of near) for (let k = 0; k < 8; k++) {
@@ -46,7 +54,8 @@ export function placeByStarterSchool(): void {
     Object.assign(b, { x, y, px: x, py: y, a: Math.atan2(s.y - y, s.x - x), vx: 0, vy: 0, w: 0 });
     return;
   }
-  placeAtPort(hp);
+  if (anchor) placeByStarterSchool();                            // nothing biting by the shared spot: start from home
+  else placeAtPort(homePort());
 }
 /** The closest biting school within casting range. */
 export const nearestSchool = (): School | null => nearest(schoolsNear(G.boat.x, G.boat.y, 90), schoolActive, castRange());
@@ -121,7 +130,8 @@ function castStage(f: FishLine): void {
   const baitMul = (f.bait === 'glow' && isNight() ? 0.5 : f.bait ? 0.75 : 1) * (f.bait === favBait(sp) ? 0.8 : 1);
   f.wait = Math.max(0.4, 1 - 0.15 * G.dry) * (1.4 + Math.random() * 2.6) * (1 - 0.1 * rod) * (f.frenzy ? 0.4 : 1) * baitMul * biteMul() * (1 - 0.12 * G.up.tackle)
     * (isRunningNow(sp.id) ? 0.75 : 1);           // this week's running fish bite sooner
-  f.teases = TEASES[sp.fight]().filter(before => before < f.wait - 0.3);
+  if (f.s.gold) f.wait *= 0.6;                                  // a golden school bites quickly, and never teases
+  f.teases = f.s.gold ? [] : TEASES[sp.fight]().filter(before => before < f.wait - 0.3);
   spawn({ kind: 'ring', x: f.tx, y: f.ty, life: 0.9, r0: 1, grow: 5 });
   sfx('plop', 0.5);
 }
@@ -135,7 +145,7 @@ function tease(f: FishLine, sp: Species): void {
     spawn({ kind: 'ring', x, y, life: 0.9, r0: 1, grow: 6 });
     burst('dot', x, y, 5, 18, 0.4);
   }
-  sfx('plop', 0.22);
+  sfx('nibble');
 }
 
 function waitStage(f: FishLine, dt: number, strike: boolean): void {
@@ -152,25 +162,26 @@ function waitStage(f: FishLine, dt: number, strike: boolean): void {
 
 function startBite(f: FishLine): void {
   const sp = SPECIES[f.s.sp], b = G.boat;
-  f.st = 'bite'; f.t = 0; f.win = strikeWindows();
+  f.st = 'bite'; f.t = 0; f.win = strikeWindows(sp);
   const back = escapeeAt(f.s);
   if (back && Math.random() < BACK_BITE) { f.back = back; f.gold = !!back.gold; }
   else f.gold = !!f.s.gold && Math.random() < GOLD_BITE;
   if (RUNS.has(sp.fight)) f.run = Math.atan2(f.ty - b.y, f.tx - b.x) + jitter(1.2);
   sfx('bite');
-  burst('dot', f.tx, f.ty, 6, 20, 0.4);
+  spawn({ kind: 'ring', x: f.tx, y: f.ty, life: 0.8, r0: 1, grow: 9 });   // the bobber plunges: unmistakable
+  burst('dot', f.tx, f.ty, 12, 28, 0.5);
 }
-/** [perfect, any] strike windows in seconds; relaxed strikes and each recent miss widen both. */
-function strikeWindows(): [number, number] {
-  const rod = G.up.rod;
-  const relaxed = (SET.strike === 'relaxed' ? 1.6 : 1) * (1 + 0.2 * Math.min(3, G.dry));   // pity: each miss widens the window
+/** [perfect, any] strike windows in seconds; relaxed strikes and each recent miss widen both, rarer fish narrow them a little. */
+function strikeWindows(sp: Species): [number, number] {
+  const rod = G.up.rod, rare = clamp(0.7 + 0.06 * sp.w, 0.75, 1);
+  const relaxed = (SET.strike === 'relaxed' ? 1.6 : 1) * (1 + 0.2 * Math.min(3, G.dry)) * rare;   // pity: each miss widens the window
   const perfect = ((G.boatId === 'row' ? 0.32 : 0.2) + 0.03 * rod + 0.05 * Math.max(0, G.up.tackle - 1)) * relaxed;
   return [perfect, (0.75 + 0.12 * rod) * relaxed];
 }
 
 function biteStage(f: FishLine, strike: boolean): void {
   const sp = SPECIES[f.s.sp];
-  const [perfectWin, biteWin] = f.win ??= strikeWindows();
+  const [perfectWin, biteWin] = f.win ??= strikeWindows(sp);
   const auto = (crewLvl() >= 2 && f.t > 0.42) || (SET.strike === 'auto' && f.t > 0.3) || (learning() && f.t > Math.min(0.6, biteWin * 0.6));
   if (strike || auto) {
     f.perfect = f.t < perfectWin; f.reeling = true;
@@ -188,10 +199,13 @@ function biteStage(f: FishLine, strike: boolean): void {
 
 /** The fish is on and the fight starts; a perfect strike is made unmistakable (the reel panel names a golden fish). */
 function hooked(f: FishLine, tension: number, prog: number): void {
-  f.st = 'reel'; f.t = 0; f.tension = tension; f.prog = prog; G.dry = 0;
+  f.st = 'reel'; f.t = 0; f.tension = tension; f.prog = prog; G.dry = 0; G.hookT = G.t;
   sfx(f.perfect ? 'perfect' : 'plop');
   f.fx = f.tx; f.fy = f.ty;
-  const sp = SPECIES[f.s.sp], b = G.boat;
+  const sp = SPECIES[f.s.sp], b = G.boat, r = Math.random();
+  // what's on the line shows from the hook: its quality (a perfect strike adds a star) and any variant
+  f.stars = Math.min(3, (r < STAR_ROLL[0] ? 3 : r < STAR_ROLL[1] ? 2 : 1) + (f.perfect ? 1 : 0)) as 1 | 2 | 3;
+  if (!f.back) f.variant = rollVariant(f.s.sp, { storm: WX.state === 'storm', biome: biomeAt(b.x, b.y), night: isNight() }, Math.random()) ?? undefined;
   if (sp.deck >= 1 || sp.legend) f.tow = { len: clamp(Math.hypot(f.tx - b.x, f.ty - b.y), 20, 50), h: Math.atan2(f.ty - b.y, f.tx - b.x) + jitter(1.6), turnT: 2 + Math.random() * 2 };
   if (f.back) toast(`It's the ${sp.name} that broke your line on day ${f.back.day}!`, 'good');
   if (f.perfect) {
@@ -254,11 +268,11 @@ function runWithLine(f: FishLine, tow: Tow, dt: number, surge: number, diff: num
   if (stretch <= 0) return;
   const give = clamp((stretch - 5) * 0.8, 0, 14) * dt;                                               // the reel's drag holds, then gives
   if (tow.len < SPOOL) { tow.len = Math.min(SPOOL, tow.len + give); f.prog = Math.max(0, f.prog - give * 0.004); }
-  else f.tension += stretch * 0.12 * dt;                                                            // nothing left to give
+  else if (!SET.reelAssist) f.tension += stretch * 0.12 * dt;                                      // nothing left to give
   f.prog += Math.min(1, stretch / 6) * 0.03 * (1 + braking) / heavy * dt;
   f.tension += braking * 0.35 * dt;
   const off = Math.abs(wrapAngle(Math.atan2((f.fy ?? f.ty) - b.y, (f.fx ?? f.tx) - b.x) - b.a));
-  f.tension += Math.max(0, off - 1.2) * 0.4 * dt;                                                  // abaft the beam the line drags along the hull
+  if (!SET.reelAssist) f.tension += Math.max(0, off - 1.2) * 0.4 * dt;                            // abaft the beam the line drags along the hull (easy reel minds it)
 }
 
 export const escapeeAt = (s: School): Escapee | undefined => G.escaped.find(e => e.school === s.id);
@@ -279,20 +293,31 @@ function remember(f: FishLine): boolean {
   return true;
 }
 
+/**
+ * Every surge is announced CUE_S ahead (`ahead` is the fight pattern that far along): the rod creaks and the reel
+ * flashes. A surge counts as passed once the pull ahead falls well below it, so a wobbling pull is one surge, not many.
+ */
+function telegraph(f: FishLine, ahead: number, surge: number, dt: number): void {
+  f.cue = Math.max(0, (f.cue ?? 0) - dt);
+  if (!f.cued && ahead > 0.9) { f.cued = true; f.cue = CUE_S; sfx('creak'); }
+  else if (f.cued && ahead < 0.6) f.cued = false;
+  f.warn = f.cue > 0 || surge > 0.9;
+}
+
 function reelStage(f: FishLine, dt: number, strike: boolean): void {
   const sp = SPECIES[f.s.sp], rod = G.up.rod, diff = sp.diff;
   const pattern = FIGHT[sp.fight], stage = f.stage || 0;
   f.ph += dt * (1.5 + diff * 2.5);
   const assist = SET.reelAssist ? 0.7 : 1;
   const big = sp.legend || sp.rod >= 3, hk = big ? harpoonLvl() : 0;   // the harpoon gun tires big fish faster
-  const surge = pattern(f.ph);
+  const surge = pattern(f.ph), easy = SET.reelAssist;
   const pull = diff * (0.3 + surge * TUNE.surge * assist) * (1 + 0.1 * stage) * (1 - 0.12 * hk) * (f.back ? 1.2 : 1);   // it has learned
   if (SET.reelToggle && strike) { f.reeling = !f.reeling; sfx('move', 0.4); }
-  const holding = SET.reelToggle ? !!f.reeling : held(' ');
-  const reeling = holding && !(SET.reelAssist && f.jump);   // assist lets go during jumps
-  // telegraph: look a moment ahead so the warning shows before the surge lands
   f.surge = surge;
-  f.warn = pattern(f.ph + 0.5) > 0.9 && diff > 0.3 && sp.fight !== 'steady';
+  if (diff > 0.3) telegraph(f, pattern(f.ph + (1.5 + diff * 2.5) * CUE_S), surge, dt);
+  const holding = SET.reelToggle ? !!f.reeling : held(' ');
+  const auto = easy && !f.warn && f.tension < lineMax() * 0.5;    // easy reel reels by itself between surges
+  const reeling = (holding || auto) && !(easy && f.jump);         // and lets go during jumps
   if (sp.fight === 'jumper' || sp.fight === 'boss') updateJumps(f, dt, reeling);
   if (f.tow) runWithLine(f, f.tow, dt, surge, diff, reeling);
   swimFish(f, dt, surge);
@@ -300,7 +325,8 @@ function reelStage(f: FishLine, dt: number, strike: boolean): void {
   if (reeling) {
     f.tension += (0.36 + pull * TUNE.k - rod * 0.05) * dt * (SET.reelAssist ? 0.85 : 1);
     f.prog += (0.4 - diff * 0.24 + rod * 0.025) * (1 + 0.12 * G.up.reel) * (1 + 0.25 * hk) * dt * (1 - Math.min(0.6, surge * 0.35))
-      * (f.tow ? 0.45 / towHeft(f) : 1);             // a towing giant is mostly won by letting it tire itself on the boat
+      * (f.tow ? 0.45 / towHeft(f) : 1)              // a towing giant is mostly won by letting it tire itself on the boat
+      * (easy ? 0.6 : 1);
     if ((f.reelT += dt) > 0.07) { f.reelT = 0; sfx('reel'); }
   } else {
     f.tension += (pull * 0.2 - 0.75 - rod * 0.05) * dt;
@@ -308,7 +334,8 @@ function reelStage(f: FishLine, dt: number, strike: boolean): void {
     else f.prog = Math.max(0, f.prog - 0.035 * dt);
   }
   f.tension = Math.max(0, f.tension);
-  if (learning()) f.tension = Math.min(f.tension, lineMax() * 0.9);   // the first fish strain the line but never snap it
+  if (learning() || easy) f.tension = Math.min(f.tension, lineMax() * 0.9);   // first fish, and easy reel, strain the line but never snap it
+  if (f.tension > lineMax() * 0.8) f.strained = true;                        // into the red: the catch loses its clean-fight star
   if (surge > 1) G.shake = Math.max(G.shake, 0.6);
   if (Math.random() < dt * (3 + surge * 10)) spawn({ kind: 'dot', x: (f.fx ?? f.tx) + jitter(4), y: (f.fy ?? f.ty) + jitter(3), vx: jitter(18), vy: jitter(18), life: 0.35 });
   if (f.tension >= lineMax()) {
@@ -343,9 +370,11 @@ function rollCatch(spIdx: number, f: FishLine | null, small = false): Fish {
     if (trophy) { r = Math.max(r, 0.82 + Math.random() * 0.18); G.pity = 0; }
     else G.pity++;
   }
-  const kg = Math.round((s.kg[0] + (s.kg[1] - s.kg[0]) * r) * 100) / 100;
-  const fish: Fish = { sp: spIdx, kg, value: Math.max(1, Math.round(s.base * (0.55 + 0.9 * r) * (small ? 0.75 : gold ? GOLD_VALUE : trophy ? 1.8 : 1))), trophy, t: G.clock };
+  const variant = f?.variant, kg = Math.round((s.kg[0] + (s.kg[1] - s.kg[0]) * r) * (variant ? VARIANTS[variant as VariantId].sizeMul : 1) * 100) / 100;
+  const value = s.base * (0.55 + 0.9 * r) * (small ? 0.75 : gold ? GOLD_VALUE : trophy ? 1.8 : 1) * STAR_VALUE[(f?.stars ?? 1) - 1];
+  const fish: Fish = { sp: spIdx, kg, value: Math.max(1, Math.round(value)), trophy, t: G.clock };
   if (gold) fish.gold = true;
+  if (variant) fish.variant = variant;
   return fish;
 }
 
@@ -366,11 +395,12 @@ function recordCatch(spIdx: number, stock: FishStock, f: FishLine | null, method
   if (WX.state === 'storm') G.stats.storm = (G.stats.storm || 0) + 1;
   const prev = G.log[sp.id];
   const first = !prev, record = !!prev && fish.kg > prev.best, firstTrophy = fish.trophy && !prev?.trophy;
-  G.log[sp.id] = { n: (prev?.n || 0) + 1, best: Math.max(prev?.best || 0, fish.kg), trophy: !!(prev?.trophy || fish.trophy), at: spotsWith(prev?.at, stock) };
+  const vars = fish.variant && !prev?.vars?.includes(fish.variant) ? [...prev?.vars ?? [], fish.variant] : prev?.vars;
+  G.log[sp.id] = { n: (prev?.n || 0) + 1, best: Math.max(prev?.best || 0, fish.kg), trophy: !!(prev?.trophy || fish.trophy), at: spotsWith(prev?.at, stock), ...(vars && { vars }) };
   if (first || record) netCatch(sp.id, fish.kg, G.cheated);          // a personal best goes on the world record board
   G.stats.caught++;
   track('fish_caught', { species: sp.id, method, kg_bucket: bucket(fish.kg), trophy: !!fish.trophy, golden: !!fish.gold, legend: !!sp.legend,
-    first, perfect: !!f?.perfect, rod: G.up.rod, towed: !!f?.tow, got_back: !!f?.back });
+    first, perfect: !!f?.perfect, rod: G.up.rod, towed: !!f?.tow, got_back: !!f?.back, variant: fish.variant ?? 'none', stars: f?.stars ?? 0 });
   if (first) track('species_logged', { species: sp.id, logged: logged() });
   if (fish.trophy) G.stats.trophies++;
   if (isNight()) G.stats.night++;
@@ -399,11 +429,14 @@ function holdFullNote(): void {
 /** The fish on the line is landed: catch card, bonus, and maybe a deckhand's extra catch. */
 function landHooked(f: FishLine): void {
   const spIdx = f.s.sp, sp = SPECIES[spIdx];
+  f.stars = Math.min(SET.reelAssist ? 2 : 3, (f.stars ?? 1) + (f.strained ? 0 : 1)) as 1 | 2 | 3;   // a clean fight lifts it a star; easy reel tops out at two
   const { fish, first, record } = recordCatch(spIdx, f.s, f, 'rod');
   if (f.back) G.escaped = G.escaped.filter(e => e.school !== f.s.id);
   else if (fish.gold) f.s.gold = false;
-  G.card = { fish, first, record, perfect: f.perfect, bonus: bottleBonus(sp), t: 0, back: f.back };
-  sfx(fish.trophy || first ? 'fanfare' : 'catch');
+  G.card = { fish, first, record, perfect: f.perfect, bonus: bottleBonus(sp), t: 0, back: f.back, stars: f.stars };
+  const big = f.stars === 3 || !!sp.legend;
+  if (big) G.hookT = G.t;                                         // a moment's stillness for a big one
+  sfx(big || G.stats.caught === 1 ? 'stinger' : fish.trophy || first ? 'fanfare' : 'catch');
   if (G.pet && Math.random() < 0.35) setTimeout(() => sfx('meow', 0.6), 900);   // the cat approves
   G.catchAnim = { sp: spIdx, t: 0, x: f.fx ?? f.tx, y: f.fy ?? f.ty };
   holdFullNote();

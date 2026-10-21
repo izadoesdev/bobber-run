@@ -238,6 +238,10 @@ export interface FishLine {
   variant?: string;
   /** seconds left in the telegraph before the next surge; 0 or undefined when none is coming */
   cue?: number;
+  /** the line went into the red this fight (no clean-fight star) */
+  strained?: boolean;
+  /** the next surge has been announced and hasn't passed yet */
+  cued?: boolean;
 }
 /** A fish that broke your line after a real fight: it stays with its school, wearing your hook, until you land it. */
 export interface Escapee {
