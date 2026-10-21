@@ -209,7 +209,7 @@ let shown: { id: TipId; text: string; t: number } | null = null, lastT = -99;
 /** The tip to show now, if any. Call once a frame while sailing: it notices the moments and remembers what was shown. */
 export function tip(): { text: string; fade: boolean } | null {
   if (shown && G.t - shown.t > TIP_S) shown = null;
-  if (!shown && G.mode === 'play' && !G.fish && !G.card && G.t - lastT > TIP_GAP) {
+  if (!shown && G.mode === 'play' && !G.fish && !G.card && G.stats.caught > 0 && G.t - lastT > TIP_GAP) {   // none in the wordless first minute
     const next = TIPS.find(t => !seen[t.id] && t.when());
     if (next) {
       shown = { id: next.id, text: next.text, t: G.t }; lastT = G.t; seen[next.id] = true;

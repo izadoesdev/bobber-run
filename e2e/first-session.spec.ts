@@ -12,3 +12,13 @@ test('the first catch always lands, and its card says what it is worth @both', a
   expect(r).toEqual({ caught: 1, card: true });
   await expect(page.locator('#ui')).toContainText('$');
 });
+test('the first minute has no words; Maren speaks after the first catch without stopping the boat @both', async ({ page }) => {
+  await sail(page);
+  await page.waitForTimeout(1500);
+  expect(await page.evaluate(() => ({ speech: !!document.querySelector('.speech'), objective: !!document.querySelector('.chip.objective'), mode: window.BR.G.mode })))
+    .toEqual({ speech: false, objective: false, mode: 'play' });
+  await landFish(page);
+  await page.evaluate(() => { window.BR.G.card = null; });             // skip the card's long first look
+  await expect(page.locator('.speech')).toContainText('Maren', { timeout: 10_000 });
+  expect(await page.evaluate(() => window.BR.G.mode)).toBe('play');   // spoken while sailing: no conversation screen
+});

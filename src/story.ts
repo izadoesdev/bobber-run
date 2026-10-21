@@ -122,8 +122,8 @@ export function talkNext(skip = false): void {
   G.mode = t.back;
   t.then?.();
 }
-// The first quest's line doesn't stop the game: it shows as a speech line while you sail, so a new captain is
-// fishing within seconds. Later quests talk as before.
+// The first minute has no words: Maren says nothing until the first catch, and then her welcome (and the next
+// quest) plays as one-line speech while you sail, never stopping the boat. Later quests talk as before.
 let said: { lines: TalkLine[]; at: number } | null = null;
 const LINE_S = 7;
 /** The line being said without pausing, if any. */
@@ -145,7 +145,7 @@ export function updateStory(): void {
   if (!q) return;
   if (!st.shown) {
     st.shown = true;
-    if (q.id === 'first-cast') said = { lines: q.intro, at: G.t }; else talk(q.intro);
+    if (q.id !== 'first-cast') talk(q.intro);
     return;
   }
   if (G.card) return;                                   // let the catch card have its moment first
@@ -156,5 +156,7 @@ export function updateStory(): void {
   st.i++; st.base = snap(); st.shown = true;
   const next = currentQuest(), coins = q.reward.coins;
   toast(`Quest complete: ${q.title}${coins ? `  +$${coins}` : ''}`, 'good'); sfx('fanfare'); saveGame();
-  talk([...q.outro, ...(next ? next.intro : [])], () => { if (q.id === 'homecoming') G.mode = 'finale'; });   // Nell comes home, then the ending
+  const lines = [...q.outro, ...(next ? next.intro : [])];
+  if (q.id === 'first-cast') said = { lines, at: G.t };
+  else talk(lines, () => { if (q.id === 'homecoming') G.mode = 'finale'; });   // Nell comes home, then the ending
 }

@@ -14,7 +14,7 @@ import { waypointRoute } from '../waypoint';
 import { coursePath } from '../game/autopilot';
 import { BIOME_NAME, biomeAt, type BiomeId } from '../biome';
 import { IslandSigns } from './island';
-import { Fish, Icon, edgeFade, forTouch, keyed, viewPct } from './parts';
+import { Fish, Icon, Key, edgeFade, forTouch, keyed, viewPct } from './parts';
 
 /** Everything drawn over the sea while sailing. `wp` is the player's waypoint, which takes the arrow from the guide. */
 export function SeaLayer({ step, wp }: { step: Step; wp: Step | null }) {
@@ -193,9 +193,26 @@ function worldLabels(): JSX.Element[] {
   return labels;
 }
 
+// The first minute has no words: once a school is in reach, the cast key under the boat; resting about 6 s
+// anywhere else, the steering key. The arrow round the boat already points at the school.
+let movedAt = -1;
+function FirstHint() {
+  const b = G.boat;
+  if (movedAt < 0 || Math.hypot(b.vx, b.vy) > 3) movedAt = G.t;
+  if (G.fish || G.card || G.mode !== 'play') return null;
+  const cast = !!G.prompt?.includes('[SPACE]');
+  if (!cast && G.t - movedAt < 6) return null;
+  const [x, y] = viewPct(b.x, b.y + 16);
+  return (
+    <div class="prompt-world first-hint" aria-hidden="true" style={{ left: x + '%', top: y + '%' }}>
+      {cast ? <><Key k=" " pad="A" /><Icon k="rod" size="s" /></> : <><Key k="ArrowUp" pad="LS" /><Icon k="hull" size="s" /></>}
+    </div>
+  );
+}
 // what you can do right here (cast, dock, salvage) as a small label under the boat instead of a panel; the
 // fishing prompts stay at the bottom, where a warning has to be loud
 function BoatPrompt() {
+  if (!G.stats.caught) return <FirstHint />;
   if (!G.prompt || G.fish || G.card || G.mode !== 'play') return null;
   const [x, y] = viewPct(G.boat.x, G.boat.y + 16);
   return <div class="prompt-world" style={{ left: x + '%', top: y + '%' }}>{keyed(G.prompt)}</div>;

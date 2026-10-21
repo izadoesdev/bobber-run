@@ -455,6 +455,10 @@ html.touch #ui .screen:has(.chartwrap) .foot { padding-right: 130px; }
 /* what you can do right here, under the boat */
 .prompt-world { position: absolute; transform: translate(-50%, 0); font-size: var(--fs-s); white-space: nowrap; color: #fff6dc; text-shadow: 0 0.08em 0 #000, 0 0 0.4em #000c; pointer-events: none; animation: region-in 0.3s ease-out; }
 .prompt-world .key { font-size: 0.9em; }
+/* the wordless first minute: a key cap and an icon under the boat, breathing; touch has its pulsing Cast button instead */
+.prompt-world.first-hint { display: inline-flex; align-items: center; gap: 0.35em; font-size: 1.1em; animation: hint-breathe 1.6s ease-in-out infinite; }
+@keyframes hint-breathe { 0%, 100% { opacity: 0.75; transform: translate(-50%, 0); } 50% { opacity: 1; transform: translate(-50%, -0.15em); } }
+html.touch .prompt-world.first-hint { display: none; }
 /* the logbook's fish chart row, the chart's "showing" line, the ship screen's helpers */
 .fish-chart { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em; margin-top: 0.6em; }
 .chip.zone-on { gap: 0.5em; white-space: normal; }

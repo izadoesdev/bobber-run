@@ -265,7 +265,7 @@ export function Hud() {
       <SeaLayer step={step} wp={wp} />
       <div class="hud-left">
         <Status />
-        <Objective step={step} prog={pr && pr.want > 1 ? `${pr.have}/${pr.want}` : null} />
+        {G.stats.caught > 0 && <Objective step={step} prog={pr && pr.want > 1 ? `${pr.have}/${pr.want}` : null} />}
         {wp && <WaypointChip />}
         {G.active.length > 0 && (
           <div class="chip contracts small">
@@ -277,7 +277,7 @@ export function Hud() {
       </div>
       <Minimap step={step} />
       <Fishing />
-      {G.stats.caught < 2 && !G.fish && <div class="hints">
+      {G.stats.caught === 1 && !G.fish && <div class="hints">
         <Hint k="Tab" pad="View">Ship</Hint><Hint k="m" pad="Y">Chart</Hint><Hint k="l" pad="LB">Log</Hint>
         <Hint k="Escape" pad="Start">Menu</Hint>{G.pet && <Hint k="p">Pet</Hint>}
       </div>}
