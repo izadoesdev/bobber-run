@@ -2,11 +2,11 @@
 // and managing happen in the island card, opened from a port's Islands tab, from the sea chart, or by clicking a sign.
 import { W, H, money } from '../config';
 import { G, saveGame } from '../game';
-import { claimableNear } from '../world';
+import { claimableNear, heightAt } from '../world';
 import { sfx } from '../audio';
 import { NET, buyIsland, claimIsland, renameIsland, releaseIsland, uploadIslandLogo, reportIsland, setIslandUrl } from '../net';
-import { ISLANDS, islandPrice, stashLogo } from '../islands';
-import { setWaypoint } from '../waypoint';
+import { ISLANDS, islandLanding, islandPrice, stashLogo } from '../islands';
+import { sailToWaypoint, setWaypoint } from '../waypoint';
 import { pixelLogo, type Logo } from './logo';
 import { edgeFade, viewPct } from './parts';
 import { track, bucket, flushAnalytics } from '../analytics';
@@ -28,7 +28,8 @@ export function IslandSigns() {
     if (!a) return null;
     return (
       <div class={'island-sign' + (row.mine ? ' mine' : '')} key={c.key} style={{ left: x + '%', top: y + '%', opacity: a, pointerEvents: a < 0.5 ? 'none' : undefined }}>
-        <button data-track="island-sign" class="sign-main" onClick={() => openIsland(c.key, 'play')}>{row.logoUrl && <img src={row.logoUrl} alt="" />}<span>{row.name}</span></button>
+        <button data-track="island-sign" class="sign-main" onClick={() => openIsland(c.key, 'play')}>{row.logoUrl && <img src={row.logoUrl} alt="" />}
+          <span class="txt"><span>{row.name}</span><span class="who">{row.mine ? 'your island' : `by ${row.owner}`}</span></span></button>
         {row.url && <button data-track="island-sign-visit" class="sign-link" title={row.url} onClick={() => visit(row.url!)}>visit ↗</button>}
       </div>
     );
@@ -97,7 +98,10 @@ export function IslandDialog() {
     if (!f.confirm) { f.confirm = true; say('Release it? Anyone can then buy it, and there is no refund. Press again to release', true); return; }
     void run(() => releaseIsland(key), 'Released');
   };
-  const waypoint = () => { const c = claimableNear((i + 0.5) * 560, (j + 0.5) * 560, 560).find(x => x.key === key); if (c) { setWaypoint(c.x, c.y); closeIsland(); } };
+  // the island's middle is land: head for the open water off its shore nearest the boat
+  const landing = () => { const c = claimableNear((i + 0.5) * 560, (j + 0.5) * 560, 560).find(x => x.key === key); return c && islandLanding(c, G.boat.x, G.boat.y, (x, y) => heightAt(x, y) < -0.1); };
+  const waypoint = () => { const p = landing(); if (p) { setWaypoint(p.x, p.y); closeIsland(); } };
+  const sail = () => { const p = landing(); if (!p) return; setWaypoint(p.x, p.y); sailToWaypoint(); closeIsland(); G.mode = 'play'; };
   const named = f.name.trim().length >= 2;
   return (
     <div class="center dim-bg">
@@ -119,6 +123,7 @@ export function IslandDialog() {
         {f.msg && <p class={f.msg.bad ? 'why left' : 'good'}>{f.msg.s}</p>}
         <footer class="foot">
           <button data-track="island-waypoint" class="btn" onClick={waypoint}>Set waypoint</button>
+          {G.islandBack !== 'port' && <button data-track="island-sail" class="btn" onClick={sail}>Sail there</button>}
           {row?.mine && <button data-track="island-release" class={'btn' + (f.confirm ? ' danger' : '')} disabled={f.busy} onClick={release}>{f.confirm ? 'Press again to release' : 'Release'}</button>}
           {row && !row.mine && <button data-track="island-report" class="btn small-btn" disabled={f.busy} onClick={() => run(() => reportIsland(key), 'Thanks. A moderator will take a look')}>Report</button>}
           <span class="grow" />

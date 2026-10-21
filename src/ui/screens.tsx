@@ -26,7 +26,7 @@ const LEGEND: [Legend, ComponentChildren][] = [
   ['you', <><i class="lg you" />You</>], ['target', <><i class="lg target" />Next step</>], ['waypoint', <><i class="wp-glyph" />Your waypoint</>],
   ['port', <><i class="lg port" />Port</>], ['light', <><i class="lg light" />Lighthouse</>], ['wreck', <><i class="lg wreck" />Wreck</>],
   ['treasure', <><i class="lg treasure" />Treasure</>], ['frenzy', <><Icon k="star" size="s" />Feeding frenzy</>], ['school', <><i class="lg school" />Fish</>],
-  ['sailor', <><i class="lg sailor" />Sailors</>], ['island', <><i class="lg island" />Island for sale</>], ['uncharted', <><i class="lg unknown" />Uncharted</>],
+  ['sailor', <><i class="lg sailor" />Sailors</>], ['owned', <><i class="lg owned" />Claimed island</>], ['island', <><i class="lg island" />Island for sale</>], ['uncharted', <><i class="lg unknown" />Uncharted</>],
 ];
 function pointAt(e: PointerEvent): void {
   const until = e.pointerType === 'mouse' ? Infinity : performance.now() + 2500, c = (e.currentTarget as HTMLElement).getBoundingClientRect(), w = (e.currentTarget as HTMLElement).parentElement!.getBoundingClientRect();

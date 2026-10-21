@@ -8,6 +8,25 @@ import { toast } from './game/feedback';
 import { track } from './analytics';
 
 export { islandPrice } from '../convex/islandRules';
+/** An island's own colour, from its key: its pennant until the owner's logo is approved, the same on the chart and in the world. */
+export function islandColour(key: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
+  const hue = (h >>> 0) % 360, f = (n: number) => { const k = (n + hue / 30) % 12, a = 0.6 * Math.min(0.55, 1 - 0.55); return Math.round(255 * (0.55 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
+  return '#' + [f(0), f(8), f(4)].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+/** Where to sail for an island: the open water off its shore nearest to (fx, fy), since its middle is land. */
+export function islandLanding(c: { x: number; y: number; R: number }, fx: number, fy: number, deep: (x: number, y: number) => boolean): { x: number; y: number } {
+  let best = { x: c.x, y: c.y }, bd = Infinity;
+  for (let r = c.R * 0.5; r <= c.R * 1.8; r += 8) {
+    for (let a = 0; a < Math.PI * 2; a += 0.2) {
+      const x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r, d = Math.hypot(x - fx, y - fy);
+      if (d < bd && deep(x, y)) { best = { x, y }; bd = d; }
+    }
+    if (bd < Infinity) return best;                       // the first ring with water is the shore
+  }
+  return best;
+}
 /** Owner, name and logo by island key ("i,j"); islands nobody owns are absent. */
 export const ISLANDS = new Map<string, IslandRow>();
 

@@ -6,7 +6,7 @@ import { poisNear, schoolsNear, claimableNear, heightAt, LAIR } from '../world';
 import { livesAt } from '../species';
 import { mapTile, MT } from '../maptiles';
 import { ONLINE } from '../online';
-import { ISLANDS, watchExtra, islandPrice } from '../islands';
+import { ISLANDS, watchExtra, islandPrice, islandColour } from '../islands';
 import type { Point, Poi } from '../types';
 import { waypointMetres, waypointRoute } from '../waypoint';
 import { clamp, dirTo, money } from '../config';
@@ -38,7 +38,7 @@ type Ctx = CanvasRenderingContext2D;
 type Project = (x: number, y: number) => [number, number];
 /** Notes that a kind of mark was drawn at canvas point (x, y), for the legend. */
 type Seen = (k: Legend, x: number, y: number) => void;
-export type Legend = 'you' | 'port' | 'light' | 'wreck' | 'treasure' | 'frenzy' | 'uncharted' | 'target' | 'waypoint' | 'sailor' | 'island' | 'school';
+export type Legend = 'you' | 'port' | 'light' | 'wreck' | 'treasure' | 'owned' | 'frenzy' | 'uncharted' | 'target' | 'waypoint' | 'sailor' | 'island' | 'school';
 /** The kinds of mark the last full chart showed, so its legend only explains what's on it. */
 export const drawn = new Set<Legend>();
 const font = (ctx: Ctx, px: number, u: number): void => { ctx.font = `600 ${Math.round(px * u)}px Pixelify, monospace`; };
@@ -312,7 +312,8 @@ function drawLabels(ctx: Ctx, pois: Poi[], S: Project, u: number): void {
   }
 }
 
-// claimed islands: the owner's flag and name over each one (names only on the full chart, gold for yours)
+// claimed islands read as landmarks: a gold dashed ring round the island, a tall pennant flying the owner's flag (or
+// the island's own colour until the flag is approved), and on the full chart its name and owner; yours in gold
 const flagImgs = new Map<string, HTMLImageElement>();
 function flagImg(url: string): HTMLImageElement | null {
   let im = flagImgs.get(url);
@@ -322,18 +323,35 @@ function flagImg(url: string): HTMLImageElement | null {
 function drawIslandNames(ctx: Ctx, cx: number, cy: number, rad: number, S: Project, u: number, labels: boolean, unclaimed: boolean, seen: Seen): void {
   const near = claimableNear(cx, cy, rad);
   if (labels) watchExtra(near.map(c => c.key));            // the full chart asks for every island it shows
-  font(ctx, 12, u);
   ctx.textAlign = 'center';
   for (const c of near) {
-    const row = ISLANDS.get(c.key);
+    const row = ISLANDS.get(c.key), [x, y] = S(c.x, c.y);
     if (!row) {                                          // for sale: a faint dashed ring on the full chart
-      if (unclaimed) { const [x, y] = S(c.x, c.y); seen('island', x, y); ctx.setLineDash([3 * u, 3 * u]); ctx.lineWidth = 1.2 * u; ctx.strokeStyle = 'rgba(58,42,28,0.45)'; ctx.beginPath(); ctx.arc(x, y, 5 * u, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
+      if (unclaimed) { seen('island', x, y); ctx.setLineDash([3 * u, 3 * u]); ctx.lineWidth = 1.2 * u; ctx.strokeStyle = 'rgba(58,42,28,0.45)'; ctx.beginPath(); ctx.arc(x, y, 5 * u, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
       continue;
     }
-    const [x, y] = S(c.x, c.y), f = row.logoUrl ? flagImg(row.logoUrl) : null, fs = (labels ? 16 : 10) * u;
-    if (f) { ctx.imageSmoothingEnabled = false; ctx.drawImage(f, x - fs / 2, y - fs - (labels ? 8 : 2) * u, fs, fs); }
+    seen('owned', x, y);
+    const r = Math.max(8 * u, S(c.x + c.R * 0.85, c.y)[0] - x), gold = row.mine ? COL.port : '#e8c86a';
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = 'rgba(240,207,106,0.12)'; ctx.fill();   // a warm wash over the claimed ground
+    ctx.setLineDash([6 * u, 3 * u]);
+    ctx.lineWidth = 4 * u; ctx.strokeStyle = 'rgba(27,42,51,0.6)'; ctx.stroke();
+    ctx.lineWidth = 2.2 * u; ctx.strokeStyle = gold; ctx.stroke();
+    ctx.setLineDash([]);
+    // the pennant: an ink pole with a gold cap, the flag off its top
+    const pole = (labels ? 46 : 18) * u, fs = (labels ? 40 : 14) * u, top = y - pole;
+    ctx.fillStyle = COL.ink; ctx.fillRect(x - 1.2 * u, top, 2.4 * u, pole);
+    ctx.beginPath(); ctx.arc(x, top, 2.2 * u, 0, 7); rimmed(ctx, gold, u);
+    const f = row.logoUrl ? flagImg(row.logoUrl) : null, fx = x + 1.5 * u, fy = top + 1 * u;
+    if (f) {
+      ctx.fillStyle = row.mine ? gold : COL.ink; ctx.fillRect(fx - 1.2 * u, fy - 1.2 * u, fs + 2.4 * u, fs + 2.4 * u);
+      ctx.imageSmoothingEnabled = false; ctx.drawImage(f, fx, fy, fs, fs);
+    } else {
+      ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx + fs, fy + fs * 0.35); ctx.lineTo(fx, fy + fs * 0.7); ctx.closePath();
+      rimmed(ctx, islandColour(c.key), 1.2 * u);
+    }
     if (!labels) continue;
-    inked(ctx, row.name, x, y + 4 * u, u, row.mine ? COL.port : '#f6eedc');
+    font(ctx, 15, u); inked(ctx, row.name, x, y + 10 * u, u, row.mine ? COL.port : '#fff6dc');
+    font(ctx, 11, u); inked(ctx, row.mine ? 'your island' : `by ${row.owner}`, x, y + 24 * u, u, '#d8d0bf');
   }
   ctx.textAlign = 'start';
 }
