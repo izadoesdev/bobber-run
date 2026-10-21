@@ -4,24 +4,18 @@ import { hAt, homePort, cellPois, nearestWater, WORLD } from '../world';
 import { SP, retiredRefund } from '../econ';
 import { toast } from './feedback';
 import { netSaved, reportStats } from '../net';
-import type { BoatId, Contract, Escapee, Fish, GameState, LogEntry, Pet, Port, ProjectId, Stats, StoryState, TreasureMap, UpgradeKey, BaitKind, BaitChoice } from '../types';
+import type { GameState, Port } from '../types';
 import { G, freshStats, freshUpgrades } from './state';
 import { fleetWhileAway } from './port/fleet';
+import { parseSave, type ParsedSave } from './saveSchema';
 import { DAYLEN, cap, hpMax } from './rules';
 
 const KEY = 'bobber-run-save-v3', OLD = 'bobber-run-save-v2';
 
 
-/** The v3 save: progress plus where the boat is. Sets are stored as arrays. */
-interface SaveData {
-  savedAt: number; world?: number;
-  coins: number; earned: number; up: Record<UpgradeKey, number>; hp: number; hold: Fish[]; log: Record<string, LogEntry>;
-  boatId: BoatId; owned: BoatId[]; bait: Record<BaitKind, number>; baitSel: BaitChoice; paint: string; paints: string[];
-  found: string[]; salvaged: string[]; lastPort: string | null; x: number; y: number; a: number;
-  stats: Stats; story: StoryState | null; gifts: Record<string, number>; pet: Pet | null; projects: ProjectId[];
-  fleet: GameState['fleet']; dives: Record<string, number>; goalsDone: number[]; cheated?: boolean;
-  maps: TreasureMap[]; escaped?: Escapee[]; waypoint?: { x: number; y: number } | null; gearOff?: GameState['gearOff']; zones?: Record<string, true>; docks?: Record<string, number>; streak?: number; musicOn: boolean; offers: Record<string, Contract[]>; active: Contract[]; pity: number; clock: number;
-}
+/** The v3 save: progress plus where the boat is (sets stored as arrays). Its shape is the schema in saveSchema.ts, so
+ *  writing a field the loader doesn't know is a type error here. */
+type SaveData = ParsedSave;
 /** The v2 save, migrated on first load. */
 interface OldSave {
   coins: number; earned: number; up?: { oars?: number; hull?: number; hold?: number; rod?: number };
@@ -131,7 +125,6 @@ function migrateOld(o: OldSave): Partial<SaveData> {
 }
 // JSON.parse is the boundary here: saves come from older versions and may miss any field
 const readJson = <T,>(key: string): T | null => JSON.parse(localStorage.getItem(key) ?? 'null') as T | null;
-const int = (v: number | undefined): number => (v ?? 0) | 0;
 
 export function loadGame(): void {
   try {
@@ -143,27 +136,26 @@ export function loadGame(): void {
       d = migrateOld(o);
     }
     if ((d.world ?? 1) < WORLD) d = forNewWorld(d);   // also covers a cloud save, which net.ts writes here first
+    const s = parseSave(d);                             // every field present, of the right type (saveSchema.ts)
     const loaded: Partial<GameState> = {
-      coins: int(d.coins), coinsShown: int(d.coins), earned: int(d.earned), up: { ...G.up, ...d.up }, hold: (d.hold || []).filter(f => f && typeof f === 'object'),
-      log: d.log || {}, boatId: d.boatId || 'row', owned: d.owned || ['row'], bait: { ...G.bait, ...d.bait }, baitSel: d.baitSel || 'shrimp',
-      paint: d.paint || 'classic', paints: d.paints || ['classic'],
-      found: new Set(d.found || []), salvaged: new Set(d.salvaged || []), lastPort: d.lastPort || G.lastPort, stats: { ...G.stats, ...d.stats },
-      story: d.story || null, gifts: d.gifts || {}, pet: d.pet || null, projects: d.projects || [], fleet: d.fleet || {}, dives: d.dives || {},
-      goalsDone: d.goalsDone || [], cheated: !!d.cheated, maps: d.maps || [], escaped: d.escaped || [], gearOff: d.gearOff || {}, zones: d.zones || {}, docks: d.docks || {}, streak: Math.min(5, int(d.streak)), waypoint: d.waypoint && Number.isFinite(d.waypoint.x) && Number.isFinite(d.waypoint.y) ? { x: d.waypoint.x, y: d.waypoint.y } : null, musicOn: d.musicOn ?? true,
-      offers: d.offers || {}, active: d.active || [], pity: int(d.pity), clock: d.clock ?? G.clock,
+      coins: s.coins, coinsShown: s.coins, earned: s.earned, up: { ...G.up, ...s.up }, hold: s.hold, log: s.log, boatId: s.boatId, owned: s.owned,
+      bait: { ...G.bait, ...s.bait }, baitSel: s.baitSel, paint: s.paint, paints: s.paints, found: new Set(s.found), salvaged: new Set(s.salvaged),
+      lastPort: s.lastPort || G.lastPort, stats: { ...G.stats, ...s.stats }, story: s.story, gifts: s.gifts, pet: s.pet, projects: s.projects,
+      fleet: s.fleet, dives: s.dives, goalsDone: s.goalsDone, cheated: s.cheated, maps: s.maps, escaped: s.escaped, gearOff: s.gearOff, zones: s.zones,
+      docks: s.docks, streak: s.streak, waypoint: s.waypoint, musicOn: s.musicOn, offers: s.offers, active: s.active, pity: s.pity, clock: s.clock ?? G.clock,
     };
     Object.assign(G, loaded);
-    fleetWhileAway(d.savedAt);                                     // the fleet kept fishing while the game was closed
+    fleetWhileAway(s.savedAt);                                     // the fleet kept fishing while the game was closed
     // retired upgrades (bilge pumps went into Plating): give back what they cost, once
     const refund = retiredRefund(G.up);
     if (refund > 0) { G.coins += refund; G.coinsShown = G.coins; G.up.bilge = 0; toast(`Bilge pumps now come with Plating: refunded $${refund}`, 'good'); }
-    G.boat.hp = clamp(d.hp ?? hpMax(), 1, hpMax());
+    G.boat.hp = clamp(s.hp ?? hpMax(), 1, hpMax());
     // older saves stored destination names in capitals, and could ask for more fish than the hold carries
     for (const c of [...G.active, ...Object.values(G.offers).flat()]) if (c && c.to) { c.toName = portById(c.to).name; c.n = Math.min(c.n, cap()); }
     // the coastline can change between versions: a treasure that now lies under land moves out to open water
     G.maps = G.maps.map(m => ({ ...m, ...nearestWater(m.x, m.y, -0.2) }));
-    const { x, y } = d, a = d.a || 0;
-    if (typeof x === 'number' && typeof y === 'number' && Number.isFinite(x) && hAt(x, y) < -0.05) {
+    const { x, y, a } = s;
+    if (x !== undefined && y !== undefined && Number.isFinite(x) && Number.isFinite(y) && hAt(x, y) < -0.05) {
       Object.assign(G.boat, { x, y, a, px: x, py: y, pa: a });
       G.cam.x = x - W / 2; G.cam.y = y - H / 2;
     } else placeAtPort(portById(G.lastPort));
