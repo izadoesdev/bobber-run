@@ -2,13 +2,22 @@
 // pays; Stripe's webhook (POST /stripe/webhook) turns the hold into ownership, lets it go if checkout expires, refunds
 // a payment that can't be granted, and gives the island back when a payment is refunded.
 import { v } from 'convex/values';
+import Stripe from 'stripe';
 import { action, internalMutation, httpAction, type MutationCtx } from './_generated/server';
 import { internal } from './_generated/api';
 import { nameOf, envVar } from './lib';
 import { byKey, taken, buyer } from './islands';
 
-/** Start buying an island: hold it, open a Stripe Checkout page, and return its URL for the game to open. */
-/** Buyers confirm they are 18 or older, or have a parent's or guardian's permission (minors can cancel purchases). */
+/** A Stripe client for this deployment's key; fetch-based, so it runs in Convex's default runtime. */
+// Dev and prod deployments can share one Stripe test account, so each sees the other's events: every checkout
+// session carries the deployment that made it, and a webhook leaves other deployments' sessions alone.
+const ORIGIN = () => envVar('CONVEX_CLOUD_URL') ?? '';
+const mine = (m: Record<string, string> | null): boolean => !m?.origin || m.origin === ORIGIN();
+const stripe = (): Stripe => new Stripe(envVar('STRIPE_SECRET_KEY') ?? '', { httpClient: Stripe.createFetchHttpClient(), timeout: 10_000, maxNetworkRetries: 2 });
+
+/**
+ * Start buying an island: hold it, open a Stripe Checkout page, and return its URL for the game to open.
+ * Buyers confirm they are 18 or older, or have a parent's or guardian's permission (minors can cancel purchases). */
 export const buy = action({
   args: { key: v.string(), name: v.string(), adult: v.optional(v.boolean()) },
   handler: async (ctx, { key, name, adult }): Promise<{ ok: true; url: string; price: number } | { ok: false; why: string }> => {
@@ -19,20 +28,19 @@ export const buy = action({
     if (!b.ok) return b;
     const hold = await ctx.runMutation(internal.islands.applyClaim, { userId: b.userId, key, name: b.name, mode: 'hold' });
     if (!hold.ok || !hold.holdId) return hold.ok ? { ok: false, why: 'Could not hold the island' } : hold;
-    if (hold.previousSession) await stripePost(`/checkout/sessions/${hold.previousSession}/expire`).catch(() => null);   // so the old page can't be paid too
-    const session = await stripePost('/checkout/sessions', {
+    const s = stripe();
+    if (hold.previousSession) await s.checkout.sessions.expire(hold.previousSession).catch(() => null);   // so the old page can't be paid too
+    const session = await s.checkout.sessions.create({
       mode: 'payment', client_reference_id: b.userId,
-      'line_items[0][quantity]': '1', 'line_items[0][price_data][currency]': 'usd', 'line_items[0][price_data][unit_amount]': String(hold.price * 100),
-      'line_items[0][price_data][product_data][name]': `Island: ${b.name}`, 'line_items[0][price_data][product_data][description]': `Bobber Run island at cell ${key}`,
-      'metadata[holdId]': hold.holdId, 'metadata[islandKey]': key, 'metadata[userId]': b.userId, 'metadata[name]': b.name,
+      line_items: [{ quantity: 1, price_data: { currency: 'usd', unit_amount: hold.price * 100, product_data: { name: `Island: ${b.name}`, description: `Bobber Run island at cell ${key}` } } }],
+      metadata: { holdId: hold.holdId, islandKey: key, userId: b.userId, name: b.name, origin: ORIGIN() },
       success_url: `${site}/?island=${encodeURIComponent(key)}&paid=1`, cancel_url: `${site}/?island=${encodeURIComponent(key)}&paid=0`,
-      expires_at: String(Math.floor(Date.now() / 1000) + 30 * 60),
+      expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
       ...(b.acct.email ? { customer_email: b.acct.email } : {}),
     }).catch(() => null);
-    const id = session?.ok ? session.body.id : undefined, url = session?.ok ? session.body.url : undefined;
-    if (!id || !url) { await ctx.runMutation(internal.payments.dropHold, { holdId: hold.holdId }); return { ok: false, why: 'Could not open checkout. Try again' }; }
-    await ctx.runMutation(internal.payments.attachSession, { holdId: hold.holdId, sessionId: id });
-    return { ok: true, url, price: hold.price };
+    if (!session?.url) { await ctx.runMutation(internal.payments.dropHold, { holdId: hold.holdId }); return { ok: false, why: 'Could not open checkout. Try again' }; }
+    await ctx.runMutation(internal.payments.attachSession, { holdId: hold.holdId, sessionId: session.id });
+    return { ok: true, url: session.url, price: hold.price };
   },
 });
 export const attachSession = internalMutation({
@@ -74,38 +82,31 @@ export const refunded = internalMutation({
   },
 });
 
-/** Stripe's signature: HMAC-SHA256 of "timestamp.payload" with the endpoint secret, within five minutes. */
-export async function signedByStripe(payload: string, header: string | null, secret: string): Promise<boolean> {
-  if (!header) return false;
-  const parts = header.split(','), t = parts.find(p => p.startsWith('t='))?.slice(2), sigs = parts.filter(p => p.startsWith('v1=')).map(p => p.slice(3));
-  if (!t || !sigs.length || Math.abs(Date.now() / 1000 - Number(t)) > 300) return false;
-  const enc = new TextEncoder(), key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const mac = [...new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(`${t}.${payload}`)))].map(b => b.toString(16).padStart(2, '0')).join('');
-  return sigs.some(s => s.length === mac.length && [...s].reduce((d, c, i) => d | (c.charCodeAt(0) ^ mac.charCodeAt(i)), 0) === 0);
+/** The event Stripe sent, if its signature checks out against the endpoint secret (and is under five minutes old). */
+export async function stripeEvent(payload: string, header: string | null, secret: string): Promise<Stripe.Event | null> {
+  if (!header) return null;
+  try { return await Stripe.webhooks.constructEventAsync(payload, header, secret, undefined, Stripe.createSubtleCryptoProvider()); } catch { return null; }
 }
-/** POST to Stripe's API with the secret key; `idempotencyKey` makes a retried request do nothing new. */
-async function stripePost(path: string, form: Record<string, string> = {}, idempotencyKey?: string): Promise<{ ok: boolean; body: { id?: string; url?: string; error?: { code?: string } } }> {
-  const r = await fetch(`https://api.stripe.com/v1${path}`, { method: 'POST', body: new URLSearchParams(form), signal: AbortSignal.timeout(10_000),
-    headers: { Authorization: `Bearer ${envVar('STRIPE_SECRET_KEY')}`, 'Content-Type': 'application/x-www-form-urlencoded', ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}) } });
-  return { ok: r.ok, body: await r.json().catch(() => ({})) };
-}
-type StripeEvent = { type: string; data: { object: { id: string; payment_status?: string; amount_total?: number; payment_intent?: string | null; refunded?: boolean; metadata?: Record<string, string> } } };
+const intentId = (pi: string | { id: string } | null): string | undefined => typeof pi === 'string' ? pi : pi?.id;
 export const stripeWebhook = httpAction(async (ctx, req) => {
-  const secret = envVar('STRIPE_WEBHOOK_SECRET'), payload = await req.text();
-  if (!secret || !await signedByStripe(payload, req.headers.get('stripe-signature'), secret)) return new Response('bad signature', { status: 400 });
-  const ev = JSON.parse(payload) as StripeEvent, o = ev.data.object, m = o.metadata ?? {};
-  if ((ev.type === 'checkout.session.completed' || ev.type === 'checkout.session.async_payment_succeeded') && o.payment_status === 'paid' && m.holdId && m.islandKey && m.userId) {
-    const r = await ctx.runMutation(internal.payments.confirmPaid, { holdId: m.holdId, key: m.islandKey, userId: m.userId, name: m.name, sessionId: o.id, paymentIntent: o.payment_intent ?? undefined, cents: o.amount_total ?? 0 });
-    if (r === 'conflict' && o.payment_intent) {                             // paid for an island we can't give: money back
-      const refund = await stripePost('/refunds', { payment_intent: o.payment_intent, reason: 'duplicate' }, `refund-${o.id}`).catch(() => null);
-      const done = !!refund && (refund.ok || refund.body.error?.code === 'charge_already_refunded');
+  const secret = envVar('STRIPE_WEBHOOK_SECRET'), ev = secret ? await stripeEvent(await req.text(), req.headers.get('stripe-signature'), secret) : null;
+  if (!ev) return new Response('bad signature', { status: 400 });
+  if (ev.type === 'checkout.session.completed' || ev.type === 'checkout.session.async_payment_succeeded') {
+    const o = ev.data.object, m = o.metadata ?? {}, paymentIntent = intentId(o.payment_intent);
+    if (!mine(o.metadata) || o.payment_status !== 'paid' || !m.holdId || !m.islandKey || !m.userId) return new Response('ok');
+    const r = await ctx.runMutation(internal.payments.confirmPaid, { holdId: m.holdId, key: m.islandKey, userId: m.userId, name: m.name, sessionId: o.id, paymentIntent, cents: o.amount_total ?? 0 });
+    if (r === 'conflict' && paymentIntent) {                                 // paid for an island we can't give: money back
+      const done = await stripe().refunds.create({ payment_intent: paymentIntent, reason: 'duplicate' }, { idempotencyKey: `refund-${o.id}` })
+        .then(() => true, (e: { code?: string }) => e.code === 'charge_already_refunded');
       console.error(JSON.stringify({ msg: 'paid island not granted', refunded: done, session: o.id, key: m.islandKey }));
       if (!done) return new Response('refund failed', { status: 500 });     // Stripe retries the event, and with it the refund
     }
-  } else if (ev.type === 'checkout.session.expired' && m.holdId) {
-    await ctx.runMutation(internal.payments.dropHold, { holdId: m.holdId });
-  } else if (ev.type === 'charge.refunded') {                             // only a full refund gives the island back
-    if (o.payment_intent && o.refunded) await ctx.runMutation(internal.payments.refunded, { paymentIntent: o.payment_intent });
+  } else if (ev.type === 'checkout.session.expired') {
+    const holdId = ev.data.object.metadata?.holdId;
+    if (holdId && mine(ev.data.object.metadata)) await ctx.runMutation(internal.payments.dropHold, { holdId });
+  } else if (ev.type === 'charge.refunded') {                              // only a full refund gives the island back
+    const paymentIntent = intentId(ev.data.object.payment_intent);
+    if (paymentIntent && ev.data.object.refunded) await ctx.runMutation(internal.payments.refunded, { paymentIntent });
   }
   return new Response('ok');
 });

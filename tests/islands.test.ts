@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { islandPrice, isClaimable, priceOfKey } from '../convex/islandRules';
-import { signedByStripe } from '../convex/payments';
+import { stripeEvent } from '../convex/payments';
+const signedByStripe = async (payload: string, header: string | null, secret: string) => (await stripeEvent(payload, header, secret)) !== null;
 
 describe('island prices', () => {
   test('home cells cost $1000 and the floor is $150', () => {
@@ -21,7 +22,8 @@ describe('island prices', () => {
   });
 });
 
-// Stripe signs "timestamp.payload" with HMAC-SHA256; only a correctly signed, fresh event may grant an island.
+// Stripe signs "timestamp.payload" with HMAC-SHA256 (computed independently here); only a correctly signed, fresh event
+// gets through the webhook's check, which uses the Stripe SDK.
 async function sign(payload: string, secret: string, t = Math.floor(Date.now() / 1000)) {
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const mac = [...new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${t}.${payload}`)))].map(b => b.toString(16).padStart(2, '0')).join('');
