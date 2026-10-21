@@ -1,9 +1,12 @@
 // Weather: clear / cloudy / rain / storm with smooth transitions, gusts and lightning.
 import type { WeatherState } from './types';
+import { isWorldFrenzy, today } from './today';
 
+// stormy days (the same for everyone) lean hard towards rain and storms
 const roll = (): WeatherState => {
   const r = Math.random();
-  return r < 0.45 ? 'clear' : r < 0.65 ? 'cloudy' : r < 0.88 ? 'rain' : 'storm';
+  return today().stormy ? (r < 0.25 ? 'clear' : r < 0.45 ? 'cloudy' : r < 0.7 ? 'rain' : 'storm')
+    : r < 0.45 ? 'clear' : r < 0.65 ? 'cloudy' : r < 0.88 ? 'rain' : 'storm';
 };
 
 interface Weather {
@@ -44,8 +47,8 @@ export function updateWeather(dt: number, onChange: (s: WeatherState) => void, o
     onBolt();
   }
 }
-/** Bites come slower in rain and storms... */
-export const biteMul = (): number => 1 - 0.2 * WX.rain - (WX.state === 'storm' ? 0.15 : 0);
+/** Scales the wait for a bite: shorter in rain and storms, and bites come 1.6 times as fast in the hourly world frenzy... */
+export const biteMul = (): number => (1 - 0.2 * WX.rain - (WX.state === 'storm' ? 0.15 : 0)) / (isWorldFrenzy() ? 1.6 : 1);
 /** ...but trophies are likelier. */
 export const trophyBonus = (): number => (WX.state === 'storm' ? 0.08 : 0) + WX.rain * 0.03;
 /** Jump straight to a state (cheats and debugging). */

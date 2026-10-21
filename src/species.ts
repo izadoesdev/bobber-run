@@ -1,7 +1,7 @@
 // Fish species: the catalogue, where and when each one bites, and how hard it fights.
 import type { Env, FightStyle, FishShape, Landmark, Region, Species, TimeOfDay, WeatherNeed } from './types';
 import { FISH_T } from './fishart';
-import { biomeMix, coldness, warmth, type BiomeMix } from './biome';
+import { biomeMix, coldness, warmth, type BiomeId, type BiomeMix } from './biome';
 
 type Zone = Species['zone'];
 type Extra = { region?: Region; weather?: WeatherNeed; special?: Landmark | null; legend?: boolean; deck?: number };
@@ -96,7 +96,7 @@ export const SPECIES: Species[] = [
   S('ghalibut', 'Greenland Halibut', 46, [2, 20], 2, 2, 'any', 'flat', ['#33281c', '#4a3a2a', '#8f7a5a', '#26394a'], 'steady', 'Deep water among the ice floes', deep(-0.32), { region: 'cold' }),
 ];
 /** Fish that only live in one biome, and how strong it must be: they appear where it is, and nowhere else. */
-const HABITAT: Partial<Record<string, keyof BiomeMix>> = {
+export const HABITAT: Partial<Record<string, keyof BiomeMix>> = {
   clown: 'reef', tang: 'reef', lionfish: 'reef', octopus: 'reef', reefshark: 'reef',
   rockfish: 'kelp', opaleye: 'kelp', kelpbass: 'kelp', lingcod: 'kelp', seabassgiant: 'kelp',
   embersnap: 'volcanic', ventcrab: 'volcanic', blackgrouper: 'volcanic', cindereel: 'volcanic',
@@ -162,6 +162,35 @@ export function activeAt(sp: number, env: Env): boolean {
   const timeOk = s.time === 'any' || (s.time === 'night' ? env.night : s.time === 'day' ? !env.night : env.twilight);
   const weatherOk = s.weather === 'any' || (s.weather === 'storm' ? env.weather === 'storm' : env.weather === 'rain' || env.weather === 'storm');
   return timeOk && weatherOk;
+}
+// ---------- variants: the odd fish in a school ----------
+export type VariantId = 'big' | 'tiny' | 'albino' | 'storm' | 'ember' | 'frost' | 'coral';
+/** tint: an [r, g, b] (0..1) colour the fish is washed towards, or null to keep its own */
+export const VARIANTS: Record<VariantId, { name: string; valueMul: number; tint: [number, number, number] | null; sizeMul: number }> = {
+  big: { name: 'Big', valueMul: 1.5, tint: null, sizeMul: 1.4 },
+  tiny: { name: 'Tiny', valueMul: 0.6, tint: null, sizeMul: 0.6 },
+  albino: { name: 'Albino', valueMul: 4, tint: [0.96, 0.93, 0.9], sizeMul: 1 },
+  storm: { name: 'Storm-touched', valueMul: 1.8, tint: [0.36, 0.45, 0.78], sizeMul: 1 },
+  ember: { name: 'Ember', valueMul: 1.6, tint: [0.92, 0.38, 0.16], sizeMul: 1 },
+  frost: { name: 'Frost', valueMul: 1.6, tint: [0.72, 0.86, 0.96], sizeMul: 1 },
+  coral: { name: 'Coral', valueMul: 1.6, tint: [0.95, 0.5, 0.55], sizeMul: 1 },
+};
+type VariantCtx = { storm: boolean; biome: BiomeId; night: boolean };
+// chance of each variant, rarest first; albinos surface twice as often at night
+const ODDS: [VariantId, (c: VariantCtx) => number][] = [
+  ['albino', c => c.night ? 0.014 : 0.007],
+  ['storm', c => c.storm ? 0.08 : 0],
+  ['ember', c => c.biome === 'volcanic' ? 0.05 : 0],
+  ['frost', c => c.biome === 'cold' ? 0.05 : 0],
+  ['coral', c => c.biome === 'reef' ? 0.05 : 0],
+  ['big', () => 0.06],
+  ['tiny', () => 0.06],
+];
+/** The variant a catch of species `sp` turns out to be (r uniform in 0..1), or null for an ordinary fish. Legends never vary. */
+export function rollVariant(sp: number, ctx: VariantCtx, r: number): VariantId | null {
+  if (SPECIES[sp].legend || SPECIES[sp].fight === 'boss') return null;
+  for (const [id, p] of ODDS) if ((r -= p(ctx)) < 0) return id;
+  return null;
 }
 export const fmtKg = (kg: number): string => kg < 10 ? kg.toFixed(1) + ' kg' : Math.round(kg) + ' kg';
 

@@ -305,10 +305,20 @@ const SFX = {
     hiss(c, { a: 0.006, d: 0.14, vol: 0.032 * v, type: 'lowpass', f: 800, color: 'pink' });
     bubble(c, 0.08, chordNote(3, 4), 0.03 * v, 0.06, 0, 2);
   },
-  bite: (c, v) => {
-    bubble(c, 0, chordNote(1, 4), 0.125 * v, 0.06, 0, 2);
-    bubble(c, 0.1, chordNote(2, 4), 0.11 * v, 0.06, 0, 2);
-    hiss(c, { a: 0.006, d: 0.1, vol: 0.04 * v, f: 900, q: 1 });
+  nibble: (c, v, p) => {                                         // the bobber tested: one tiny plip and a tick, never quite the same twice
+    const k = v * r(0.75, 1), f = chordNote([2, 3, 4][Math.floor(Math.random() * 3)], 4);
+    bubble(c, 0, f, 0.06 * k, r(0.025, 0.04), p + r(-0.1, 0.1), r(1.4, 1.9));
+    hiss(c, { a: 0.002, d: 0.018, vol: 0.016 * k, f: r(1700, 2300), q: 2, pan: p });
+  },
+  bite: (c, v, p) => {                                           // the bobber pulled under: a deep plunk dropping an octave, a splash, a bubble after
+    tone(c, { f: chordNote(3, 3), f1: chordNote(0, 3), a: 0.004, d: 0.16, vol: 0.17 * v, pan: p });
+    tone(c, { f: 140, f1: 70, a: 0.004, d: 0.12, vol: 0.08 * v, pan: p });
+    hiss(c, { a: 0.008, d: 0.3, vol: 0.09 * v, f: 1300, f1: 480, q: 0.8, color: 'pink', pan: p, rev: 0.15 });
+    bubble(c, 0.09, chordNote(1, 4), 0.06 * v, 0.06, p, 2);
+  },
+  creak: (c, v, p) => {                                          // the rod bending before a surge: a low wooden groan and a rubbing creak, both rising
+    tone(c, { f: 46, f1: 54, a: 0.08, hold: 0.12, d: 0.25, vol: 0.045 * v, type: 'sawtooth', lp: 520, pan: p });
+    hiss(c, { a: 0.1, hold: 0.08, d: 0.25, vol: 0.035 * v, f: chordNote(0, 4), f1: chordNote(1, 4), q: 7, color: 'pink', pan: p });
   },
   // one ratchet click, ~14 a second: dull and quiet
   reel: (c, v) => hiss(c, { a: 0.002, d: 0.02, vol: 0.22 * v * r(0.8, 1), f: r(1500, 1800), q: 1.2 }),
@@ -337,6 +347,19 @@ const SFX = {
   fanfare: (c, v) => {
     for (let i = 0; i < 4; i++) mallet(c, chordNote(i, 5), i * 0.1, 0.09 * v, 0.8, 0.35);
     for (const i of [0, 2, 4]) tone(c, { f: chordNote(i, 4), t: 0.3, a: 0.3, d: 1.3, vol: 0.03 * v, type: 'triangle', lp: 1400, rev: 0.4 });
+  },
+  stinger: (c, v) => {                                           // a big moment, gentler than the fanfare: root, fifth, octave, landing on the high third, over a shimmer
+    [0, 2, 3].forEach((i, k) => mallet(c, chordNote(i, 4), k * 0.08, 0.07 * v, 0.6, 0.35));
+    mallet(c, chordNote(4, 4), 0.3, 0.08 * v, 1.1, 0.45);
+    for (const [i, t] of [[0, 0.3], [1, 0.4], [2, 0.52]]) tone(c, { f: chordNote(i, 6), t, a: 0.004, d: 0.5, vol: 0.012 * v, rev: 0.6 });
+    hiss(c, { t: 0.25, a: 0.15, d: 0.7, vol: 0.012 * v, f: 5200, q: 1.5, rev: 0.5 });
+  },
+  glint: (c, v, p) => {                                          // a rare school catching the light: two faint high chime notes, up or down
+    const [a, b] = Math.random() < 0.5 ? [3, 4] : [4, 3];
+    for (const [i, t] of [[a, 0], [b, 0.07]]) {
+      tone(c, { f: chordNote(i, 5), t, a: 0.002, d: 0.3, vol: 0.02 * v, pan: p, rev: 0.5 });
+      tone(c, { f: chordNote(i, 5) * 3, t, a: 0.002, d: 0.08, vol: 0.004 * v, pan: p, rev: 0.5 });
+    }
   },
   levelup: (c, v) => {
     for (let i = 0; i < 6; i++) mallet(c, chordNote(i, 4), i * 0.06, 0.068 * v, 0.5, 0.35);
@@ -490,7 +513,8 @@ function purrBreath(c: BaseAudioContext, t0: number, len: number, vol: number, h
 
 // short text for sounds that carry information, shown when captions are on
 const CAPTION: Partial<Record<SfxName, string>> = {
-  bite: 'Bobber splashes', snap: 'Line snaps', crash: 'Hull crunches', slap: 'Boats bump', scrape: 'Hull scrapes', thunder: 'Thunder rumbles',
+  nibble: 'Bobber twitches', bite: 'Bobber splashes', creak: 'Rod creaks', glint: 'Something glints',
+  snap: 'Line snaps', crash: 'Hull crunches', slap: 'Boats bump', scrape: 'Hull scrapes', thunder: 'Thunder rumbles',
   gulls: 'Gulls crying', sink: 'Boat sinking', discover: 'Bell rings', purr: 'Cat purring', meow: 'Cat meows',
   whale: 'Whale song', bigsplash: 'Big splash',
 };
@@ -499,10 +523,10 @@ export const setCaptionHook = (f: (text: string) => void): void => { onCaption =
 
 // how far and how long a sound pushes the music down: [gain, hold s]. Rapid little ticks never duck, that would pump.
 const DUCK: Partial<Record<SfxName, [number, number]>> = {
-  fanfare: [0.5, 1.3], levelup: [0.5, 0.9], discover: [0.5, 1.1], sink: [0.5, 1.2], catch: [0.56, 0.7],
+  fanfare: [0.5, 1.3], stinger: [0.6, 1], levelup: [0.5, 0.9], discover: [0.5, 1.1], sink: [0.5, 1.2], catch: [0.56, 0.7],
   perfect: [0.56, 0.5], thunder: [0.56, 1.4], whale: [0.6, 1.8], bigsplash: [0.6, 0.6],
 };
-const NO_DUCK = new Set<SfxName>(['reel', 'move', 'oar', 'scrape', 'purr', 'gulls', 'plop', 'splash']);
+const NO_DUCK = new Set<SfxName>(['reel', 'move', 'oar', 'scrape', 'purr', 'gulls', 'plop', 'splash', 'nibble', 'glint']);
 let duckEnd = 0;
 // ~-4 to -6 dB in ~30 ms, held while the sound speaks, back over ~0.6 s
 function duckMusic(ctx: AudioContext, name: SfxName): void {
@@ -533,7 +557,7 @@ export function sfx(name: SfxName, vol = 1, pan = 0): void {
 // ---------- continuous soundscape ----------
 interface LoopVoice { g: GainNode; fl: BiquadFilterNode }
 interface Engine { g: GainNode; o1: OscillatorNode; o2: OscillatorNode; lfo: OscillatorNode; lp: BiquadFilterNode }
-type LoopName = 'sea' | 'lap' | 'wash' | 'spray' | 'surf' | 'wind' | 'rain' | 'luff' | 'roof' | 'stove' | 'hiss';
+type LoopName = 'sea' | 'lap' | 'wash' | 'spray' | 'surf' | 'wind' | 'rain' | 'luff' | 'roof' | 'stove' | 'hiss' | 'school';
 type Loops = Record<LoopName, LoopVoice> & { wall: LoopVoice; engine: Engine; drone: GainNode };
 let loops: Loops | null = null;
 
@@ -562,6 +586,7 @@ function startLoops(ctx: AudioContext, gr: Graph): void {
     wash: loop('pink', 'lowpass', 500, 0.7, wall),               // water rushing past while moving
     spray: loop('pink', 'highpass', 2000, 0.7, wall),            // spray at speed
     surf: loop('brown', 'bandpass', 480, 0.6, wall),             // breakers near shore
+    school: loop('pink', 'bandpass', 1100, 1.4, wall),           // a fish school stirring the surface nearby
     wind: loop('pink', 'bandpass', 450, 1.2, wall),              // kept under the melody's range
     rain: loop('pink', 'highpass', 1400, 0.7, wall),             // pink, not white: a patter rather than a fizz
     luff: loop('pink', 'bandpass', 320, 2, wall),                // sail flapping when pointing into the wind
@@ -611,7 +636,7 @@ function startEngine(ctx: AudioContext, gr: Graph): Engine {
   return { g, o1, o2, lfo, lp };
 }
 
-let lapPhase = 0, portMix = 0, deepMix = 0;
+let lapPhase = 0, portMix = 0, deepMix = 0, schoolMix = 0;
 const poisson = (rate: number, dt: number) => Math.floor(rate * dt + Math.random());   // event count with the right mean
 
 // one-shots heard inside the harbour office: rain ticking on the wooden roof, a drip, the stove crackling
@@ -667,6 +692,23 @@ function deepEvents(c: AudioContext, dt: number, calm: boolean): void {
   curBus = 'sfx';
 }
 
+// a fish school close by: bubbles rising and the odd fish flicking at the surface. Rates and levels both grow with
+// closeness, so it is plain at 0.6 and barely there below 0.2.
+function schoolEvents(c: AudioContext, dt: number): void {
+  const m = schoolMix * (1 - portMix);
+  if (m < 0.03) return;
+  curBus = 'amb';
+  try {
+    for (let i = poisson(7 * m, dt); i-- > 0;) bubble(c, r(0, dt), r(420, 1000), 0.03 * m, r(0.03, 0.06), r(-0.6, 0.6));
+    for (let i = poisson(0.9 * m, dt); i-- > 0;) {               // a flick: a small wet slap and a bubble after it
+      const t = r(0, dt), p = r(-0.7, 0.7);
+      hiss(c, { t, a: 0.003, d: r(0.06, 0.12), vol: 0.05 * m, f: r(1400, 2000), f1: 600, q: 0.9, color: 'pink', pan: p, rev: 0.2 });
+      bubble(c, t + 0.04, r(500, 800), 0.025 * m, 0.05, p);
+    }
+  } catch { /* a dropped bubble is harmless */ }
+  curBus = 'sfx';
+}
+
 /** The world around the boat, sampled every frame. Levels are 0..1 unless noted. */
 interface SoundscapeState {
   /** boat speed, world units per second */
@@ -683,6 +725,8 @@ interface SoundscapeState {
   deep: number;
   /** calm sounds: no clicks, rarer whale song */
   calm: boolean;
+  /** closeness of the nearest active fish school, 0..1 (brings in its bubbling) */
+  school?: number;
 }
 
 // called every frame with the state of the world around the boat
@@ -728,6 +772,12 @@ export function soundscape(s: SoundscapeState, dt: number): void {
   deepMix += ((s.mute ? 0 : s.deep) - deepMix) * (1 - Math.exp(-dtc / 4));
   set(L.drone, 0.022 * deepMix * (1 - portMix) * (s.calm ? 0.7 : 1), 0.5);
   deepEvents(ac, dtc, s.calm);
+
+  // a fish school fades in over about a second as the boat closes on it
+  schoolMix += ((s.mute ? 0 : s.school ?? 0) - schoolMix) * (1 - Math.exp(-dtc / 0.8));
+  if (schoolMix < 0.001) schoolMix = 0;
+  set(L.school.g, 0.016 * schoolMix * schoolMix * (1 - portMix) * (0.7 + 0.3 * Math.sin(t * 2.3) * Math.sin(t * 0.8)), 0.3);
+  schoolEvents(ac, dtc);
 }
 
 // ---------- music: mallet melody over slow pads and a soft bass, C pentatonic, through tape and reverb ----------

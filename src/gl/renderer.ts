@@ -1026,8 +1026,8 @@ function partPoints(): void {
     else if (p.kind === 'spark') point(p.x, p.y, 2, 1.3, 2.2, 1.8, 0.9, k);
     else if (p.kind === 'spout') point(p.x, p.y, 2, 1.6, 1.3, 1.35, 1.4, k * 0.9);
   }
-  // legendary fish and frenzies glint at the surface
-  for (const s of schoolsNear(G.cam.x + W / 2, G.cam.y + H / 2, viewReach(30), nearSchools)) if (schoolActive(s) && (SPECIES[s.sp].legend || G.frenzy?.s === s)) {
+  // legendary fish, golden schools and frenzies glint at the surface, so they read from across the water
+  for (const s of schoolsNear(G.cam.x + W / 2, G.cam.y + H / 2, viewReach(30), nearSchools)) if (schoolActive(s) && (SPECIES[s.sp].legend || s.gold || G.frenzy?.s === s)) {
     for (let k = 0; k < 3; k++) {
       const q = Math.floor(G.t * 5) + k * 13;
       if (hash01(q, s.ph * 100 | 0, 3) < 0.55) point(s.x + (hash01(q, 1, 9) - 0.5) * 16, s.y + (hash01(q, 2, 9) - 0.5) * 10, 0.3, 1.2, 2.0, 1.7, 0.8, 0.9);
@@ -1038,6 +1038,15 @@ function partPoints(): void {
     if (!schoolActive(s) || SPECIES[s.sp].time !== 'night' || Math.floor(G.t * 3 + s.ph) % 3 !== 0) continue;
     const glowing = SPECIES[s.sp].shape === 'glow';
     point(s.x + Math.sin(G.t + s.ph) * 4, s.y, 0.2, 1.3, glowing ? 2.2 : 1.3, glowing ? 1.8 : 1.4, glowing ? 0.7 : 1.5, 0.9);
+  }
+  // the strike: water bursts up round the hooked fish for the first moments of the fight
+  const hooked = G.fish;
+  if (hooked?.st === 'reel' && hooked.t < 0.45) {
+    const k = hooked.t / 0.45, hx = hooked.fx ?? hooked.tx, hy = hooked.fy ?? hooked.ty;
+    for (let j = 0; j < 12; j++) {
+      const a = j / 12 * Math.PI * 2 + hash01(j, 3, 1), r = 2 + k * (7 + hash01(j, 5, 1) * 5);
+      point(hx + Math.cos(a) * r, hy + Math.sin(a) * r * 0.6, Math.sin(Math.PI * Math.min(1, k * 1.3)) * (4 + hash01(j, 7, 1) * 5), 1.4, 1.3, 1.35, 1.4, 1 - k);
+    }
   }
   // golden fish twinkle, leaping fish throw spray
   for (let i = 0; i < schoolFx.length; i += 3) {
