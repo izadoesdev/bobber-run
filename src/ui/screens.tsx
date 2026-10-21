@@ -11,6 +11,7 @@ import { openIsland } from './island';
 import { NET } from '../net';
 import { QUESTS, CHAPTERS, PEOPLE, currentQuest, questProgress, story } from '../story';
 import { guide, guideOn, stepLine } from '../game/guide';
+import { chartPerks } from '../game/rules';
 import type { UpgradeKey } from '../types';
 import { drawChart, compassRose, zoneKnown, chartAt, drawn, type Legend } from './chart';
 import { Canvas, Cell, Fish, Hint, HullStat, Icon, Key, Pips, Stat, boatPreview, type DrawFn } from './parts';
@@ -211,6 +212,16 @@ export function Logbook() {
 }
 
 // ---------- ship + hold ----------
+/** What charting the coast has earned so far, and what the next lighthouse or landmark adds. */
+function ChartedPerks() {
+  const { speed, hold } = chartPerks(), places = Math.max(0, G.found.size - 1), lights = [...G.found].filter(id => id.startsWith('light:')).length;
+  const next = speed < 0.12 ? 'each new place adds 1% speed' : hold < 3 ? `${4 - lights % 4} more lighthouse${4 - lights % 4 === 1 ? '' : 's'} for another hold slot` : 'every perk earned';
+  return (
+    <span class="perks" title="Charting the coast makes you faster, and every 4 lighthouses add a slot to your hold">
+      <Icon k="map" size="s" />{places} places charted: <span class="gold">+{Math.round(speed * 100)}% speed{hold ? `, +${hold} hold` : ''}</span><span class="muted"> ({next})</span>
+    </span>
+  );
+}
 /** Every variant a species can come in: the ones you've caught by name, the rest as silhouettes to look for. */
 function Variants({ sp, got }: { sp: number; got: readonly string[] }) {
   return (
@@ -303,7 +314,7 @@ export function Journal() {
   const st = story(), cur = currentQuest(), pr = cur && questProgress(cur);
   return (
     <div class="screen paper doc">
-      <header class="head"><h1>Journal</h1><span class="muted">{Math.min(st.i, QUESTS.length)} of {QUESTS.length} quests</span></header>
+      <header class="head"><h1>Journal</h1><span class="muted">{Math.min(st.i, QUESTS.length)} of {QUESTS.length} quests</span><ChartedPerks /></header>
       <div class="body">
         <div class="col journal-list">
           {CHAPTERS.map((c, ci) => {

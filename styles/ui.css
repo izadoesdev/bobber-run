@@ -495,3 +495,4 @@ html.touch #ui .speech { bottom: auto; top: 12%; }   /* phones are short: up whe
 /* the logbook's variants: caught ones named, the rest as silhouettes */
 .variants { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35em 0.6em; margin-top: 0.7em; font-size: var(--fs-s); }
 .variants .var { display: inline-flex; align-items: center; gap: 0.2em; color: var(--muted); } .variants .var.got { color: var(--gold); }
+.head .perks { display: inline-flex; align-items: center; gap: 0.35em; font-size: var(--fs-s); margin-left: auto; }
