@@ -89,3 +89,16 @@ test('@phone a tap on the chart sets the waypoint there, and the chip gives its 
   const m = await page.evaluate(() => { const { G } = window.BR, w = G.waypoint; return Math.max(1, Math.round(Math.hypot(w.x - G.boat.x, w.y - G.boat.y) / 10)); });
   await expect(page.locator('.chart-chips .chip.waypoint')).toContainText(`${m} m`);
 });
+
+test("a fish's waters on the chart settle once drawn, even zoomed all the way out", async ({ page }) => {
+  await sail(page);
+  await page.evaluate(() => {
+    const { G, SET, SPECIES } = window.BR; SET.calm = true;          // calm stills the ripple round the boat, so only a rebuild would change the chart
+    G.talk = null; G.story = { i: 99, base: {}, shown: true }; G.zones.mackerel = true;
+    G.map.x = G.map.y = 0; G.map.zoom = 2; G.map.zoneSp = SPECIES.findIndex((s: { id: string }) => s.id === 'mackerel'); G.mode = 'map';
+  });
+  const chart = page.locator('.chartwrap canvas');
+  let last = Buffer.alloc(0);
+  await expect.poll(async () => { const now = await chart.screenshot(); const same = now.equals(last); last = now; return same; },
+    { timeout: 40_000, intervals: [1500] }).toBe(true);
+});

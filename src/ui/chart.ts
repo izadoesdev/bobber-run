@@ -67,7 +67,7 @@ export function drawChart(ctx: Ctx, w: number, h: number, cx: number, cy: number
   ctx.fillStyle = '#4f7389';
   ctx.fillRect(0, 0, w, h);
   drawTiles(ctx, w, h, wx0, wy0, wpp, () => performance.now() - t0 < budget);
-  if (opt.zone != null) drawZone(ctx, w, h, wx0, wy0, wpp, opt.zone, S, u, () => performance.now() - t0 < budget + 4);
+  if (opt.zone != null) { const tz = performance.now(); drawZone(ctx, w, h, wx0, wy0, wpp, opt.zone, S, u, () => performance.now() - tz < 6); }   // its own slice, not the map's leftovers
   if (opt.grid) drawGrid(ctx, w, h, wx0, wy0, wpp, S, u);
 
   const pois = poisNear(cx, cy, Math.max(w, h) * wpp * 0.6);
@@ -118,33 +118,51 @@ function drawTarget(ctx: Ctx, w: number, h: number, [x, y]: [number, number], u:
 }
 
 // ---------- fish zones ----------
-// Where a species lives, worked out from the same rules that place its schools, in world-aligned tiles like the map's
-// (16 samples a side, 8 units apart), cached and built within the frame budget. Landmark fish ring their landmarks.
-const ZN = 16, zoneTiles = new Map<string, HTMLCanvasElement | null>();
-const ZONE_FILL = [255, 214, 90];
+// Where a species lives, worked out from the same rules that place its schools, on a world-aligned grid of 16-unit
+// cells. Each 512-unit chunk is drawn once into a canvas, hatched in gold the way an old chart engraves a fishing
+// ground, outlined only where the waters end in open sea (the coast already draws itself), then kept. Chunks are big so a far view needs only a few dozen,
+// and the cache holds far more than any view shows, so nothing on screen is thrown away and rebuilt. Landmark fish
+// ring their landmarks instead.
+const ZC = 16, ZCH = 512, ZK = ZCH / ZC, ZPX = 4, ZS = ZK * ZPX;   // cell size, chunk size, cells per chunk side, canvas px per cell, canvas size
+const ZONE_CAP = 600, zoneTiles = new Map<string, HTMLCanvasElement | null>();
+const HATCH = [250, 218, 112, 165], TINT = [240, 207, 106, 60], EDGE = [255, 236, 168, 240];
 /** Whether the chart may shade species `sp`'s zone: its chart was bought, or you've caught it 5 times. */
 export const zoneKnown = (sp: number): boolean => !!G.zones[SPECIES[sp].id] || (G.log[SPECIES[sp].id]?.n ?? 0) >= 5;
+/** A cell's water: 0 land or shallows, 1 sea the species doesn't live in, 2 its waters. */
+const waterOf = (sp: number, cx: number, cy: number): number => {
+  const x = (cx + 0.5) * ZC, y = (cy + 0.5) * ZC, h = heightAt(x, y);
+  return h > -0.07 ? 0 : livesAt(sp, x, y, h) ? 2 : 1;
+};
 function zoneTile(sp: number, tx: number, ty: number, build: boolean): HTMLCanvasElement | null | undefined {
-  const k = `${sp}:${tx},${ty}`;
-  if (zoneTiles.has(k)) { const c = zoneTiles.get(k)!; zoneTiles.delete(k); zoneTiles.set(k, c); return c; }   // most recent last
+  const k = `${sp}:${tx},${ty}`, have = zoneTiles.get(k);
+  if (have !== undefined) return have;
   if (!build) return undefined;
-  const c = document.createElement('canvas');
-  c.width = c.height = ZN;
-  const g = c.getContext('2d')!, img = g.createImageData(ZN, ZN), step = MT / ZN;
+  // the chunk's cells plus a ring of its neighbours', so the outline knows where the waters end across the edge
+  const N = ZK + 2, cell = new Uint8Array(N * N), c0 = tx * ZK - 1, r0 = ty * ZK - 1;
   let any = false;
-  for (let j = 0; j < ZN; j++) for (let i = 0; i < ZN; i++) {
-    const x = tx * MT + (i + 0.5) * step, y = ty * MT + (j + 0.5) * step, h = heightAt(x, y);
-    if (h > -0.07 || !livesAt(sp, x, y, h)) continue;
-    const o = (j * ZN + i) * 4;
-    img.data[o] = ZONE_FILL[0]; img.data[o + 1] = ZONE_FILL[1]; img.data[o + 2] = ZONE_FILL[2]; img.data[o + 3] = 120; any = true;
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const k = waterOf(sp, c0 + i, r0 + j); cell[j * N + i] = k; if (k === 2 && i && j && i <= ZK && j <= ZK) any = true; }
+  let c: HTMLCanvasElement | null = null;
+  if (any) {
+    c = document.createElement('canvas'); c.width = c.height = ZS;
+    const g = c.getContext('2d')!, img = g.createImageData(ZS, ZS), d = img.data;
+    const put = (x: number, y: number, col: number[]) => { const o = (y * ZS + x) * 4; d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = col[3]; };
+    for (let j = 1; j <= ZK; j++) for (let i = 1; i <= ZK; i++) {
+      if (cell[j * N + i] !== 2) continue;
+      const x0 = (i - 1) * ZPX, y0 = (j - 1) * ZPX, open = (k: number) => cell[k] === 1;   // an edge only against open sea
+      const l = open(j * N + i - 1), r = open(j * N + i + 1), t = open((j - 1) * N + i), b = open((j + 1) * N + i);
+      for (let y = 0; y < ZPX; y++) for (let x = 0; x < ZPX; x++) {
+        const edge = (l && x === 0) || (r && x === ZPX - 1) || (t && y === 0) || (b && y === ZPX - 1);
+        put(x0 + x, y0 + y, edge ? EDGE : (x0 + x + y0 + y) % 4 === 0 ? HATCH : TINT);   // 4 divides a chunk, so diagonals run on across chunks; dense enough for a narrow band
+      }
+    }
+    g.putImageData(img, 0, 0);
   }
-  g.putImageData(img, 0, 0);
-  if (zoneTiles.size > 900) zoneTiles.delete(zoneTiles.keys().next().value!);   // least recently drawn first
-  zoneTiles.set(k, any ? c : null);
-  return any ? c : null;
+  zoneTiles.set(k, c);
+  if (zoneTiles.size > ZONE_CAP) zoneTiles.delete(zoneTiles.keys().next().value!);   // oldest first; a far view needs about 70
+  return c;
 }
 function drawZone(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp: number, sp: number, S: Project, u: number, inBudget: () => boolean): void {
-  const s = SPECIES[sp], tpx = MT / wpp;
+  const s = SPECIES[sp];
   if (zoneKnown(sp)) {
     if (s.special) {                                       // wreck and lighthouse fish: a ring round each landmark that holds them
       for (const p of poisNear(wx0 + w * wpp / 2, wy0 + h * wpp / 2, Math.max(w, h) * wpp * 0.6)) {
@@ -153,11 +171,15 @@ function drawZone(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp:
         ctx.fillStyle = 'rgba(240,207,106,0.35)'; ctx.beginPath(); ctx.arc(x, y, 9 * u, 0, 7); ctx.fill();
       }
     } else {
-      ctx.save(); ctx.imageSmoothingEnabled = true;
-      for (let ty = Math.floor(wy0 / MT); ty <= Math.floor((wy0 + h * wpp) / MT); ty++) {
-        for (let tx = Math.floor(wx0 / MT); tx <= Math.floor((wx0 + w * wpp) / MT); tx++) {
+      // crisp pixels, each chunk from one whole pixel to the next so the wash never doubles up along a seam
+      ctx.save(); ctx.imageSmoothingEnabled = false;
+      const px = (wx: number, o: number) => Math.round((wx - o) / wpp);
+      for (let ty = Math.floor(wy0 / ZCH); ty <= Math.floor((wy0 + h * wpp) / ZCH); ty++) {
+        for (let tx = Math.floor(wx0 / ZCH); tx <= Math.floor((wx0 + w * wpp) / ZCH); tx++) {
           const c = zoneTile(sp, tx, ty, inBudget());
-          if (c) ctx.drawImage(c, (tx * MT - wx0) / wpp, (ty * MT - wy0) / wpp, tpx, tpx);
+          if (!c) continue;
+          const x0 = px(tx * ZCH, wx0), y0 = px(ty * ZCH, wy0);
+          ctx.drawImage(c, x0, y0, px((tx + 1) * ZCH, wx0) - x0, px((ty + 1) * ZCH, wy0) - y0);
         }
       }
       ctx.restore();
