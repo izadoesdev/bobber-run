@@ -1,4 +1,7 @@
 import { getAuthUserId } from '@convex-dev/auth/server';
+import { RateLimiter, DAY, HOUR } from '@convex-dev/rate-limiter';
+import { components } from './_generated/api';
+import { GUESTS_PER_WINDOW, GUEST_WINDOW_MS, FUND_DAILY_ALL, HOLDS_PER_HOUR } from './limits';
 import type { QueryCtx, MutationCtx } from './_generated/server';
 import type { Id } from './_generated/dataModel';
 
@@ -23,15 +26,12 @@ export async function trusted(ctx: QueryCtx | MutationCtx, userId: Id<'users'>, 
   const u = await ctx.db.get(userId);
   return !!u && (!u.isAnonymous || Date.now() - u._creationTime >= trustMs);
 }
-// fixed-window counter shared by everyone; returns false once `limit` uses have been spent in the window
-export async function spend(ctx: MutationCtx, key: string, limit: number, windowMs: number, n = 1): Promise<boolean> {
-  const now = Date.now(), c = await ctx.db.query('counters').withIndex('by_key', q => q.eq('key', key)).unique();
-  if (!c || now - c.start >= windowMs) {
-    if (n > limit) return false;
-    if (c) await ctx.db.patch(c._id, { start: now, used: n }); else await ctx.db.insert('counters', { key, start: now, used: n });
-    return true;
-  }
-  if (c.used + n > limit) return false;
-  await ctx.db.patch(c._id, { used: c.used + n });
-  return true;
-}
+/**
+ * Rate limits (the Convex rate-limiter component). guests: new guest accounts across everyone; hold: island purchases
+ * a player can start; fund: coins the whole coast can give per UTC day (matching each sailor's own daily cap).
+ */
+export const limits = new RateLimiter(components.rateLimiter, {
+  guests: { kind: 'token bucket', rate: GUESTS_PER_WINDOW, period: GUEST_WINDOW_MS },
+  hold: { kind: 'token bucket', rate: HOLDS_PER_HOUR, period: HOUR },
+  fund: { kind: 'fixed window', rate: FUND_DAILY_ALL, period: DAY, start: 0 },
+});

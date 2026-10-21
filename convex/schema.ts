@@ -43,6 +43,4 @@ export default defineSchema({
   islandReports: defineTable({ key: v.string(), userId: v.id('users'), name: v.string(), logo: v.optional(v.id('_storage')), at: v.number() }).index('by_key_user', ['key', 'userId']),
   // small server-wide values (the relay's online count)
   meta: defineTable({ key: v.string(), value: v.number(), at: v.number() }).index('by_key', ['key']),
-  // shared rate-limit windows (guest sign-ups, coastwide fund per day)
-  counters: defineTable({ key: v.string(), start: v.number(), used: v.number() }).index('by_key', ['key']),
 });

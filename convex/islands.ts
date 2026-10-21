@@ -3,7 +3,7 @@ import { query, mutation, action, internalAction, internalMutation, internalQuer
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { getAuthUserId } from '@convex-dev/auth/server';
-import { requireUser, nameOf, spend } from './lib';
+import { requireUser, nameOf, limits } from './lib';
 import { jevYes } from './jev';
 import { cleanName } from './names';
 import { jevAllowsName, isAdminUser } from './profiles';
@@ -13,7 +13,7 @@ import { isClaimable, priceOfKey, MAX_ISLANDS, ISLAND_NAME_MAX, LOGO_MAX_BYTES }
 // payments.ts), names it, and can give it a logo and a link. Admins claim for free. Islands go back on the market when
 // their owner hasn't been seen for 60 days.
 type Result = { ok: true; price?: number } | { ok: false; why: string };
-const IDLE_MS = 60 * 86_400_000, HOLD_MS = 31 * 60_000, HOLDS_PER_HOUR = 6;
+const IDLE_MS = 60 * 86_400_000, HOLD_MS = 31 * 60_000;
 
 export const byKey = (ctx: QueryCtx | MutationCtx, key: string) => ctx.db.query('islands').withIndex('by_key', q => q.eq('key', key)).unique();
 /** Owned, or held by someone who is still paying; an expired hold counts as free. */
@@ -54,7 +54,7 @@ export const applyClaim = internalMutation({
     if (taken(isl, now) && !(isl!.status === 'pending' && isl!.ownerId === userId)) return { ok: false, why: isl!.status === 'pending' ? 'Someone is buying this island right now' : `${isl!.ownerName} already owns this island` };
     const mine = (await ctx.db.query('islands').withIndex('by_owner', q => q.eq('ownerId', userId)).take(MAX_ISLANDS + 2)).filter(i => i.key !== key && taken(i, now));
     if (mine.length >= MAX_ISLANDS) return { ok: false, why: `You can own ${MAX_ISLANDS} islands. Release one first` };
-    if (mode === 'hold' && !await spend(ctx, `hold:${userId}`, HOLDS_PER_HOUR, 3_600_000)) return { ok: false, why: 'Too many purchases started. Try again in an hour' };
+    if (mode === 'hold' && !(await limits.limit(ctx, 'hold', { key: userId })).ok) return { ok: false, why: 'Too many purchases started. Try again in an hour' };
     const previousSession = isl?.status === 'pending' && isl.ownerId === userId ? isl.sessionId : undefined;   // our own earlier checkout
     if (isl) await ctx.db.delete(isl._id);                                   // an expired hold, or our own earlier attempt
     const row = { key, ownerId: userId, ownerName: await nameOf(ctx, userId), name, price, claimedAt: now, updatedAt: now, seenAt: now };

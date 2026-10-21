@@ -1,8 +1,8 @@
 import { v } from 'convex/values';
 import { query, mutation } from './_generated/server';
 import { getAuthUserId } from '@convex-dev/auth/server';
-import { requireUser, trusted, spend } from './lib';
-import { FUND_DAILY, FUND_DAILY_ALL, FUND_KEYS, GUEST_TRUST_MS } from './limits';
+import { requireUser, trusted, limits } from './lib';
+import { FUND_DAILY, FUND_KEYS, GUEST_TRUST_MS } from './limits';
 
 // Sized for the coast's real traffic: a few sailors can fill the first round in an evening, and each filled round
 // raises the next goal by 60% (up to a million).
@@ -29,7 +29,7 @@ export const give = mutation({
     const g = await ctx.db.query('gifts').withIndex('by_key_user', q => q.eq('key', key).eq('userId', userId)).unique();
     const given = g?.day === day ? g.today ?? 0 : 0;
     if (given + amount > FUND_DAILY) return { ok: false, why: 'You have given all you can for today' };
-    if (!await spend(ctx, `fund:${key}`, FUND_DAILY_ALL, 86_400_000, amount)) return { ok: false, why: 'The fund has taken all it can for today. Try tomorrow' };
+    if (!(await limits.limit(ctx, 'fund', { key, count: amount })).ok) return { ok: false, why: 'The fund has taken all it can for today. Try tomorrow' };
     if (g) await ctx.db.patch(g._id, { amount: g.amount + amount, day, today: given + amount }); else await ctx.db.insert('gifts', { key, userId, amount, day, today: amount });
     const f = await ctx.db.query('fund').withIndex('by_key', q => q.eq('key', key)).unique();
     const goal = f?.goal ?? FIRST_GOAL, round = f?.round ?? 1, total = (f?.total ?? 0) + amount, givers = (f?.givers ?? 0) + (g ? 0 : 1);
