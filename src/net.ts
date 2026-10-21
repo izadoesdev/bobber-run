@@ -1,10 +1,9 @@
 // Online play through Convex: guest sign-in, accounts, cloud saves, world records, the coastwide fund,
-// greetings and other sailors. Without VITE_CONVEX_URL the game stays offline.
-import { h, render } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
-import { ConvexReactClient } from 'convex/react';
+// greetings and other sailors. Without VITE_CONVEX_URL the game stays offline. The Convex client itself lives in
+// netClient.ts, loaded after the first frame so it never delays the game appearing; this module owns all the state.
+import type { ConvexReactClient } from 'convex/react';
 import type { FunctionArgs, FunctionReference, FunctionReturnType } from 'convex/server';
-import { ConvexAuthProvider, useAuthActions, useAuthToken, useConvexAuth } from '@convex-dev/auth/react';
+import type { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
 import { ONLINE, type Sailor } from './online';
 import type { ToastKind } from './types';
@@ -58,31 +57,20 @@ const unwatch = (key: string) => { watches[key]?.off(); delete watches[key]; };
 const call = <A extends Record<string, unknown>>(ref: FunctionReference<'mutation'>, args: A) => client!.mutation(ref, args);
 
 // ---------- sign-in ----------
-// Signs in as a guest when nobody is signed in (never during an account switch) and tracks the session.
-function Bridge() {
-  const a = useAuthActions(), { isLoading, isAuthenticated } = useConvexAuth(), token = useAuthToken();
-  const [wake, setWake] = useState(0);
-  actions = a; authToken = isAuthenticated ? token : null; wakeBridge = () => setWake(n => n + 1);
-  useEffect(() => {
-    if (isLoading || isAuthenticated || signingIn || switching) return;
-    signingIn = true; NET.status = 'connecting';
-    a.signIn('anonymous')
-      .catch(() => { NET.status = 'offline'; setTimeout(wakeBridge, 10_000); })   // try again in a while
-      .finally(() => { signingIn = false; });
-  }, [isLoading, isAuthenticated, wake]);
-  useEffect(() => {
-    NET.authed = isAuthenticated;
-    if (isAuthenticated) { NET.status = 'online'; void onSignedIn(); } else NET.profile = null;
-  }, [isAuthenticated]);
-  return null;
-}
+/** What the sign-in bridge in netClient.ts reports here and asks of this module. */
+export const bridge = {
+  connected(a: ReturnType<typeof useAuthActions>, token: string | null, wake: () => void): void { actions = a; authToken = token; wakeBridge = wake; },
+  /** A guest session may start now (nobody signed in, and no account switch in progress). */
+  mayStartGuest: (): boolean => !signingIn && !switching,
+  guestStarting(on: boolean): void { signingIn = on; },
+  authChanged(authed: boolean): void { NET.authed = authed; if (authed) { NET.status = 'online'; void onSignedIn(); } else NET.profile = null; },
+};
 export function initNet(game: Game, species: string[], notify: (s: string, kind?: ToastKind) => void) {
   G = game; speciesIds = species; toast = notify;
-  if (!URL) return;
-  client = new ConvexReactClient(URL);
-  const host = document.createElement('div'); host.style.display = 'none'; document.body.appendChild(host);
-  render(h(ConvexAuthProvider, { client, children: h(Bridge, null) }), host);
-  addEventListener('beforeunload', () => { if (NET.authed) client!.mutation(api.sea.leave, {}).catch(() => { }); });
+  const url = URL;
+  if (!url) return;
+  requestAnimationFrame(() => setTimeout(() => void import('./netClient').then(m => { client = m.connect(url); }), 0));   // after the first frame
+  addEventListener('beforeunload', () => { if (NET.authed) client?.mutation(api.sea.leave, {}).catch(() => { }); });
 }
 const pageStart = Date.now();
 async function onSignedIn() {
