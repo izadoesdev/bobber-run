@@ -61,12 +61,14 @@ function Status() {
   const opt = (on: boolean, cls = '') => ({ class: `seg opt ${cls}` + (on ? '' : ' off'), 'aria-hidden': !on });
   return (
     <div class="hud-bar chip">
-      <span class="seg"><Icon k="coin" size="s" /><span class="coins">{money(G.coinsShown)}</span>
+      {/* fixed slots first (coins, hold), the ones that fold away after them, so a fold only moves the bar's right edge;
+          numbers sit in fixed-width boxes so a new digit never nudges what follows */}
+      <span class="seg"><Icon k="coin" size="s" /><span class="coins num">{money(G.coinsShown)}</span>
         {G.floaters.map((f, i) => <span key={i} class={'floater ' + f.kind}>{f.s}</span>)}</span>
-      <span class={'seg' + (full ? ' bad' : '')} title="Fish in your hold"><Icon k="hold" size="s" />{G.hold.length}/{cp}{G.hold.some(f => f.gold) && <span class="gold"> ★</span>}</span>
+      <span class={'seg' + (full ? ' bad' : '')} title="Fish in your hold"><Icon k="hold" size="s" /><span class="num hold">{G.hold.length}/{cp}</span>{G.hold.some(f => f.gold) && <span class="gold">★</span>}</span>
+      <span {...opt(fishing, 'small')} title="Bait (B to switch)"><Icon k={bait === 'none' ? 'rod' : bait} size="s" /><span class="num n2">{bait === 'none' ? '–' : `×${G.bait[bait] || 0}`}</span><Key k="b" pad="RB" /></span>
+      <span {...opt(fishing && chum > 0, 'small')} title="Chum (C)"><Icon k="chum" size="s" /><span class="num n2">{chum}</span><Key k="c" /></span>
       <span {...opt(k < 1)} title="Hull"><Icon k="hull" size="s" /><span class="mini-bar"><Bar k={k} tone={k > 0.5 ? '' : k > 0.25 ? 'warn' : 'bad'} /></span></span>
-      <span {...opt(fishing, 'small')} title="Bait (B to switch)"><Icon k={bait === 'none' ? 'rod' : bait} size="s" />{bait === 'none' ? 'No bait' : `×${G.bait[bait] || 0}`}<Key k="b" pad="RB" /></span>
-      <span {...opt(fishing && chum > 0, 'small')} title="Chum (C)"><Icon k="chum" size="s" />{chum}<Key k="c" /></span>
     </div>
   );
 }

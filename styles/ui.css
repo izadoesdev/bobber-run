@@ -421,6 +421,7 @@ html.touch #ui .screen:has(.chartwrap) .foot { padding-right: 130px; }
 .hud-bar .seg.opt.off { max-width: 0; margin-left: 0; opacity: 0; }
 .hud-bar .seg.bad { color: var(--bad); }
 .hud-bar .coins { font-size: 1.25em; line-height: 1; font-variant-numeric: tabular-nums; }
+.hud-bar .num { display: inline-block; text-align: left; font-variant-numeric: tabular-nums; } .hud-bar .coins.num { min-width: 3.4em; } .hud-bar .num.hold { min-width: 2.6em; } .hud-bar .num.n2 { min-width: 1.6em; }
 .hud-bar .floater { position: absolute; left: 1.6em; top: -0.2em; white-space: nowrap; pointer-events: none; }
 .hud-bar .mini-bar { width: 4em; display: inline-block; }
 .hud-bar .key { font-size: 0.8em; }
