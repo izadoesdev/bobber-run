@@ -238,7 +238,7 @@ export interface FishLine {
   variant?: string;
   /** seconds left in the telegraph before the next surge; 0 or undefined when none is coming */
   cue?: number;
-  /** the line went into the red this fight (no clean-fight star) */
+  /** the line went into the red this fight (the catch loses a star) */
   strained?: boolean;
   /** the next surge has been announced and hasn't passed yet */
   cued?: boolean;

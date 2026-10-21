@@ -28,8 +28,8 @@ const GOLD_BITE = 0.4, GOLD_VALUE = 2.5;
 const BACK_BITE = 0.5, MAX_ESCAPED = 4;
 /** Seconds of warning (a rod creak, the reel panel flashing) before every surge lands. */
 const CUE_S = 0.5;
-/** Quality at the hook: below 0.1 three stars, below 0.45 two, else one; and what each is worth. */
-const STAR_ROLL = [0.1, 0.45], STAR_VALUE = [1, 1.25, 1.6];
+/** Quality at the hook: below 0.07 three stars, below 0.35 two, else one; and what each is worth. */
+const STAR_ROLL = [0.07, 0.35], STAR_VALUE = [1, 1.25, 1.6];
 /** The world holds still this long when a fish is hooked, and when a 3-star or legendary one is landed. */
 const HITSTOP = 0.1;
 export const hitstop = (): boolean => G.t - G.hookT < HITSTOP;
@@ -314,7 +314,7 @@ function reelStage(f: FishLine, dt: number, strike: boolean): void {
   const pull = diff * (0.3 + surge * TUNE.surge * assist) * (1 + 0.1 * stage) * (1 - 0.12 * hk) * (f.back ? 1.2 : 1);   // it has learned
   if (SET.reelToggle && strike) { f.reeling = !f.reeling; sfx('move', 0.4); }
   f.surge = surge;
-  if (diff > 0.3) telegraph(f, pattern(f.ph + (1.5 + diff * 2.5) * CUE_S), surge, dt);
+  telegraph(f, pattern(f.ph + (1.5 + diff * 2.5) * CUE_S), surge, dt);
   const holding = SET.reelToggle ? !!f.reeling : held(' ');
   const auto = easy && !f.warn && f.tension < lineMax() * 0.5;    // easy reel reels by itself between surges
   const reeling = (holding || auto) && !(easy && f.jump);         // and lets go during jumps
@@ -335,7 +335,7 @@ function reelStage(f: FishLine, dt: number, strike: boolean): void {
   }
   f.tension = Math.max(0, f.tension);
   if (learning() || easy) f.tension = Math.min(f.tension, lineMax() * 0.9);   // first fish, and easy reel, strain the line but never snap it
-  if (f.tension > lineMax() * 0.8) f.strained = true;                        // into the red: the catch loses its clean-fight star
+  if (f.tension > lineMax() * 0.8) f.strained = true;                        // into the red: the catch loses a star
   if (surge > 1) G.shake = Math.max(G.shake, 0.6);
   if (Math.random() < dt * (3 + surge * 10)) spawn({ kind: 'dot', x: (f.fx ?? f.tx) + jitter(4), y: (f.fy ?? f.ty) + jitter(3), vx: jitter(18), vy: jitter(18), life: 0.35 });
   if (f.tension >= lineMax()) {
@@ -429,7 +429,7 @@ function holdFullNote(): void {
 /** The fish on the line is landed: catch card, bonus, and maybe a deckhand's extra catch. */
 function landHooked(f: FishLine): void {
   const spIdx = f.s.sp, sp = SPECIES[spIdx];
-  f.stars = Math.min(SET.reelAssist ? 2 : 3, (f.stars ?? 1) + (f.strained ? 0 : 1)) as 1 | 2 | 3;   // a clean fight lifts it a star; easy reel tops out at two
+  f.stars = clamp((f.stars ?? 1) - (f.strained ? 1 : 0), 1, SET.reelAssist ? 2 : 3) as 1 | 2 | 3;   // a fight in the red costs a star; easy reel tops out at two
   const { fish, first, record } = recordCatch(spIdx, f.s, f, 'rod');
   if (f.back) G.escaped = G.escaped.filter(e => e.school !== f.s.id);
   else if (fish.gold) f.s.gold = false;
