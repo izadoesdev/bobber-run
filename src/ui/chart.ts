@@ -9,7 +9,7 @@ import { ONLINE } from '../online';
 import { ISLANDS, watchExtra, islandPrice } from '../islands';
 import type { Point, Poi } from '../types';
 import { waypointMetres, waypointRoute } from '../waypoint';
-import { dirTo, money } from '../config';
+import { clamp, dirTo, money } from '../config';
 import { SET } from '../settings';
 
 const COL = { you: '#ff9a6b', port: '#f0cf6a', light: '#efe9dc', wreck: '#dcb074', dim: '#8a949c', ink: '#1b2a33', red: '#c0493a', green: '#8fd48a' };
@@ -67,7 +67,13 @@ export function drawChart(ctx: Ctx, w: number, h: number, cx: number, cy: number
   ctx.fillStyle = '#4f7389';
   ctx.fillRect(0, 0, w, h);
   drawTiles(ctx, w, h, wx0, wy0, wpp, () => performance.now() - t0 < budget);
-  if (opt.zone != null) { const tz = performance.now(); drawZone(ctx, w, h, wx0, wy0, wpp, opt.zone, S, u, () => performance.now() - tz < 6); }   // its own slice, not the map's leftovers
+  if (opt.zone != null) {
+    // its own slice, not the map's leftovers, and in proportion to real time: a slow machine drawing few frames
+    // builds more per frame, so the waters fill in about as fast everywhere
+    const tz = performance.now(), slice = clamp((tz - zoneDrawnAt) * 0.4, 6, 40);
+    zoneDrawnAt = tz;
+    drawZone(ctx, w, h, wx0, wy0, wpp, opt.zone, S, u, () => performance.now() - tz < slice);
+  }
   if (opt.grid) drawGrid(ctx, w, h, wx0, wy0, wpp, S, u);
 
   const pois = poisNear(cx, cy, Math.max(w, h) * wpp * 0.6);
@@ -125,6 +131,7 @@ function drawTarget(ctx: Ctx, w: number, h: number, [x, y]: [number, number], u:
 // ring their landmarks instead.
 const ZC = 16, ZCH = 512, ZK = ZCH / ZC, ZPX = 4, ZS = ZK * ZPX;   // cell size, chunk size, cells per chunk side, canvas px per cell, canvas size
 const ZONE_CAP = 600, zoneTiles = new Map<string, HTMLCanvasElement | null>();
+let zoneDrawnAt = 0;
 const HATCH = [250, 218, 112, 165], TINT = [240, 207, 106, 60], EDGE = [255, 236, 168, 240];
 /** Whether the chart may shade species `sp`'s zone: its chart was bought, or you've caught it 5 times. */
 export const zoneKnown = (sp: number): boolean => !!G.zones[SPECIES[sp].id] || (G.log[SPECIES[sp].id]?.n ?? 0) >= 5;

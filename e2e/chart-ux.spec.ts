@@ -91,6 +91,7 @@ test('@phone a tap on the chart sets the waypoint there, and the chip gives its 
 });
 
 test("a fish's waters on the chart settle once drawn, even zoomed all the way out", async ({ page }) => {
+  test.setTimeout(120_000);                                          // CI renders on 2 CPU cores at a few frames a second
   await sail(page);
   await page.evaluate(() => {
     const { G, SET, SPECIES } = window.BR; SET.calm = true;          // calm stills the ripple round the boat, so only a rebuild would change the chart
@@ -100,5 +101,5 @@ test("a fish's waters on the chart settle once drawn, even zoomed all the way ou
   const chart = page.locator('.chartwrap canvas');
   let last = Buffer.alloc(0);
   await expect.poll(async () => { const now = await chart.screenshot(); const same = now.equals(last); last = now; return same; },
-    { timeout: 40_000, intervals: [1500] }).toBe(true);
+    { timeout: 90_000, intervals: [2000] }).toBe(true);
 });
