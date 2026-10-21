@@ -39,7 +39,9 @@
 
 	# single-page game with no client routes: unknown paths are real 404s, not the game page
 	try_files {path} {path}/index.html
+	# the build writes .br and .gz next to each text file (scripts/precompress.ts); serve those as they are
 	file_server {
+		precompressed br gzip
 		hide .git .env*
 	}
 	handle_errors {
