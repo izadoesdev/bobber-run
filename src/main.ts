@@ -65,7 +65,8 @@ function zoomView(dt: number): void {
 
 // ---------- the loop ----------
 newGame(); G.mode = 'title';                           // the title screen shows the home harbour
-let acc = 0, last = performance.now(), noRender = false, trimT = 0;
+let acc = 0, last = performance.now(), noRender = false, trimT = 0, frozenKey = '';
+const settingsKey = (): string => Object.values(SET).join();
 
 function panChart(dt: number): void {
   const s = 220 * dt * G.map.zoom, k = G.keys;
@@ -99,7 +100,11 @@ export function tick(dt: number): void {
   if (G.mode === 'play' && (trimT -= dt) <= 0) { trimT = 2; trimWorld(G.cam.x + W / 2, G.cam.y + H / 2, Math.max(W, H)); }   // forget the sea far behind (not while the chart looks far afield)
   if (noRender) return;
   if (!SET.shake) { G.shakeX = 0; G.shakeY = 0; }
-  perf?.begin(); render(alpha); perf?.end();
+  // the menus freeze the view behind them: draw it once, then again only if the window or a setting changes
+  const live = G.mode === 'play' || G.mode === 'sunk' || G.mode === 'title' || G.mode === 'emote';
+  const sceneKey = live ? '' : `${G.mode}|${innerWidth}x${innerHeight}|${settingsKey()}`;
+  if (live || sceneKey !== frozenKey) { perf?.begin(); render(alpha); perf?.end(); }
+  frozenKey = sceneKey;
   drawUI();
   perf?.update();
   prefetch(3);
@@ -108,7 +113,9 @@ export function tick(dt: number): void {
 // hot. Sailing draws at most 60 frames a second; menus, the port, the title and a boat lying still draw 30. Everything
 // moves by elapsed time, so the pace only changes how often the picture updates.
 let lastFrame = 0, stillFor = 0;
+// a visible window without focus (another app in front) needs only a slow trickle of frames
 function frameBudgetMs(): number {
+  if (!document.hasFocus()) return 1000 / 15;
   if (G.mode !== 'play' && G.mode !== 'sunk') return 1000 / 30;
   const b = G.boat, moving = G.fish || G.throttle || Math.hypot(b.vx, b.vy) > 2 || Math.abs(b.w) > 0.05 || ONLINE.sailors.length;
   return moving || stillFor < 2 ? 1000 / 60 : 1000 / 30;

@@ -14,8 +14,9 @@ export const viewPct = (x: number, y: number): [number, number] => [(x - G.cam.x
 /** Draws into a canvas sized to its CSS box at device resolution. */
 export type DrawFn = (ctx: CanvasRenderingContext2D, w: number, h: number, dpr: number) => void;
 
-type CanvasProps = { draw: DrawFn; cls?: string } & Omit<HTMLAttributes<HTMLCanvasElement>, 'class' | 'ref'>;
-export function Canvas({ draw, cls, ...rest }: CanvasProps) {
+/** `when`: a key for what the drawing shows; the canvas redraws only when it changes (absent: after every render). */
+type CanvasProps = { draw: DrawFn; cls?: string; when?: () => unknown } & Omit<HTMLAttributes<HTMLCanvasElement>, 'class' | 'ref'>;
+export function Canvas({ draw, cls, when, ...rest }: CanvasProps) {
   const ref = useRef<HTMLCanvasElement>(null);
   // the CSS box, measured on mount and whenever it resizes, so the per-frame redraw never forces a layout
   const box = useRef<DOMRect | null>(null);
@@ -26,10 +27,12 @@ export function Canvas({ draw, cls, ...rest }: CanvasProps) {
     ro.observe(c, { box: 'border-box' });
     return () => ro.disconnect();
   }, []);
-  // redraws after every render: the UI re-renders each frame, so this animates
+  // redraws after a render, unless `when` says nothing it shows has changed since the last draw
+  const last = useRef<unknown>(undefined);
   useEffect(() => {
     const c = ref.current, r = box.current;
     if (!c || !r) return;
+    if (when) { const k = when(); if (k === last.current) return; last.current = k; }
     const dpr = window.devicePixelRatio || 1;
     const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
     if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }

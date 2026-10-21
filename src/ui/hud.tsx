@@ -60,6 +60,9 @@ function Status() {
   );
 }
 
+// the minimap redraws when the boat has moved a minimap pixel or turned a little, and ten times a second for what
+// animates on it (schools, sailors, the frenzy star); every frame it cost as much CPU as the rest of the UI
+const miniKey = (): string => { const b = G.boat; return `${Math.round(b.x / 2.2)},${Math.round(b.y / 2.2)},${Math.round(b.a * 20)},${Math.floor(G.t * 10)},${G.waypoint?.x},${G.waypoint?.y}`; };
 function Minimap({ step }: { step: Step }) {
   const un = G.up.sextant > 0 ? nearestUncharted() : null, target = guideOn() ? step.at : null;
   const draw: DrawFn = (ctx, w, h, dpr) => {
@@ -79,7 +82,7 @@ function Minimap({ step }: { step: Step }) {
   const part = night ? ', night' : c > 0.55 ? ', dusk' : '';   // the icon already shows it; the words go in the tooltip so the label never grows into the wind dial
   return (
     <div class="mini">
-      <div class="ring"><Canvas draw={draw} onClick={open} title="Open the sea chart (M)" data-track="minimap-open" /><span class="n">N</span>
+      <div class="ring"><Canvas draw={draw} when={miniKey} onClick={open} title="Open the sea chart (M)" data-track="minimap-open" /><span class="n">N</span>
         <div class={'wind' + (sail ? '' : ' quiet')} title={`${windWord()}${sail ? `, sails at ${Math.round(eff * 100)}%` : ''}`}>
           <WindVane sail={sail} eff={eff} />
           {sail && <span class={'pct ' + (eff > 0.9 ? 'good' : eff > 0.6 ? '' : 'bad')}>{Math.round(eff * 100)}%</span>}

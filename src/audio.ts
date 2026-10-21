@@ -27,6 +27,14 @@ let curBus: Bus = 'sfx';
 export function setVolumes(v: Partial<Record<Bus, number>>): void {
   Object.assign(VOL, v);
   if (graph) for (const k of BUSES) graph.bus[k].gain.value = VOL[k];
+  wake();
+}
+// with every volume at zero the graph (reverb, loops) would still run for nothing: sleep until a volume comes back
+let tabHidden = false;
+const silent = (): boolean => BUSES.every(k => VOL[k] <= 0);
+function wake(): void {
+  if (!ac) return;
+  if (tabHidden || silent()) ac.suspend().catch(() => { }); else resume(ac);
 }
 
 // Safari before 14.1 only has the prefixed constructor
@@ -38,12 +46,12 @@ const resume = (c: AudioContext): void => { c.resume().catch(() => { }); };
 
 /** Pause all sound while the tab is hidden, and pick it back up when it returns. */
 export function suspendAudio(hidden: boolean): void {
-  if (!ac) return;
-  if (hidden) ac.suspend().catch(() => { }); else resume(ac);
+  tabHidden = hidden;
+  wake();
 }
 export function unlockAudio(): void {
   if (ac) {
-    if (ac.state !== 'running') resume(ac);
+    if (ac.state !== 'running' && !silent()) resume(ac);
     return;
   }
   try {
@@ -51,7 +59,7 @@ export function unlockAudio(): void {
     ac = new Ctor();
     graph = buildGraph(ac, ac.destination);
     startLoops(ac, graph);
-    resume(ac);
+    wake();
   } catch {
     ac = null;
   }
