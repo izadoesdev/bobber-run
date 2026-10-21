@@ -120,7 +120,8 @@ h2, .title { font-size: var(--fs-xl); }
 .fishdial .z.danger { fill: #c0493a; } .fishdial.surge .z.danger { animation: danger-flash 0.24s steps(2) infinite; } @keyframes danger-flash { 50% { fill: #ff8a6a; } }
 .fishdial .sweep { fill: #7fb86a; } .fishdial .sweep.perfect { fill: #f0cf6a; animation: perfect-glow 0.5s ease-in-out infinite alternate; } @keyframes perfect-glow { to { fill: #fff2b0; } }
 .fishdial .prog-bg { fill: none; stroke: #3a2810; stroke-width: 7; stroke-linecap: round; }
-.fishdial .prog { fill: none; stroke: #ffe08a; stroke-width: 5; filter: drop-shadow(0 0 2px #f0cf6a); stroke-linecap: round; transition: d 0.15s linear; } .fishdial .prog.taking { stroke: #ef8a72; }
+.fishdial .prog { fill: none; stroke: #5fd0e0; stroke-width: 5; filter: drop-shadow(0 0 2px #8fe6f0); stroke-linecap: round; transition: d 0.15s linear; } .fishdial .prog.taking { stroke: #ef8a72; }
+.fishdial .prog-head { fill: #1b3a44; stroke: #5fd0e0; stroke-width: 2; } .fishdial .prog-head.taking { stroke: #ef8a72; } .fishdial image { image-rendering: pixelated; }   /* teal: the catch, unlike any strain colour */
 .fishdial .tick { stroke: #4a3624; stroke-width: 1.2; } .fishdial .tick.big { stroke-width: 2.2; }
 .fishdial .needle { transform-origin: 0 0; transition: transform 0.12s ease-out; } .fishdial .needle path { fill: #7e2c25; stroke: #2a1f17; stroke-width: 0.8; } .fishdial .needle .hook { fill: #2a1f17; }
 .fishdial.surge .needle path { fill: #c0493a; }

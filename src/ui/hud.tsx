@@ -16,6 +16,7 @@ import { currentQuest, questProgress } from '../story';
 import { guide, guideOn, stepLine, tip, whereText, type Step } from '../game/guide';
 import type { CatchCard as CatchCardState, FishLine, Point, Toast } from '../types';
 import { drawChart, nearestUncharted } from './chart';
+import { fishIcon } from './icons';
 import { SeaLayer } from './overlay';
 import { ShareButton, ShareChip } from './share';
 import { clearWaypoint, sailToWaypoint, tickWaypoint, waypointMetres } from '../waypoint';
@@ -183,6 +184,8 @@ function FishPanel() {
     face = <>
       <path class="z safe" d={band(0, 0.55)} /><path class="z strain" d={band(0.55, red)} /><path class="z danger" d={band(red, 1)} />
       <path class="prog-bg" d={ring(0, 1, RP)} /><path class={'prog' + (f.taking ? ' taking' : '')} d={ring(0, Math.max(0.001, prog), RP)} />
+      {/* the fish itself rides the rim as it comes in, so the catch ring never reads as another strain zone */}
+      <g transform={`translate(${pt(RP, prog).replace(' ', ',')})`}><circle class={'prog-head' + (f.taking ? ' taking' : '')} r="8.5" /><image href={fishIcon(f.s.sp)} x="-7" y="-7" width="14" height="14" /></g>
     </>;
   } else {
     right = f.fakeT != null && G.t - f.fakeT < 0.7 ? <span class="bad">Not yet</span> : <BaitTag />;   // a fake-out dip costs time; otherwise the bait on the hook
