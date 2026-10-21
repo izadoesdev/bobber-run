@@ -55,6 +55,8 @@ type Events = {
   helper_toggled: { helper: 'deckhand' | 'net' | 'pots'; on: boolean };
   contract_offers_refreshed: { port: string };
   fleet_collected: { earned_bucket: string };
+  /** what the fleet earned while the player was away, credited on load */
+  fleet_away: { earned_bucket: string };
   fish_chart_bought: { species: string; price_bucket: string; logged: boolean };
   fish_chart_opened: { species: string; how: 'logbook' | 'chart' };
   dock_grade_up: { grade: number };

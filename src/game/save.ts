@@ -6,6 +6,7 @@ import { toast } from './feedback';
 import { netSaved, reportStats } from '../net';
 import type { BoatId, Contract, Escapee, Fish, GameState, LogEntry, Pet, Port, ProjectId, Stats, StoryState, TreasureMap, UpgradeKey, BaitKind, BaitChoice } from '../types';
 import { G, freshStats, freshUpgrades } from './state';
+import { fleetWhileAway } from './port/fleet';
 import { DAYLEN, cap, hpMax } from './rules';
 
 const KEY = 'bobber-run-save-v3', OLD = 'bobber-run-save-v2';
@@ -152,6 +153,7 @@ export function loadGame(): void {
       offers: d.offers || {}, active: d.active || [], pity: int(d.pity), clock: d.clock ?? G.clock,
     };
     Object.assign(G, loaded);
+    fleetWhileAway(d.savedAt);                                     // the fleet kept fishing while the game was closed
     // retired upgrades (bilge pumps went into Plating): give back what they cost, once
     const refund = retiredRefund(G.up);
     if (refund > 0) { G.coins += refund; G.coinsShown = G.coins; G.up.bilge = 0; toast(`Bilge pumps now come with Plating: refunded $${refund}`, 'good'); }

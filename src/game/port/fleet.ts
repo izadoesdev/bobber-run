@@ -1,6 +1,6 @@
 // The fleet office: spare boats fish on their own. A fleet boat earns a fixed, modest rate (well under what you make
-// fishing with your best boat), only while you are at sea, and holds at most FLEET_HOLD_MIN minutes of catch until
-// collected: idling in port or in a menu earns nothing.
+// fishing with your best boat) while you are at sea and while you are away from the game, and holds at most
+// FLEET_HOLD_MIN minutes of catch until collected: idling in port or in a menu earns nothing.
 import { BOATS, FLEET_PER_MIN, FLEET_HOLD_MIN } from '../../econ';
 import { sfx } from '../../audio';
 import { track, bucket } from '../../analytics';
@@ -14,12 +14,25 @@ import { deny, header, type Rows } from './kit';
 const fleetPerMin = (bd: BoatDef): number => FLEET_PER_MIN[bd.id];
 const fleetCap = (bd: BoatDef): number => fleetPerMin(bd) * FLEET_HOLD_MIN;
 export const fleetTotal = (): number => Object.values(G.fleet).reduce((a, f) => a + Math.floor(f.earned), 0);
-export function updateFleet(dt: number): void {
-  if (G.mode !== 'play') return;
+/** Add `seconds` of fishing to every fleet boat (each stops at its hold cap); returns the whole coins it added. */
+function accrue(seconds: number): number {
+  let added = 0;
   for (const [id, f] of Object.entries(G.fleet)) {
     const bd = BOATS.find(b => b.id === id);
-    if (bd) f.earned = Math.min(fleetCap(bd), f.earned + fleetPerMin(bd) / 60 * dt);
+    if (!bd) continue;
+    const before = Math.floor(f.earned);
+    f.earned = Math.min(fleetCap(bd), f.earned + fleetPerMin(bd) / 60 * seconds);
+    added += Math.floor(f.earned) - before;
   }
+  return added;
+}
+export function updateFleet(dt: number): void { if (G.mode === 'play') accrue(dt); }
+/** On loading a save: the real time since it was written counts as time at sea for the fleet (still capped). */
+export function fleetWhileAway(savedAt: number | undefined): void {
+  const away = savedAt ? (Date.now() - savedAt) / 1000 : 0;
+  if (away < 60) return;
+  const n = accrue(away);
+  if (n > 0) { toast(`Your fleet brought in $${n} while you were away. Collect it at any port`, 'good'); track('fleet_away', { earned_bucket: bucket(n) }); }
 }
 function collectFleet(): void {
   const n = fleetTotal();
@@ -50,7 +63,7 @@ export function fleetItems(p: Port, items: Rows): void {
   items.push({
     kind: 'collect', icon: 'coin', label: 'Collect fleet earnings', sub: out ? `${out} boat${out > 1 ? 's' : ''} out, ${money(perMin)} a minute in all` : 'No boats out yet', right: n ? '+' + money(n) : '',
     ok: n > 0, why: out ? 'Nothing to collect yet. Fleet boats only earn while you are at sea' : 'Send out a spare boat first (listed below)', action: 'Collect', act: collectFleet,
-    what: `Boats you own but are not sailing can fish for you. Each earns a set amount every minute you spend at sea (not in port or menus) and holds up to ${FLEET_HOLD_MIN} minutes of catch until you collect it at any port.`,
+    what: `Boats you own but are not sailing can fish for you. Each earns a set amount every minute you spend at sea or away from the game (not in port or menus) and holds up to ${FLEET_HOLD_MIN} minutes of catch until you collect it at any port.`,
   });
   header(items, 'BOATS');
   const spare = BOATS.filter(bd => G.owned.includes(bd.id) && bd.id !== G.boatId);
