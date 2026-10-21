@@ -171,6 +171,9 @@ function startBite(f: FishLine): void {
   spawn({ kind: 'ring', x: f.tx, y: f.ty, life: 0.8, r0: 1, grow: 9 });   // the bobber plunges: unmistakable
   burst('dot', f.tx, f.ty, 12, 28, 0.5);
 }
+/** Does the fight pattern surge (above 0.9) within the next CUE_S, at `rate` of phase per second? */
+const surgeWithin = (pattern: (ph: number) => number, ph: number, rate: number): boolean =>
+  Array.from({ length: 11 }, (_, i) => pattern(ph + rate * CUE_S * i / 10)).some(v => v > 0.9);
 /** [perfect, any] strike windows in seconds; relaxed strikes and each recent miss widen both, rarer fish narrow them a little. */
 function strikeWindows(sp: Species): [number, number] {
   const rod = G.up.rod, rare = clamp(0.7 + 0.06 * sp.w, 0.75, 1);
@@ -203,6 +206,8 @@ function hooked(f: FishLine, tension: number, prog: number): void {
   sfx(f.perfect ? 'perfect' : 'plop');
   f.fx = f.tx; f.fy = f.ty;
   const sp = SPECIES[f.s.sp], b = G.boat, r = Math.random();
+  // a fight never opens inside a surge's warning: start where the next CUE_S is calm, so the first surge is announced too
+  for (let k = 0; k < 200 && surgeWithin(FIGHT[sp.fight], f.ph, 1.5 + sp.diff * 2.5); k++) f.ph += 0.05;
   // what's on the line shows from the hook: its quality (a perfect strike adds a star) and any variant
   f.stars = Math.min(3, (r < STAR_ROLL[0] ? 3 : r < STAR_ROLL[1] ? 2 : 1) + (f.perfect ? 1 : 0)) as 1 | 2 | 3;
   if (!f.back) f.variant = rollVariant(f.s.sp, { storm: WX.state === 'storm', biome: biomeAt(b.x, b.y), night: isNight() }, Math.random()) ?? undefined;
