@@ -8,18 +8,12 @@ const NOISE = `${HASH}float noise(vec2 p){ vec2 i = floor(p), f = fract(p); vec2
 float fbm(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++){ s += a*noise(p); p = p*2.03 + vec2(17.1, 9.3); a *= 0.5; } return s; }
 `;
 const LIGHTS = `
-uniform int uNL; uniform vec4 uL[16]; uniform vec3 uLC[16];
-uniform int uNB; uniform vec4 uB[6];
+uniform int uNL; uniform vec4 uL[16]; uniform vec3 uLC[16]; uniform float uLZ[16];   // uLZ: each lamp's height
 vec3 pointLights(vec3 p, vec3 n){ vec3 acc = vec3(0.0);
-  for (int i = 0; i < 16; i++){ if (i >= uNL) break; vec4 L = uL[i]; vec3 lp = vec3(L.xy, 7.0); vec3 d = lp - p; float r = length(d.xy);
+  for (int i = 0; i < 16; i++){ if (i >= uNL) break; vec4 L = uL[i]; vec3 lp = vec3(L.xy, uLZ[i]); vec3 d = lp - p; float r = length(d.xy);
     float k = clamp(1.0 - r/L.z, 0.0, 1.0); k = k*k*(3.0 - 2.0*k)*(0.55 + 0.45*k);   // broad soft pool, no rim
     acc += uLC[i]*L.w*k*(0.45 + 0.55*max(dot(n, normalize(d)), 0.0)); }
   return acc; }
-float beams(vec2 p){ float b = 0.0;
-  for (int i = 0; i < 6; i++){ if (i >= uNB) break; vec4 B = uB[i]; vec2 dv = p - B.xy; float d = length(dv);
-    float a = atan(dv.y, dv.x) - B.z; a = mod(a + 3.14159, 6.28318) - 3.14159;
-    b += smoothstep(0.22, 0.0, abs(a))*smoothstep(B.w, B.w*0.15, d)*smoothstep(3.0, 14.0, d); }
-  return b; }
 `;
 // Pixel styles share one stylised language: lighting, depth tints, foam, shadows and light pools step through a
 // few flat bands (hard edges, no dither, so flat areas stay calm). uOrg = world pixel index of the frame's top-left
@@ -192,7 +186,7 @@ void main(){
     float ao = 0.62 + 0.38*st(clamp(1.0 - (avg - h)*6.0, 0.62, 1.0)*2.63 - 1.63, 3.0);
     float diff = st(max(dot(n, uSun), 0.0), 4.0), tsh = st(terrainShadow(p, h)/0.8, 3.0)*0.8;   // stepped like the voxel faces
     vec3 light = uAmb*ao*(0.8 + 0.2*n.z) + uSunC*diff*sunVis*(1.0 - tsh);
-    light += stL(pointLights(vec3(p, 0.0), n), 5.0) + vec3(1.0, .84, .58)*st(beams(p), 3.0)*(0.12 + uNight*0.9);
+    light += stL(pointLights(vec3(p, 0.0), n), 5.0);
     col *= light;
     // a volcano's crater: a dip at the top of a tall ember-isle peak, its floor glowing lava that pulses slowly
     float lava = 0.0;
@@ -252,7 +246,7 @@ void main(){
     float fres = 0.06 + 0.94*pow(1.0 - max(dot(n, V), 0.0), 5.0);
     vec3 skyR = uSky*(0.8 + 0.4*smoothstep(-0.1, 0.5, -Rv.y));
     vec3 Lp = stL(pointLights(vec3(p, 0.0), n), 6.0);           // lamp pools step out in rings
-    vec3 light = uAmb + uSunC*(0.55 + 0.32*st(max(dot(nS, uSun), 0.0), 3.0) + 0.13*max(dot(n, uSun), 0.0))*sunVis + Lp*0.3 + vec3(1.0, .84, .58)*st(beams(p), 3.0)*(0.12 + uNight*0.9);
+    vec3 light = uAmb + uSunC*(0.55 + 0.32*st(max(dot(nS, uSun), 0.0), 3.0) + 0.13*max(dot(n, uSun), 0.0))*sunVis + Lp*0.3;
     float tsh = depth < 0.22 ? st(terrainShadow(p, 0.0)/0.8, 3.0)*0.64 : 0.0;
     col = wc*light*(1.0 - tsh*0.7) + skyR*fres*0.7*(1.0 - cloud*0.35);
     col += uSunC*st(sunShafts(p), 2.0)*0.045*smoothstep(0.08, 0.3, vd)*smoothstep(1.1, 0.4, vd)*sunVis*(1.0 - uNight);
@@ -332,6 +326,30 @@ void main(){
   o = vec4(col, 1.0 - sub);                          // alpha: how solid this pixel is, for the pixel outline
 }`;
 
+// A lighthouse beam: a wedge of light in the air at the lantern's height, one instance per beam, drawn after the
+// meshes with the depth test on (no depth write), so it passes over the trees below the lamp and behind the tower
+// itself. Its depth is the meshes' formula at that height.
+export const BEAM_VS = `#version 300 es
+uniform vec4 uCam; uniform vec4 uB[6]; uniform float uBZ[6];
+out vec2 vP; flat out int vI;
+void main(){
+  int i = gl_InstanceID; vec4 B = uB[i]; float z = uBZ[i]; vec2 p = B.xy;
+  if (gl_VertexID > 0){ float a = B.z + (gl_VertexID == 1 ? -0.26 : 0.26); p += vec2(cos(a), sin(a))*B.w*1.04; }
+  vP = p; vI = i;
+  gl_Position = vec4((p.x - uCam.x)/uCam.z*2.0 - 1.0, 1.0 - (p.y - z - uCam.y)/uCam.w*2.0, 1.0 - ((p.y - uCam.y) + z + 90.0)/(uCam.w + 280.0)*2.0, 1.0);
+}`;
+export const BEAM_FS = `#version 300 es
+precision highp float; precision highp int;
+in vec2 vP; flat in int vI; out vec4 o;
+uniform vec4 uB[6]; uniform float uNight, uBK;
+${STYLE}
+void main(){
+  vec4 B = uB[vI]; vec2 dv = vP - B.xy; float d = length(dv);
+  float a = atan(dv.y, dv.x) - B.z; a = mod(a + 3.14159, 6.28318) - 3.14159;
+  float b = smoothstep(0.22, 0.0, abs(a))*smoothstep(B.w, B.w*0.15, d)*smoothstep(3.0, 14.0, d);
+  o = vec4(vec3(1.0, .84, .58)*st(b, 3.0)*(0.06 + uNight*0.5)*uBK, 0.0);
+}`;
+
 // soft discs/rings stamped into a world-aligned buffer: R = foam, G = ripple height
 export const FOAM_VS = `#version 300 es
 layout(location=0) in vec4 aP;   // x, y, size (long axis), alpha
@@ -355,7 +373,9 @@ layout(location=0) in vec4 aP; layout(location=1) in vec4 aC; layout(location=2)
 uniform vec4 uCam; uniform float uPpu; out vec4 vC; flat out float vS;
 // points smaller than ~2.5 pixels pop on and off as they cross pixel centres; keep them at least that big and
 // dim them to keep the same total light
-void main(){ vC = aC; vS = aS; gl_Position = vec4((aP.x - uCam.x)/uCam.z*2.0 - 1.0, 1.0 - (aP.y - aP.z - uCam.y)/uCam.w*2.0, 0.0, 1.0);
+// depth as the meshes have it, a unit above the particle, so a hull or tree in front of it covers it
+void main(){ vC = aC; vS = aS; float z = aP.z + 1.0;
+  gl_Position = vec4((aP.x - uCam.x)/uCam.z*2.0 - 1.0, 1.0 - (aP.y - aP.z - uCam.y)/uCam.w*2.0, 1.0 - ((aP.y - uCam.y) + z + 90.0)/(uCam.w + 280.0)*2.0, 1.0);
   float s = aP.w*uPpu, sz = max(s, 2.5); vC.a *= min(1.0, (s*s)/(sz*sz)*1.6); gl_PointSize = sz; }`;
 export const PART_FS = `#version 300 es
 precision highp float; precision highp int;

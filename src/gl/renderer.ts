@@ -38,8 +38,8 @@ export const R: RenderOptions = { S0: 1, S: 1, scale: 1, quality: 'auto', fx: { 
 
 type GL = WebGL2RenderingContext;
 let gl: GL, cv: HTMLCanvasElement, hdr = false;
-let quadVao: WebGLVertexArrayObject, foamVao: WebGLVertexArrayObject, foamBuf: WebGLBuffer, partVao: WebGLVertexArrayObject, partBuf: WebGLBuffer;
-interface Programs { ground: Program; mesh: Program; foam: Program; part: Program; bright: Program; blur: Program; comp: Program; copy: Program; present: Program }
+let quadVao: WebGLVertexArrayObject, foamVao: WebGLVertexArrayObject, foamBuf: WebGLBuffer, partVao: WebGLVertexArrayObject, partBuf: WebGLBuffer, beamVao: WebGLVertexArrayObject;
+interface Programs { ground: Program; mesh: Program; foam: Program; part: Program; beam: Program; bright: Program; blur: Program; comp: Program; copy: Program; present: Program }
 let PG: Programs;
 
 export function initRender(canvas: HTMLCanvasElement): void {
@@ -75,7 +75,7 @@ function setupGL(): void {
   hdr = !!gl.getExtension('EXT_color_buffer_float');
   PG = {
     ground: program(gl, SH.QUAD_VS, SH.GROUND_FS), mesh: program(gl, SH.MESH_VS, SH.MESH_FS),
-    foam: program(gl, SH.FOAM_VS, SH.FOAM_FS), part: program(gl, SH.PART_VS, SH.PART_FS),
+    foam: program(gl, SH.FOAM_VS, SH.FOAM_FS), part: program(gl, SH.PART_VS, SH.PART_FS), beam: program(gl, SH.BEAM_VS, SH.BEAM_FS),
     bright: program(gl, SH.QUAD_VS, SH.BRIGHT_FS), blur: program(gl, SH.QUAD_VS, SH.BLUR_FS),
     comp: program(gl, SH.QUAD_VS, SH.COMPOSITE_FS), copy: program(gl, SH.QUAD_VS, SH.COPY_FS), present: program(gl, SH.QUAD_VS, SH.PRESENT_FS),
   };
@@ -90,6 +90,7 @@ function setupGL(): void {
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, FOAM_STRIDE * 4, 0);
   gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, FOAM_STRIDE * 4, 16);
   // scene particles: vec4 position+size, vec4 colour, float style
+  beamVao = gl.createVertexArray();                     // no attributes: the beam's corners come from gl_VertexID
   partVao = gl.createVertexArray(); gl.bindVertexArray(partVao);
   partBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, partBuf);
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, PART_STRIDE * 4, 0);
@@ -174,7 +175,9 @@ function ensureTargets(): Frame {
 const STY = { px: 0, org: [0, 0, 1] };
 function styleUniforms(pg: Program): void { U1(pg, 'uPx', STY.px); U3(pg, 'uOrg', STY.org); }
 function sunUniforms(pg: Program, E: Env): void { U3(pg, 'uSun', E.sun); U3(pg, 'uSunC', E.sunC); U3(pg, 'uAmb', E.amb); }
-function lightUniforms(pg: Program, Lt: Lights): void { gl.uniform1i(pg.u.uNL ?? null, Lt.nl); gl.uniform4fv(pg.u.uL ?? null, Lt.L); gl.uniform3fv(pg.u.uLC ?? null, Lt.LC); }
+function lightUniforms(pg: Program, Lt: Lights): void {
+  gl.uniform1i(pg.u.uNL ?? null, Lt.nl); gl.uniform4fv(pg.u.uL ?? null, Lt.L); gl.uniform3fv(pg.u.uLC ?? null, Lt.LC); gl.uniform1fv(pg.u.uLZ ?? null, Lt.LZ);
+}
 function U1(pg: Program, name: string, x: number): void { const l = pg.u[name]; if (l) gl.uniform1f(l, x); }
 function U2(pg: Program, name: string, x: number, y: number): void { const l = pg.u[name]; if (l) gl.uniform2f(l, x, y); }
 function U3(pg: Program, name: string, v: ArrayLike<number>): void { const l = pg.u[name]; if (l) gl.uniform3f(l, v[0], v[1], v[2]); }
@@ -788,17 +791,21 @@ function environment(cy: number): Env {
 
 // ---------- point lights and lighthouse beams (uniform arrays, reused every frame) ----------
 const MAX_LIGHTS = 16, MAX_BEAMS = 6;
+/** Lamp height of each lighthouse design in landmarks.ts (the lantern rooms sit at z 28, 27 and 30, lamp +2.5). */
+const LAMP_Z = [30.5, 29.5, 32.5];
 const LT = {
-  /** x, y, radius, strength per light; rgb per light; x, y, angle, length per beam */
-  L: new Float32Array(MAX_LIGHTS * 4), LC: new Float32Array(MAX_LIGHTS * 3), B: new Float32Array(MAX_BEAMS * 4),
+  /** x, y, radius, strength per light; rgb and height per light; x, y, angle, length and height per beam */
+  L: new Float32Array(MAX_LIGHTS * 4), LC: new Float32Array(MAX_LIGHTS * 3), LZ: new Float32Array(MAX_LIGHTS),
+  B: new Float32Array(MAX_BEAMS * 4), BZ: new Float32Array(MAX_BEAMS),
   nl: 0, nb: 0,
 };
 type Lights = typeof LT;
 const AMBER = [1.0, 0.62, 0.26], PORT_LAMP = [1.0, 0.58, 0.24], LIGHTHOUSE_LAMP = [1.0, 0.72, 0.38], FRENZY_GLOW = [1.0, 0.9, 0.6];
 const EEL_GLOW = [0.35, 0.7, 1.0], SEA_GLOW = [0.3, 0.95, 0.95];
-function addLight(x: number, y: number, r: number, k: number, c: readonly number[]): void {
+function addLight(x: number, y: number, r: number, k: number, c: readonly number[], z = 7): void {
   if (LT.nl >= MAX_LIGHTS || k <= 0.01) return;
   const o = LT.nl * 4, oc = LT.nl * 3;
+  LT.LZ[LT.nl] = z;
   LT.L[o] = x; LT.L[o + 1] = y; LT.L[o + 2] = r; LT.L[o + 3] = k;
   LT.LC[oc] = c[0]; LT.LC[oc + 1] = c[1]; LT.LC[oc + 2] = c[2];
   LT.nl++;
@@ -813,16 +820,17 @@ function swarmEntry(): SwarmLight {
   return e;
 }
 function lightsFor(bs: BoatPose, pois: Poi[], dk: number): Lights {
-  LT.L.fill(0); LT.LC.fill(0); LT.B.fill(0); LT.nl = 0; LT.nb = 0;
+  LT.L.fill(0); LT.LC.fill(0); LT.LZ.fill(7); LT.B.fill(0); LT.BZ.fill(0); LT.nl = 0; LT.nb = 0;
   // warm amber (#ffb860) pools; the shader's falloff is soft, so radii run large
   addLight(bs.x, bs.y, lightR() * 1.6, 0.8 * dk, AMBER);
   for (const p of pois) {
-    if (p.type === 'port') { addLight(p.end.x, p.end.y, 58, 0.7 * dk, AMBER); addLight(p.x, p.y, 40, 0.6 * dk, PORT_LAMP); }
+    if (p.type === 'port') { addLight(p.end.x, p.end.y, 58, 0.7 * dk, AMBER, 9); addLight(p.x, p.y, 40, 0.6 * dk, PORT_LAMP, 9); }
     else if (p.type === 'light') {
-      addLight(p.x, p.y, 54, 0.8 * dk, LIGHTHOUSE_LAMP);
+      const lz = LAMP_Z[landmarkKind(p)] ?? 31;          // the lantern room of this lighthouse design
+      addLight(p.x, p.y, 54, 0.8 * dk, LIGHTHOUSE_LAMP, lz);
       if (LT.nb < MAX_BEAMS) {
         const o = LT.nb * 4;
-        LT.B[o] = p.x; LT.B[o + 1] = p.y; LT.B[o + 2] = G.t * 0.5 + p.beam; LT.B[o + 3] = 150;
+        LT.B[o] = p.x; LT.B[o + 1] = p.y; LT.B[o + 2] = G.t * 0.5 + p.beam; LT.B[o + 3] = 150; LT.BZ[LT.nb] = lz;
         LT.nb++;
       }
     }
@@ -1007,7 +1015,6 @@ function drawMeshes(mode: 0 | 1, F: Field, E: Env, Lt: Lights): void {
   if (mode === 0) {
     sunUniforms(pg, E); U1(pg, 'uNight', E.dk); U3(pg, 'uWater', E.water);
     bindTex(pg, 'uH', F.tex, 0); U4(pg, 'uHT', HT); lightUniforms(pg, Lt);
-    if (pg.u.uNB) gl.uniform1i(pg.u.uNB, 0);
   }
   POOLS[0].forEach(drawPool);
   if (mode === 0) POOLS[1].forEach(drawPool);       // sea life and other no-shadow meshes skip the shadow pass
@@ -1099,11 +1106,18 @@ export function render(alpha: number): void {
   U4(pg, 'uHR', HR); U4(pg, 'uHT', HT); U4(pg, 'uCam', CAM); U1(pg, 'uT', G.t); U1(pg, 'uWT', WX.waveT); U1(pg, 'uWind', WX.wind); U1(pg, 'uRain', WX.rain);
   U1(pg, 'uNight', E.dk); U1(pg, 'uCloud', E.cloud); U1(pg, 'uFlash', WX.flash * (SET.calm ? 0.15 : 1)); U2(pg, 'uWD', Math.cos(windAngle()), Math.sin(windAngle()));
   sunUniforms(pg, E); U3(pg, 'uSky', E.sky); styleUniforms(pg); lightUniforms(pg, Lt);
-  gl.uniform1i(pg.u.uNB ?? null, Lt.nb); gl.uniform4fv(pg.u.uB ?? null, Lt.B);
   quad();
+  if (Lt.nb && E.dk > 0.02) {                       // lighthouse beams in the air (depth test on, depth write still off)
+    const bp = PG.beam;
+    gl.useProgram(bp.p); U4(bp, 'uCam', CAM); U1(bp, 'uNight', E.dk); U1(bp, 'uBK', 1); styleUniforms(bp);
+    gl.uniform4fv(bp.u.uB ?? null, Lt.B); gl.uniform1fv(bp.u.uBZ ?? null, Lt.BZ);
+    gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ZERO, gl.ONE);
+    gl.bindVertexArray(beamVao); gl.drawArraysInstanced(gl.TRIANGLES, 0, 3, Lt.nb);
+    gl.disable(gl.BLEND);
+  }
   gl.depthMask(true);
   // particles blend over the colour but leave alpha (the solid-voxel mask for the outline) alone; glow adds
-  gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
+  gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
   partPoints();
   const pp = PG.part;
   gl.useProgram(pp.p); U4(pp, 'uCam', CAM); U1(pp, 'uPpu', w / CAM[2]); sunUniforms(pp, E); styleUniforms(pp);
@@ -1111,7 +1125,7 @@ export function render(alpha: number): void {
   if (pN) gl.bufferData(gl.ARRAY_BUFFER, partArr, gl.STREAM_DRAW, 0, pN * PART_STRIDE);
   gl.drawArrays(gl.POINTS, 0, blendN);
   gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE, gl.ZERO, gl.ONE); gl.drawArrays(gl.POINTS, blendN, glowN);
-  gl.disable(gl.BLEND);
+  gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST); gl.depthMask(true);
   if (FB.ms) {
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, FB.ms.fb); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, FB.scene.fb);
     gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
