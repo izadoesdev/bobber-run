@@ -238,7 +238,7 @@ export function Online() {
       )}
       {!G.needName && (NET.busy || (NET.authed && p?.guest)) && (   /* choosing a name shows just the name; the account can wait */
         <form class="account-box" onSubmit={submit}>
-          <div class="seg">
+          <div class="seg-pick">
             {([['signUp', 'sign-up', 'Make an account'], ['signIn', 'sign-in', 'I have an account']] as const).map(([mode, id, label]) => (
               <button data-track={`mode-${id}`} type="button" class={'seg-btn' + (f.mode === mode ? ' on' : '')} onClick={() => { f.mode = mode; G.netMsg = null; }}>{label}</button>
             ))}
