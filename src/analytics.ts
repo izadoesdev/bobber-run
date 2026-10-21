@@ -58,6 +58,12 @@ type Events = {
   fish_chart_bought: { species: string; price_bucket: string; logged: boolean };
   fish_chart_opened: { species: string; how: 'logbook' | 'chart' };
   dock_grade_up: { grade: number };
+  share_clicked: { species: string; how: 'native' | 'copy'; stars?: number; variant?: string; why: 'record' | 'first' | 'legend' | 'stars' | 'variant' | 'trophy' };
+  /** someone opened the game from a shared catch link */
+  share_visit: { species: string; returning: boolean; named: boolean };
+  hint_shown: { hint: string; quest: number };
+  /** two minutes of sailing with no catch, sale or quest step: where players stall */
+  idle_stuck: { quest: number; step: string; mode: string; from_home: string; caught: number };
   first_minutes: { shown_s: string; input_s: string; cast_s: string; catch_s: string; returning: boolean; ended: 'caught' | 'left' };
   progress: { minutes: number; day: number; coins_bucket: string; earned_bucket?: string; species_logged: number; quest: number; projects: number; reason: 'interval' | 'hidden' };
 };

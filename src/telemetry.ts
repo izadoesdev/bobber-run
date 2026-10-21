@@ -2,6 +2,7 @@
 // need their own tracking calls: screens opened, quests finished, the ending, settings and zoom changes, online
 // status, boat and the signed-in profile, plus a progress snapshot every ten minutes of play and when the tab is hidden.
 import { G, dayNum, logged, hasSave } from './game';
+import { homePort } from './world';
 import { SET } from './prefs';
 import { NET } from './net';
 import { QUESTS } from './story';
@@ -63,6 +64,20 @@ function watchFirst(): void {
   if (first.caught === null && first.base >= 0 && G.stats.caught > first.base) { first.caught = now; sendFirst('caught'); }
 }
 
+// ---------- where players stall: two minutes of sailing with nothing caught, sold, funded or finished ----------
+const STUCK_S = 120;
+let stuck = { sig: '', since: 0, sent: false };
+function watchStuck(): void {
+  if (G.mode !== 'play') return;
+  const quest = G.story?.i ?? 0, sig = `${G.stats.caught}|${G.stats.sold}|${quest}|${G.projects.length}`;
+  if (sig !== stuck.sig) { stuck = { sig, since: playTime, sent: false }; return; }
+  if (stuck.sent || playTime - stuck.since < STUCK_S) return;
+  stuck.sent = true;                                      // once per stall; any progress starts a new one
+  const b = G.boat, h = homePort();
+  track('idle_stuck', { quest, step: QUESTS[quest]?.id ?? 'done', mode: G.fish ? 'fishing' : Math.hypot(b.vx, b.vy) > 2 ? 'sailing' : 'still',
+    from_home: bucket(Math.hypot(b.x - h.x, b.y - h.y)), caught: G.stats.caught });
+}
+
 /** Called every frame from the main loop; the checks themselves run about once a second. */
 export function watchGame(dt: number): void {
   if (!first.sent) watchFirst();
@@ -75,6 +90,7 @@ export function watchGame(dt: number): void {
   }
   if ((acc += dt) < 1) return;
   acc = 0;
+  watchStuck();
   // the story only moves forward, so a higher index means the previous quest was finished
   const i = G.story?.i ?? -1;
   if (quest >= 0 && i > quest) for (let q = quest; q < i; q++) if (QUESTS[q]) track('quest_completed', { quest: QUESTS[q].id, index: q });

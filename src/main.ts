@@ -23,6 +23,7 @@ import { menuInput } from './menus';
 import { initAnalytics, trackFailure } from './analytics';
 import { initTelemetry, watchGame } from './telemetry';
 import { forceName } from './ui/menus';
+import { applySharedCatch } from './share';
 import { zoneStats } from './ui/chart';
 import { baseScale, targetScale, easeScale, shipZoom } from './camera';
 
@@ -94,6 +95,7 @@ export function tick(dt: number): void {
   try { netTick(dt); } catch { if (!netFailed) { netFailed = true; trackFailure('net_tick'); } }   // a bad network message must never stop the frame
   watchGame(dt);
   forceName();
+  applySharedCatch();
   updateLife(dt);
   const bs = boatRenderState(alpha);
   if (G.mode === 'play' || G.mode === 'sunk' || G.mode === 'title') updateCamera(dt, bs.x, bs.y);   // menus freeze the view behind them
