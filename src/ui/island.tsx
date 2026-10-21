@@ -2,7 +2,7 @@
 // and managing happen in the island card, opened from a port's Islands tab, from the sea chart, or by clicking a sign.
 import { W, H, money } from '../config';
 import { G, saveGame } from '../game';
-import { claimableNear, heightAt } from '../world';
+import { claimableNear, heightAt, homesteadSite } from '../world';
 import { sfx } from '../audio';
 import { NET, buyIsland, claimIsland, renameIsland, releaseIsland, uploadIslandLogo, reportIsland, setIslandUrl } from '../net';
 import { ISLANDS, islandLanding, islandPrice, stashLogo } from '../islands';
@@ -22,9 +22,9 @@ export function IslandSigns() {
   return <>{claimableNear(G.cam.x + W / 2, G.cam.y + H / 2, Math.hypot(W, H) / 2).map(c => {
     const row = ISLANDS.get(c.key);
     if (!row) return null;
-    // over the island's middle while that is in view (and clear of the top HUD), fading near the edges so signs
-    // never crowd them or blink out
-    const [x, y] = viewPct(c.x, c.y - c.R * 0.35), a = edgeFade(x, y, 6, 94, 24, 90);
+    // just under the island's flagpole (homesteadSite) while that is in view and clear of the top HUD, fading near
+    // the edges so signs never crowd them or blink out
+    const site = homesteadSite(c) ?? c, [x, y] = viewPct(site.x, site.y + 6), a = edgeFade(x, y, 6, 94, 24, 90);
     if (!a) return null;
     return (
       <div class={'island-sign' + (row.mine ? ' mine' : '')} key={c.key} style={{ left: x + '%', top: y + '%', opacity: a, pointerEvents: a < 0.5 ? 'none' : undefined }}>

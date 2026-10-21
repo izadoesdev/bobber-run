@@ -409,7 +409,7 @@ html.touch #ui .screen:has(.chartwrap) .foot { padding-right: 130px; }
 .mini .forecast { margin-top: 0.9em; font-size: 0.75em; }
 
 /* claimed islands: the owner's sign over the island, the claim chip, the island dialog */
-.island-sign { position: absolute; transform: translate(-50%, -100%); display: inline-flex; align-items: center; gap: 0.1em; font-size: var(--fs-s);
+.island-sign { position: absolute; transform: translate(-50%, 0);   /* hangs below its flagpole */ display: inline-flex; align-items: center; gap: 0.1em; font-size: var(--fs-s);
   background: var(--chip); border: 0.1em solid rgba(122,85,48,0.7); border-radius: 0.35em; pointer-events: auto; white-space: nowrap; }
 .island-sign button { color: var(--text); cursor: pointer; display: inline-flex; align-items: center; gap: 0.35em; padding: 0.15em 0.5em 0.15em 0.2em; }
 .island-sign img { width: 2.6em; height: 2.6em; image-rendering: pixelated; box-shadow: 0 0 0 0.1em #1b2a33; border-radius: 0.15em; }

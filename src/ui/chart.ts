@@ -2,7 +2,7 @@
 import { G, sonarLvl, logged, canLand } from '../game';
 import { schoolShown, schoolMood } from '../game/schools';
 import { SPECIES, PAINTS } from '../econ';
-import { poisNear, schoolsNear, claimableNear, heightAt, LAIR } from '../world';
+import { poisNear, schoolsNear, claimableNear, heightAt, homesteadSite, LAIR } from '../world';
 import { livesAt } from '../species';
 import { mapTile, MT } from '../maptiles';
 import { ONLINE } from '../online';
@@ -337,11 +337,12 @@ function drawIslandNames(ctx: Ctx, cx: number, cy: number, rad: number, S: Proje
     ctx.lineWidth = 4 * u; ctx.strokeStyle = 'rgba(27,42,51,0.6)'; ctx.stroke();
     ctx.lineWidth = 2.2 * u; ctx.strokeStyle = gold; ctx.stroke();
     ctx.setLineDash([]);
-    // the pennant: an ink pole with a gold cap, the flag off its top
-    const pole = (labels ? 46 : 18) * u, fs = (labels ? 40 : 14) * u, top = y - pole;
-    ctx.fillStyle = COL.ink; ctx.fillRect(x - 1.2 * u, top, 2.4 * u, pole);
-    ctx.beginPath(); ctx.arc(x, top, 2.2 * u, 0, 7); rimmed(ctx, gold, u);
-    const f = row.logoUrl ? flagImg(row.logoUrl) : null, fx = x + 1.5 * u, fy = top + 1 * u;
+    // the pennant, where the island's flagpole stands in the world (homesteadSite): an ink pole with a gold cap, the flag off its top
+    const site = homesteadSite(c), [px, py] = site ? S(site.x, site.y) : [x, y];
+    const pole = (labels ? 46 : 18) * u, fs = (labels ? 40 : 14) * u, top = py - pole;
+    ctx.fillStyle = COL.ink; ctx.fillRect(px - 1.2 * u, top, 2.4 * u, pole);
+    ctx.beginPath(); ctx.arc(px, top, 2.2 * u, 0, 7); rimmed(ctx, gold, u);
+    const f = row.logoUrl ? flagImg(row.logoUrl) : null, fx = px + 1.5 * u, fy = top + 1 * u;
     if (f) {
       ctx.fillStyle = row.mine ? gold : COL.ink; ctx.fillRect(fx - 1.2 * u, fy - 1.2 * u, fs + 2.4 * u, fs + 2.4 * u);
       ctx.imageSmoothingEnabled = false; ctx.drawImage(f, fx, fy, fs, fs);
@@ -350,8 +351,8 @@ function drawIslandNames(ctx: Ctx, cx: number, cy: number, rad: number, S: Proje
       rimmed(ctx, islandColour(c.key), 1.2 * u);
     }
     if (!labels) continue;
-    font(ctx, 15, u); inked(ctx, row.name, x, y + 10 * u, u, row.mine ? COL.port : '#fff6dc');
-    font(ctx, 11, u); inked(ctx, row.mine ? 'your island' : `by ${row.owner}`, x, y + 24 * u, u, '#d8d0bf');
+    font(ctx, 15, u); inked(ctx, row.name, px, py + 10 * u, u, row.mine ? COL.port : '#fff6dc');
+    font(ctx, 11, u); inked(ctx, row.mine ? 'your island' : `by ${row.owner}`, px, py + 24 * u, u, '#d8d0bf');
   }
   ctx.textAlign = 'start';
 }
