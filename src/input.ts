@@ -58,10 +58,10 @@ function onKeyDown(e: KeyboardEvent): void {
 /** Zoom the sea view: mouse wheel or - and + (=) while sailing. A wheel event zooms by its scroll distance in pixels. */
 let zoomSfxAt = -1e9;
 function zoom(dir: 1 | -1, wheelPx = 0): void {
-  const z = stepZoom(dir, wheelPx), now = performance.now(), quiet = now - zoomSfxAt < 180;   // a trackpad sends dozens of events a second
-  if (!quiet) zoomSfxAt = now;
-  if (z === null) { if (!quiet) sfx('deny'); return; }
-  if (!quiet) sfx('move');
+  const z = stepZoom(dir, wheelPx);
+  if (z === null) return;                                              // already at the end of the range: nothing to say
+  const now = performance.now();
+  if (now - zoomSfxAt > 180) { zoomSfxAt = now; sfx('move'); }        // a trackpad sends dozens of events a second
   G.toasts = G.toasts.filter(t => !t.s.startsWith('Zoom '));          // one zoom notice, updated in place
   toast(`Zoom ${Math.round(z * 100)}%`);
 }
