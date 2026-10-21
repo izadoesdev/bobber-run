@@ -12,6 +12,7 @@ import { sfx } from './audio';
 import { voyageStarted } from './telemetry';
 import type { Mode } from './types';
 import { placeByStarterSchool } from './game/fishing';
+import { SHARED } from './share';
 import { talkNext, voyage } from './story';
 
 type ListKey = 'titleSel' | 'pauseSel' | 'ctlSel' | 'emoteSel';
@@ -24,7 +25,7 @@ function nav(key: ListKey, n: number): void {
 const go = (mode: Mode, sound: 'move' | 'select' = 'move') => { G.mode = mode; sfx(sound); };
 const openSettings = (back: Mode, settings: boolean) => { G.back = back; G.setSel = 1; G.ctlSel = 0; G.mode = settings ? 'settings' : 'controls'; };
 const startVoyage = () => {
-  G.newConfirm = -1; wipeSave(); newGame(); placeByStarterSchool();
+  G.newConfirm = -1; wipeSave(); newGame(); placeByStarterSchool(SHARED?.at);   // a shared catch link starts you by its spot
   G.mode = 'play'; voyage.startedAt = G.t; voyageStarted('new');
 };
 /** A new voyage erases the save, so with one on this device it asks first. */
