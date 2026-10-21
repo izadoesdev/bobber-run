@@ -31,7 +31,7 @@ export const buy = action({
     const s = stripe();
     if (hold.previousSession) await s.checkout.sessions.expire(hold.previousSession).catch(() => null);   // so the old page can't be paid too
     const session = await s.checkout.sessions.create({
-      mode: 'payment', client_reference_id: b.userId,
+      mode: 'payment', client_reference_id: b.userId, allow_promotion_codes: true,   // codes made in the Stripe dashboard
       line_items: [{ quantity: 1, price_data: { currency: 'usd', unit_amount: hold.price * 100, product_data: { name: `Island: ${b.name}`, description: `Bobber Run island at cell ${key}` } } }],
       metadata: { holdId: hold.holdId, islandKey: key, userId: b.userId, name: b.name, origin: ORIGIN() },
       success_url: `${site}/?island=${encodeURIComponent(key)}&paid=1`, cancel_url: `${site}/?island=${encodeURIComponent(key)}&paid=0`,
