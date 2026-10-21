@@ -22,7 +22,7 @@ import { clearWaypoint, sailToWaypoint, tickWaypoint, waypointMetres } from '../
 import { courseTarget } from '../game/autopilot';
 import { SPOOL } from '../game/fishing';
 import { tickIslands } from '../islands';
-import { Bar, Canvas, Fish, Hint, Icon, Key, WX_ICON, cap1, clockText, keyed, type DrawFn } from './parts';
+import { Bar, BaitTag, Canvas, Fish, Hint, Icon, Key, WX_ICON, cap1, clockText, keyed, type DrawFn } from './parts';
 
 // stable keys so a toast keeps its element (and its fade) as older ones leave
 const toastIds = new WeakMap<Toast, number>();
@@ -51,24 +51,16 @@ function Captions() {
   return G.captions.length > 0 && <div class="captions">{G.captions.map(c => <div class="caption">[{c.s}]</div>)}</div>;
 }
 
-// hull, bait and chum stay in the bar and fold away when they don't matter, so showing one slides the bar open
-// instead of jumping everything after it; bait and chum linger a moment after a school, so sailing past doesn't flicker them
-let fishSeen = -99;
+// The status bar never changes shape: coins, hold and hull, always. Bait and chum belong to fishing, so they show
+// with the cast prompt by a school and on the fishing dial, not here.
 function Status() {
-  const b = G.boat, cp = cap(), k = clamp(b.hp / hpMax(), 0, 1), bait = G.baitSel, full = G.hold.length >= cp, chum = G.bait.chum || 0;
-  if (G.fish || G.nearSchool) fishSeen = G.t;
-  const fishing = G.t - fishSeen < 2;
-  const opt = (on: boolean, cls = '') => ({ class: `seg opt ${cls}` + (on ? '' : ' off'), 'aria-hidden': !on });
+  const b = G.boat, cp = cap(), k = clamp(b.hp / hpMax(), 0, 1), full = G.hold.length >= cp;
   return (
     <div class="hud-bar chip">
-      {/* fixed slots first (coins, hold), the ones that fold away after them, so a fold only moves the bar's right edge;
-          numbers sit in fixed-width boxes so a new digit never nudges what follows */}
       <span class="seg"><Icon k="coin" size="s" /><span class="coins num">{money(G.coinsShown)}</span>
         {G.floaters.map((f, i) => <span key={i} class={'floater ' + f.kind}>{f.s}</span>)}</span>
       <span class={'seg' + (full ? ' bad' : '')} title="Fish in your hold"><Icon k="hold" size="s" /><span class="num hold">{G.hold.length}/{cp}</span>{G.hold.some(f => f.gold) && <span class="gold">★</span>}</span>
-      <span {...opt(fishing, 'small')} title="Bait (B to switch)"><Icon k={bait === 'none' ? 'rod' : bait} size="s" /><span class="num n2">{bait === 'none' ? '–' : `×${G.bait[bait] || 0}`}</span><Key k="b" pad="RB" /></span>
-      <span {...opt(fishing && chum > 0, 'small')} title="Chum (C)"><Icon k="chum" size="s" /><span class="num n2">{chum}</span><Key k="c" /></span>
-      <span {...opt(k < 1)} title="Hull"><Icon k="hull" size="s" /><span class="mini-bar"><Bar k={k} tone={k > 0.5 ? '' : k > 0.25 ? 'warn' : 'bad'} /></span></span>
+      <span class="seg" title="Hull"><Icon k="hull" size="s" /><span class="mini-bar"><Bar k={k} tone={k > 0.5 ? '' : k > 0.25 ? 'warn' : 'bad'} /></span></span>
     </div>
   );
 }
@@ -171,7 +163,7 @@ function FishPanel() {
   const sp = SPECIES[f.s.sp], lm = lineMax(), reel = f.st === 'reel', bite = f.st === 'bite', surge = reel && (f.cue ?? 0) > 0;
   const warn = reel && (surge || f.warn || f.jump || f.jumpWarn), red = clamp(f.redAt ?? 0.8 / lm, 0.56, 0.99);   // new captains get a later red
   const grace = reel && (f.grace ?? 0) > 0;                  // the first moments after the hook: the strain can't pass the amber
-  let needle = 0, icon: JSX.Element = <Icon k="rod" size="s" />, title: string = f.st === 'cast' ? 'Casting' : 'Waiting for a bite', right: JSX.Element | null = null;
+  let needle = 0, icon: JSX.Element = <Icon k="rod" size="s" />, title: string = f.st === 'cast' ? 'Casting…' : 'Waiting…', right: JSX.Element | null = null;
   let face: JSX.Element;
   if (bite) {
     const [perfect, total] = f.win ?? [0.3, 1], left = SET.strike === 'auto' ? 1 : clamp(1 - f.t / total, 0, 1), cut = 1 - perfect / total, now = f.t < perfect;
@@ -193,7 +185,7 @@ function FishPanel() {
       <path class="prog-bg" d={ring(0, 1, RP)} /><path class={'prog' + (f.taking ? ' taking' : '')} d={ring(0, Math.max(0.001, prog), RP)} />
     </>;
   } else {
-    if (f.fakeT != null && G.t - f.fakeT < 0.7) right = <span class="bad">Not yet</span>;   // a fake-out dip: striking costs time
+    right = f.fakeT != null && G.t - f.fakeT < 0.7 ? <span class="bad">Not yet</span> : <BaitTag />;   // a fake-out dip costs time; otherwise the bait on the hook
     face = <path class="trk" d={band(0, 1)} />;
   }
   const tip = live && G.prompt;

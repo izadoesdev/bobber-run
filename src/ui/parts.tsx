@@ -9,6 +9,16 @@ import type { BoatId, WeatherState } from '../types';
 import { icon, fishIcon } from './icons';
 
 /** World position -> percent of the view, for things pinned over the canvas. */
+/** The bait on the hook and the chum aboard, with their keys: shown by a school before the cast and on the fishing dial. */
+export function BaitTag() {
+  const bait = G.baitSel, chum = G.bait.chum || 0;
+  return (
+    <span class="bait-tag">
+      <span title="Bait (B to switch)"><Icon k={bait === 'none' ? 'rod' : bait} size="s" />{bait === 'none' ? 'No bait' : `×${G.bait[bait] || 0}`}<Key k="b" pad="RB" /></span>
+      {chum > 0 && <span title="Chum (C)"><Icon k="chum" size="s" />{chum}<Key k="c" /></span>}
+    </span>
+  );
+}
 export const viewPct = (x: number, y: number): [number, number] => [(x - G.cam.x) / W * 100, (y - G.cam.y) / H * 100];
 /**
  * How much of a label at view % (x, y) shows: all of it inside the box [x0, x1] x [y0, y1], fading out over `band` %

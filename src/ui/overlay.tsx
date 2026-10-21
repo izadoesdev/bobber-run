@@ -14,7 +14,7 @@ import { waypointRoute } from '../waypoint';
 import { coursePath } from '../game/autopilot';
 import { BIOME_NAME, biomeAt, type BiomeId } from '../biome';
 import { IslandSigns } from './island';
-import { Fish, Icon, Key, edgeFade, forTouch, keyed, viewPct } from './parts';
+import { BaitTag, Fish, Icon, Key, edgeFade, forTouch, keyed, viewPct } from './parts';
 
 /** Everything drawn over the sea while sailing. `wp` is the player's waypoint, which takes the arrow from the guide. */
 export function SeaLayer({ step, wp }: { step: Step; wp: Step | null }) {
@@ -215,5 +215,5 @@ function BoatPrompt() {
   if (!G.stats.caught) return <FirstHint />;
   if (!G.prompt || G.fish || G.card || G.mode !== 'play') return null;
   const [x, y] = viewPct(G.boat.x, G.boat.y + 16);
-  return <div class="prompt-world" style={{ left: x + '%', top: y + '%' }}>{keyed(G.prompt)}</div>;
+  return <div class="prompt-world" style={{ left: x + '%', top: y + '%' }}>{keyed(G.prompt)}{G.nearSchool && <BaitTag />}</div>;
 }
