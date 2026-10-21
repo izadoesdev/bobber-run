@@ -19,23 +19,32 @@ async function onChart(page: Page, x: number, y: number): Promise<[number, numbe
   }, [x, y, box.x, box.y, box.width, box.height]);
 }
 const tip = (page: Page) => page.evaluate(() => document.querySelector('.chart-tip')?.textContent ?? '');
+/**
+ * Hover world point (x, y) until the tip matches: the point is re-projected and the pointer re-moved each try, since on
+ * a slow runner the view can shift (the boat drifts) between measuring and moving, and a single hover can miss.
+ */
+async function hoverUntil(page: Page, x: number, y: number, want: RegExp): Promise<[number, number]> {
+  let at: [number, number] = [0, 0];
+  await expect.poll(async () => {
+    at = await onChart(page, x, y);
+    await page.mouse.move(at[0] + 3, at[1], { steps: 2 }); await page.mouse.move(at[0], at[1], { steps: 2 });
+    return want.test(await tip(page));
+  }, { timeout: 20_000, intervals: [400] }).toBe(true);
+  return at;
+}
 
 test('clicking the minimap opens the chart; a port names itself and a click puts the waypoint on its dock', async ({ page }) => {
   await openChart(page);
   const hp = await page.evaluate(() => { const h = window.BR.homePort(); return { x: h.x, y: h.y, dx: h.dock.x, dy: h.dock.y, name: h.name }; });
-  const [x, y] = await onChart(page, hp.x, hp.y);
-  await page.mouse.move(x, y);
-  await expect.poll(() => tip(page)).toContain(hp.name);
+  const [x, y] = await hoverUntil(page, hp.x, hp.y, new RegExp(hp.name));
   expect(await tip(page)).toMatch(/sail here/i);
   await page.mouse.click(x, y);
   const wp = await page.evaluate(() => window.BR.G.waypoint);
   expect(Math.hypot(wp.x - hp.dx, wp.y - hp.dy)).toBeLessThan(1);
   await expect(page.locator('.chart-chips .chip.waypoint [data-track=chart-waypoint-sail]')).toBeVisible();
   // the waypoint itself offers to clear, and a click does
-  const [wx, wy] = await onChart(page, wp.x, wp.y);
-  await page.mouse.move(wx + 1, wy);
-  await expect.poll(() => tip(page)).toMatch(/clear/i);
-  await page.mouse.click(wx + 1, wy);
+  const [wx, wy] = await hoverUntil(page, wp.x, wp.y, /clear/i);
+  await page.mouse.click(wx, wy);
   await expect.poll(() => page.evaluate(() => window.BR.G.waypoint)).toBeNull();
 });
 
