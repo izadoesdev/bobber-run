@@ -131,15 +131,17 @@ function RouteDots() {
   const path = G.waypoint ? waypointRoute() : coursePath();
   if (!path.length || G.mode !== 'play' || G.fish) return null;
   const dots: JSX.Element[] = [], inView = (x: number, y: number) => x > -2 && x < 102 && y > -2 && y < 102;
-  let ax = G.boat.x, ay = G.boat.y, t0 = DOT_GAP * 1.5, n = 0;     // the first dot a little ahead of the bow
-  for (const p of path) {
-    const dx = p.x - ax, dy = p.y - ay, len = Math.hypot(dx, dy);
-    let t = t0;
-    for (; t < len && n < MAX_DOTS; t += DOT_GAP, n++) {
-      const [x, y] = viewPct(ax + dx * t / len, ay + dy * t / len);
-      if (inView(x, y)) dots.push(<i key={n} style={{ left: x + '%', top: y + '%', animationDelay: -n * 0.11 + 's' }} />);
-    }
-    t0 = t - len; ax = p.x; ay = p.y;
+  // dots sit at fixed distances back from the end, so they stay put on the water as the boat sails along them
+  // (measured from the boat they'd slide every frame); the ones under or behind the bow are left out
+  const xs = [G.boat.x, ...path.map(p => p.x)], ys = [G.boat.y, ...path.map(p => p.y)], cum = [0];
+  for (let i = 1; i < xs.length; i++) cum.push(cum[i - 1] + Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]));
+  const total = cum[cum.length - 1];
+  const kMax = Math.floor((total - DOT_GAP * 1.5) / DOT_GAP);              // the dot nearest the bow, counted back from the end
+  for (let k = kMax, seg = 0; k >= Math.max(0, kMax - MAX_DOTS + 1); k--) {
+    const s = total - k * DOT_GAP;
+    while (seg < xs.length - 2 && cum[seg + 1] < s) seg++;
+    const t = (s - cum[seg]) / ((cum[seg + 1] - cum[seg]) || 1), [x, y] = viewPct(xs[seg] + (xs[seg + 1] - xs[seg]) * t, ys[seg] + (ys[seg + 1] - ys[seg]) * t);
+    if (inView(x, y)) dots.push(<i key={k} style={{ left: x + '%', top: y + '%', animationDelay: k * 0.11 + 's' }} />);
   }
   const end = G.waypoint, [ex, ey] = end ? viewPct(end.x, end.y) : [-9, -9];
   return (

@@ -1,10 +1,11 @@
 // The player's waypoint: one spot marked on the chart (or from an island card), with a water route to it that goes
-// round islands. The route shows as dots on the sea and a line on the minimap and chart; it is planned when the
-// waypoint is set and again whenever the next corner drops out of sight. Sailing within a boat length clears it.
+// round islands, keeps to mid-channel and leaves room for the hull (route.planRoute). The route shows as dots on the
+// sea and a line on the minimap and chart; it's planned when the waypoint is set and again only when the boat has
+// strayed well off it, and the part already sailed is dropped, so the line stays put. Arriving clears it.
 import { G } from './game';
 import { toast } from './game/feedback';
 import { roomFor, setCourse } from './game/autopilot';
-import { clearLine, findRoute } from './game/route';
+import { planRoute } from './game/route';
 import { sfx } from './audio';
 import type { Point } from './types';
 
@@ -13,7 +14,7 @@ let route: Point[] = [], plannedFor: Point | null = null, retryT = -99;
 
 export function setWaypoint(x: number, y: number): void { G.waypoint = { x, y }; route = []; plannedFor = null; retryT = -99; sfx('select'); }
 export function clearWaypoint(): void { G.waypoint = null; route = []; plannedFor = null; }
-/** The corners from the boat to the waypoint, ending at it; empty without a waypoint. */
+/** The route from the boat to the waypoint, evenly spaced points ending at it; empty without a waypoint. */
 export const waypointRoute = (): Point[] => G.waypoint ? route : [];
 /** How far the waypoint is along its route, in whole metres (at least 1). */
 export function waypointMetres(): number {
@@ -26,15 +27,18 @@ export function waypointMetres(): number {
 /** Let the autopilot sail the route (the waypoint chip's Sail button). */
 export function sailToWaypoint(): void { if (G.waypoint) setCourse(G.waypoint.x, G.waypoint.y); }
 
-/** Called while sailing: keeps the route fresh, and arriving clears the waypoint with a soft chime. */
+/** Called while sailing: drops the route already sailed, replans if the boat strays, and arriving clears the waypoint. */
 export function tickWaypoint(): void {
   const w = G.waypoint, b = G.boat;
   if (!w) return;
   if (Math.hypot(w.x - b.x, w.y - b.y) < ARRIVE) { clearWaypoint(); sfx('select'); toast('You reached your waypoint', 'good'); return; }
-  while (route.length > 1 && clearLine(b, route[1], roomFor())) route.shift();   // corners already rounded
-  const lost = !route.length || !clearLine(b, route[0], roomFor());
-  if ((plannedFor !== w || lost) && G.t - retryT > 1.5) {
+  // the nearest point among the next stretch: everything before it is behind the boat
+  let best = -1, bd = Infinity;
+  for (let i = 0; i < Math.min(route.length, 40); i++) { const d = Math.hypot(route[i].x - b.x, route[i].y - b.y); if (d < bd) { bd = d; best = i; } }
+  if (best > 0) route = route.slice(best);
+  const strayed = !route.length || bd > roomFor() + 40;
+  if ((plannedFor !== w || strayed) && G.t - retryT > 1) {
     retryT = G.t; plannedFor = w;
-    route = findRoute(b, w, roomFor()) ?? [w];                                 // room for this hull; no way found: a straight line
+    route = planRoute(b, w, roomFor())?.pts ?? [w];                      // no water route at all: a straight line
   }
 }
