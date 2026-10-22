@@ -13,5 +13,6 @@ import { mangroves } from './mangroves';
 import { northernIce } from './northern-ice';
 import { lighthouseKeepers } from './lighthouse-keepers';
 import { nellVoyages } from './nell-voyages';
+import { rival } from './rival';
 
-export const PACKS: Pack[] = [emberIsles, coastSurvey, stormSeason, nightMarket, alderhavenDocks, coralReach, warmCurrent, kelpForest, mangroves, northernIce, lighthouseKeepers, nellVoyages];
+export const PACKS: Pack[] = [emberIsles, coastSurvey, stormSeason, nightMarket, alderhavenDocks, coralReach, warmCurrent, kelpForest, mangroves, northernIce, lighthouseKeepers, nellVoyages, rival];
