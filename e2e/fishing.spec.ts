@@ -11,10 +11,12 @@ const hookFn = `(pick) => {
   const s = schoolsNear(hp.x, hp.y, 3500).find(q => GAME.schoolActive(q) && !q.boss && pick(SPECIES[q.sp], q));
   if (!s) throw new Error('no school of that kind');
   window.hook = () => {
-    s.stock = s.max; Object.assign(b, { x: s.x + 30, y: s.y, px: s.x + 30, py: s.y, vx: 0, vy: 0, w: 0, a: Math.PI, helm: 0, thr: 0 });
+    // right over the school, so it's the nearest one even in a hotspot packed with others
+    s.stock = s.max; Object.assign(b, { x: s.x, y: s.y, px: s.x, py: s.y, vx: 0, vy: 0, w: 0, a: Math.PI, helm: 0, thr: 0 });
     G.fish = null; G.card = null; G.hold = [];
     for (let i = 0; i < 3; i++) step();
     G.pressed.add(' '); step();
+    if (G.fish && G.fish.s !== s) throw new Error('cast at a different school');
     let nibbles = 0, last;
     for (let t = 0; t < 2400 && G.fish && G.fish.st !== 'bite'; t++) { step(); if (G.fish?.teaseT !== undefined && G.fish.teaseT !== last) { nibbles++; last = G.fish.teaseT; } }
     G.pressed.add(' '); step();
