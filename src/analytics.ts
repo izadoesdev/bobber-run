@@ -64,6 +64,9 @@ type Events = {
   /** someone opened the game from a shared catch link */
   share_visit: { species: string; returning: boolean; named: boolean };
   hint_shown: { hint: string; quest: number };
+  /** someone opened a visit link (/?sail=<name>): was that sailor in sight, out at sea, or not sailing */
+  visit_link: { found: 'near' | 'far' | 'offline' };
+  invite_copied: Record<string, never>;
   /** two minutes of sailing with no catch, sale or quest step: where players stall */
   idle_stuck: { quest: number; step: string; mode: string; from_home: string; caught: number };
   first_minutes: { shown_s: string; input_s: string; cast_s: string; catch_s: string; returning: boolean; ended: 'caught' | 'left' };

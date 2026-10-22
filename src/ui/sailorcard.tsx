@@ -33,6 +33,12 @@ function follow(uid: string): void {
     if (setCourse(x, y, true)) aim = courseTarget(); else if (G.fish && G.fish.st !== 'cast' && G.fish.st !== 'wait') stopFollowing();
   }, FOLLOW_EVERY_MS);
 }
+/** Follow the sailor of this captain name if their boat is in sight; false when it isn't. */
+export function followByName(name: string): boolean {
+  const s = ONLINE.sailors.find(o => o.name === name);
+  if (s) follow(s.uid);
+  return !!s;
+}
 // steering by hand takes the helm back
 addEventListener('keydown', e => {
   if (following && /^(Arrow(Up|Down|Left|Right)|[wasdWASD])$/.test(e.key) && !(e.target instanceof HTMLInputElement)) stopFollowing();

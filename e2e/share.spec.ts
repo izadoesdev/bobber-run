@@ -51,3 +51,12 @@ test('a share link pointing at land puts the waypoint on the nearest water', asy
   expect(w).not.toBeNull();
   expect(w!.h).toBeLessThan(-0.05);                 // water, not forest
 });
+test('a visit link points the way to that sailor once they show up on the sea', async ({ page }) => {
+  await recordLines(page);
+  await sail(page, '?offline&sail=Captain%20Kipper');
+  expect(new URL(page.url()).search).toBe('?offline');
+  // offline there is no relay, so stand in for it: signed in, and the sailor in the far list
+  await page.evaluate(() => { const { NET, ONLINE, G } = window.BR; NET.authed = true; ONLINE.far = [{ uid: 'k1', name: 'Captain Kipper', x: G.boat.x + 1500, y: G.boat.y + 300 }]; });
+  await expect.poll(() => page.evaluate(() => window.BR.G.waypoint && Math.round(window.BR.G.waypoint.x - window.BR.G.boat.x))).toBeGreaterThan(1300);
+  await expect.poll(() => shown(page)).toContain('Captain Kipper is out at sea');
+});

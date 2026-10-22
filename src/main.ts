@@ -23,7 +23,7 @@ import { menuInput } from './menus';
 import { initAnalytics, trackFailure } from './analytics';
 import { initTelemetry, watchGame } from './telemetry';
 import { forceName } from './ui/menus';
-import { applySharedCatch } from './share';
+import { applySharedCatch, tickVisit } from './share';
 import { zoneStats } from './ui/chart';
 import { baseScale, targetScale, easeScale, shipZoom } from './camera';
 
@@ -96,6 +96,7 @@ export function tick(dt: number): void {
   watchGame(dt);
   forceName();
   applySharedCatch();
+  tickVisit();
   updateLife(dt);
   const bs = boatRenderState(alpha);
   if (G.mode === 'play' || G.mode === 'sunk' || G.mode === 'title') updateCamera(dt, bs.x, bs.y);   // menus freeze the view behind them

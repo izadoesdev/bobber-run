@@ -59,6 +59,15 @@ function onlineText(): string {
   return total ? `${total} online${near ? ` · ${near} nearby` : ''}` : near ? `${near} nearby` : 'Online';
 }
 
+/** Copy a link that brings a friend straight to you (/?sail=<your captain name>; see share.ts). */
+function invite(): void {
+  const name = NET.profile?.name;
+  if (!name) return;
+  const link = `${location.origin}/?sail=${encodeURIComponent(name)}`;
+  navigator.clipboard?.writeText(link).then(() => { ONLINE.note = 'Invite link copied. Anyone who opens it sails to you'; track('invite_copied', {}); },
+    () => { ONLINE.note = link; });                                        // no clipboard: show it to copy by hand
+}
+
 // the open log follows the newest line, unless you've scrolled up to read older ones; opening it starts at the bottom
 let logEl: HTMLDivElement | null = null, logEnd = '';
 function followLog(el: HTMLDivElement | null): void {
@@ -82,6 +91,7 @@ export function Chat() {
           <header>
             <b>Chat</b>
             <span class="muted">{ONLINE.roster.length ? `In your sea: ${ONLINE.roster.join(', ')}` : onlineText()}</span>
+            {NET.profile?.chosen && <button data-track="chat-invite" class="btn small-btn" onPointerDown={e => e.preventDefault()} onClick={invite}>Invite</button>}
             <button data-track="chat-close" class="chat-x" aria-label="Close chat" onPointerDown={e => e.preventDefault()} onClick={closeChat}>×</button>
           </header>
           <div class="chat-log" ref={el => followLog(el)}>{ONLINE.log.slice(-12).map(l => <Line key={`${l.id}${l.at}`} l={l} live />)}</div>
