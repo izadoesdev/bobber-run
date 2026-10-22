@@ -234,6 +234,9 @@ async function fetchOnce<Q extends FunctionReference<'query'>>(ref: Q, args: Fun
 export const leaders = (by: LeaderBy) => fetchOnce(api.leaderboard.top, { by });
 /** This week's running species and their heaviest catches. See convex/rotation.ts. */
 export const weeklyBoard = () => fetchOnce(api.leaderboard.weekly, {});
+/** Admins only: captains whose name contains `q`, online or not, with where they are (convex/admin.ts); null if offline or refused. */
+export const adminPlayers = (q: string) => fetchOnce(api.admin.players, { q });
+export type AdminPlayer = NonNullable<FunctionReturnType<typeof api.admin.players>>[number];
 /** Sailors online coastwide, for the title screen (no sign-in needed); null if unknown. */
 export const onlineCount = async () => (await fetchOnce(api.leaderboard.online, {}))?.total ?? null;
 let statsAt = 0;
