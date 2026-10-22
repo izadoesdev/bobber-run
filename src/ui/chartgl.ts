@@ -8,6 +8,7 @@ import { program, type Program } from '../gl/glutil';
 import { heightAt, claimableNear } from '../world';
 import { chartBands } from '../maptiles';
 import { fogDirty, fogChunk, fogChunks } from '../game/explore';
+import { lockedAt, openKey } from '../game/regions';
 
 type GL = WebGL2RenderingContext;
 const N = 33, NC = 9, BANDS = 7;            // height samples per side, colour samples per side, colour bands
@@ -48,10 +49,12 @@ float H(vec2 uv) {
   vec2 cell = vec2(mod(v_slot, ${HCOLS}.0), floor(v_slot / ${HCOLS}.0)) * ${N}.0;
   return texture(u_h, (cell + 0.5 + clamp(uv, 0.0, 1.0) * ${N - 1}.0) / u_hsz).r;
 }
-vec3 B(float b, vec2 uv) {
+vec2 cuvOf(float b, vec2 uv) {
   vec2 cell = vec2(mod(v_slot, ${CCOLS}.0) * ${NC * BANDS}.0 + b * ${NC}.0, floor(v_slot / ${CCOLS}.0) * ${NC}.0);
-  return texture(u_c, (cell + 0.5 + clamp(uv, 0.0, 1.0) * ${NC - 1}.0) / u_csz).rgb;
+  return (cell + 0.5 + clamp(uv, 0.0, 1.0) * ${NC - 1}.0) / u_csz;
 }
+vec3 B(float b, vec2 uv) { return texture(u_c, cuvOf(b, uv)).rgb; }
+#define cuv(b) cuvOf(b, v_uv)
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
@@ -124,6 +127,13 @@ void main() {
     vec3 paper = vec3(0.90, 0.85, 0.73) * (0.97 + 0.05 * hash(floor(gl_FragCoord.xy / (2.0 * u_dpr))));
     col = mix(paper, col, s);
     col = mix(col, vec3(0.45, 0.32, 0.19), 0.6 * s * (1.0 - s) * 4.0);   // a singed rim where the known meets the blank
+  }
+  // a region not open yet: greyed under a storm hatch, as if the chart were warning you off
+  float shut = 1.0 - texture(u_c, cuv(0.0)).a;
+  if (shut > 0.01) {
+    float stripe = step(0.62, fract((gl_FragCoord.x + gl_FragCoord.y) / (7.0 * u_dpr)));
+    col = mix(col, sat(col, 0.35) * vec3(0.72, 0.74, 0.8), 0.7 * shut);
+    col = mix(col, vec3(0.2, 0.22, 0.28), 0.28 * stripe * shut);
   }
   // the full chart darkens a little toward its frame
   vec2 fc = vec2(gl_FragCoord.x, u_view.y - gl_FragCoord.y), edge = min(fc, u_view - fc);
@@ -215,6 +225,7 @@ function build(g: GL, l: number, tx: number, ty: number): Tile {
       const o = (j * NC * BANDS + b * NC + i) * 4;
       cBuf[o] = bands[b * 3] * 255; cBuf[o + 1] = bands[b * 3 + 1] * 255; cBuf[o + 2] = bands[b * 3 + 2] * 255; cBuf[o + 3] = 255;
     }
+    if (lockedAt(x0 + i * cstep, y0 + j * cstep)) cBuf[(j * NC * BANDS + i) * 4 + 3] = 0;   // band 0's alpha: a closed region
   }
   g.pixelStorei(g.UNPACK_ALIGNMENT, 1);
   g.bindTexture(g.TEXTURE_2D, hTex);
@@ -243,7 +254,7 @@ function uploadFog(g: GL): void {
   }
   fogDirty.clear();
 }
-let instData = new Float32Array(10 * 256);
+let instData = new Float32Array(10 * 256), builtFor = '';
 /** Tiles built so far, for tests and probes. */
 export const terrainStats = { tiles: 0, built: 0 };
 
@@ -255,6 +266,11 @@ export const terrainStats = { tiles: 0, built: 0 };
 export function drawTerrain(ctx: CanvasRenderingContext2D, w: number, h: number, wx0: number, wy0: number, wpp: number, dpr: number, budget: number, vignette = false, fogOn = true): boolean {
   if (!init() || !gl || !glc || !prog) return false;
   const g = gl, t0 = performance.now();
+  if (openKey() !== builtFor) {                             // regions opened (or a save loaded): sample everything again
+    builtFor = openKey();
+    for (const t of tiles.values()) free.push(t.slot);
+    tiles.clear();
+  }
   frame++;
   if (glc.width < w || glc.height < h) { glc.width = Math.max(glc.width, w); glc.height = Math.max(glc.height, h); }
   // the level whose samples fall 2 to 4 canvas pixels apart

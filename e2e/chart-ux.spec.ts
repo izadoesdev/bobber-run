@@ -153,3 +153,21 @@ test('sea you have not sailed stays blank on the chart until you have been there
   await hoverUntil(page, far.x, far.y, /^(?!.*unexplored)/i);
   expect(await page.evaluate(() => window.BR.G.explored.length)).toBeGreaterThan(0);
 });
+
+test('a region not open yet says on the chart what opens it, and opens with the story', async ({ page }) => {
+  await openChart(page);
+  await page.evaluate(() => { const { G } = window.BR; G.story = { i: 0, base: {}, shown: true }; G.unlocked = []; G.map.zoom = 2; });
+  // east of home, out past Alderhaven Reach into the next region (one step out: it opens once the pier is mended)
+  let at: { x: number; y: number } | null = null;
+  for (const dx of [1800, 2200, 2600]) {
+    const p = await page.evaluate(dx => ({ x: window.BR.G.boat.x + dx, y: window.BR.G.boat.y - 300 }), dx);
+    const [x, y] = await onChart(page, p.x, p.y);
+    await page.mouse.move(x + 3, y); await page.mouse.move(x, y);
+    await page.waitForTimeout(300);
+    if (/closed/i.test(await tip(page))) { at = p; break; }
+  }
+  expect(at, 'a closed region east of home').not.toBeNull();
+  expect(await tip(page)).toMatch(/opens after "mend the pier"/i);
+  await page.evaluate(() => { window.BR.G.story = { i: 3, base: {}, shown: true }; });
+  await hoverUntil(page, at!.x, at!.y, /^(?!.*closed)/i);
+});

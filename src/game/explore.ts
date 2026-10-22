@@ -4,6 +4,7 @@
 // string: each chunk that has anything seen, as "cx,cy:base64" (a typical voyage is a few kilobytes).
 import { G } from './state';
 import { poisNear, homePort } from '../world';
+import { tickRegions } from './regions';
 
 export const CELL = 32;
 const CN = 32;                               // cells per chunk side (a chunk is 1024 units)
@@ -64,6 +65,7 @@ export function tickExplore(dt: number): void {
   sync();
   if ((acc += dt) < 0.25) return;
   acc = 0;
+  tickRegions();
   reveal(G.boat.x, G.boat.y, sightRange());
   if (G.found.size !== foundSeen) { foundSeen = G.found.size; revealFound(); }
   if (fog.version !== wroteVersion && G.t - wroteAt > 2) { G.explored = synced = exploredToSave(); wroteVersion = fog.version; wroteAt = G.t; }

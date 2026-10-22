@@ -6,6 +6,8 @@ import { poisNear, schoolsNear, claimableNear, heightAt, homesteadSite, LAIR } f
 import { livesAt } from '../species';
 import { drawTerrain } from './chartgl';
 import { seen as isSeen, revealPlace } from '../game/explore';
+import { regionAt, regionBorders, type Region, type RegionBorder } from '../biome';
+import { regionOpen, regionOpenId, opensAfter, regionAbout } from '../game/regions';
 import { ONLINE } from '../online';
 import { ISLANDS, watchExtra, islandPrice, islandColour } from '../islands';
 import type { Point, Poi } from '../types';
@@ -84,6 +86,7 @@ export function drawChart(ctx: Ctx, w: number, h: number, cx: number, cy: number
     drawZone(ctx, w, h, wx0, wy0, wpp, opt.zone, S, u, () => performance.now() - tz < slice);
   }
   if (opt.grid) drawGrid(ctx, w, h, wx0, wy0, wpp, S, u);
+  if (opt.labels) { drawRegionBorders(ctx, w, h, wx0, wy0, wpp, S, u); drawRegionNames(ctx, w, h, wx0, wy0, wpp, u); }
 
   const son = sonarLvl();                  // 1 shows schools, 2 colours them by species, 3 stars legends
   const showUncharted = (opt.sextant ?? 0) >= 2;
@@ -213,6 +216,61 @@ function drawZone(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp:
   }
 }
 
+// the borders in view, traced once per view (biome.regionBorders); a border with a closed region on one side is the
+// rough water, drawn heavier and rust-red
+let bordersFor = '', borders: RegionBorder[] = [];
+function drawRegionBorders(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp: number, S: Project, u: number): void {
+  const pad = 200, key = [Math.floor(wx0 / 256), Math.floor(wy0 / 256), Math.ceil(w * wpp / 256), Math.ceil(h * wpp / 256)].join();
+  if (key !== bordersFor) {
+    bordersFor = key;
+    const x0 = Math.floor(wx0 / 256) * 256 - pad, y0 = Math.floor(wy0 / 256) * 256 - pad;
+    borders = regionBorders(x0, y0, x0 + w * wpp + 512 + pad * 2, y0 + h * wpp + 512 + pad * 2, 24);
+  }
+  ctx.save();
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  for (const B of borders) {
+    const rough = regionOpenId(B.a) !== regionOpenId(B.b);
+    ctx.beginPath();
+    for (let i = 0; i < B.pts.length; i += 2) { const [x, y] = S(B.pts[i], B.pts[i + 1]); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+    ctx.setLineDash(rough ? [7 * u, 4 * u] : [2 * u, 5 * u]);
+    ctx.lineWidth = (rough ? 4.5 : 3) * u; ctx.strokeStyle = 'rgba(244,234,210,0.35)'; ctx.stroke();
+    ctx.lineWidth = (rough ? 2.2 : 1.3) * u; ctx.strokeStyle = rough ? 'rgba(140,52,36,0.9)' : 'rgba(27,42,51,0.45)'; ctx.stroke();
+  }
+  ctx.restore();
+}
+/**
+ * The regions' names, engraved across the water: each at the middle of the part of it in view, so the one you're in
+ * is always named. A region not open yet says what opens it, under a padlock.
+ */
+function drawRegionNames(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp: number, u: number): void {
+  const seen = new Map<string, { r: Region; x: number; y: number; n: number }>(), NX = 14, NY = 9;
+  for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+    const px = (i + 0.5) / NX * w, py = (j + 0.5) / NY * h, r = regionAt(wx0 + px * wpp, wy0 + py * wpp);
+    const e = seen.get(r.id) ?? { r, x: 0, y: 0, n: 0 };
+    e.x += px; e.y += py; e.n++; seen.set(r.id, e);
+  }
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const { r, x: sx, y: sy, n } of seen.values()) {
+    if (n < 4) continue;                                     // a sliver at the edge: named when you look its way
+    const x = sx / n, y = sy / n, open = regionOpen(r), name = r.name.toUpperCase().split('').join('\u200A');
+    ctx.font = `${Math.round(26 * u)}px Jersey, monospace`;
+    ctx.lineWidth = 5 * u; ctx.strokeStyle = 'rgba(244,234,210,0.55)'; ctx.strokeText(name, x, y);
+    ctx.fillStyle = open ? 'rgba(27,42,51,0.62)' : 'rgba(27,42,51,0.8)'; ctx.fillText(name, x, y);
+    if (open) continue;
+    const why = opensAfter(r) ?? '';
+    font(ctx, 12, u);
+    const tw = ctx.measureText(why).width, py = y + 20 * u;
+    padlock(ctx, x - tw / 2 - 3 * u, py, u);
+    inked(ctx, why, x + 6 * u, py, u, '#f4ead2');
+  }
+  ctx.restore();
+}
+function padlock(ctx: Ctx, x: number, y: number, u: number): void {
+  ctx.lineWidth = 1.6 * u; ctx.strokeStyle = COL.ink;
+  ctx.beginPath(); ctx.arc(x, y - 3 * u, 2.6 * u, Math.PI, 0); ctx.stroke();
+  ctx.beginPath(); ctx.roundRect(x - 4 * u, y - 3 * u, 8 * u, 6.5 * u, 1.2 * u); rimmed(ctx, COL.port, 1.2 * u);
+}
 function drawGrid(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp: number, S: Project, u: number): void {
   const step = 512;
   ctx.strokeStyle = 'rgba(240,248,250,0.13)';
@@ -496,7 +554,9 @@ export function chartAt(x: number, y: number, r: number, target: { at: Point; te
   if (map) return { title: 'Treasure', sub: `Marked on a treasure map · ${away(map)}`, act: SAIL, snap: map };
   const esc = G.escaped.find(near);
   if (esc) return { title: `The ${SPECIES[esc.sp].name} that got away`, sub: `Broke your line on day ${esc.day} · ${away(esc)}`, act: SAIL, snap: esc };
-  if (fogged) return { title: 'Unexplored waters', sub: `${away({ x, y })}. Sail there to fill in the chart`, act: 'Click to set a waypoint' };
+  const region = regionAt(x, y), shut = opensAfter(region);
+  if (shut) return { title: `${region.name} (closed)`, sub: `${shut}. Rough water turns boats back until then`, none: true };
+  if (fogged) return { title: `Unexplored: ${region.name}`, sub: `${away({ x, y })}. Sail there to fill in the chart`, act: 'Click to set a waypoint' };
   const poi = poisNear(x, y, r * 3).filter(near).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
   if (poi) {
     const snap = poi.type === 'port' ? poi.dock : poi, where = away(poi);
@@ -512,7 +572,7 @@ export function chartAt(x: number, y: number, r: number, target: { at: Point; te
     return row ? { title: row.name, sub: row.mine ? 'Your island' : `Owned by ${row.owner}`, act: 'Click to view it', island: isle.key }
       : { title: isle.i === 0 && isle.j === 0 ? 'Alderhaven' : 'Unclaimed island', sub: `For sale · ${money(islandPrice(isle.i, isle.j))}`, act: 'Click to view or buy it', island: isle.key };
   }
-  return { title: heightAt(x, y) > -0.05 ? 'Land' : 'Open sea', sub: away({ x, y }), act: 'Click to set a waypoint' };
+  return { title: region.name, sub: `${regionAbout(region)} ${away({ x, y })}`.trim(), act: 'Click to set a waypoint' };
 }
 
 /** The nearest uncharted landmark, for the sextant. */
