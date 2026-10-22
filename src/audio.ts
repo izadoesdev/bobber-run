@@ -848,8 +848,8 @@ export function music(on: boolean, night: boolean): void {
 }
 
 /** Render the start of a piece offline (tests and listening checks): `seed` picks it, as in play. */
-export async function renderMusicOffline(seed: number, night: boolean, secs = 20): Promise<{ piece: Piece; left: Float32Array; right: Float32Array }> {
-  const off = new OfflineAudioContext(2, 44100 * secs, 44100), prevGraph = graph, prevHarmony = harmony, piece = compose(seed, night);
+export async function renderMusicOffline(seed: number, night: boolean, secs = 20, tempo = 1): Promise<{ piece: Piece; left: Float32Array; right: Float32Array }> {
+  const off = new OfflineAudioContext(2, 44100 * secs, 44100), prevGraph = graph, prevHarmony = harmony, piece = compose(seed, night, undefined, tempo);
   await loadPiano(off);
   try {
     graph = buildGraph(off, off.destination);
