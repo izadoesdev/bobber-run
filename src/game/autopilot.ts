@@ -10,6 +10,7 @@ import { toast } from './feedback';
 import { wrapAngle } from '../config';
 import { clearLine, findRoute } from './route';
 import { shapeContact, solidsNear } from './physics';
+import { lockedAt } from './regions';
 
 /** Treated as land: a little deeper than where the hull grounds, so the boat keeps clear of the beach. */
 const LAND = -0.045;
@@ -99,7 +100,7 @@ function press(k: SteerKey, on: boolean): void {
 export function steerCourse(): void {
   const c = course;
   if (!c) return;
-  if (G.mode !== 'play' || (G.fish && !c.reelIn)) { dropCourse(); return; }
+  if (G.mode !== 'play' || (G.fish && !c.reelIn) || lockedAt(G.boat.x, G.boat.y)) { dropCourse(); return; }   // rough water ends a course
   if (!G.fish) c.reelIn = false;
   const b = G.boat, bd = boatDef();
   // round a corner once it's close, or as soon as the next one is in clear sight

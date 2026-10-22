@@ -7,6 +7,7 @@ import { test, expect, sail } from './fixtures';
 const hookFn = `(pick) => {
   const { G, GAME, SPECIES, schoolsNear, sim, homePort } = window.BR, hp = homePort(), b = G.boat;
   G.up.rod = 4; G.stats.caught = 50; G.boatId = 'trawler';
+  G.story = { ...(G.story ?? { base: {}, shown: true }), i: Math.max(G.story?.i ?? 0, 14) };   // every region open (regions.ts: the last ring opens after quest 14)
   window.step = () => { G.talk = null; G.mode = 'play'; sim(1 / 60); };
   const s = schoolsNear(hp.x, hp.y, 3500).find(q => GAME.schoolActive(q) && !q.boss && pick(SPECIES[q.sp], q));
   if (!s) throw new Error('no school of that kind');

@@ -13,6 +13,7 @@ import { G, inp } from './state';
 import { boatDef, chartPerks, hpMax, keelLvl, speedMul, sailEfficiency, windAngle, toWorld } from './rules';
 import { spawn, toast, jitter, burst } from './feedback';
 import { cancelFishing, hitstop, towStretch } from './fishing';
+import { lockPush } from './regions';
 
 // the hull outline as 18 points on an ellipse, slightly blunter at the stern
 const hullCache: Record<string, [number, number][]> = {};
@@ -210,6 +211,8 @@ export function physicsStep(dt: number): void {
     const gust = (WX.wind - 0.3) * 10 * (0.6 + 0.4 * Math.sin(G.t * 0.8)) * 13.5 / bd.L * Math.max(0, 1 - 0.5 * keelLvl());
     b.vx += Math.cos(wa) * gust * dt; b.vy += Math.sin(wa) * gust * dt;
   }
+  const lock = lockPush(b.x, b.y, dt);                             // closed waters: rough water turns the boat back the way it came
+  if (lock) { const k = 1 - 0.8 * dt; b.vx = (b.vx + lock.x * dt) * k; b.vy = (b.vy + lock.y * dt) * k; }
   towBoat(dt, heft);
   b.x += b.vx * dt; b.y += b.vy * dt;
   contacts();
