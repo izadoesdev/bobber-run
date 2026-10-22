@@ -42,10 +42,10 @@ const MESAS = tpl('Red Mesas', 'mesa', ['dunes'], 'warm'), BAMBOO = tpl('Bamboo 
 const BANDS: { y1: number; w: number; kinds: Template[] }[] = [
   { y1: -5200, w: 3000, kinds: [FROZEN, GLACIER] },
   { y1: -3200, w: 3200, kinds: [GLACIER, FJORDS, GLACIER, FJORDS, FJORDS] },
-  { y1: -1150, w: 3200, kinds: [PINES, BIRCHES, CHALK, PINES, BOG] },
-  { y1: 750, w: 3200, kinds: [ALDER, AMBER, FUNGAL, BLOSSOM, BASALT, EMBER] },
-  { y1: 2600, w: 3200, kinds: [MEADOW, CHALK, MANGROVE, MEADOW, BLOSSOM] },
-  { y1: 5200, w: 3200, kinds: [ATOLLS, MESAS, BAMBOO, DUNES, ATOLLS, DELTA] },
+  { y1: -900, w: 3200, kinds: [PINES, BIRCHES, CHALK, PINES, BOG] },
+  { y1: 1500, w: 3200, kinds: [ALDER, AMBER, FUNGAL, BLOSSOM, BASALT, EMBER] },
+  { y1: 3300, w: 3200, kinds: [MEADOW, CHALK, MANGROVE, MEADOW, BLOSSOM] },
+  { y1: 5600, w: 3200, kinds: [ATOLLS, MESAS, BAMBOO, DUNES, ATOLLS, DELTA] },
   { y1: Infinity, w: 3000, kinds: [DUNES, ATOLLS, MESAS] },
 ];
 /** A named region. */

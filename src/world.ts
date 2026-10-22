@@ -705,7 +705,7 @@ function placeSites(): RegionSite[] {
   const out: RegionSite[] = [], taken: Point[] = [];
   const clear = (x: number, y: number, gap: number): boolean => taken.every(t => Math.hypot(t.x - x, t.y - y) > gap)
     && !poisNear(x, y, 90).some(p => p.type !== 'wreck' && Math.hypot(p.x - x, p.y - y) < 80);
-  const isles = claimableNear(HOME_ISLAND.x, HOME_ISLAND.y, 4200).filter(c => c.key !== '0,0')
+  const isles = claimableNear(HOME_ISLAND.x, HOME_ISLAND.y, 6000).filter(c => c.key !== '0,0')
     .sort((a, b) => Math.hypot(a.x - HOME_ISLAND.x, a.y - HOME_ISLAND.y) - Math.hypot(b.x - HOME_ISLAND.x, b.y - HOME_ISLAND.y));
   // a village: dry ground near the island's shore, facing open water, clear of where a homestead would stand
   for (const biome of VILLAGE_BIOMES) for (const c of isles) {
