@@ -122,16 +122,16 @@ test('the chart draws the land and sea themselves, not a flat fill', async ({ pa
   // a point of dry land and one of deep water near the boat, by the world's own heights
   const pts = await page.evaluate(() => {
     const { G, hAt } = window.BR; let land = null, sea = null;
-    for (let r = 40; r < 1500 && (!land || !sea); r += 20) for (let a = 0; a < 6.28; a += 0.2) {
+    for (let r = 200; r < 1500 && (!land || !sea); r += 20) for (let a = 0; a < 6.28; a += 0.2) {   // clear of the boat's own mark
       const x = G.boat.x + Math.cos(a) * r, y = G.boat.y + Math.sin(a) * r, h = hAt(x, y);
-      if (!land && h > 0.15) land = { x, y }; if (!sea && h < -0.45) sea = { x, y };
+      if (!land && h > 0.25) land = { x, y }; if (!sea && h < -0.45) sea = { x, y };
     }
     return { land, sea };
   });
   expect(pts.land && pts.sea).toBeTruthy();
   await page.evaluate(({ land, sea }) => { const { G, sim } = window.BR, b = { x: G.boat.x, y: G.boat.y }; G.mode = 'play';   // sail by both, so the fog lifts there
     for (const p of [land!, sea!]) { G.boat.x = p.x; G.boat.y = p.y; sim(0.3); }
-    G.boat.x = b.x; G.boat.y = b.y; G.mode = 'map'; }, pts);
+    G.boat.x = b.x; G.boat.y = b.y; G.map.zoom = 2; G.mode = 'map'; }, pts);   // zoomed out, so both are on the chart
   const box = (await page.locator('.chartwrap canvas').boundingBox())!;
   const rgb = async (p: { x: number; y: number }) => {
     const [cx, cy] = await onChart(page, p.x, p.y);
