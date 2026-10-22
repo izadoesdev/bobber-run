@@ -193,7 +193,7 @@ export interface HeightTile {
   h: Float32Array;
   /** any land (or near-land) in the tile */
   land: boolean;
-  /** tree instances cached by the renderer: [x, y, kind, scale, yaw] per tree */
+  /** tree instances cached by the renderer: [x, y, kind, scale, yaw, shade] per tree */
   trees?: number[];
 }
 const tiles = new Map<number, HeightTile>();

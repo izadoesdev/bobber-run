@@ -1,6 +1,7 @@
 // Weather: clear / cloudy / rain / storm with smooth transitions, gusts and lightning.
 import type { WeatherState } from './types';
 import { isWorldFrenzy, today } from './today';
+import { biomeMix, coldness, warmth, themeHoldAt, THEMES, type Atmos, type ThemeHold } from './biome';
 
 // stormy days (the same for everyone) lean hard towards rain and storms
 const roll = (): WeatherState => {
@@ -56,4 +57,22 @@ export function setWeather(s: WeatherState): void {
   WX.state = s;
   [WX.rain, WX.dark, WX.wind] = TARGET[s];
   WX.next = 200;
+}
+
+// ---------- the air of a place ----------
+const ATMOS_KEYS = ['fog', 'haze', 'snow', 'ash', 'leaves', 'petals', 'spores', 'fireflies'] as const;
+const atHold: ThemeHold = { theme: 'home', w: 0, jitter: 0 };
+/**
+ * The ambient effects at (x, y), each 0..1: the open sea's by region (snow flurries up north, warm haze down south,
+ * ash over the ember isles, a little fog on kelp coasts, fireflies over the mangroves), blended into the nearest
+ * island's theme as you close on it. Pure: the renderer eases toward it and adds night and weather. Fills `out`.
+ */
+export function atmosAt(x: number, y: number, out: Atmos): Atmos {
+  const m = biomeMix(x, y), cd = coldness(y), wm = warmth(y);
+  out.fog = 0.25 * m.kelp + 0.2 * cd; out.haze = 0.45 * wm * (1 - m.kelp); out.snow = 0.7 * cd * cd;
+  out.ash = 0.55 * m.volcanic; out.leaves = 0; out.petals = 0; out.spores = 0; out.fireflies = 0.6 * m.mangrove;
+  const h = themeHoldAt(x, y, atHold), a = THEMES[h.theme].atmos;
+  if (h.w > 0) for (const k of ATMOS_KEYS) out[k] += ((a[k] ?? 0) - out[k]) * h.w;
+  out.snow = Math.max(out.snow, 0.7 * cd * cd);              // the north snows whatever the island
+  return out;
 }

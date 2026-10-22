@@ -4,15 +4,16 @@
 import { W, H, clamp, lerp, frac, smooth01 } from '../config';
 import { ONLINE, type Sailor } from '../online';
 import { SET, type Quality, type PixelStyle } from '../prefs';
-import { TS, TN, getTile, hasTile, hAt, poisNear, schoolsNear, cratesNear, claimableNear, homesteadSite, type HeightTile } from '../world';
+import { TS, TN, getTile, hasTile, hAt, poisNear, schoolsNear, cratesNear, claimableNear, homesteadSite, hotspotsNear, regionSites, type HeightTile, type Hotspot, type RegionSite } from '../world';
 import { hash01 } from '../noise';
 import { SPECIES, BOATS, activeAt } from '../econ';
-import { biomeMix, coldness, warmth } from '../biome';
+import { biomeMix, coldness, warmth, themeHold, themeAt, THEMES, THEME_IDS, type Atmos, type Odds, type Theme, type ThemeHold } from '../biome';
 import { schoolLook } from '../species';
 import { DIVE_S, SCATTER_S, schoolDrawR } from '../game/schools';
 import { LAMP_Z, landmarkKind, onGrounds } from '../landmarks';
 import { G, darkness, lightR, schoolActive, isNight, dayFrac, equipment, windAngle, boatDef, env } from '../game';
-import { WX } from '../weather';
+import { WX, atmosAt } from '../weather';
+import { seaPropsNear, type SeaProp, type SeaPropKind } from '../seaprops';
 import { LIFE, type Whale, type Giant } from '../life';
 import { hasOars, oarGeom, BOAT_MODELS, NP, SHIPPED, PLAIN, lookSeed, lookCoat, type Fit } from '../models';
 import { NET } from '../net';
@@ -99,6 +100,7 @@ function setupGL(): void {
   gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, PART_STRIDE * 4, 32);
   gl.bindVertexArray(null);
   MS.init(gl, gl.createBuffer()); MS.reset();
+  palTex = paletteTexture();
   field = null; frame = null;
 }
 
@@ -117,6 +119,8 @@ interface Field {
   TW: number; TH: number;
   /** scratch for uploads */
   hdata: Float32Array; tex: WebGLTexture; foam: Target; shadow: Target;
+  /** the island themes beside the heights (see themeGrid), and their upload scratch */
+  tdata: Uint8Array; th: WebGLTexture;
   /** the texels (world units / fs) the heights texture holds: x0, y0, x1, y1 (exclusive); and fs (0 until the first upload) */
   V: number[]; fs: number;
 }
@@ -124,11 +128,14 @@ let field: Field | null = null;
 function ensureField(): Field {
   const [vw, vh] = maxView(), tw = Math.ceil(vw) + PAD * 2 + SNAP * 2 + 8, th = Math.ceil(vh) + PAD * 2 + SNAP * 2 + 8;
   if (field && tw === field.TW && th === field.TH) return field;
-  if (field) { gl.deleteTexture(field.tex); free(gl, field.foam); free(gl, field.shadow); }
+  if (field) { gl.deleteTexture(field.tex); gl.deleteTexture(field.th); free(gl, field.foam); free(gl, field.shadow); }
   const tex = texture(gl, tw, th, gl.RGBA16F, gl.RGBA, gl.FLOAT);   // height, reef minus mangrove (never both), kelp, volcanic
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  const ttex = texture(gl, tw, th, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);   // theme row, its weight, the island's shade
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);   // a theme row never blends
   field = {
-    TW: tw, TH: th, hdata: new Float32Array(tw * th * 4), tex, V: [0, 0, 0, 0], fs: 0,
+    TW: tw, TH: th, hdata: new Float32Array(tw * th * 4), tex, tdata: new Uint8Array(tw * th * 4), th: ttex, V: [0, 0, 0, 0], fs: 0,
     foam: target(gl, tw * FR, th * FR, gl.RG8, gl.RG, gl.UNSIGNED_BYTE),
     shadow: target(gl, tw * FR, th * FR, gl.R8, gl.RED, gl.UNSIGNED_BYTE),
   };
@@ -225,23 +232,27 @@ function putHeights(F: Field, X: number, Y: number, w: number, h: number): void 
   if (w1 < w && h1 < h) heightsRect(F, X + w1, Y + h1, 0, 0, w - w1, h - h1);
 }
 // w x h texels from texel (X, Y) into column c, row r of the texture: the height, and the biome weights from the
-// tile's coarse biome grid
+// tile's coarse biome grid; and beside them the island theme (themeGrid)
 function heightsRect(F: Field, X: number, Y: number, c: number, r: number, w: number, h: number): void {
-  const fs = F.fs, x0 = X * fs, hdata = F.hdata;
+  const fs = F.fs, x0 = X * fs, hdata = F.hdata, tdata = F.tdata;
   let i = 0;
   for (let j = 0; j < h; j++) {
     const wy = (Y + j) * fs, ty = Math.floor(wy / TS), ly = wy - ty * TS, row = (ly + 1) * TN;
-    let tx = Math.floor(x0 / TS), tile = getTile(tx, ty), base = tx * TS - 1, bg = biomeGrid(tile);
+    let tx = Math.floor(x0 / TS), tile = getTile(tx, ty), base = tx * TS - 1, bg = biomeGrid(tile), tg = themeGrid(tile);
     for (let k = 0; k < w; k++, i += 4) {
       const wx = x0 + k * fs;
-      if (wx - base > TS) { tx++; tile = getTile(tx, ty); base = tx * TS - 1; bg = biomeGrid(tile); }
+      if (wx - base > TS) { tx++; tile = getTile(tx, ty); base = tx * TS - 1; bg = biomeGrid(tile); tg = themeGrid(tile); }
       hdata[i] = tile.h[row + wx - base];
       biomeLerp(bg, wx - base - 1, ly, bq, 0);
       hdata[i + 1] = bq[0] - bq[3]; hdata[i + 2] = bq[1]; hdata[i + 3] = bq[2];
+      themeLerp(tg, wx - base - 1, ly, tq);
+      tdata[i] = tq[0]; tdata[i + 1] = Math.round(tq[1] * 255); tdata[i + 2] = Math.round(tq[2] * 255); tdata[i + 3] = 0;
     }
   }
   gl.bindTexture(gl.TEXTURE_2D, F.tex);
   gl.texSubImage2D(gl.TEXTURE_2D, 0, c, r, w, h, gl.RGBA, gl.FLOAT, hdata, 0);
+  gl.bindTexture(gl.TEXTURE_2D, F.th);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, c, r, w, h, gl.RGBA, gl.UNSIGNED_BYTE, tdata, 0);
 }
 
 // ---------- biomes: weights on a coarse grid per height tile (the noise is slow, the grid is not) ----------
@@ -271,6 +282,48 @@ function biomeLerp(g: Float32Array, lx: number, ly: number, out: Float32Array | 
 }
 const bmS = [0, 0, 0, 0];
 
+// ---------- island themes: which island's theme holds each biome-grid point, and how strongly ----------
+// Per point: theme row (THEME_IDS index), weight 0..1, the island's shade 0..1. Weights blend between points; the
+// row and shade come from the nearest point (where the row changes the weight is ~0, see themeHold).
+const NTH = 3, tq = [0, 0, 0], TROW: Record<string, number> = Object.fromEntries(THEME_IDS.map((t, i) => [t, i]));
+const themeGrids = new WeakMap<HeightTile, Float32Array>(), holdS: ThemeHold = { theme: 'home', w: 0, jitter: 0 };
+const ISLAND_REACH = 460;                        // claimableNear radius that finds every island whose theme can reach a tile
+function themeGrid(t: HeightTile): Float32Array {
+  let g = themeGrids.get(t);
+  if (g) return g;
+  g = new Float32Array(BN * BN * NTH);
+  const islands = claimableNear(t.tx * TS + TS / 2, t.ty * TS + TS / 2, ISLAND_REACH);
+  for (let j = 0; j < BN; j++) for (let i = 0; i < BN; i++) {
+    themeHold(t.tx * TS + i * BG, t.ty * TS + j * BG, islands, holdS);
+    const o = (j * BN + i) * NTH;
+    g[o] = TROW[holdS.theme]; g[o + 1] = holdS.w; g[o + 2] = holdS.jitter;
+  }
+  themeGrids.set(t, g);
+  return g;
+}
+/** Theme row, weight and shade at tile-local (lx, ly), written to out[0..2]. */
+function themeLerp(g: Float32Array, lx: number, ly: number, out: number[]): void {
+  const gx = clamp(lx / BG, 0, BN - 1.001), gy = clamp(ly / BG, 0, BN - 1.001), i = Math.floor(gx), j = Math.floor(gy), fx = gx - i, fy = gy - j;
+  const a = (j * BN + i) * NTH, b = a + NTH, cc = a + BN * NTH, d = cc + NTH;
+  const top = g[a + 1] + (g[b + 1] - g[a + 1]) * fx, bot = g[cc + 1] + (g[d + 1] - g[cc + 1]) * fx;
+  const n = (fy < 0.5 ? (fx < 0.5 ? a : b) : (fx < 0.5 ? cc : d));
+  out[0] = g[n]; out[1] = top + (bot - top) * fy; out[2] = g[n + 2];
+}
+// the palette table the ground shader reads: a row of 16 RGBA texels per theme (layout in shaders.ts, TH/PAL)
+let palTex: WebGLTexture;
+function paletteTexture(): WebGLTexture {
+  const D = new Float32Array(16 * THEME_IDS.length * 4);
+  THEME_IDS.forEach((id, row) => {
+    const T = THEMES[id], put = (k: number, v: readonly number[]) => D.set(v, (row * 16 + k) * 4);
+    [T.wet, T.sand, T.sand2, T.grass, T.grass2, T.forest, T.rock, T.cliff, T.cliff2, T.accent, T.shallow, T.mid, T.deep].forEach((c, k) => put(k, c));
+    put(13, [T.beach, T.patch, T.flowers, T.speckle]); put(14, [T.rockAt, T.snow, T.outcrops, T.glow]); put(15, [T.clarity, T.altBeach, T.bands, 0]);
+  });
+  const t = texture(gl, 16, THEME_IDS.length, gl.RGBA32F, gl.RGBA, gl.FLOAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 16, THEME_IDS.length, gl.RGBA, gl.FLOAT, D);
+  return t;
+}
+
 // ---------- per-tile scenery: one candidate spot per GS x GS cell, hashed into place, cached with the tile ----------
 // fn gets the spot, its cell, and the tile's height there; spots that land outside the tile belong to its neighbour
 function tileSpots(t: HeightTile, GS: number, salt: number, fn: (px: number, py: number, gx: number, gy: number, h: number) => void): void {
@@ -288,58 +341,117 @@ function eachTile(x0: number, y0: number, x1: number, y1: number, fn: (tx: numbe
 // ---------- trees ----------
 const KINDS = MS.TREE_KINDS;
 const KI: Record<string, number> = Object.fromEntries(KINDS.map((k, i) => [k, i]));
-// one candidate per 6x6 cell, chosen by height band and climate; cached on the tile as [x, y, kind, scale, yaw] runs
+const pickOdds = (L: Odds, r: number): string => { let t = 0; for (const [, w] of L) t += w; let v = r * t; for (const [k, w] of L) { v -= w; if (v <= 0) return k; } return L[0][0]; };
+const TOP: Odds = [['rock', 2], ['boulders', 1]];
+const TROPICAL = new Set(['palm', 'fern', 'mangrove', 'bamboo', 'cactus']);
+/** Groves and clearings: a slow lattice noise scaling tree density, ~0.15 in a clearing to ~2.4 in a thick grove. */
+function grove(x: number, y: number): number {
+  const fx = x / 44, fy = y / 44, i = Math.floor(fx), j = Math.floor(fy), u = smooth01(fx - i), v = smooth01(fy - j);
+  const a = hash01(i, j, 71), b = hash01(i + 1, j, 71), c = hash01(i, j + 1, 71), d = hash01(i + 1, j + 1, 71);
+  const n = (a + (b - a) * u) * (1 - v) + (c + (d - c) * u) * v;
+  return 0.15 + 2.2 * n * n;
+}
+/** What a theme grows at height v (r: the spot's roll), or null. */
+function themeTree(T: Theme, v: number, r: number, r2: number, x: number, y: number): string | null {
+  const [L, d] = v < 0.12 ? [T.shore, T.shoreD] : v < 0.36 ? [T.low, T.lowD] : v < 0.76 ? [T.high, T.highD] : [TOP, 0.05];
+  return L.length && r < d * grove(x, y) ? pickOdds(L, r2) : null;
+}
+// one candidate per 6x6 cell, chosen by height band and climate, or by the island's theme; cached on the tile as
+// [x, y, kind, scale, yaw, tint] runs (tint: the island's shade on its trees)
+const TREE_STRIDE = 6;
 const groundsScratch: Poi[] = [];
 function tileTrees(t: HeightTile): number[] {
   if (t.trees) return t.trees;
-  const L: number[] = [], x0 = t.tx * TS, y0 = t.ty * TS;
+  const L: number[] = [], x0 = t.tx * TS, y0 = t.ty * TS, tg = themeGrid(t), props = tileProps(t);
   const near = poisNear(x0 + TS / 2, y0 + TS / 2, TS + 40, groundsScratch);       // harbours and lighthouses keep their grounds clear
   tileSpots(t, 6, 42, (px, py, gx, gy, v) => {
     if (near.length && onGrounds(near, px, py)) return;
+    if (onProp(props, px, py)) return;
     const r = hash01(gx, gy, 41);
     if (v < 0.03) {                                                         // mangroves stand out in the shallows
       if (v < -0.06) return;
       biomeLerp(biomeGrid(t), px - x0, py - y0, bmS, 0);
-      if (r < 0.55 * bmS[3]) L.push(px + 0.5, py + 0.5, KI.mangrove, 0.8 + hash01(gx, gy, 46) * 0.35, hash01(gx, gy, 47) * 6.283);
+      if (r < 0.55 * bmS[3]) L.push(px + 0.5, py + 0.5, KI.mangrove, 0.8 + hash01(gx, gy, 46) * 0.35, hash01(gx, gy, 47) * 6.283, 1);
       return;
     }
-    let kind: string | null = null;
-    if (v < 0.12) { if (r < 0.025) kind = 'boulders'; }                     // the odd heap of stones on the beach
-    else if (v >= 0.36 && v < 0.76) { if (r < 0.72) kind = v > 0.5 || r < 0.25 ? 'pine' : 'round'; }
-    else if (v < 0.36) { if (r < 0.06) kind = 'round'; else if (r < 0.08) kind = 'rock'; else if (r < 0.17) kind = r < 0.13 ? 'bush' : 'berrybush'; }
-    else if (r < 0.06) kind = r < 0.025 ? 'boulders' : 'rock';
-    const wm = warmth(py), cd = coldness(py), rr = hash01(gx, gy, 45);
-    const stony = kind === 'rock' || kind === 'boulders', shrub = kind === 'bush' || kind === 'berrybush';
-    if (wm > rr && v >= 0.12 && v < 0.24 && r < 0.14) kind = 'palm';
-    else if (kind && !stony && !shrub && cd > rr) kind = 'snowpine';
-    else if (kind === 'pine' && wm > rr) kind = 'round';
-    // biomes: palms and ferns on coral islands, birch and ferns on kelp coasts, burnt snags on the ember isles
-    biomeLerp(biomeGrid(t), px - x0, py - y0, bmS, 0);
-    const [rf, kp, vc, mg] = bmS, rb = hash01(gx, gy, 48), r2 = hash01(gx, gy, 49);
-    const tall = kind === 'pine' || kind === 'round' || kind === 'snowpine';
-    if (rb < vc) {
-      if (tall || kind === 'palm') kind = r2 < 0.4 ? 'deadtree' : r2 < 0.55 ? 'ashbush' : null;
-      else if (shrub) kind = 'ashbush';
-      else if (!kind && v >= 0.12 && r < 0.05) kind = 'boulders';
-    } else if (rb < vc + rf) {
-      if (kind === 'pine' || kind === 'snowpine') kind = 'round';
-      else if (shrub) kind = r2 < 0.5 ? 'fern' : kind;
-      else if (!kind && v >= 0.05 && v < 0.3 && r < 0.16) kind = r2 < 0.75 ? 'palm' : 'fern';
-    } else if (rb < vc + rf + kp) {
-      if (kind === 'round') kind = r2 < 0.7 ? 'birch' : 'pine';
-      else if (shrub) kind = 'fern';
-      else if (!kind && v >= 0.1 && v < 0.36 && r < 0.12) kind = r2 < 0.5 ? 'fern' : 'birch';
-    } else if (rb < vc + rf + kp + mg) {                                     // mangrove thickets on the low ground
-      if (v < 0.22 && r < 0.45) kind = 'mangrove';
-      else if (kind === 'pine' || kind === 'snowpine' || kind === 'palm') kind = 'round';
-      else if (shrub) kind = 'fern';
+    const wm = warmth(py), cd = coldness(py), rr = hash01(gx, gy, 45), r2 = hash01(gx, gy, 49);
+    themeLerp(tg, px - x0, py - y0, tq);
+    let kind: string | null = null, tint = 1;
+    if (tq[1] > 0.02 && hash01(gx, gy, 50) < tq[1]) {                      // the island's theme decides
+      kind = themeTree(THEMES[THEME_IDS[tq[0]]], v, r, r2, px, py);
+      tint = 0.93 + tq[2] * 0.12 + (hash01(gx, gy, 51) - 0.5) * 0.06;
+      if (kind && cd > rr && (kind === 'pine' || kind === 'round')) kind = 'snowpine';
+      if (kind && cd > 0.5 && TROPICAL.has(kind)) kind = 'snowpine';      // nothing tropical on the ice
+    } else {
+      if (v < 0.12) { if (r < 0.025) kind = 'boulders'; }                   // the odd heap of stones on the beach
+      else if (v >= 0.36 && v < 0.76) { if (r < 0.72) kind = v > 0.5 || r < 0.25 ? 'pine' : 'round'; }
+      else if (v < 0.36) { if (r < 0.06) kind = 'round'; else if (r < 0.08) kind = 'rock'; else if (r < 0.17) kind = r < 0.13 ? 'bush' : 'berrybush'; }
+      else if (r < 0.06) kind = r < 0.025 ? 'boulders' : 'rock';
+      const stony = kind === 'rock' || kind === 'boulders', shrub = kind === 'bush' || kind === 'berrybush';
+      if (wm > rr && v >= 0.12 && v < 0.24 && r < 0.14) kind = 'palm';
+      else if (kind && !stony && !shrub && cd > rr) kind = 'snowpine';
+      else if (kind === 'pine' && wm > rr) kind = 'round';
+      // biomes: palms and ferns on coral islands, birch and ferns on kelp coasts, burnt snags on the ember isles
+      biomeLerp(biomeGrid(t), px - x0, py - y0, bmS, 0);
+      const [rf, kp, vc, mg] = bmS, rb = hash01(gx, gy, 48);
+      const tall = kind === 'pine' || kind === 'round' || kind === 'snowpine';
+      if (rb < vc) {
+        if (tall || kind === 'palm') kind = r2 < 0.4 ? 'deadtree' : r2 < 0.55 ? 'ashbush' : null;
+        else if (shrub) kind = 'ashbush';
+        else if (!kind && v >= 0.12 && r < 0.05) kind = 'boulders';
+      } else if (rb < vc + rf) {
+        if (kind === 'pine' || kind === 'snowpine') kind = 'round';
+        else if (shrub) kind = r2 < 0.5 ? 'fern' : kind;
+        else if (!kind && v >= 0.05 && v < 0.3 && r < 0.16) kind = r2 < 0.75 ? 'palm' : 'fern';
+      } else if (rb < vc + rf + kp) {
+        if (kind === 'round') kind = r2 < 0.7 ? 'birch' : 'pine';
+        else if (shrub) kind = 'fern';
+        else if (!kind && v >= 0.1 && v < 0.36 && r < 0.12) kind = r2 < 0.5 ? 'fern' : 'birch';
+      } else if (rb < vc + rf + kp + mg) {                                   // mangrove thickets on the low ground
+        if (v < 0.22 && r < 0.45) kind = 'mangrove';
+        else if (kind === 'pine' || kind === 'snowpine' || kind === 'palm') kind = 'round';
+        else if (shrub) kind = 'fern';
+      }
+      if (cd > 0.5 && (kind === 'palm' || kind === 'fern' || kind === 'mangrove')) kind = 'snowpine';   // nothing tropical on the ice
     }
-    if (cd > 0.5 && (kind === 'palm' || kind === 'fern' || kind === 'mangrove')) kind = 'snowpine';   // nothing tropical on the ice
     if (!kind) return;
     if (kind === 'pine' || kind === 'round' || kind === 'snowpine') { if (hash01(gx, gy, 44) < 0.3) kind += 'B'; }   // big variant
-    L.push(px + 0.5, py + 0.5, KI[kind], 0.85 + hash01(gx, gy, 46) * 0.35, hash01(gx, gy, 47) * 6.283);
+    const k = KI[kind];                                                     // (tests/themes.test.ts checks every theme's kinds exist)
+    if (k !== undefined) L.push(px + 0.5, py + 0.5, k, 0.85 + hash01(gx, gy, 46) * 0.35, hash01(gx, gy, 47) * 6.283, tint);
   });
   return (t.trees = L);
+}
+
+// ---------- land props: standing stones, ruins, huts and rocks by island theme (the sea's are in seaprops.ts) ----------
+const PROP_I = new Map<string, number>(MS.PROP_KINDS.map((k, i) => [k, i]));
+const propScale = (kind: string, r: number): number => kind === 'mesaRock' ? 1 + r * 0.4 : 1;   // mesas come in sizes; the rest as built
+// how much ground a land prop keeps clear of trees
+const FOOT: Record<string, number> = { ruinArch: 6, hut: 7, shack: 7, mesaRock: 7, standingStones: 8, whaleBones: 6, chalkRock: 5, basalt: 5, crystal: 4, log: 4 };
+const propCache = new WeakMap<HeightTile, Float32Array>();
+const PROP_STRIDE = 7;                           // x, y, kind, scale, yaw, z, footprint
+// one candidate per 26 x 26 on level land
+function tileProps(t: HeightTile): Float32Array {
+  let A = propCache.get(t);
+  if (A) return A;
+  const L: number[] = [], x0 = t.tx * TS, y0 = t.ty * TS, tg = themeGrid(t);
+  const near = poisNear(x0 + TS / 2, y0 + TS / 2, TS + 40, groundsScratch);
+  if (t.land) tileSpots(t, 26, 131, (px, py, gx, gy, v) => {
+    if (v < 0.12 || v > 0.62 || (near.length && onGrounds(near, px, py))) return;
+    if (Math.abs(hAt(px + 4, py) - hAt(px - 4, py)) + Math.abs(hAt(px, py + 4) - hAt(px, py - 4)) > 0.08) return;   // level ground
+    themeLerp(tg, px - x0, py - y0, tq);
+    const T = THEMES[THEME_IDS[tq[0]]];
+    if (tq[1] < 0.6 || !T.land.length || hash01(gx, gy, 132) > T.landD * tq[1]) return;
+    const kind = pickOdds(T.land, hash01(gx, gy, 133)), k = PROP_I.get(kind);
+    if (k !== undefined) L.push(px + 0.5, py + 0.5, k, propScale(kind, hash01(gx, gy, 134)), hash01(gx, gy, 135) * 6.283, MS.PROP_Z[MS.PROP_KINDS[k]], FOOT[kind] ?? 3);
+  });
+  A = new Float32Array(L);
+  propCache.set(t, A);
+  return A;
+}
+/** Whether (x, y) falls on a land prop's footprint in this tile's props. */
+function onProp(A: Float32Array, x: number, y: number): boolean {
+  for (let i = 0; i < A.length; i += PROP_STRIDE) if (Math.abs(A[i] - x) < A[i + 6] && Math.abs(A[i + 1] - y) < A[i + 6]) return true;
+  return false;
 }
 
 // ---------- the sea floor: deterministic props per height tile, by biome ----------
@@ -389,29 +501,6 @@ function tileBed(t: HeightTile): Float32Array {
   return A;
 }
 const SWAY = new Set<number>([BI.kelp, BI.kelpTall, BI.fanPurple, BI.fanPink, BI.seagrass]);
-
-// ---------- ice floes: rafts of sea ice drifting on the far northern sea (scenery: boats sail through them) ----------
-const ICES = MS.ICE_KINDS;
-const iceProps = new WeakMap<HeightTile, Float32Array>();
-const ICE_STRIDE = 6;                            // x, y, kind, scale, yaw, phase
-// one candidate per 22x22 cell in open water, more of them the colder it is; bergs only out in deep water
-function tileIce(t: HeightTile): Float32Array {
-  let A = iceProps.get(t);
-  if (A) return A;
-  const L: number[] = [];
-  if (coldness(t.ty * TS + TS) > 0.05) tileSpots(t, 22, 81, (px, py, gx, gy, h) => {
-    const depth = -h, cd = coldness(py), r = hash01(gx, gy, 83);
-    if (depth < 0.15 || cd < 0.4 || r > 0.2 * smooth01((cd - 0.4) / 0.4)) return;
-    if (hAt(px + 26, py) > -0.06 || hAt(px - 26, py) > -0.06 || hAt(px, py + 26) > -0.06 || hAt(px, py - 26) > -0.06) return;   // clear of the shore
-    const bm = biomeMix(px, py);
-    if (bm.kelp > 0.3 || bm.reef > 0.3) return;
-    const rk = hash01(gx, gy, 84), kind = depth > 0.3 && rk < 0.12 ? 3 : rk < 0.45 ? 0 : rk < 0.8 ? 1 : 2;
-    L.push(px + 0.5, py + 0.5, kind, 0.8 + hash01(gx, gy, 85) * 0.5, hash01(gx, gy, 86) * 6.283, hash01(gx, gy, 87) * 6.283);
-  });
-  A = new Float32Array(L);
-  iceProps.set(t, A);
-  return A;
-}
 
 /** arr, or a copy twice its size when `need` floats won't fit (the scene, foam and particle lists grow as needed) */
 function room(arr: Float32Array<ArrayBuffer>, need: number): Float32Array<ArrayBuffer> {
@@ -637,6 +726,197 @@ function drawOwned(): void {
   }
 }
 
+// ---------- region sites: a village in each region and the legends (world.regionSites) ----------
+// gathered once a frame; trees and land props keep off their ground, and they light up at night
+interface Placed { site: RegionSite; x: number; y: number; yaw: number; z: number; mesh: () => MS.Mesh }
+const sites: Placed[] = [], placedSites = new Map<string, Placed>();
+const isLegend = (k: string | undefined): k is MS.LegendKind => !!k && (MS.LEGEND_KINDS as readonly string[]).includes(k);
+// A village is drawn turned so its jetty (built running south, 15 units out at u = 15) points out to the water at s.a,
+// and slid along s.a until the jetty's end stands in the water. Worked out once per site.
+function placeSite(s: RegionSite): Placed {
+  let p = placedSites.get(s.id);
+  if (p) return p;
+  if (s.kind === 'village') {
+    const th = themeAt(s.x, s.y), ca = Math.cos(s.a), sa = Math.sin(s.a), jx = s.x + sa * 15, jy = s.y - ca * 15;   // the jetty's root
+    let d = 0;
+    while (d < 40 && hAt(jx + ca * d, jy + sa * d) > -0.02) d += 2;   // first water out along the jetty's line
+    const slide = Math.max(0, d - 13);
+    p = { site: s, x: s.x + ca * slide, y: s.y + sa * slide, yaw: s.a - Math.PI / 2, z: 0, mesh: () => MS.villageMesh(th) };
+  } else {
+    const k = isLegend(s.legend) ? s.legend : 'stoneCircle';
+    p = { site: s, x: s.x, y: s.y, yaw: k === 'whaleFall' ? 0 : s.a, z: MS.LEGEND_Z[k], mesh: () => MS.legendMesh(k) };
+  }
+  placedSites.set(s.id, p);
+  return p;
+}
+function gatherSites(cx: number, cy: number, reach: number): void {
+  sites.length = 0;
+  for (const s of regionSites()) if (Math.abs(s.x - cx) < reach && Math.abs(s.y - cy) < reach) sites.push(placeSite(s));
+}
+const SITE_R = 30;
+const onSite = (x: number, y: number): boolean => sites.some(s => Math.abs(s.x - x) < SITE_R && Math.abs(s.y - y) < SITE_R);
+function drawSites(): void { for (const s of sites) inst(s.mesh(), s.x, s.y, s.yaw, 1, s.z); }
+const LEGEND_GLOW: Record<string, readonly number[]> = { crystalCave: [0.45, 0.9, 1.0], sunkenTemple: [0.3, 0.95, 0.85], stoneCircle: [0.7, 0.8, 1.0],
+  wreckGraveyard: [0.5, 1.0, 0.7], whaleFall: [0.5, 0.8, 1.0], iceboundShip: [0.75, 0.9, 1.0] };
+
+// ---------- hotspot signs: how players find fish ----------
+// Gulls wheel and dive over bait, a dark knot of bait flickers silver under the surface, predators boil the water
+// where they feed, and a golden fish puts a faint shimmer on the spot. Everything scales with how far the spot has
+// surfaced, and is sized to read from a zoomed-out view.
+const signs: Hotspot[] = [];
+// how far out the view is zoomed, for the signs: 1 up close (>= ~3 screen pixels per world unit) .. 3.5 at the widest;
+// farK runs 0..1 over the same range. Signs grow and the far-only cues fade in with it, so close up they stay subtle.
+let signFar = 1, farK = 0;
+function signScale(): void {
+  signFar = clamp(3.2 / (R.S / (window.devicePixelRatio || 1)), 1, 3.5); farK = (signFar - 1) / 2.5;
+}
+const spotSeed = (h: Hotspot): number => frac(h.x * 0.0137 + h.y * 0.0071);
+/** where the bait ball sits: on the bait school, else the spot's centre */
+const ballAt = (h: Hotspot, out: number[]): number[] => { const s = h.schools[0]; out[0] = s ? s.x : h.x; out[1] = s ? s.y : h.y; return out; };
+const ball = [0, 0];
+// a predator's boil: one burst at a time, somewhere new in the spot every BOIL_S seconds
+const BOIL_S = 1.1, boil = [0, 0, 0];
+function boilAt(h: Hotspot, out: number[]): number[] {
+  const c = G.t / BOIL_S + spotSeed(h), n = Math.floor(c);
+  out[0] = h.x + (hash01(n, 1, h.x | 0) - 0.5) * Math.max(10, h.r); out[1] = h.y + (hash01(n, 2, h.y | 0) - 0.5) * Math.max(8, h.r * 0.7); out[2] = c - n;
+  return out;
+}
+function drawGulls(h: Hotspot): void {
+  const n = h.bait ? 6 : h.predator ? 3 : 0, up = smooth01((h.surf - 0.15) / 0.6), seed = spotSeed(h) * 6.283;
+  if (!n || up <= 0.01) return;
+  for (let k = 0; k < n; k++) {
+    const dir = k % 2 ? 1 : -1, a = G.t * (0.55 + k * 0.09) * dir + k * 1.9 + seed, r = (10 + h.r * 0.3 + (k % 3) * 6) * (1 + farK * 0.6);
+    const dv = frac(G.t / (3.2 + k * 0.7) + k * 0.31 + seed), dive = dv < 0.18 ? Math.sin(Math.PI * dv / 0.18) : 0;   // now and then one folds and drops
+    const z = (15 + (k % 3) * 5) * (1 - dive * 0.85) * (1 + farK * 0.5) + (1 - up) * 45, rr = r * (1 - dive * 0.7);   // they arrive from on high as the spot surfaces
+    inst(MS.gullMesh(dive > 0.2 ? 0 : Math.floor(G.t * 5 + k * 0.7) % 2), h.x + Math.cos(a) * rr, h.y + Math.sin(a) * rr * 0.6, a + dir * Math.PI / 2, 1.05 * Math.pow(signFar, 0.8), z, -dive * 1.1);   // a bigger flock from afar
+  }
+}
+function signFoam(): void {
+  for (const h of signs) {
+    const k = h.surf, seed = spotSeed(h), R2 = Math.max(18, h.r * 1.2);
+    // the patch: ruffled water flecked with foam over the whole spot, faint up close and plain from afar
+    for (let i = 0; i < 12; i++) {
+      const c = G.t * 0.8 + i / 12 + seed, n = Math.floor(c), ph = c - n, a = hash01(n, i, 23) * 6.283, d = Math.sqrt(hash01(n, i, 24)) * R2;
+      const x = h.x + Math.cos(a) * d, y = h.y + Math.sin(a) * d * 0.75, fade = Math.sin(Math.PI * ph) * k;
+      foam(x, y, (2 + hash01(n, i, 25) * 2) * signFar, fade * (0.25 + 0.75 * farK), 0, 0, 1, 1);
+      foam(x, y, 7 * signFar, fade * (0.3 + 0.7 * farK), 1, 0, 1, 0.1);
+    }
+    if (h.bait) {                                         // nervous water over the ball: rings swelling out, mostly ripple
+      ballAt(h, ball);
+      for (let i = 0; i < 2; i++) { const ph = frac(G.t * 0.32 + i / 2 + seed); foam(ball[0], ball[1], 12 + ph * 30, (1 - ph) * 0.9 * k, 1, 0, 0.75, 0.55); }
+      for (let i = 0; i < 4; i++) {                       // and the surface shivers with little rings
+        const c = G.t * 1.3 + i / 4 + seed, n = Math.floor(c), ph = c - n;
+        foam(ball[0] + (hash01(n, i, 21) - 0.5) * 14, ball[1] + (hash01(n, i, 22) - 0.5) * 9, 3 + ph * 6, (1 - ph) * 0.8 * k, 1, 0, 1, 0.15);
+      }
+    }
+    if (h.predator) {                                     // the boil: a burst of white water and a ring
+      boilAt(h, boil);
+      const ph = boil[2];
+      foam(boil[0], boil[1], 6 + ph * 10, (1 - ph) * 1.3 * k, 0, 0, 1, 1);
+      foam(boil[0], boil[1], 9 + ph * 22, (1 - ph) * 0.9 * k, 1, 0, 1, 0.6);
+    }
+  }
+}
+function signPoints(glow: boolean): void {
+  const q = Math.floor(G.t * 6), night = nightK;
+  for (const h of signs) {
+    const k = h.surf, sd = (spotSeed(h) * 997) | 0;
+    if (glow) {
+      if (!h.rare) continue;
+      // a rare fish: a soft gold glow under the spot by night, and from afar a gold glint that winks on the water
+      if (night > 0.05) point(h.x, h.y, -0.5, 9 * signFar, 1.4, 1.1, 0.4, 0.22 * k * night * (0.8 + 0.2 * Math.sin(G.t * 2.4)), 2);
+      const wink = Math.pow(Math.max(0, Math.sin(G.t * 2.2 + sd)), 6);
+      if (farK > 0) point(h.x + Math.sin(G.t * 0.5 + sd) * 4, h.y, 0.4, (1.6 + wink * 1.6) * signFar, 2.4, 1.9, 0.7, k * farK * (0.35 + 0.65 * wink), 2);
+      continue;
+    }
+    if (farK > 0) for (let i = 0; i < 5; i++) {           // from afar the water over the spot reads darker
+      const a = i * 1.257 + spotSeed(h) * 6.283 + Math.sin(G.t * 0.3 + i) * 0.3, d = i ? Math.max(8, h.r * 0.55) : 0;
+      point(h.x + Math.cos(a) * d, h.y + Math.sin(a) * d * 0.75, -1, Math.max(16, h.r * 1.3), 0.02, 0.06, 0.1, 0.13 * k * farK);
+    }
+    if (h.bait) {
+      ballAt(h, ball);
+      for (let i = 0; i < 3; i++)                         // the ball: a dark, shifting knot just under the surface
+        point(ball[0] + Math.sin(G.t * 0.9 + i * 2.1) * 2.5, ball[1] + Math.cos(G.t * 0.7 + i * 2.1) * 1.8, -0.8, 11, 0.03, 0.08, 0.12, 0.22 * k);
+      for (let i = 0; i < 16; i++) {
+        const a = G.t * (1.3 + (i % 3) * 0.45) * (i % 2 ? 1 : -1) + i * 2.4, r = 1.5 + (i % 5) * 1.4 + Math.sin(G.t * 2.1 + i) * 0.8;
+        point(ball[0] + Math.cos(a) * r, ball[1] + Math.sin(a) * r * 0.7, -0.6, (2.6 + (i % 3) * 0.9) * Math.sqrt(signFar), 0.04, 0.09, 0.14, 0.55 * k);
+      }
+      for (let i = 0; i < 4; i++) if (hash01(q, i, sd) < 0.45)   // silver flicks as the fish turn
+        point(ball[0] + (hash01(q, i, sd + 3) - 0.5) * 11, ball[1] + (hash01(q, i, sd + 4) - 0.5) * 8, 0.1, 1.1, 1.7, 1.8, 1.9, 0.95 * k);
+    }
+    if (h.predator) {                                     // spray thrown up by the boil
+      boilAt(h, boil);
+      const ph = boil[2], n = Math.floor(G.t / BOIL_S);
+      for (let i = 0; i < 6; i++) {
+        const a = i / 6 * 6.283 + hash01(n, i, 7), r = 1 + ph * (3 + hash01(n, i, 8) * 3);
+        point(boil[0] + Math.cos(a) * r, boil[1] + Math.sin(a) * r * 0.6, Math.sin(Math.PI * Math.min(1, ph * 1.4)) * (2.5 + hash01(n, i, 9) * 3), 1.3, 1.3, 1.35, 1.4, (1 - ph) * k);
+      }
+    }
+    if (h.rare) for (let i = 0; i < 3; i++) {             // a faint gold shimmer on the water
+      const qq = q + i * 13;
+      if (hash01(qq, sd, 11) < 0.5) point(h.x + (hash01(qq, 1, 12) - 0.5) * (12 + h.r * 0.5), h.y + (hash01(qq, 2, 12) - 0.5) * (8 + h.r * 0.3), 0.3, 1.2 * signFar, 2.1, 1.7, 0.7, 0.85 * k);
+    }
+  }
+}
+
+// ---------- the air: snow, petals, leaves and ash by day; spores and fireflies glowing at night ----------
+// The mix eases toward weather.atmosAt at the view's centre as you sail. Motes live in world-anchored cells (so the
+// sea scrolls under them), at most one per cell, each on a loop: fade in, fall or drift, fade out, come back elsewhere.
+const ATM: Atmos = { fog: 0, haze: 0, snow: 0, ash: 0, leaves: 0, petals: 0, spores: 0, fireflies: 0 };
+const atmGoal: Atmos = { ...ATM };
+let atmT = -1, nightK = 0;
+function easeAtmos(cx: number, cy: number): void {
+  atmosAt(cx, cy, atmGoal);
+  const k = atmT < 0 ? 1 : 1 - Math.exp(-clamp(G.t - atmT, 0, 0.2) / 2.5);
+  atmT = G.t;
+  for (const key in ATM) { const a = key as keyof Atmos; ATM[a] += (atmGoal[a] - ATM[a]) * k; }
+}
+interface Mote { key: keyof Atmos; dens: number; life: number; glow: boolean }
+const MOTES: Mote[] = [
+  { key: 'snow', dens: 0.9, life: 7, glow: false }, { key: 'petals', dens: 0.45, life: 8, glow: false }, { key: 'leaves', dens: 0.35, life: 8, glow: false },
+  { key: 'ash', dens: 0.5, life: 9, glow: false }, { key: 'spores', dens: 0.4, life: 9, glow: true }, { key: 'fireflies', dens: 0.3, life: 6, glow: true },
+];
+const LEAF_C = [[0.95, 0.45, 0.14], [0.86, 0.28, 0.12], [0.96, 0.72, 0.22]], SPORE_C = [[0.4, 1.0, 0.9], [0.75, 0.5, 1.0]];
+// how many of a kind are about: glowing ones come out at night (spores show faintly by day too)
+const moteAmt = (m: Mote): number => ATM[m.key] * m.dens * (!m.glow ? 1 : m.key === 'spores' ? 0.15 + 0.85 * nightK : nightK);
+function motes(glow: boolean): void {
+  let sum = 0;
+  for (const m of MOTES) if (m.glow === glow) sum += moteAmt(m);
+  if (sum < 0.02) return;
+  const C = Math.max(20, Math.max(CAM[2], CAM[3]) / 36), wa = windAngle(), wdx = Math.cos(wa), wdy = Math.sin(wa), wind = 2 + WX.wind * 7;
+  const i0 = Math.floor((CAM[0] - 10) / C), i1 = Math.floor((CAM[0] + CAM[2] + 10) / C), j0 = Math.floor((CAM[1] - 10) / C), j1 = Math.floor((CAM[1] + CAM[3] + 30) / C);
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    let r = hash01(i, j, 301) * (SET.calm ? 3.2 : 1.6);          // calm skies: half as many
+    let m: Mote | null = null;
+    for (const mm of MOTES) if (mm.glow === glow && (r -= moteAmt(mm)) < 0) { m = mm; break; }
+    if (!m) continue;
+    const off = hash01(i, j, 302), c = G.t / m.life + off, n = Math.floor(c), ph = c - n, age = ph * m.life;
+    const x0 = (i + hash01(i * 31 + n, j, 303)) * C, y0 = (j + hash01(i, j * 31 + n, 304)) * C, a = Math.min(1, ph / 0.15, (1 - ph) / 0.2);
+    const sway = Math.sin(G.t * 1.7 + off * 40), hv = hash01(i + n, j, 305);
+    if (m.key === 'snow') point(x0 + wdx * wind * age * 0.6 + sway * 1.2, y0 + wdy * wind * age * 0.4, 26 * (1 - ph), 1.0, 0.96, 0.98, 1.02, 0.85 * a);
+    else if (m.key === 'petals') point(x0 + wdx * wind * age + sway * 3, y0 + wdy * wind * age * 0.6, 3 + 16 * (1 - ph) + sway, 1.0, 1.0, 0.74 + 0.12 * hv, 0.84, 0.9 * a);
+    else if (m.key === 'leaves') { const lc = LEAF_C[Math.floor(hv * 3)]; point(x0 + wdx * wind * age + sway * 3.5, y0 + wdy * wind * age * 0.6, 2 + 15 * (1 - ph) + sway * 1.5, 1.15, lc[0], lc[1], lc[2], 0.95 * a); }
+    else if (m.key === 'ash') {
+      if (hv < 0.12) point(x0 + wdx * wind * age, y0 + wdy * wind * age * 0.5, 4 + 20 * ph, 0.9, 2.2, 0.9, 0.3, 0.8 * a);   // an ember rising
+      else point(x0 + wdx * wind * age * 0.8 + sway, y0 + wdy * wind * age * 0.4, 22 * (1 - ph), 0.95, 0.36, 0.34, 0.33, 0.7 * a);
+    } else if (m.key === 'spores') { const sc = SPORE_C[hv < 0.5 ? 0 : 1]; point(x0 + sway * 2, y0 + Math.cos(G.t + off * 30) * 1.5, 1 + 10 * ph, 1.0, sc[0], sc[1], sc[2], 0.75 * a, 2); }
+    else { const blink = Math.pow(Math.max(0, Math.sin(G.t * 2.3 + off * 40)), 3); point(x0 + sway * 3, y0 + Math.sin(G.t * 0.7 + off * 9) * 3, 2 + 2.5 * Math.sin(G.t * 0.9 + off * 7), 1.0, 1.6, 1.9, 0.6, blink * a, 2); }
+  }
+}
+// fog banks and warm haze for the composite pass, lit like the scene: rgb and strength
+const FOG_C = [0.84, 0.88, 0.9], HAZE_C = [1.0, 0.86, 0.66], FOGU = [0, 0, 0, 0], HAZEU = [0, 0, 0, 0];
+function airUniforms(pg: Program, E: Env): void {
+  for (let i = 0; i < 3; i++) { const lit = E.amb[i] + E.sunC[i] * 0.6; FOGU[i] = FOG_C[i] * lit; HAZEU[i] = HAZE_C[i] * lit; }
+  FOGU[3] = ATM.fog * (SET.calm ? 0.5 : 1); HAZEU[3] = ATM.haze * (1 - E.dk);
+  U4(pg, 'uFogC', FOGU); U4(pg, 'uHazeC', HAZEU);
+}
+const seaScratch: SeaProp[] = [];
+const ICE_MESH: Partial<Record<SeaPropKind, MS.IceKind>> = { floeS: 'floeS', floeM: 'floeM', floeL: 'floeL', berg: 'berg' };
+const FLOATS = new Set<SeaPropKind>(['log', 'weedMat', 'lilyPad', 'iceberg']);
+// steam off the vents in view, and the props that glow at night (x, y, kind index), filled while building the scene
+const vents: number[] = [], glowProps: number[] = [];
+const PROP_GLOW: Partial<Record<string, readonly number[]>> = { crystal: [0.45, 0.9, 1.0], steamVent: [1.0, 0.5, 0.2] };
+
 // the rod and fishing line, in world space (scratch, rebuilt each frame)
 const ROD_RGB = [94, 68, 48], LINE_RGB = [236, 232, 220];
 const hand = [0, 0, 0], tip = [0, 0, 0], bob = [0, 0, 0], linePrev = [0, 0, 0], lineNext = [0, 0, 0];
@@ -648,10 +928,10 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
     const t = getTile(tx, ty);
     if (!t.land) return;
     const L = tileTrees(t);
-    for (let i = 0; i < L.length; i += 5) {
+    for (let i = 0; i < L.length; i += TREE_STRIDE) {
       const x = L[i], y = L[i + 1];
-      if (x < camX - 24 || x > camX + W + 24 || y < camY - 12 || y > camY + H + 50 || (owned.length && inYard(x, y))) continue;
-      inst(MS.treeMesh(KINDS[L[i + 2]]), x, y, L[i + 4], L[i + 3]);
+      if (x < camX - 24 || x > camX + W + 24 || y < camY - 12 || y > camY + H + 50 || (owned.length && inYard(x, y)) || (sites.length && onSite(x, y))) continue;
+      inst(MS.treeMesh(KINDS[L[i + 2]]), x, y, L[i + 4], L[i + 3], 0, 0, 0, false, L[i + 5]);
     }
   });
   // the sea floor in the shallows: coral, kelp swaying with the swell, stones (never casts a shadow)
@@ -664,16 +944,30 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
       inst(MS.bedMesh(BEDS[k]), x, y, A[i + 4], A[i + 3], A[i + 5], sway, sway * 0.6, true, 1, k === BI.vent ? 1 : 0, A[i + 6]);
     }
   });
-  // ice floes rocking gently and drifting a little about their spot
-  eachTile(camX - 20, camY - 20, camX + W + 20, camY + H + 40, (tx, ty) => {
-    const A = tileIce(getTile(tx, ty));
-    for (let i = 0; i < A.length; i += ICE_STRIDE) {
-      const ph = A[i + 5], x = A[i] + Math.sin(G.t * 0.05 + ph) * 4, y = A[i + 1] + Math.cos(G.t * 0.04 + ph) * 3;
-      if (x < camX - 30 || x > camX + W + 30 || y < camY - 12 || y > camY + H + 40) continue;
-      inst(MS.iceMesh(ICES[A[i + 2]]), x, y, A[i + 4] + Math.sin(G.t * 0.03 + ph) * 0.3, A[i + 3], -0.5 + Math.sin(G.t * 0.9 + ph) * 0.2,
-        Math.sin(G.t * 0.7 + ph) * 0.035, Math.cos(G.t * 0.6 + ph) * 0.035, true, 0.8);   // dimmed a touch: bright ice set off the bloom
+  // props on the islands
+  vents.length = 0; glowProps.length = 0;
+  eachTile(camX - 30, camY - 30, camX + W + 30, camY + H + 60, (tx, ty) => {
+    const A = tileProps(getTile(tx, ty));
+    for (let i = 0; i < A.length; i += PROP_STRIDE) {
+      const x = A[i], y = A[i + 1];
+      if (x < camX - 30 || x > camX + W + 30 || y < camY - 12 || y > camY + H + 60 || (sites.length && onSite(x, y)) || (owned.length && inYard(x, y))) continue;
+      const kind = MS.PROP_KINDS[A[i + 2]];
+      inst(MS.propMesh(kind), x, y, A[i + 4], A[i + 3], A[i + 5]);
+      if (kind === 'steamVent') vents.push(x, y);
+      if (PROP_GLOW[kind]) glowProps.push(x, y, A[i + 2]);
     }
   });
+  // and in the sea (seaprops.ts): ice and flotsam ride the swell in place, rock and bone stand still
+  for (const p of seaPropsNear(cx, cy + 15, Math.max(W, H) / 2 + 45, seaScratch, true)) {
+    if (p.x < camX - 30 || p.x > camX + W + 30 || p.y < camY - 12 || p.y > camY + H + 60 || (sites.length && onSite(p.x, p.y))) continue;
+    const ice = ICE_MESH[p.kind], afloat = !!ice || FLOATS.has(p.kind), ph = p.yaw;
+    const bob = afloat ? Math.sin(G.t * (ice ? 0.9 : 1.2) + ph * 3) * (ice ? 0.2 : 0.18) : 0, tilt = afloat ? Math.sin(G.t * 0.8 + ph) * (ice ? 0.035 : 0.04) : 0;
+    if (ice) inst(MS.iceMesh(ice), p.x, p.y, ph, p.scale, -0.5 + bob, tilt, tilt * 0.8, true, 0.8);   // dimmed a touch: bright ice set off the bloom
+    else inst(MS.propMesh(p.kind as MS.PropKind), p.x, p.y, ph, p.scale, MS.PROP_Z[p.kind as MS.PropKind] + bob, tilt, tilt * 0.7, afloat);
+    if (p.kind === 'steamVent') vents.push(p.x, p.y);
+  }
+  drawSites();
+  for (const h of signs) drawGulls(h);
   // landmarks, flotsam, treasure buoys
   for (const p of pois) {
     const k = landmarkKind(p);
@@ -909,6 +1203,19 @@ function lightsFor(bs: BoatPose, pois: Poi[], dk: number): Lights {
   // the pole's lamp shines down on the flag's face (it hangs east of the pole, facing the camera), and the cottage's windows glow
   for (const o of owned) { addLight(o.x + 17, o.y + 8, 42, 0.7 * dk, LIGHTHOUSE_LAMP, MS.POLE - 8); addLight(o.x - 13, o.y + 1, 22, 0.4 * dk, PORT_LAMP, 4); }
   if (G.frenzy) addLight(G.frenzy.s.x, G.frenzy.s.y, 20, 0.25, FRENZY_GLOW);
+  for (const p of sites) {                                  // village windows, and each legend's own glow
+    const s = p.site;
+    if (s.kind === 'village') { addLight(p.x, p.y, 56, 0.7 * dk, PORT_LAMP, 7); addLight(p.x + Math.cos(s.a) * 18, p.y + Math.sin(s.a) * 18, 30, 0.5 * dk, AMBER, 5); }
+    else addLight(p.x, p.y, 48, 0.55 * dk, LEGEND_GLOW[s.legend ?? ''] ?? SEA_GLOW, 6);
+  }
+  // crystals and vents: the few nearest the middle of the view (each light costs every pixel)
+  for (let n = 0; n < 5 && dk > 0.05; n++) {
+    let best = -1, bd = Infinity;
+    for (let i = 0; i < glowProps.length; i += 3) { const d = Math.abs(glowProps[i] - viewX) + Math.abs(glowProps[i + 1] - viewY); if (d < bd) { bd = d; best = i; } }
+    if (best < 0) break;
+    addLight(glowProps[best], glowProps[best + 1], 26, 0.45 * dk, PROP_GLOW[MS.PROP_KINDS[glowProps[best + 2]]]!, 3);
+    glowProps[best] = Infinity;                            // taken
+  }
   // sea life: glowing giants, jelly swarms (one light per cluster) and the lamps of passing boats
   const cx = G.cam.x + W / 2, cy = G.cam.y + H / 2, mx = W / 2 + 60, my = H / 2 + 60;
   for (const g of LIFE.giants) if (g.glow > 0.05 && near(g, cx, cy, mx, my)) addLight(g.x, g.y, g.len * 1.3, g.glow * 0.5, g.kind === 'eel' ? EEL_GLOW : SEA_GLOW);
@@ -994,6 +1301,7 @@ function foamPoints(bs: BoatPose): number {
     if (up > 0) hullWash(w.x - Math.cos(w.a) * 3 * s, w.y - Math.sin(w.a) * 3 * s, w.a, 30 * s, 8 * s, 0, w.t, up);
     if (w.tail > 0.25) foam(w.x + Math.cos(w.a) * (MS.WHALE.joint - 5) * s, w.y + Math.sin(w.a) * (MS.WHALE.joint - 5) * s, 10 * s, w.tail * 0.5, 0, w.a + Math.PI / 2, 0.5);
   }
+  signFoam();
   for (let i = 0; i < schoolFx.length; i += 3) {          // darting and leaping fish ruffle the surface
     const kind = schoolFx[i + 2];
     if (kind === FX_RING) foam(schoolFx[i], schoolFx[i + 1], 5, 0.35, 0);
@@ -1062,7 +1370,15 @@ function partPoints(): void {
     const k = clamp(p.life / p.max, 0, 1), age = 1 - k, lean = age * (2 + WX.wind * 8), g = lerp(0.82, 0.24, p.dark || 0);
     point(p.x + wdx * lean, p.y + wdy * lean, p.z ?? 10, (p.size || 2) * (1 + 2 * age) * 1.5, g, g * 0.98, g * 0.95, Math.min(1, age * 8) * Math.pow(k, 0.6) * 0.9, 1);
   }
+  for (let i = 0; i < vents.length; i += 2) for (let k = 0; k < 3; k++) {   // steam rising off the vents
+    const ph = frac(G.t * 0.35 + k / 3 + vents[i] * 0.013), lean = ph * (2 + WX.wind * 6);
+    point(vents[i] + wdx * lean, vents[i + 1] + wdy * lean, 1 + ph * 12, 2 + ph * 4, 0.9, 0.9, 0.92, Math.sin(Math.PI * ph) * 0.45, 1);
+  }
+  signPoints(false);
+  motes(false);
   blendN = pN;
+  signPoints(true);
+  motes(true);
   for (const p of G.parts) if (p.kind === 'glow') {        // bioluminescent plankton, added on top
     const k = clamp(p.life / p.max, 0, 1);
     point(p.x, p.y, p.z || 0, p.size || 1.2, 0.35, 1.5, 1.3, k, 2);
@@ -1172,8 +1488,11 @@ export function render(alpha: number): void {
   // lamps light past their landmark and beams reach 150 out at lantern height: gather those wider, so none switches
   // on already in view (lightsFor keeps the nearest and fades the rest)
   gatherOwned(pcx, pcy, viewReach(120));
-  const Lt = lightsFor(bs, poisNear(pcx, pcy, viewReach(200), lightPois), E.dk);
+  gatherSites(pcx, pcy, viewReach(160));
+  hotspotsNear(pcx, pcy, viewReach(40), signs);
+  easeAtmos(pcx, pcy); nightK = E.dk; signScale();
   buildScene(bs, pois, camX, camY);
+  const Lt = lightsFor(bs, poisNear(pcx, pcy, viewReach(200), lightPois), E.dk);
   SHXY[0] = E.sun[0] / Math.max(0.25, E.sun[2]); SHXY[1] = E.sun[1] / Math.max(0.25, E.sun[2]);   // shadow offset per unit height
   gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
   // 1. object shadows projected onto the ground plane (only the part of the field in use is cleared)
@@ -1201,6 +1520,7 @@ export function render(alpha: number): void {
   const pg = PG.ground;
   gl.useProgram(pg.p);
   bindTex(pg, 'uH', F.tex, 0); bindTex(pg, 'uFoam', F.foam.tex, 1); bindTex(pg, 'uShadow', F.shadow.tex, 2);
+  bindTex(pg, 'uTh', F.th, 3); bindTex(pg, 'uPal', palTex, 4);
   U4(pg, 'uHR', HR); U4(pg, 'uHT', HT); U4(pg, 'uCam', CAM); U1(pg, 'uT', G.t); U1(pg, 'uWT', WX.waveT); U1(pg, 'uWind', WX.wind); U1(pg, 'uRain', WX.rain);
   U1(pg, 'uNight', E.dk); U1(pg, 'uCloud', E.cloud); U1(pg, 'uFlash', WX.flash * (SET.calm ? 0.15 : 1)); U2(pg, 'uWD', Math.cos(windAngle()), Math.sin(windAngle()));
   sunUniforms(pg, E); U3(pg, 'uSky', E.sky); styleUniforms(pg); lightUniforms(pg, Lt);
@@ -1254,6 +1574,7 @@ export function render(alpha: number): void {
   U1(cp, 'uGrade', R.fx.grade ?? 1); U1(cp, 'uDusk', E.dusk);
   U1(cp, 'uRain', WX.rain); U1(cp, 'uDrops', WX.rain * (SET.calm ? 0.5 : 1)); U4(cp, 'uCam', CAM); U1(cp, 'uFlash', WX.flash * (SET.calm ? 0.15 : 1)); U1(cp, 'uBloomK', bloomK); U1(cp, 'uSlant', 0.3 + WX.wind * 0.7);
   U3(cp, 'uTint', E.tint); U2(cp, 'uRes', out ? w : cv.width, out ? h : cv.height);
+  airUniforms(cp, E);
   quad();
   if (out) present(out, h, (camX0 - camX) * upx, (camY0 - camY) * upx, R.S / upx);
   gl.bindVertexArray(null);
