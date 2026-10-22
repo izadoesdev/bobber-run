@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { SPECIES, SP } from '../src/econ';
 import { biomeMix } from '../src/biome';
-import { cellPois, schoolsNear } from '../src/world';
+import { cellPois, schoolsNear, tickHotspots } from '../src/world';
 
 // the hold, contracts and port prices store species by index, so the original 43 must never move
 const ORIGINAL = ['anchovy', 'sardine', 'mullet', 'flounder', 'mackerel', 'herring', 'crab', 'squid', 'rtrout', 'cod', 'duskfin', 'lantern',
@@ -25,7 +25,9 @@ describe('species catalogue', () => {
     expect(SPECIES.slice(0, ORIGINAL.length + BIOME_V1.length).map(s => s.id)).toEqual([...ORIGINAL, ...BIOME_V1]);
   });
   test('home waters keep their everyday fish and no biome fish', () => {
-    const ids = new Set(schoolsNear(280, 280, 450).map(s => SPECIES[s.sp].id));
+    // hotspots surface and dive on the game clock, so look over an hour of it
+    const ids = new Set<string>();
+    for (let t = 0; t < 3600; t += 60) { tickHotspots(t); for (const s of schoolsNear(280, 280, 450)) if (s.stock > 0) ids.add(SPECIES[s.sp].id); }
     for (const id of ['anchovy', 'mackerel', 'perch', 'flounder']) expect(ids.has(id)).toBe(true);
     for (const id of [...Object.keys(HABITAT), ...ICE]) expect(ids.has(id)).toBe(false);
   });

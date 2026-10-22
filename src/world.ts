@@ -403,7 +403,6 @@ const schoolReach = (sp: number): number => schoolLook(sp).radius + SWIM.wander 
 /** Closest two schools may be: their reaches plus clear water between (at least ~50 for the smallest). */
 const schoolGap = (a: number, b: number): number => schoolReach(a) + schoolReach(b) + 14;
 const FC = 300;                                // fish cell size
-const FC_EDGE = 0.11;                          // schools keep this share of a cell clear at its edges: 2 x 33 covers the widest gap (~65)
 interface FishCell { schools: School[]; crates: Crate[] }
 const fishCells = new Map<number, FishCell>();
 function makeSchool(id: string, x: number, y: number, sp: number, r: Rng, stock?: number): School {
@@ -436,24 +435,6 @@ function crowded(x: number, y: number, sp: number, others: readonly School[]): b
 }
 function genFishCell(i: number, j: number): FishCell {
   const r = mulberry(hash(i, j, 31)), schools: School[] = [], crates: Crate[] = [];
-  const n = 3 + Math.floor(r() * 3), x0 = (i + FC_EDGE) * FC, y0 = (j + FC_EDGE) * FC, span = (1 - 2 * FC_EDGE) * FC;
-  const box = [x0, y0, x0 + span, y0 + span];
-  const fixed = [BOSS, ...poisNear(x0 + span / 2, y0 + span / 2, FC).flatMap(p => p.school ? [p.school] : [])];
-  for (let q = 0; q < n; q++) {
-    // every other school tries to hug a coastline (if this cell has one) so shallow-water species get a home
-    for (let tries = q % 2 ? 3 : 24; tries > 0; tries--) {
-      const cx = x0 + span * r(), cy = y0 + span * r(), h = heightAt(cx, cy);
-      if (h > -0.07 || (!(q % 2) && tries > 4 && h < -0.28)) continue;
-      const sp = pickSpecies(h, Math.hypot(cx - HOME_ISLAND.x, cy - HOME_ISLAND.y), r, cx, cy);
-      const home = settle(cx, cy, schoolReach(sp), box);
-      if (!home || crowded(home.x, home.y, sp, schools) || crowded(home.x, home.y, sp, fixed)) continue;
-      const s = makeSchool(`s:${i},${j},${q}`, home.x, home.y, sp, r);
-      s.max = s.stock;
-      s.gold = !SPECIES[s.sp].legend && hash01(i * 7 + q, j, 53) < GOLD_SCHOOLS;
-      schools.push(s);
-      break;
-    }
-  }
   if (r() < 0.65) {
     const x = (i + 0.1 + 0.8 * r()) * FC, y = (j + 0.1 + 0.8 * r()) * FC;
     if (heightAt(x, y) < -0.06) crates.push({ id: `c:${i},${j}`, x, y, value: 3 + Math.floor(r() * 7), taken: false, respawn: 0, ph: r() * 6.28 });
@@ -466,6 +447,110 @@ function fishCell(i: number, j: number): FishCell {
   if (!c) { c = genFishCell(i, j); fishCells.set(k, c); }
   return c;
 }
+// ---------- fish hotspots ----------
+// The sea is not a grid of schools. A few hotspots are up within reach at a time, each a tight cluster of two to four
+// schools of what its water holds: often a bait ball with a predator under it, now and then a golden fish. A hotspot
+// surfaces for a few minutes, dives, and comes up again somewhere else in its patch of sea, favouring drop-offs, coasts
+// and reef or kelp water. Its state follows the game clock (tickHotspots), so a reload finds the same sea. The home
+// waters keep one cluster up and in place, so a first voyage always starts by biting fish.
+export interface Hotspot {
+  id: string; x: number; y: number; r: number;
+  /** 0 hidden … 1 fully surfaced; eases in and out over SURF_S */
+  surf: number;
+  /** a school of bait fish, a predator feeding under it, a golden fish among them */
+  bait: boolean; predator: boolean; rare: boolean;
+  schools: School[];
+}
+interface HotSlot { k: number; period: number; phase: number; duty: number; fixed: boolean; n: number; up: boolean; spot: Hotspot }
+const HC = 420, HSLOTS = 3, SURF_S = 10, HOME_R = 300, RARE_SPOT = 0.1, CLUSTER = 4;
+const BAIT_FISH = new Set([SP.anchovy, SP.sardine, SP.herring]);
+const hotCells = new Map<number, HotSlot[]>();
+let hotClock = 0;
+const DOWN = 1e12;                                // spooked until "never": a cluster under water neither shows nor bites
+// how interesting the water at (x, y) is to fish: the edge of a drop-off, a coast, reef or kelp water
+function lure(x: number, y: number): number {
+  const h = heightAt(x, y), edge = Math.abs(heightAt(x + 24, y) - heightAt(x - 24, y)) + Math.abs(heightAt(x, y + 24) - heightAt(x, y - 24));
+  const m = biomeMix(x, y);
+  return edge * 3 + (h > -0.3 ? 0.4 : 0) + m.reef * 0.6 + m.kelp * 0.5 + m.mangrove * 0.3;
+}
+// a cluster for slot k of hot cell (i, j) on its n-th surfacing: where it comes up and which fish it holds
+function placeSpot(i: number, j: number, sl: HotSlot): void {
+  const spot = sl.spot, r = mulberry(hash(i * 3 + sl.k, j, 7919 + sl.n)), x0 = i * HC + 30, y0 = j * HC + 30, span = HC - 60;
+  const box = [x0, y0, x0 + span, y0 + span];
+  const fixed = [BOSS, ...poisNear(x0 + span / 2, y0 + span / 2, HC).flatMap(p => p.school ? [p.school] : [])];
+  let best: Point | null = null, score = -1;
+  for (let t = 0; t < 30; t++) {
+    const cx = x0 + span * r(), cy = y0 + span * r();
+    if (heightAt(cx, cy) > -0.08) continue;
+    const sc = lure(cx, cy) + r() * 0.3;
+    if (sc > score) { score = sc; best = { x: cx, y: cy }; }
+  }
+  const used: number[] = [];
+  let bait = false, predator = false, reach = 0;
+  for (const s of spot.schools) { s.spooked = DOWN; s.stock = 0; s.gold = false; s.swim = undefined; }
+  if (best) {
+    for (let m = 0, tries = 0; m < CLUSTER && tries < 12; tries++) {
+      // fish of the first school's water; behind a bait ball, a predator from a little deeper
+      const ox = best.x + (m ? (r() - 0.5) * 50 : 0), oy = best.y + (m ? (r() - 0.5) * 36 : 0), h = heightAt(ox, oy);
+      if (h > -0.08) continue;
+      const d = Math.hypot(ox - HOME_ISLAND.x, oy - HOME_ISLAND.y), sp = pickSpecies(m === 1 && bait ? h - 0.15 : h, d, r, ox, oy);
+      if (used.includes(sp) || (m > 0 && BAIT_FISH.has(sp) && bait)) continue;
+      const home = settle(ox, oy, schoolReach(sp), box);
+      if (!home || crowded(home.x, home.y, sp, fixed)) continue;
+      const s = spot.schools[m] ??= makeSchool(`${spot.id},${m}`, home.x, home.y, sp, r);
+      const n = BAIT_FISH.has(sp) ? 3 + Math.floor(r() * 3) : 2 + Math.floor(r() * 2);
+      Object.assign(s, { x: home.x, y: home.y, sp, stock: n, max: n, respawn: 0, ph: r() * 6.28, spooked: undefined, gold: false, swim: undefined, scatterT: undefined, heat: 0 });
+      if (m === 0) bait = BAIT_FISH.has(sp);
+      else if (bait && !BAIT_FISH.has(sp)) predator = true;
+      used.push(sp); reach = Math.max(reach, Math.hypot(home.x - best.x, home.y - best.y) + schoolReach(sp));
+      m++;
+      if (m >= 2 && r() < 0.35) break;              // two to four schools
+    }
+    const live = spot.schools.filter(s => s.stock > 0 && !SPECIES[s.sp].legend);
+    spot.rare = live.length > 0 && r() < RARE_SPOT;
+    if (spot.rare) live[Math.floor(r() * live.length)].gold = true;
+  }
+  Object.assign(spot, { x: best?.x ?? x0 + span / 2, y: best?.y ?? y0 + span / 2, r: reach, bait, predator });
+  if (!used.length) spot.rare = false;
+}
+function hotCell(i: number, j: number): HotSlot[] {
+  const k = key(i, j);
+  let c = hotCells.get(k);
+  if (c) return c;
+  const home = Math.hypot((i + 0.5) * HC - HOME_ISLAND.x, (j + 0.5) * HC - HOME_ISLAND.y) < HOME_R;
+  c = [];
+  for (let q = 0; q < HSLOTS; q++) {
+    const period = 420 + hash01(i * 5 + q, j, 61) * 300;   // seven to twelve minutes a cycle
+    const spot: Hotspot = { id: `h:${i},${j},${q}`, x: 0, y: 0, r: 0, surf: 0, bait: false, predator: false, rare: false, schools: [] };
+    c.push({ k: q, period, phase: q / HSLOTS + hash01(i, j * 5 + q, 62) * 0.2, duty: 0.55, fixed: home && q === 0, n: -1, up: false, spot });
+  }
+  hotCells.set(k, c);
+  for (const sl of c) stepSlot(i, j, sl);
+  return c;
+}
+// bring one slot to the hotspot clock: surfacing (somewhere new), diving, and the ease of its signs
+function stepSlot(i: number, j: number, sl: HotSlot): void {
+  const cyc = hotClock / sl.period + sl.phase, n = sl.fixed ? 0 : Math.floor(cyc), f = cyc - Math.floor(cyc);
+  const up = sl.fixed || f < sl.duty;
+  if (up && n !== sl.n) { sl.n = n; placeSpot(i, j, sl); }
+  else if (!up && sl.up) for (const s of sl.spot.schools) s.spooked = DOWN;
+  sl.up = up;
+  const into = f * sl.period, left = (sl.duty - f) * sl.period;
+  sl.spot.surf = sl.fixed ? 1 : up ? Math.min(1, into / SURF_S, left / SURF_S) : 0;
+}
+/** Move the hotspots on to game clock `clock` (seconds): call once a frame from the game loop. */
+export function tickHotspots(clock: number): void {
+  hotClock = clock;
+  for (const [k, c] of hotCells) { const i = Math.floor(k / 100000) - 50000, j = (k % 100000) - 50000; for (const sl of c) stepSlot(i, j, sl); }
+}
+/** The hotspots up (or easing in or out) within the square of half-size rad; fills `out` if given. */
+export function hotspotsNear(x: number, y: number, rad: number, out: Hotspot[] = []): Hotspot[] {
+  out.length = 0;
+  for (let j = Math.floor((y - rad) / HC); j <= Math.floor((y + rad) / HC); j++)
+    for (let i = Math.floor((x - rad) / HC); i <= Math.floor((x + rad) / HC); i++)
+      for (const sl of hotCell(i, j)) if (sl.spot.surf > 0 && sl.spot.r > 0 && Math.abs(sl.spot.x - x) < rad + sl.spot.r && Math.abs(sl.spot.y - y) < rad + sl.spot.r) out.push(sl.spot);
+  return out;
+}
 // the Old One's lair: deep open water far from home, fixed for this world
 export const LAIR: Point = (() => {
   for (let r = 3400; r < 5600; r += 150) for (let a = 0; a < 6.28; a += 0.35) {
@@ -476,12 +561,13 @@ export const LAIR: Point = (() => {
 })();
 export const BOSS: School = { id: 'boss', x: LAIR.x, y: LAIR.y, sp: SP.oldone, stock: 1, max: 1, respawn: 0, ph: 0, boss: true };
 const landmarkScratch: Poi[] = [];
-/** fish schools in fish cells overlapping the square of half-size rad, plus the boss and landmark schools nearby; fills `out` if given */
+/** fish schools in hotspots within the square of half-size rad, plus the boss and landmark schools nearby; fills `out` if given */
 export function schoolsNear(x: number, y: number, rad: number, out: School[] = []): School[] {
   out.length = 0;
   if (Math.abs(BOSS.x - x) < rad + 20 && Math.abs(BOSS.y - y) < rad + 20) out.push(BOSS);
-  for (let j = Math.floor((y - rad) / FC); j <= Math.floor((y + rad) / FC); j++)
-    for (let i = Math.floor((x - rad) / FC); i <= Math.floor((x + rad) / FC); i++) for (const s of fishCell(i, j).schools) out.push(s);
+  for (let j = Math.floor((y - rad) / HC); j <= Math.floor((y + rad) / HC); j++)
+    for (let i = Math.floor((x - rad) / HC); i <= Math.floor((x + rad) / HC); i++)
+      for (const sl of hotCell(i, j)) for (const s of sl.spot.schools) if (Math.abs(s.x - x) < rad && Math.abs(s.y - y) < rad) out.push(s);
   for (const p of poisNear(x, y, rad + 60, landmarkScratch)) if (p.school) out.push(p.school);
   return out;
 }
@@ -508,6 +594,7 @@ export function trimWorld(x: number, y: number, view: number): void {
   for (const k of tiles.keys()) if (far(k, TS, x, y, keepTiles)) tiles.delete(k);
   for (const k of cells.keys()) if (far(k, CELL, x, y, 4000)) cells.delete(k);
   for (const [k, L] of poiCells) if (far(k, CELL, x, y, 4000) && L.every(p => full(p.school))) poiCells.delete(k);
+  for (const [k, c] of hotCells) if (far(k, HC, x, y, 1500) && c.every(sl => sl.spot.schools.every(full))) hotCells.delete(k);
   for (const [k, c] of fishCells) {
     if (!far(k, FC, x, y, 1500)) continue;
     if (c.schools.every(full) && c.crates.every(cr => !cr.taken)) fishCells.delete(k);
