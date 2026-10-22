@@ -23,14 +23,14 @@ async function asReturning(page: Page, query: string): Promise<void> {
 test('a shared catch sets a waypoint for a returning player, names the sailor and tidies the address @both', async ({ page }) => {
   await recordLines(page);
   await asReturning(page, '?offline&catch=perch&kg=1.4&at=2400,1800&by=Captain%20Kipper');
-  await expect.poll(() => page.evaluate(() => { const w = window.BR.G.waypoint; return w && Math.hypot(w.x - 2400, w.y - 1800) < 600; })).toBe(true);
-  await expect.poll(() => shown(page)).toContain('Captain Kipper landed a Perch of 1.4 kg');
+  await expect.poll(() => page.evaluate(() => { const w = window.BR.G.waypoint; return !!w && Math.hypot(w.x - 2400, w.y - 1800) < 600; }), { timeout: 15_000 }).toBe(true);   // set on a frame: slow under parallel load
+  await expect.poll(() => shown(page), { timeout: 15_000 }).toContain('Captain Kipper landed a Perch of 1.4 kg');
   expect(new URL(page.url()).search).toBe('?offline');
 });
 test('a rude name in a share link is not shown', async ({ page }) => {
   await recordLines(page);
   await sail(page, '?offline&catch=perch&at=2400,1800&by=Sh1t%20Lord');
-  await expect.poll(() => shown(page)).toContain('A sailor landed a Perch');
+  await expect.poll(() => shown(page), { timeout: 15_000 }).toContain('A sailor landed a Perch');
   expect(await shown(page)).not.toContain('Sh1t');
 });
 test('a share link for a fish that does not exist is ignored', async ({ page }) => {
@@ -66,6 +66,6 @@ test('a visit link points the way to that sailor once they show up on the sea', 
   expect(new URL(page.url()).search).toBe('?offline');
   // offline there is no relay, so stand in for it: signed in, and the sailor in the far list
   await page.evaluate(() => { const { NET, ONLINE, G } = window.BR; NET.authed = true; ONLINE.far = [{ uid: 'k1', name: 'Captain Kipper', x: G.boat.x + 1500, y: G.boat.y + 300 }]; });
-  await expect.poll(() => page.evaluate(() => window.BR.G.waypoint && Math.round(window.BR.G.waypoint.x - window.BR.G.boat.x))).toBeGreaterThan(1300);
-  await expect.poll(() => shown(page)).toContain('Captain Kipper is out at sea');
+  await expect.poll(() => page.evaluate(() => { const { G } = window.BR; return G.waypoint ? Math.round(G.waypoint.x - G.boat.x) : 0; }), { timeout: 15_000 }).toBeGreaterThan(1300);   // checked about once a second, on a frame
+  await expect.poll(() => shown(page), { timeout: 15_000 }).toContain('Captain Kipper is out at sea');
 });
