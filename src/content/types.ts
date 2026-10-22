@@ -9,7 +9,7 @@ import type { BaitKind, ProjectId } from '../types';
  * (chart, fund, visit) are checked against the game as it is.
  */
 export type Objective =
-  | { catch: number; species?: string; trophy?: true; variant?: string; region?: BiomeId; night?: true }
+  | { catch: number; species?: string; trophy?: true; variant?: string; region?: BiomeId; night?: true; weather?: 'rain' | 'storm' }   // rain counts storms too
   | { sell: number }                                       // coins taken at the market while the quest runs
   | { chart: number; kind: 'port' | 'light' | 'wreck' }    // places on your chart, in all
   | { visit: { x: number; y: number; r?: number }; place: string }   // sail within r (default 60) of a spot; `place` names it

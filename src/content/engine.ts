@@ -6,6 +6,7 @@ import { G } from '../game/state';
 import { addCoins, toast } from '../game/feedback';
 import { isNight } from '../game/rules';
 import { biomeAt, type BiomeId } from '../biome';
+import { WX } from '../weather';
 import { SPECIES } from '../species';
 import type { Fish } from '../types';
 import { PACKS } from './packs';
@@ -49,6 +50,7 @@ export function packCatch(fish: Fish, x: number, y: number): void {
     if (o.variant && fish.variant !== o.variant) continue;
     if (o.region && biomeAt(x, y) !== o.region) continue;
     if (o.night && !isNight()) continue;
+    if (o.weather && !(WX.state === 'storm' || (o.weather === 'rain' && WX.state === 'rain'))) continue;
     cur.s.n++;
   }
 }

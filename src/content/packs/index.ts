@@ -2,5 +2,8 @@
 // tests/content.test.ts checks it (ids, characters, species, regions, rewards).
 import type { Pack } from '../types';
 import { emberIsles } from './ember-isles';
+import { coastSurvey } from './coast-survey';
+import { stormSeason } from './storm-season';
+import { nightMarket } from './night-market';
 
-export const PACKS: Pack[] = [emberIsles];
+export const PACKS: Pack[] = [emberIsles, coastSurvey, stormSeason, nightMarket];
