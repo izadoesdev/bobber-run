@@ -8,7 +8,11 @@ const errs = []; p.on('pageerror', e => errs.push(e.message));
 await p.goto(process.argv[2] + '?offline'); await p.waitForTimeout(3500);
 await p.evaluate(() => { const { G, SET, poisNear } = window.BR; G.talk = null; G.story = { i: 99, base: {}, shown: true }; G.toasts = [];
   for (const q of poisNear(G.boat.x, G.boat.y, 2200)) if (Math.random() < 0.7) G.found.add(q.id);
-  G.waypoint = { x: G.boat.x + 500, y: G.boat.y + 260 }; SET.minimap = true; G.mode = 'play'; });
+  G.waypoint = { x: G.boat.x + 500, y: G.boat.y + 260 }; SET.minimap = true; G.mode = 'play';
+  // sail a sweep of the sea round home first, so the fog of war lifts where the shots look
+  const { sim } = window.BR, b0 = { x: G.boat.x, y: G.boat.y };
+  for (let y = -3200; y <= 3200; y += 400) for (let x = -3600; x <= 3600; x += 400) { G.boat.x = b0.x + x; G.boat.y = b0.y + y; sim(0.26); }
+  Object.assign(G.boat, b0); });
 await p.waitForTimeout(1500);
 await p.locator('.mini').screenshot({ path: `${out}-mini.png` });
 for (const z of [1, 2]) {

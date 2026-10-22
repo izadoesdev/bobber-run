@@ -6,6 +6,7 @@ import { toast } from './feedback';
 import { netSaved, reportStats } from '../net';
 import type { GameState, Port } from '../types';
 import { G, freshStats, freshUpgrades } from './state';
+import { seedExplored } from './explore';
 import { fleetWhileAway } from './port/fleet';
 import { parseSave, type ParsedSave } from './saveSchema';
 import { DAYLEN, cap, hpMax } from './rules';
@@ -147,6 +148,7 @@ export function loadGame(): void {
     };
     Object.assign(G, loaded);
     fleetWhileAway(s.savedAt);                                     // the fleet kept fishing while the game was closed
+    if (!G.explored) seedExplored();
     if (moved) toast('The coast has changed while you were away. Your boat, coins and logbook are safe, but your chart starts fresh');
     // retired upgrades (bilge pumps went into Plating): give back what they cost, once
     const refund = retiredRefund(G.up);

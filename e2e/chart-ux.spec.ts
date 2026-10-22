@@ -73,6 +73,9 @@ test('dragging pans without a waypoint; C and the buttons recentre and zoom; the
 
 test('an island on the chart opens its card, and its waypoint brings you back to the chart', async ({ page }) => {
   await openChart(page);
+  await page.evaluate(() => { const { G, sim } = window.BR, b = { x: G.boat.x, y: G.boat.y }; G.mode = 'play';   // see the sea round about first
+    for (const [dx, dy] of [[-500, -300], [500, -300], [-500, 300], [500, 300], [0, 0]]) { G.boat.x = b.x + dx; G.boat.y = b.y + dy; sim(0.3); }
+    G.mode = 'map'; });
   // the nearest island to the boat that isn't Alderhaven, found through the chart's own hit test
   const box = (await page.locator('.chartwrap canvas').boundingBox())!;
   let opened = false;
@@ -119,13 +122,16 @@ test('the chart draws the land and sea themselves, not a flat fill', async ({ pa
   // a point of dry land and one of deep water near the boat, by the world's own heights
   const pts = await page.evaluate(() => {
     const { G, hAt } = window.BR; let land = null, sea = null;
-    for (let r = 40; r < 600 && (!land || !sea); r += 20) for (let a = 0; a < 6.28; a += 0.2) {
+    for (let r = 40; r < 1500 && (!land || !sea); r += 20) for (let a = 0; a < 6.28; a += 0.2) {
       const x = G.boat.x + Math.cos(a) * r, y = G.boat.y + Math.sin(a) * r, h = hAt(x, y);
-      if (!land && h > 0.3) land = { x, y }; if (!sea && h < -0.45) sea = { x, y };
+      if (!land && h > 0.15) land = { x, y }; if (!sea && h < -0.45) sea = { x, y };
     }
     return { land, sea };
   });
   expect(pts.land && pts.sea).toBeTruthy();
+  await page.evaluate(({ land, sea }) => { const { G, sim } = window.BR, b = { x: G.boat.x, y: G.boat.y }; G.mode = 'play';   // sail by both, so the fog lifts there
+    for (const p of [land!, sea!]) { G.boat.x = p.x; G.boat.y = p.y; sim(0.3); }
+    G.boat.x = b.x; G.boat.y = b.y; G.mode = 'map'; }, pts);
   const box = (await page.locator('.chartwrap canvas').boundingBox())!;
   const rgb = async (p: { x: number; y: number }) => {
     const [cx, cy] = await onChart(page, p.x, p.y);
@@ -135,4 +141,15 @@ test('the chart draws the land and sea themselves, not a flat fill', async ({ pa
     }, [(cx - box.x) / box.width, (cy - box.y) / box.height]);
   };
   await expect.poll(async () => { const [l, s] = [await rgb(pts.land!), await rgb(pts.sea!)]; return s[2] > s[0] + 30 && Math.abs(l[0] - s[0]) + Math.abs(l[1] - s[1]) + Math.abs(l[2] - s[2]) > 60; }, { timeout: 15_000 }).toBe(true);
+});
+
+test('sea you have not sailed stays blank on the chart until you have been there', async ({ page }) => {
+  await openChart(page);
+  const far = await page.evaluate(() => { const { G } = window.BR; return { x: G.boat.x + 900, y: G.boat.y + 300 }; });
+  await page.evaluate(() => { window.BR.G.map.zoom = 2; });
+  await hoverUntil(page, far.x, far.y, /unexplored/i);
+  // sail there (stepped through the game's own tick), come back to the chart, and it's charted water now
+  await page.evaluate(({ x, y }) => { const { G, sim } = window.BR; G.mode = 'play'; G.boat.x = x; G.boat.y = y; sim(0.3); sim(0.3); G.boat.x -= 900; G.boat.y -= 300; G.mode = 'map'; }, far);
+  await hoverUntil(page, far.x, far.y, /^(?!.*unexplored)/i);
+  expect(await page.evaluate(() => window.BR.G.explored.length)).toBeGreaterThan(0);
 });

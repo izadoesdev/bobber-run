@@ -25,6 +25,7 @@ import { initTelemetry, watchGame } from './telemetry';
 import { forceName } from './ui/menus';
 import { applySharedCatch, tickVisit } from './share';
 import { tickPacks, packJournal, packCatch } from './content/engine';
+import { tickExplore } from './game/explore';
 import { biomeAt } from './biome';
 import { zoneStats } from './ui/chart';
 import { baseScale, targetScale, easeScale, shipZoom } from './camera';
@@ -100,6 +101,7 @@ export function tick(dt: number): void {
   applySharedCatch();
   tickVisit();
   tickPacks(dt);
+  if (G.mode === 'play') tickExplore(dt);
   updateLife(dt);
   const bs = boatRenderState(alpha);
   if (G.mode === 'play' || G.mode === 'sunk' || G.mode === 'title') updateCamera(dt, bs.x, bs.y);   // menus freeze the view behind them

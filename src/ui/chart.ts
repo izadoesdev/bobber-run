@@ -5,6 +5,7 @@ import { SPECIES, PAINTS } from '../econ';
 import { poisNear, schoolsNear, claimableNear, heightAt, homesteadSite, LAIR } from '../world';
 import { livesAt } from '../species';
 import { drawTerrain } from './chartgl';
+import { seen as isSeen, revealPlace } from '../game/explore';
 import { ONLINE } from '../online';
 import { ISLANDS, watchExtra, islandPrice, islandColour } from '../islands';
 import type { Point, Poi } from '../types';
@@ -84,14 +85,16 @@ export function drawChart(ctx: Ctx, w: number, h: number, cx: number, cy: number
   }
   if (opt.grid) drawGrid(ctx, w, h, wx0, wy0, wpp, S, u);
 
-  const pois = poisNear(cx, cy, Math.max(w, h) * wpp * 0.6);
   const son = sonarLvl();                  // 1 shows schools, 2 colours them by species, 3 stars legends
   const showUncharted = (opt.sextant ?? 0) >= 2;
+  // what's in sea you haven't seen stays off the chart, except what a sextant marks
+  const pois = poisNear(cx, cy, Math.max(w, h) * wpp * 0.6).filter(p => showUncharted || G.found.has(p.id) || isSeen(p.x, p.y));
+  for (const p of pois) if (G.found.has(p.id) && !isSeen(p.x, p.y)) revealPlace(p);   // charted before the fog came in
   if (son >= 1) drawSchools(ctx, cx, cy, Math.min(260, Math.max(w, h) * wpp * 0.6), S, u, son, seen);
   drawPois(ctx, pois, S, u, showUncharted, seen);
   drawTreasure(ctx, S, u, seen);
   drawLair(ctx, S, u);
-  if (G.frenzy) { const [x, y] = S(G.frenzy.s.x, G.frenzy.s.y); star(ctx, x, y, 5 * u, Math.floor(G.t * 4) % 2 ? COL.port : '#fff6d6'); seen('frenzy', x, y); }
+  if (G.frenzy && isSeen(G.frenzy.s.x, G.frenzy.s.y)) { const [x, y] = S(G.frenzy.s.x, G.frenzy.s.y); star(ctx, x, y, 5 * u, Math.floor(G.t * 4) % 2 ? COL.port : '#fff6d6'); seen('frenzy', x, y); }
   if (son >= 3) for (const p of pois) if (p.school && schoolShown(p.school) && SPECIES[p.school.sp].legend) star(ctx, ...S(p.school.x, p.school.y), 4 * u, COL.port);
   if (opt.labels) drawLabels(ctx, pois, S, u);
   if (opt.target) { const at = S(opt.target.x, opt.target.y); drawTarget(ctx, w, h, at, u, !!opt.round); if (opt.labels) drawn.add('target'); }
@@ -226,6 +229,7 @@ function drawGrid(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp:
 
 function drawSchools(ctx: Ctx, cx: number, cy: number, rad: number, S: Project, u: number, son: number, seen: Seen): void {
   for (const s of schoolsNear(cx, cy, rad)) {
+    if (!isSeen(s.x, s.y)) continue;
     // scattered and fished-out schools stay on the sonar, faded, so they don't blink out of sight
     if (!schoolShown(s) || s.boss) continue;
     const [x, y] = S(s.x, s.y), colour = son >= 2 ? SPECIES[s.sp].c[1] : '#b4d0d8';
@@ -293,7 +297,7 @@ function drawTreasure(ctx: Ctx, S: Project, u: number, seen: Seen): void {
 
 // the Old One's lair, a blinking eye once the logbook is well filled
 function drawLair(ctx: Ctx, S: Project, u: number): void {
-  if (logged() < 10 && !G.log.oldone) return;
+  if ((logged() < 10 && !G.log.oldone) || !isSeen(LAIR.x, LAIR.y)) return;
   const [x, y] = S(LAIR.x, LAIR.y);
   ctx.fillStyle = Math.floor(G.t * 2) % 2 ? COL.red : '#efe9dc';
   ctx.beginPath(); ctx.arc(x, y, 4.5 * u, 0, 7); ctx.fill();
@@ -346,6 +350,7 @@ function drawIslandNames(ctx: Ctx, cx: number, cy: number, rad: number, S: Proje
   ctx.textAlign = 'center';
   for (const c of near) {
     const row = ISLANDS.get(c.key), [x, y] = S(c.x, c.y);
+    if (!row?.mine && !isSeen(c.x, c.y)) continue;      // only your own island shows through unseen sea
     if (!row) {                                          // for sale: a faint dashed ring on the full chart
       if (unclaimed) { seen('island', x, y); ctx.setLineDash([3 * u, 3 * u]); ctx.lineWidth = 1.2 * u; ctx.strokeStyle = 'rgba(58,42,28,0.45)'; ctx.beginPath(); ctx.arc(x, y, 5 * u, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
       continue;
@@ -486,6 +491,12 @@ export function chartAt(x: number, y: number, r: number, target: { at: Point; te
   if (target && near(target.at)) return { title: 'Next step', sub: target.text, act: SAIL, snap: target.at };
   const sailor = sailorMarks().find(near);
   if (sailor) return { title: sailor.name, sub: 'Another sailor', act: 'Click to set a waypoint here' };
+  const fogged = !isSeen(x, y);
+  const map = G.maps.find(near);
+  if (map) return { title: 'Treasure', sub: `Marked on a treasure map · ${away(map)}`, act: SAIL, snap: map };
+  const esc = G.escaped.find(near);
+  if (esc) return { title: `The ${SPECIES[esc.sp].name} that got away`, sub: `Broke your line on day ${esc.day} · ${away(esc)}`, act: SAIL, snap: esc };
+  if (fogged) return { title: 'Unexplored waters', sub: `${away({ x, y })}. Sail there to fill in the chart`, act: 'Click to set a waypoint' };
   const poi = poisNear(x, y, r * 3).filter(near).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
   if (poi) {
     const snap = poi.type === 'port' ? poi.dock : poi, where = away(poi);
@@ -494,10 +505,6 @@ export function chartAt(x: number, y: number, r: number, target: { at: Point; te
     if (poi.type === 'light') return { title: poi.name, sub: `Lighthouse · ${where}`, act: SAIL, snap };
     return { title: G.salvaged.has(poi.id) ? 'Salvaged wreck' : 'Wreck', sub: where, act: SAIL, snap };
   }
-  const map = G.maps.find(near);
-  if (map) return { title: 'Treasure', sub: `Marked on a treasure map · ${away(map)}`, act: SAIL, snap: map };
-  const esc = G.escaped.find(near);
-  if (esc) return { title: `The ${SPECIES[esc.sp].name} that got away`, sub: `Broke your line on day ${esc.day} · ${away(esc)}`, act: SAIL, snap: esc };
   if ((logged() >= 10 || G.log.oldone) && near(LAIR)) return { title: "The Old One's lair", sub: away(LAIR), act: SAIL, snap: LAIR };
   const isle = islandAt(x, y);
   if (isle) {

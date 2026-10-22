@@ -7,12 +7,15 @@
 import { program, type Program } from '../gl/glutil';
 import { heightAt, claimableNear } from '../world';
 import { chartBands } from '../maptiles';
+import { fogDirty, fogChunk, fogChunks } from '../game/explore';
 
 type GL = WebGL2RenderingContext;
 const N = 33, NC = 9, BANDS = 7;            // height samples per side, colour samples per side, colour bands
 const SLOTS = 1024, HCOLS = 32, CCOLS = 16;  // tile slots, and how they're laid out in the two atlases
 const BASE = 128;                           // world units per tile side at level 0 (samples every 4 units)
 const MAXL = 7;
+// the fog of war: one texel per 32-unit cell, 1024 x 1024 of them round the world's centre (+-16,384 units)
+const FOG_TEX = 1024, FOG_HALF = FOG_TEX * 32 / 2, FOG_CN = 32;
 
 const VS = `#version 300 es
 layout(location=0) in vec2 a_corner;
@@ -33,9 +36,9 @@ void main() {
 
 const FS = `#version 300 es
 precision highp float;
-uniform sampler2D u_h, u_c;
+uniform sampler2D u_h, u_c, u_fog;
 uniform vec2 u_hsz, u_csz, u_view, u_origin;
-uniform float u_wpp, u_dpr, u_vig;
+uniform float u_wpp, u_dpr, u_vig, u_fogOn;
 in vec2 v_uv;
 flat in float v_slot;
 flat in float v_step;
@@ -49,8 +52,12 @@ vec3 B(float b, vec2 uv) {
   vec2 cell = vec2(mod(v_slot, ${CCOLS}.0) * ${NC * BANDS}.0 + b * ${NC}.0, floor(v_slot / ${CCOLS}.0) * ${NC}.0);
   return texture(u_c, (cell + 0.5 + clamp(uv, 0.0, 1.0) * ${NC - 1}.0) / u_csz).rgb;
 }
-vec3 sat(vec3 c, float k) { return mix(vec3(dot(c, vec3(0.299, 0.587, 0.114))), c, k); }
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+vec3 sat(vec3 c, float k) { return mix(vec3(dot(c, vec3(0.299, 0.587, 0.114))), c, k); }
 // coverage of a line along the level c of h, w px wide, given how much h changes per pixel
 float iso(float h, float c, float perPx, float w) {
   float d = abs(h - c) / max(perPx, 1e-6);
@@ -105,6 +112,19 @@ void main() {
   }
   // the inked shoreline
   col = mix(col, vec3(0.106, 0.165, 0.2), 0.85 * iso(h, 0.0, perPx, 1.5 * lw));
+  // the sea not seen yet: blank parchment, its edge ragged and singed like a chart still being drawn
+  if (u_fogOn > 0.5) {
+    // the 32-unit cells, blurred over nine taps so the edge runs smooth, then roughened with soft noise
+    vec2 fuv = (world + ${FOG_HALF}.0) / ${FOG_HALF * 2}.0, o = vec2(28.0 / ${FOG_HALF * 2}.0);
+    float f = 0.0;
+    for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) f += texture(u_fog, fuv + o * vec2(i, j)).r;
+    f /= 9.0;
+    float rag = (vnoise(world / 46.0) - 0.5) * 0.45 + (vnoise(world / 13.0) - 0.5) * 0.2;
+    float s = smoothstep(0.42, 0.58, f + rag);
+    vec3 paper = vec3(0.90, 0.85, 0.73) * (0.97 + 0.05 * hash(floor(gl_FragCoord.xy / (2.0 * u_dpr))));
+    col = mix(paper, col, s);
+    col = mix(col, vec3(0.45, 0.32, 0.19), 0.6 * s * (1.0 - s) * 4.0);   // a singed rim where the known meets the blank
+  }
   // the full chart darkens a little toward its frame
   vec2 fc = vec2(gl_FragCoord.x, u_view.y - gl_FragCoord.y), edge = min(fc, u_view - fc);
   col *= mix(1.0, mix(0.8, 1.0, smoothstep(0.0, 70.0 * u_dpr, min(edge.x, edge.y))), u_vig);
@@ -115,7 +135,7 @@ void main() {
 
 interface Tile { slot: number; used: number }
 let gl: GL | null = null, glc: HTMLCanvasElement | null = null, prog: Program | null = null, failed = false;
-let hTex: WebGLTexture | null = null, cTex: WebGLTexture | null = null, vao: WebGLVertexArrayObject | null = null, inst: WebGLBuffer | null = null;
+let hTex: WebGLTexture | null = null, cTex: WebGLTexture | null = null, fTex: WebGLTexture | null = null, vao: WebGLVertexArrayObject | null = null, inst: WebGLBuffer | null = null;
 const tiles = new Map<number, Tile>(), free: number[] = [];
 let frame = 0;
 const key = (l: number, tx: number, ty: number): number => ((l * 4096 + (tx + 2048)) * 4096) + (ty + 2048);
@@ -140,6 +160,8 @@ function init(): boolean {
     };
     hTex = atlas(HCOLS * N, (SLOTS / HCOLS) * N, g.R16F);
     cTex = atlas(CCOLS * NC * BANDS, (SLOTS / CCOLS) * NC, g.RGBA8);
+    fTex = atlas(FOG_TEX, FOG_TEX, g.R8);
+    for (const k of fogChunks()) fogDirty.add(k);           // a fresh context starts blank: send everything seen
     vao = g.createVertexArray();
     g.bindVertexArray(vao);
     const quad = g.createBuffer();
@@ -207,6 +229,20 @@ function build(g: GL, l: number, tx: number, ty: number): Tile {
 // the shader compiles while the game idles after loading, not on the chart's first open
 if (typeof requestIdleCallback === 'function') requestIdleCallback(() => { init(); }, { timeout: 8000 });
 
+// seen chunks that changed since the last draw go up to the fog texture
+const fogBuf = new Uint8Array(FOG_CN * FOG_CN);
+function uploadFog(g: GL): void {
+  if (!fogDirty.size) return;
+  g.pixelStorei(g.UNPACK_ALIGNMENT, 1);
+  g.bindTexture(g.TEXTURE_2D, fTex);
+  for (const k of fogDirty) {
+    const [cx, cy] = k.split(',').map(Number), c = fogChunk(cx, cy), ox = cx * FOG_CN + FOG_TEX / 2, oy = cy * FOG_CN + FOG_TEX / 2;
+    if (!c || ox < 0 || oy < 0 || ox + FOG_CN > FOG_TEX || oy + FOG_CN > FOG_TEX) continue;
+    for (let i = 0; i < FOG_CN * FOG_CN; i++) fogBuf[i] = c[i >> 3] & (1 << (i & 7)) ? 255 : 0;
+    g.texSubImage2D(g.TEXTURE_2D, 0, ox, oy, FOG_CN, FOG_CN, g.RED, g.UNSIGNED_BYTE, fogBuf);
+  }
+  fogDirty.clear();
+}
 let instData = new Float32Array(10 * 256);
 /** Tiles built so far, for tests and probes. */
 export const terrainStats = { tiles: 0, built: 0 };
@@ -216,7 +252,7 @@ export const terrainStats = { tiles: 0, built: 0 };
  * Missing tiles are built while `budget` ms last, nearest the centre first; until then a coarser level stands in.
  * Returns false where the GPU can't draw it (the caller fills the sea).
  */
-export function drawTerrain(ctx: CanvasRenderingContext2D, w: number, h: number, wx0: number, wy0: number, wpp: number, dpr: number, budget: number, vignette = false): boolean {
+export function drawTerrain(ctx: CanvasRenderingContext2D, w: number, h: number, wx0: number, wy0: number, wpp: number, dpr: number, budget: number, vignette = false, fogOn = true): boolean {
   if (!init() || !gl || !glc || !prog) return false;
   const g = gl, t0 = performance.now();
   frame++;
@@ -256,6 +292,9 @@ export function drawTerrain(ctx: CanvasRenderingContext2D, w: number, h: number,
   g.useProgram(prog.p);
   g.activeTexture(g.TEXTURE0); g.bindTexture(g.TEXTURE_2D, hTex); g.uniform1i(prog.u.u_h!, 0);
   g.activeTexture(g.TEXTURE1); g.bindTexture(g.TEXTURE_2D, cTex); g.uniform1i(prog.u.u_c!, 1);
+  uploadFog(g);
+  g.activeTexture(g.TEXTURE2); g.bindTexture(g.TEXTURE_2D, fTex); g.uniform1i(prog.u.u_fog!, 2);
+  g.uniform1f(prog.u.u_fogOn!, fogOn ? 1 : 0);
   g.uniform2f(prog.u.u_hsz!, HCOLS * N, (SLOTS / HCOLS) * N);
   g.uniform2f(prog.u.u_csz!, CCOLS * NC * BANDS, (SLOTS / CCOLS) * NC);
   g.uniform2f(prog.u.u_view!, w, h);
