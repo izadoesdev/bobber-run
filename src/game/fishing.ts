@@ -1,6 +1,7 @@
 // Fishing: casting, bites, strikes, the reel fight, landing a catch, nets/pots/deckhand catches, frenzies and chum.
 import { nA } from '../noise';
 import { packCatch } from '../content/engine';
+import { masteryAfterCatch } from './mastery';
 import { hAt, heightAt, homePort, schoolsNear } from '../world';
 import { WX, biteMul, trophyBonus } from '../weather';
 import { SPECIES, activeAt, fmtKg } from '../econ';
@@ -230,8 +231,9 @@ function hooked(f: FishLine, tension: number, prog: number): void {
   sfx(f.perfect ? 'perfect' : 'plop');
   f.fx = f.tx; f.fy = f.ty;
   const sp = SPECIES[f.s.sp], b = G.boat, r = Math.random();
-  // a grace after the hook: start where the next GRACE seconds are calm, so the first surge comes later and is announced
-  for (let k = 0; k < 300 && surgeWithin(FIGHT[sp.fight], f.ph, 1.5 + sp.diff * 2.5, GRACE); k++) f.ph += 0.05;
+  // a grace after the hook: the fight holds still through it, from a point where the next CUE_S is calm, so the first
+  // surge comes after the grace and is announced like the rest
+  for (let k = 0; k < 300 && surgeWithin(FIGHT[sp.fight], f.ph, 1.5 + sp.diff * 2.5, CUE_S); k++) f.ph += 0.05;
   f.grace = GRACE; f.redAt = G.stats.caught < NEW_CAPTAIN ? 0.85 : 0.8;
   // what's on the line shows from the hook: its quality (a perfect strike, or the bait it loves, helps) and any variant,
   // its size, and so how long the fight will be
@@ -341,7 +343,7 @@ function telegraph(f: FishLine, ahead: number, surge: number, dt: number): void 
 function reelStage(f: FishLine, dt: number, strike: boolean): void {
   const sp = SPECIES[f.s.sp], rod = G.up.rod, diff = sp.diff;
   const pattern = FIGHT[sp.fight], stage = f.stage || 0;
-  f.ph += dt * (1.5 + diff * 2.5);
+  if (!f.grace) f.ph += dt * (1.5 + diff * 2.5);                  // the fight holds still through the grace
   const surge = pattern(f.ph), easy = SET.reelAssist, big = sp.legend || sp.rod >= 3;
   // how hard it pulls: heavier fish harder, each round of the Old One harder still, a fish that got away before harder
   // (it has learned), the harpoon gun and easy reel softer
@@ -409,7 +411,7 @@ function rollCatch(spIdx: number, f: FishLine | null, small = false): Fish {
   if (f?.back) {                                        // the one that got away: the weight it had, and a story worth paying for
     const fish: Fish = { sp: spIdx, kg: f.back.kg, value: Math.round(s.base * 1.45 * (gold ? GOLD_VALUE : 1.8) * 1.3), trophy: true, t: G.clock };
     if (gold) fish.gold = true;
-    return fish;
+    return withRodMarks(fish, f);
   }
   const { size: r, trophy } = f?.size !== undefined ? { size: f.size, trophy: !!f.trophy } : rollSize(spIdx, f, small);
   const variant = f?.variant, kg = f?.kg ?? kgOf(s, r, variant);
@@ -417,6 +419,12 @@ function rollCatch(spIdx: number, f: FishLine | null, small = false): Fish {
   const fish: Fish = { sp: spIdx, kg, value: Math.max(1, Math.round(value)), trophy, t: G.clock };
   if (gold) fish.gold = true;
   if (variant) fish.variant = variant;
+  return f ? withRodMarks(fish, f) : fish;
+}
+/** A rod catch keeps its stars and whether the strike was perfect (quests and mastery ask for them). */
+function withRodMarks(fish: Fish, f: FishLine): Fish {
+  if (f.stars) fish.stars = f.stars;
+  if (f.perfect) fish.perfect = true;
   return fish;
 }
 
@@ -440,6 +448,7 @@ function recordCatch(spIdx: number, stock: FishStock, f: FishLine | null, method
   const vars = fish.variant && !prev?.vars?.includes(fish.variant) ? [...prev?.vars ?? [], fish.variant] : prev?.vars;
   G.log[sp.id] = { n: (prev?.n || 0) + 1, best: Math.max(prev?.best || 0, fish.kg), trophy: !!(prev?.trophy || fish.trophy), at: spotsWith(prev?.at, stock), ...(vars && { vars }) };
   if (first || record) netCatch(sp.id, fish.kg, G.cheated);          // a personal best goes on the world record board
+  masteryAfterCatch(spIdx, prev?.n ?? 0);
   G.stats.caught++;
   packCatch(fish, G.boat.x, G.boat.y, method === 'rod');        // content quests count catches as they land
   track('fish_caught', { species: sp.id, method, kg_bucket: bucket(fish.kg), trophy: !!fish.trophy, golden: !!fish.gold, legend: !!sp.legend,

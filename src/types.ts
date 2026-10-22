@@ -182,6 +182,9 @@ export interface Fish {
   gold?: boolean;
   /** a variant of its species (a VariantId from species.ts) */
   variant?: string;
+  /** rod catches: its quality, and whether it was struck perfectly */
+  stars?: 1 | 2 | 3;
+  perfect?: true;
 }
 
 type LineStage = 'cast' | 'wait' | 'bite' | 'reel';
