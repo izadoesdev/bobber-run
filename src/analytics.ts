@@ -66,6 +66,9 @@ type Events = {
   hint_shown: { hint: string; quest: number };
   /** someone opened a visit link (/?sail=<name>): was that sailor in sight, out at sea, or not sailing */
   visit_link: { found: 'near' | 'far' | 'offline' };
+  // regions open with the story (game/regions.ts); a boat turned back by rough water at a closed region's edge, once per region per session
+  region_opened: { step: number; story_i: number };
+  region_blocked: { region: string; step: number; story_i: number };
   invite_copied: Record<string, never>;
   /** two minutes of sailing with no catch, sale or quest step: where players stall */
   idle_stuck: { quest: number; step: string; mode: string; from_home: string; caught: number };
