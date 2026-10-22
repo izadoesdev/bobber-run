@@ -1,7 +1,7 @@
 // The per-frame update while sailing: timers and particles, sound, discovery, nets, flotsam, prompts and
 // the actions the player can take at sea; plus the camera and the ship (hold) screen.
 import { W, H, smooth01 } from '../config';
-import { hAt, homePort, poisNear, schoolsNear, cratesNear } from '../world';
+import { hAt, homePort, poisNear, schoolsNear, cratesNear, tickHotspots } from '../world';
 import { WX, updateWeather } from '../weather';
 import { SPECIES, SP, SUPPLIES } from '../econ';
 import { sfx, soundscape, music } from '../audio';
@@ -13,7 +13,7 @@ import { boatDef, boatSpeed, cap, catchNeed, dayNum, fishValue, hpMax, isNight, 
 import { addCoins, burst, celebrate, jitter, spawn, toast } from './feedback';
 import { checkGoals } from './goals';
 import { placeAtPort, portById, saveGame } from './save';
-import { SPOOL, endlessStock, hitstop, landNetted, nearestSchool, towStretch, tryCast, updateFishing, updateFrenzy, useChum } from './fishing';
+import { SPOOL, endlessStock, hitstop, landNetted, rehomeEscapees, nearestSchool, towStretch, tryCast, updateFishing, updateFrenzy, useChum } from './fishing';
 import { schoolActive, swimSchools, updateSchools } from './schools';
 import { dock, keptBack, updateFleet } from './port';
 import { track } from '../analytics';
@@ -130,6 +130,7 @@ const WEATHER_NEWS: Record<WeatherState, string> = {
   storm: 'A storm rolls in. Trophy fish bite more often', rain: 'Rain. Rain Trout come out', cloudy: '', clear: '',
 };
 
+let rehomeT = 0;
 export function update(dt: number): void {
   G.t += dt;
   tickFeedback(dt);
@@ -144,6 +145,8 @@ export function update(dt: number): void {
   if (G.mode !== 'title') updateFleet(dt);
   if (G.mode !== 'play') { G.prompt = null; return; }
   G.clock += dt;
+  tickHotspots(G.clock);                         // fish hotspots surface, dive and move with the clock
+  if ((rehomeT -= dt) <= 0) { rehomeT = 5; rehomeEscapees(); }   // a fish that got away follows its kind as hotspots move
   updateWeather(dt, s => { if (WEATHER_NEWS[s]) toast(WEATHER_NEWS[s], s === 'storm' ? 'bad' : 'info'); },
     () => setTimeout(() => sfx('thunder'), 200 + Math.random() * 900));
   if (logged() >= 10 && !G.lairTold) { G.lairTold = true; toast('Sailors talk of a giant fish, the Old One. Its lair is now marked on your chart', 'bad'); }

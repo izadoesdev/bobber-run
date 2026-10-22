@@ -17,7 +17,7 @@ import { clamp, dirTo, wrapAngle } from '../config';
 import { setWaypoint } from '../waypoint';
 import { addCoins, burst, jitter, spawn, toast } from './feedback';
 import { placeAtPort, saveGame } from './save';
-import { schoolActive, takeFish } from './schools';
+import { schoolActive, schoolShown, takeFish } from './schools';
 import { isRunningNow } from '../tides';
 import { biomeAt } from '../biome';
 
@@ -311,7 +311,18 @@ function runWithLine(f: FishLine, tow: Tow, dt: number, surge: number, diff: num
   if (!SET.reelAssist) f.tension += Math.max(0, off - 1.2) * 0.4 * dt;                            // abaft the beam the line drags along the hull (easy reel minds it)
 }
 
-export const escapeeAt = (s: School): Escapee | undefined => G.escaped.find(e => e.school === s.id);
+export const escapeeAt = (s: School): Escapee | undefined => G.escaped.find(e => e.school === s.id && e.sp === s.sp);
+/**
+ * Hotspots dive and come back as other fish, so a fish that got away follows its kind: when its school is no longer
+ * shown with its species, it moves to the nearest shown school of that species (and its ring on the chart with it).
+ */
+export function rehomeEscapees(): void {
+  for (const e of G.escaped) {
+    if (schoolsNear(e.x, e.y, 80).some(s => s.id === e.school && s.sp === e.sp && schoolShown(s))) continue;
+    const s = nearest(schoolsNear(e.x, e.y, 1500).filter(q => q.sp === e.sp && !q.boss), schoolShown, 1500);
+    if (s) Object.assign(e, { school: s.id, x: Math.round(s.x), y: Math.round(s.y) });
+  }
+}
 /**
  * A fish worth remembering that breaks the line after a real fight (golden, legendary, a sea giant, or a hard fish
  * half landed) stays with its school, wearing your hook, until you land it. One that gets away again grows a little.
