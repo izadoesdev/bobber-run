@@ -18,7 +18,7 @@ test('the first minute has no words; Maren speaks after the first catch without 
   expect(await page.evaluate(() => ({ speech: !!document.querySelector('.speech'), objective: !!document.querySelector('.chip.objective'), mode: window.BR.G.mode })))
     .toEqual({ speech: false, objective: false, mode: 'play' });
   await landFish(page);
-  await page.evaluate(() => { window.BR.G.card = null; });             // skip the card's long first look
+  await page.evaluate(() => { window.BR.G.card = null; for (let i = 0; i < 120; i++) window.BR.sim(1 / 30); });   // skip the card's long first look; step 4 s of game time, past the welcome title even on a slow CI machine
   await expect(page.locator('.speech')).toContainText('Maren', { timeout: 10_000 });
   expect(await page.evaluate(() => window.BR.G.mode)).toBe('play');   // spoken while sailing: no conversation screen
 });
