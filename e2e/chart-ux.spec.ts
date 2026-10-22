@@ -18,6 +18,8 @@ async function onChart(page: Page, x: number, y: number): Promise<[number, numbe
     return [bx + bw / 2 + (x - (G.boat.x + G.map.x)) / base, by + bh / 2 + (y - (G.boat.y + G.map.y)) / base] as [number, number];
   }, [x, y, box.x, box.y, box.width, box.height]);
 }
+/** Waits until the page has painted `n` more frames: on a slow software renderer wall time says little about how far it got. */
+const frames = (page: Page, n: number) => page.evaluate(n => new Promise<void>(res => { let k = 0; const f = () => (++k >= n ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
 const tip = (page: Page) => page.evaluate(() => document.querySelector('.chart-tip')?.textContent ?? '');
 /**
  * Hover world point (x, y) until the tip matches: the point is re-projected and the pointer re-moved each try, since on
@@ -109,15 +111,21 @@ test("a fish's waters on the chart are built once, even zoomed all the way out",
     const { G, SPECIES } = window.BR; G.talk = null; G.story = { i: 99, base: {}, shown: true }; G.zones.mackerel = true;
     G.map.x = G.map.y = 0; G.map.zoom = 2; G.map.zoneSp = SPECIES.findIndex((s: { id: string }) => s.id === 'mackerel'); G.mode = 'map';
   });
-  // the chunks get built, then building stops: an endless rebuild (tiles on screen evicting each other) never stops
+  // the chunks get built, then building stops: an endless rebuild (tiles on screen evicting each other) never stops.
+  // "Stopped" means no new builds over 40 painted frames, twice running, since a stalled renderer paints none at all
   const built = () => page.evaluate(() => window.BR.ZONES.built as number);
-  let last = -1;
-  await expect.poll(async () => { const n = await built(); const still = n > 0 && n === last; last = n; return still; }, { timeout: 90_000, intervals: [3000] }).toBe(true);
-  await page.waitForTimeout(4000);
+  let last = -1, still = 0;
+  while (still < 2) {
+    await frames(page, 40);
+    const n = await built();
+    still = n > 0 && n === last ? still + 1 : 0; last = n;
+  }
+  await frames(page, 60);
   expect(await built()).toBe(last);
 });
 
 test('the chart draws the land and sea themselves, not a flat fill', async ({ page }) => {
+  test.setTimeout(90_000);
   await openChart(page);
   // a point of dry land and one of deep water near the boat, by the world's own heights
   const pts = await page.evaluate(() => {
@@ -140,7 +148,8 @@ test('the chart draws the land and sea themselves, not a flat fill', async ({ pa
       return [d[0], d[1], d[2]];
     }, [(cx - box.x) / box.width, (cy - box.y) / box.height]);
   };
-  await expect.poll(async () => { const [l, s] = [await rgb(pts.land!), await rgb(pts.sea!)]; return s[2] > s[0] + 30 && Math.abs(l[0] - s[0]) + Math.abs(l[1] - s[1]) + Math.abs(l[2] - s[2]) > 60; }, { timeout: 15_000 }).toBe(true);
+  // tiles are sampled by a worker and drawn as they arrive: give a slow runner painted frames and time to get there
+  await expect.poll(async () => { await frames(page, 10); const [l, s] = [await rgb(pts.land!), await rgb(pts.sea!)]; return s[2] > s[0] + 30 && Math.abs(l[0] - s[0]) + Math.abs(l[1] - s[1]) + Math.abs(l[2] - s[2]) > 60; }, { timeout: 45_000 }).toBe(true);
 });
 
 test('sea you have not sailed stays blank on the chart until you have been there', async ({ page }) => {
