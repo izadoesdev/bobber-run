@@ -454,9 +454,14 @@ function drawWaypoint(ctx: Ctx, w: number, h: number, S: Project, [x, y]: [numbe
   const route = waypointRoute();
   ctx.save();
   if (round) { ctx.beginPath(); ctx.arc(w / 2, h / 2, r, 0, Math.PI * 2); ctx.clip(); }
-  ctx.setLineDash([4 * u, 3 * u]); ctx.lineWidth = 3 * u; ctx.strokeStyle = 'rgba(27,42,51,0.6)';
+  // the dashes are pinned to the waypoint's end of the line, so they hold still on the water as the boat sails along
+  // (from the boat's end they'd crawl every frame)
+  const pts = route.length ? route.map(p => S(p.x, p.y)) : [[x, y] as [number, number]];
+  let len = 0, px = bx, py = by;
+  for (const [qx, qy] of pts) { len += Math.hypot(qx - px, qy - py); px = qx; py = qy; }
+  ctx.setLineDash([4 * u, 3 * u]); ctx.lineDashOffset = -len % (7 * u); ctx.lineWidth = 3 * u; ctx.strokeStyle = 'rgba(27,42,51,0.6)';
   ctx.beginPath(); ctx.moveTo(bx, by);
-  if (route.length) for (const p of route) ctx.lineTo(...S(p.x, p.y)); else ctx.lineTo(x, y);
+  for (const [qx, qy] of pts) ctx.lineTo(qx, qy);
   ctx.stroke();
   ctx.lineWidth = 1.5 * u; ctx.strokeStyle = WP; ctx.stroke();
   ctx.restore();

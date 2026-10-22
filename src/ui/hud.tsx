@@ -68,7 +68,9 @@ function Status() {
 
 // the minimap redraws when the boat has moved a minimap pixel or turned a little, and ten times a second for what
 // animates on it (schools, sailors, the frenzy star); every frame it cost as much CPU as the rest of the UI
-const miniKey = (): string => { const b = G.boat; return `${Math.round(b.x / 2.2)},${Math.round(b.y / 2.2)},${Math.round(b.a * 20)},${Math.floor(G.t * 10)},${G.waypoint?.x},${G.waypoint?.y}`; };
+// redrawn whenever the boat has moved a tenth of a world unit or the clock a frame's worth (it used to step at 10 Hz, which
+// read as stutter: the whole map jumped a few pixels at a time), and when the waypoint moves
+const miniKey = (): string => { const b = G.boat; return `${Math.round(b.x * 10)},${Math.round(b.y * 10)},${Math.round(b.a * 100)},${Math.floor(G.t * 30)},${G.waypoint?.x},${G.waypoint?.y}`; };
 /**
  * The compass, the default dial: north up, your heading, and on the rim a gold chevron toward the next step, the
  * white diamond of your waypoint and (with the sextant) a grey square toward the nearest uncharted place, the same
@@ -109,7 +111,7 @@ function Minimap({ step }: { step: Step }) {
   return (
     <div class="mini">
       <div class="ring">
-        {SET.minimap ? <Canvas draw={draw} when={miniKey} onClick={open} title="Open the sea chart (M)" data-track="minimap-open" /> : <CompassFace target={target} un={un?.p ?? null} onClick={open} />}
+        {SET.minimap ? <Canvas draw={draw} when={miniKey} live onClick={open} title="Open the sea chart (M)" data-track="minimap-open" /> : <CompassFace target={target} un={un?.p ?? null} onClick={open} />}
         <span class="n">N</span>
         <div class={'wind' + (sail ? '' : ' quiet')} title={`${windWord()}${sail ? `, sails at ${Math.round(eff * 100)}%` : ''}`}>
           <WindVane sail={sail} eff={eff} />

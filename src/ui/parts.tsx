@@ -30,10 +30,15 @@ export const edgeFade = (x: number, y: number, x0: number, x1: number, y0: numbe
 /** Draws into a canvas sized to its CSS box at device resolution. */
 export type DrawFn = (ctx: CanvasRenderingContext2D, w: number, h: number, dpr: number) => void;
 
-/** `when`: a key for what the drawing shows; the canvas redraws only when it changes (absent: after every render). */
-type CanvasProps = { draw: DrawFn; cls?: string; when?: () => unknown } & Omit<HTMLAttributes<HTMLCanvasElement>, 'class' | 'ref'>;
-export function Canvas({ draw, cls, when, ...rest }: CanvasProps) {
-  const ref = useRef<HTMLCanvasElement>(null);
+/**
+ * `when`: a key for what the drawing shows; the canvas redraws only when it changes (absent: after every render).
+ * `live`: also checks every animation frame on its own, not only when the UI renders, so something that follows the
+ * boat (the minimap) moves as smoothly as the sea does.
+ */
+type CanvasProps = { draw: DrawFn; cls?: string; when?: () => unknown; live?: boolean } & Omit<HTMLAttributes<HTMLCanvasElement>, 'class' | 'ref'>;
+export function Canvas({ draw, cls, when, live, ...rest }: CanvasProps) {
+  const ref = useRef<HTMLCanvasElement>(null), drawRef = useRef(draw), whenRef = useRef(when);
+  drawRef.current = draw; whenRef.current = when;
   // the CSS box, measured on mount and whenever it resizes, so the per-frame redraw never forces a layout
   const box = useRef<DOMRect | null>(null);
   useEffect(() => {
@@ -43,17 +48,25 @@ export function Canvas({ draw, cls, when, ...rest }: CanvasProps) {
     ro.observe(c, { box: 'border-box' });
     return () => ro.disconnect();
   }, []);
-  // redraws after a render, unless `when` says nothing it shows has changed since the last draw
+  // redraws after a render (and, live, every frame), unless `when` says nothing it shows has changed since the last draw
   const last = useRef<unknown>(undefined);
-  useEffect(() => {
-    const c = ref.current, r = box.current;
+  const paint = (): void => {
+    const c = ref.current, r = box.current, wk = whenRef.current;
     if (!c || !r) return;
-    if (when) { const k = when(); if (k === last.current) return; last.current = k; }
+    if (wk) { const k = wk(); if (k === last.current) return; last.current = k; }
     const dpr = window.devicePixelRatio || 1;
     const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
     if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
-    draw(c.getContext('2d')!, w, h, dpr);
-  });
+    drawRef.current(c.getContext('2d')!, w, h, dpr);
+  };
+  useEffect(paint);
+  useEffect(() => {
+    if (!live) return;
+    let id = 0;
+    const tick = (): void => { paint(); id = requestAnimationFrame(tick); };
+    id = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(id);
+  }, [live]);
   return <canvas ref={ref} class={cls} {...rest} />;
 }
 

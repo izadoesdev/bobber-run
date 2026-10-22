@@ -317,6 +317,10 @@ export function drawTerrain(ctx: CanvasRenderingContext2D, w: number, h: number,
     instData.set([x, y, x + s, y + s, u0, v0, u0 + span, v0 + span, t.slot, (BASE << l) / (N - 1)], o);
     n++;
   }
+  // then a tile's ring round the view, asked for ahead of time, so tiles sailing into view are ready rather than popping
+  // in from a coarser level (only while the worker has room after the view's own)
+  if (worker) for (let ty = ty0 - 1; ty <= ty1 + 1; ty++) for (let tx = tx0 - 1; tx <= tx1 + 1; tx++)
+    if ((tx < tx0 || tx > tx1 || ty < ty0 || ty > ty1) && pending.size < MAX_PENDING - 4 && !tiles.has(key(L, tx, ty))) request(g, L, tx, ty, false);
   terrainStats.tiles = tiles.size;
   g.viewport(0, glc.height - h, w, h);
   g.disable(g.BLEND);
