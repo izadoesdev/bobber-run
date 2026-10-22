@@ -8,6 +8,7 @@ import { OAR } from '../models';
 import { BOATS } from '../econ';
 import { ONLINE } from '../online';
 import type { Poi, Solid, Sway } from '../types';
+import { seaPropsNear, type SeaProp } from '../seaprops';
 import { G, inp } from './state';
 import { boatDef, chartPerks, hpMax, keelLvl, speedMul, sailEfficiency, windAngle, toWorld } from './rules';
 import { spawn, toast, jitter, burst } from './feedback';
@@ -28,13 +29,21 @@ function hullPoints(): [number, number][] {
 }
 
 const RESTITUTION = 0.2, FRICTION = 0.35, DRAFT = 0.028;
-const nearPois: Poi[] = [];
-/** The piers and wrecks within `rad` of the boat, into `out`. */
+const nearPois: Poi[] = [], nearProps: SeaProp[] = [];
+/** A sea prop's solid footprint as a circle, made once per prop (props are fixed in place). */
+const propSolids = new WeakMap<SeaProp, Solid>();
+const propSolid = (p: SeaProp): Solid => {
+  let so = propSolids.get(p);
+  if (!so) propSolids.set(p, so = { kind: 'circ', x: p.x, y: p.y, r: p.r });
+  return so;
+};
+/** The piers, wrecks and solid sea props (icebergs, floes, sea stacks, whale bones, basalt) within `rad` of the boat, into `out`. */
 export function solidsNear(rad: number, out: Solid[]): void {
   out.length = 0;
   for (const p of poisNear(G.boat.x, G.boat.y, rad, nearPois)) if (p.solid) out.push(p.solid);
+  for (const p of seaPropsNear(G.boat.x, G.boat.y, rad, nearProps)) out.push(propSolid(p));
 }
-/** Piers and wrecks near the boat; refreshed once per frame rather than every physics step. */
+/** Everything solid near the boat; refreshed once per frame rather than every physics step. */
 const solids: Solid[] = [];
 export const refreshSolids = (): void => solidsNear(140, solids);
 
