@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { PACKS } from '../src/content/packs';
 import { SPECIES } from '../src/species';
 import type { BiomeId } from '../src/biome';
-import { regionSite } from '../src/world';
+import { regionSite, heightAt } from '../src/world';
 
 // Every content pack, checked: a typo in a species id, a character name or a region should fail here, not in a quest.
 const REGIONS: BiomeId[] = ['home', 'reef', 'kelp', 'volcanic', 'mangrove', 'warm', 'cold', 'open'];
@@ -36,3 +36,14 @@ for (const p of PACKS) test(`pack "${p.id}" is well formed`, () => {
     expect((q.reward.coins ?? 0) >= 0 && (q.reward.coins ?? 0) <= 5000, `${q.id}: reward`).toBe(true);
   }
 });
+
+// a boat can only get as close as the water lets it: every place a quest sends you needs navigable water within reach
+const reachable = (x: number, y: number, r: number): boolean => {
+  for (let d = 0; d <= r; d += 6) for (let a = 0; a < Math.PI * 2; a += 0.2) if (heightAt(x + Math.cos(a) * d, y + Math.sin(a) * d) < -0.06) return true;
+  return false;
+};
+for (const p of PACKS) for (const q of p.quests) {
+  const o = q.obj;
+  if ('site' in o) test(`${p.id}/${q.id}: water within reach of site ${o.site}`, () => { const s = regionSite(o.site)!; expect(reachable(s.x, s.y, o.r ?? 90)).toBe(true); });
+  if ('visit' in o) test(`${p.id}/${q.id}: water within reach of ${o.place}`, () => expect(reachable(o.visit.x, o.visit.y, o.visit.r ?? 60)).toBe(true));
+}
