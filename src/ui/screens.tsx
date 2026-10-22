@@ -12,6 +12,7 @@ import { NET } from '../net';
 import { QUESTS, CHAPTERS, PEOPLE, currentQuest, questProgress, story } from '../story';
 import { guide, guideOn, stepLine } from '../game/guide';
 import { chartPerks } from '../game/rules';
+import { GRADES, grade } from '../game/mastery';
 import { packJournal } from '../content/engine';
 import type { UpgradeKey } from '../types';
 import { drawChart, compassRose, zoneKnown, chartAt, drawn, type Legend } from './chart';
@@ -197,7 +198,7 @@ export function Logbook() {
             {s.deck > 0 && <><dt>Boat</dt><dd class={s.deck > deckLvl() ? 'bad' : 'good'}>{deckBoat(sel).name}{s.deck < 2 ? ' or larger' : ''}{s.deck > deckLvl() ? '. Yours is too small' : ''}</dd></>}
             <dt>Worth</dt><dd class="gold">About {money(s.base)}</dd>
             <dt>Fights</dt><dd>{FIGHTS[s.fight]}</dd>
-            {e && <><dt>Caught</dt><dd>{e.n}</dd><dt>Your best</dt><dd>{fmtKg(e.best)}</dd></>}
+            {e && <><dt>Caught</dt><dd><Mastery n={e.n} /></dd><dt>Your best</dt><dd>{fmtKg(e.best)}</dd></>}
             {world && <><dt>World record</dt><dd class="gold">{fmtKg(world.kg)} by {world.name}</dd></>}
           </dl>
           {e && !s.legend && <Variants sp={sel} got={e.vars ?? []} />}
@@ -237,6 +238,11 @@ function ChartedPerks() {
       <Icon k="map" size="s" />{places} places charted: <span class="gold">+{Math.round(speed * 100)}% speed{hold ? `, +${hold} hold` : ''}</span><span class="muted"> ({next})</span>
     </span>
   );
+}
+/** How many you've caught, its mastery grade (Bronze 5, Silver 25, Gold 100), and how many to the next. */
+function Mastery({ n }: { n: number }) {
+  const g = grade(n), next = GRADES[g];
+  return <>{n}{g > 0 && <span class={'stamp grade g' + g}>{GRADES[g - 1].name}</span>}{next && <span class="muted small"> {next.at - n} more for {next.name}</span>}</>;
 }
 /** Every variant a species can come in: the ones you've caught by name, the rest as silhouettes to look for. */
 function Variants({ sp, got }: { sp: number; got: readonly string[] }) {

@@ -11,6 +11,7 @@ import { saveGame } from '../save';
 import { money } from '../../config';
 import { deny, header, short, spend, type Rows } from './kit';
 import { toggleFleet } from './fleet';
+import { COLLECTIONS } from '../mastery';
 
 // ---------- buying ----------
 function buy(k: UpgradeKey): void {
@@ -111,8 +112,9 @@ export function shipyardItems(p: Port, items: Rows): void {
   header(items, 'PAINT');
   for (const pt of PAINTS) {
     const own = G.paints.includes(pt.id), on = G.paint === pt.id;
-    if (pt.earn && !own) {                                   // earned, never sold: the row says how
-      items.push({ kind: 'paint', key: pt.id, paint: pt.id, boat: boatDef(), label: pt.name, sub: 'Earned, not sold', cost: null, right: 'Earn it', ok: false, why: pt.earn, action: 'Buy', act: deny,
+    if (pt.earn && !own) {                                   // earned, never sold: the row says how, and how far along you are
+      const c = COLLECTIONS.find(k => k.paint === pt.id), prog = c ? `${Math.min(c.have(), c.want)}/${c.want}` : '';
+      items.push({ kind: 'paint', key: pt.id, paint: pt.id, boat: boatDef(), label: pt.name, sub: prog ? `Earned, not sold · ${prog}` : 'Earned, not sold', cost: null, right: 'Earn it', ok: false, why: pt.earn, action: 'Buy', act: deny,
         what: `${pt.earn} and this paint is yours. Paint only changes how your boat looks.` });
       continue;
     }

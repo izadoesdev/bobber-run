@@ -12,3 +12,14 @@ test('the logbook shows caught variants by name and the rest as silhouettes', as
   await expect(v).toContainText('1/7');
   expect(await v.locator('.var:not(.got)').count()).toBe(6);
 });
+
+// Mastery: 5 caught is Bronze, 25 Silver, 100 Gold; the logbook stamps the grade and says how many to the next.
+test('the logbook stamps a species with its mastery grade and the count to the next', async ({ page }) => {
+  await sail(page);
+  await page.evaluate(() => {
+    const { G, SPECIES } = window.BR, sp = SPECIES.findIndex((s: { id: string }) => s.id === 'perch');
+    G.log.perch = { n: 7, best: 0.8, trophy: false, vars: [] }; G.logSel = sp; G.talk = null; G.mode = 'log';
+  });
+  await expect(page.locator('.stamp.grade')).toHaveText('Bronze', { timeout: 15_000 });
+  await expect(page.locator('dd', { has: page.locator('.stamp.grade') })).toContainText('18 more for Silver');
+});

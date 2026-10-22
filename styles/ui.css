@@ -518,3 +518,4 @@ html.touch #ui .speech { bottom: auto; top: 12%; }   /* phones are short: up whe
 .card .title .stars { color: var(--gold); font-size: 0.8em; } .card .title .stars .off { opacity: 0.25; }
 .bait-tag { display: inline-flex; align-items: center; gap: 0.7em; margin-left: 0.6em; } .bait-tag > span { display: inline-flex; align-items: center; gap: 0.25em; } .bait-tag .key { font-size: 0.85em; }
 .speech-initial { flex: none; width: 2.2em; height: 2.2em; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: #7a5530; color: #fff6dc; font-family: var(--font-head); font-size: 1.1em; box-shadow: 0 0 0 0.12em #e2b94a; }   /* story-pack people have no portrait yet */
+.stamp.grade { margin-left: 0.4em; } .stamp.grade.g1 { color: #c08a5a; border-color: #c08a5a; } .stamp.grade.g2 { color: #b8c0c6; border-color: #b8c0c6; } .stamp.grade.g3 { color: var(--gold); border-color: var(--gold); }   /* bronze, silver, gold */
