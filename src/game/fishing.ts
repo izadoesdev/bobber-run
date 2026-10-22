@@ -64,8 +64,14 @@ export function placeByStarterSchool(anchor?: { x: number; y: number }): void {
   if (anchor) placeByStarterSchool();                            // nothing biting by the shared spot: start from home
   else placeAtPort(homePort());
 }
-/** The closest biting school within casting range. */
-export const nearestSchool = (): School | null => nearest(schoolsNear(G.boat.x, G.boat.y, 90), schoolActive, castRange());
+/**
+ * The closest biting school within casting range that this rod and boat can land; failing that the closest at all, so
+ * the prompt can say what it needs. A hotspot mixes rod levels, and a catchable fish beside one you can't land comes first.
+ */
+export function nearestSchool(): School | null {
+  const near = schoolsNear(G.boat.x, G.boat.y, 90);
+  return nearest(near, s => schoolActive(s) && !catchNeed(s.sp), castRange()) ?? nearest(near, schoolActive, castRange());
+}
 
 export function cancelFishing(msg?: string): void {
   if (G.fish && msg) toast(msg);
