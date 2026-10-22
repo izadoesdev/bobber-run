@@ -6,7 +6,7 @@ import { hash01 } from './noise';
 import { M } from './models';
 import type { Poi } from './types';
 
-const L = {
+export const L = {
   roofD: mat(['#5a2420', '#7e302a', '#a03e34']), slate: mat(['#2a3440', '#3c4a58', '#566676']), slateD: mat(['#222b35', '#323e4a', '#485666']),
   ochre: mat(['#8a6a3a', '#b8904e', '#d8b06a']), ochreD: mat(['#7a5c30', '#a07c42', '#c09a5a']), thatch: mat(['#7a6436', '#a88a4a', '#ccae66']),
   thatchD: mat(['#6a5630', '#927840', '#b49858']), wall2: mat(['#7c8a8e', '#a8b6b8', '#cfdadb']), timber: mat(['#3a2818', '#54402a', '#6e5638']),
@@ -20,42 +20,42 @@ const h = (a: number, b: number, s: number): number => hash01(a + 101, b + 37, s
 
 // ---------- props, shared by every design ----------
 /** A gable roof over the box u0..u1 x v0..v1 with its ridge along u, in shingle rows, starting at height z. */
-function gable(V: Vox, u0: number, u1: number, v0: number, v1: number, z: number, a: number, b: number, ridge = a): void {
+export function gable(V: Vox, u0: number, u1: number, v0: number, v1: number, z: number, a: number, b: number, ridge = a): void {
   for (let k = 0; v0 + k <= v1 - k; k++) {
     const lo = v0 + k, hi = v1 - k, m = k % 2 ? b : a;
     V.box(u0, u1, lo, hi, z + k, z + k, lo >= hi - 1 ? ridge : m);
   }
 }
 /** The same with its ridge along v. */
-function gableV(V: Vox, u0: number, u1: number, v0: number, v1: number, z: number, a: number, b: number, ridge = a): void {
+export function gableV(V: Vox, u0: number, u1: number, v0: number, v1: number, z: number, a: number, b: number, ridge = a): void {
   for (let k = 0; u0 + k <= u1 - k; k++) {
     const lo = u0 + k, hi = u1 - k, m = k % 2 ? b : a;
     V.box(lo, hi, v0, v1, z + k, z + k, lo >= hi - 1 ? ridge : m);
   }
 }
 /** Walls of a house from z0 up to z1 with dark corner posts, hollow inside (only the shell shows). */
-function walls(V: Vox, u0: number, u1: number, v0: number, v1: number, z0: number, z1: number, m: number, post = L.timber): void {
+export function walls(V: Vox, u0: number, u1: number, v0: number, v1: number, z0: number, z1: number, m: number, post = L.timber): void {
   V.box(u0, u1, v0, v1, z0, z1, m);
   for (const u of [u0, u1]) for (const v of [v0, v1]) V.box(u, u, v, v, z0, z1, post);
 }
-function barrel(V: Vox, u: number, v: number, z: number): void {
+export function barrel(V: Vox, u: number, v: number, z: number): void {
   V.box(u, u + 1, v, v + 1, z, z + 2, M.crate); V.box(u, u + 1, v, v + 1, z + 1, z + 1, M.band); V.set(u, v, z + 2, M.plank2);
 }
-function crate(V: Vox, u: number, v: number, z: number, s = 2): void {
+export function crate(V: Vox, u: number, v: number, z: number, s = 2): void {
   V.box(u, u + s - 1, v, v + s - 1, z, z + s - 1, M.crate);
   V.box(u, u + s - 1, v, v + s - 1, z + s - 1, z + s - 1, M.plank);
   if (s > 2) { V.box(u, u, v, v + s - 1, z, z + s - 1, M.band); V.box(u + s - 1, u + s - 1, v, v + s - 1, z, z + s - 1, M.band); }
 }
 /** A basket of the day's catch. */
-function basket(V: Vox, u: number, v: number, z: number): void { V.box(u, u + 1, v, v + 1, z, z, L.thatchD); V.box(u, u + 1, v, v + 1, z + 1, z + 1, M.fishm); }
-function lampPost(V: Vox, u: number, v: number, z: number, tall = 4): void { V.box(u, u, v, v, z, z + tall, M.iron); V.set(u, v, z + tall + 1, M.lamp); }
+export function basket(V: Vox, u: number, v: number, z: number): void { V.box(u, u + 1, v, v + 1, z, z, L.thatchD); V.box(u, u + 1, v, v + 1, z + 1, z + 1, M.fishm); }
+export function lampPost(V: Vox, u: number, v: number, z: number, tall = 4): void { V.box(u, u, v, v, z, z + tall, M.iron); V.set(u, v, z + tall + 1, M.lamp); }
 function bollard(V: Vox, u: number, v: number, z: number): void { V.box(u, u, v, v, z, z + 1, M.post); V.set(u, v, z + 1, M.iron); }
-function coil(V: Vox, u: number, v: number, z: number): void { for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) if (a || b) V.set(u + a, v + b, z, M.rope); V.set(u, v, z, M.ropeD); }
+export function coil(V: Vox, u: number, v: number, z: number): void { for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) if (a || b) V.set(u + a, v + b, z, M.rope); V.set(u, v, z, M.ropeD); }
 function flowers(V: Vox, u0: number, u1: number, v: number, z: number): void {
   for (let u = u0; u <= u1; u++) { V.set(u, v, z, M.plank2); V.set(u, v, z + 1, (u & 1) ? L.flower : L.flower2); }
 }
 /** A rough outcrop of rock centred on (cu, cv), mossy on top. */
-function rocks(V: Vox, cu: number, cv: number, r: number, zmax: number, seed: number): void {
+export function rocks(V: Vox, cu: number, cv: number, r: number, zmax: number, seed: number): void {
   for (let u = cu - r - 1; u <= cu + r + 1; u++) for (let v = cv - r - 1; v <= cv + r + 1; v++) {
     const d = Math.hypot(u - cu, v - cv) / (r * (0.75 + 0.5 * h(u, v, seed)));
     if (d > 1) continue;
@@ -71,7 +71,7 @@ function pier(V: Vox, u0: number, u1: number, w: number, z: number): void {
   for (const u of [u0 + 9, u0 + 18]) if (u < u1) bollard(V, u, -w, z + 1);
 }
 /** A small rowing skiff moored alongside, bow +u. */
-function skiff(V: Vox, u0: number, v: number, paint: number): void {
+export function skiff(V: Vox, u0: number, v: number, paint: number): void {
   for (let u = 0; u <= 9; u++) {
     const hw = u < 2 ? 1 : u > 7 ? (u === 9 ? 0 : 1) : 2;
     for (let dv = -hw; dv <= hw; dv++) {
@@ -82,7 +82,7 @@ function skiff(V: Vox, u0: number, v: number, paint: number): void {
   V.box(u0 + 4, u0 + 5, v - 1, v + 1, 2, 2, M.seat); V.set(u0 + 9, v, 2, M.gun);
 }
 /** A rack of nets hung to dry between two posts, running along v. */
-function netRack(V: Vox, u: number, v0: number, v1: number, z: number): void {
+export function netRack(V: Vox, u: number, v0: number, v1: number, z: number): void {
   for (const v of [v0, v1]) V.box(u, u, v, v, z, z + 4, M.post);
   for (let v = v0 + 1; v < v1; v++) for (let k = 1; k <= 3; k++) if ((v + k) % 2 || k === 1) V.set(u, v, z + 5 - k, M.net);
   V.box(u, u, v0, v1, z + 5, z + 5, M.post);
