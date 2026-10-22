@@ -40,18 +40,24 @@ export function progress(q: QuestDef, s: PackState): [number, number] {
 }
 const current = (p: Pack): { q: QuestDef; s: PackState } | null => { const s = stateOf(p), q = p.quests[s.i]; return q && s.started ? { q, s } : null; };
 
-/** A fish was landed at (x, y): it counts toward every running catch objective it fits. */
-export function packCatch(fish: Fish, x: number, y: number): void {
+type CatchObjective = Extract<Objective, { catch: number }>;
+function fits(o: CatchObjective, fish: Fish, x: number, y: number): boolean {
+  const sp = SPECIES[fish.sp];
+  return (!o.species || sp?.id === o.species) && (!o.trophy || fish.trophy) && (!o.variant || fish.variant === o.variant)
+    && (!o.region || biomeAt(x, y) === o.region) && (!o.night || isNight())
+    && (!o.weather || WX.state === 'storm' || (o.weather === 'rain' && WX.state === 'rain'))
+    && (!o.fight || sp?.fight === o.fight) && (!o.kg || fish.kg >= o.kg) && (!o.lightRod || G.up.rod <= (sp?.rod ?? 0));
+}
+/**
+ * A fish was landed at (x, y): it counts toward every running catch objective it fits. `byRod` is false for nets,
+ * pots and the deckhand, which never break an in-a-row run.
+ */
+export function packCatch(fish: Fish, x: number, y: number, byRod = true): void {
   for (const p of PACKS) {
     const cur = isOpen(p) ? current(p) : null, o = cur?.q.obj;
     if (!cur || !o || !('catch' in o)) continue;
-    if (o.species && SPECIES[fish.sp]?.id !== o.species) continue;
-    if (o.trophy && !fish.trophy) continue;
-    if (o.variant && fish.variant !== o.variant) continue;
-    if (o.region && biomeAt(x, y) !== o.region) continue;
-    if (o.night && !isNight()) continue;
-    if (o.weather && !(WX.state === 'storm' || (o.weather === 'rain' && WX.state === 'rain'))) continue;
-    cur.s.n++;
+    if (fits(o, fish, x, y)) cur.s.n++;
+    else if (o.inARow && byRod) cur.s.n = 0;
   }
 }
 /** Coins taken at a market: they count toward running sell objectives. */

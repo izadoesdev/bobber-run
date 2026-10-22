@@ -441,7 +441,7 @@ function recordCatch(spIdx: number, stock: FishStock, f: FishLine | null, method
   G.log[sp.id] = { n: (prev?.n || 0) + 1, best: Math.max(prev?.best || 0, fish.kg), trophy: !!(prev?.trophy || fish.trophy), at: spotsWith(prev?.at, stock), ...(vars && { vars }) };
   if (first || record) netCatch(sp.id, fish.kg, G.cheated);          // a personal best goes on the world record board
   G.stats.caught++;
-  packCatch(fish, G.boat.x, G.boat.y);                          // content quests count catches as they land
+  packCatch(fish, G.boat.x, G.boat.y, method === 'rod');        // content quests count catches as they land
   track('fish_caught', { species: sp.id, method, kg_bucket: bucket(fish.kg), trophy: !!fish.trophy, golden: !!fish.gold, legend: !!sp.legend,
     first, perfect: !!f?.perfect, rod: G.up.rod, towed: !!f?.tow, got_back: !!f?.back, variant: fish.variant ?? 'none', stars: f?.stars ?? 0 });
   if (first) track('species_logged', { species: sp.id, logged: logged() });

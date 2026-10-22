@@ -26,6 +26,8 @@ for (const p of PACKS) test(`pack "${p.id}" is well formed`, () => {
       if (o.species) expect(species.has(o.species), `${q.id}: species ${o.species}`).toBe(true);
       if (o.region) expect(REGIONS).toContain(o.region);
       if (o.weather) expect(['rain', 'storm']).toContain(o.weather);
+      if (o.kg !== undefined) expect(o.kg).toBeGreaterThan(0);
+      if (o.fight) expect(['steady', 'darter', 'generic', 'jumper', 'erratic', 'boss']).toContain(o.fight);
     } else if ('sell' in o) expect(o.sell).toBeGreaterThan(0);
     else if ('chart' in o) expect(o.chart).toBeGreaterThan(0);
     else if ('visit' in o) expect(Number.isFinite(o.visit.x) && Number.isFinite(o.visit.y) && !!o.place).toBe(true);

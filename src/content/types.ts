@@ -2,14 +2,21 @@
 // by src/content/engine.ts alongside the main story. tests/content.test.ts checks every pack, so a typo in a species
 // id or a character name fails CI rather than a player's quest.
 import type { BiomeId } from '../biome';
-import type { BaitKind, ProjectId } from '../types';
+import type { BaitKind, FightStyle, ProjectId } from '../types';
 
 /**
  * What a quest asks for. Counting objectives (catch, sell) count from when the quest starts; state objectives
  * (chart, fund, visit) are checked against the game as it is.
  */
 export type Objective =
-  | { catch: number; species?: string; trophy?: true; variant?: string; region?: BiomeId; night?: true; weather?: 'rain' | 'storm' }   // rain counts storms too
+  | {
+      catch: number; species?: string; trophy?: true; variant?: string; region?: BiomeId; night?: true;
+      weather?: 'rain' | 'storm';   // rain counts storms too
+      fight?: FightStyle;           // the species fights this way
+      kg?: number;                  // at least this heavy
+      lightRod?: true;              // on the lightest rod that can land it (no rod to spare)
+      inARow?: true;                // the count must come in a row: a rod catch that doesn't fit starts it over
+    }
   | { sell: number }                                       // coins taken at the market while the quest runs
   | { chart: number; kind: 'port' | 'light' | 'wreck' }    // places on your chart, in all
   | { visit: { x: number; y: number; r?: number }; place: string }   // sail within r (default 60) of a spot; `place` names it
