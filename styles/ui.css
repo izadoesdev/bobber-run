@@ -222,11 +222,11 @@ h2, .title { font-size: var(--fs-xl); }
 .facts dt { font-size: var(--fs-s); text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); align-self: center; }
 .facts dd { margin: 0; }
 .chartwrap { flex: 1; min-height: 0; position: relative; padding: 0.4em; }
-.chartwrap canvas { width: 100%; height: 100%; display: block; border-radius: 0.2em; filter: sepia(0.35) saturate(0.85) contrast(1.02); box-shadow: inset 0 0 2em rgba(80,50,20,0.5); pointer-events: auto; touch-action: none; }
+.chartwrap canvas { width: 100%; height: 100%; display: block; border-radius: 0.2em; box-shadow: 0 0 0 0.12em #3a2a1c, 0 0 0 0.35em #e9d9b0, 0 0 0 0.47em #3a2a1c; pointer-events: auto; touch-action: none; }   /* a double ink rule, like a printed chart's border */
 .legend { display: flex; gap: 1em; font-size: var(--fs-s); flex-wrap: wrap; align-items: center; }
 .legend span { display: inline-flex; align-items: center; gap: 0.35em; }
 .lg { display: inline-block; width: 0.75em; height: 0.75em; box-shadow: 0 0 0 0.1em #1b2a33; }
-.lg.port { background: #f0cf6a; } .lg.light { width: 0.4em; height: 0.9em; background: linear-gradient(#efe9dc 40%, #c0493a 40% 60%, #efe9dc 60%); } .lg.unknown { background: #8a949c; width: 0.5em; height: 0.5em; }
+.lg.port { background: #f0cf6a; border-radius: 50%; width: 0.85em; height: 0.85em; } .lg.light { width: 0.4em; height: 0.9em; background: linear-gradient(#efe9dc 40%, #c0493a 40% 60%, #efe9dc 60%); } .lg.unknown { background: none; box-shadow: inset 0 0 0 0.12em #8a949c; border-radius: 50%; width: 0.6em; height: 0.6em; }
 .lg.wreck, .lg.treasure { box-shadow: none; background: linear-gradient(45deg, transparent 42%, currentColor 42% 58%, transparent 58%), linear-gradient(-45deg, transparent 42%, currentColor 42% 58%, transparent 58%); }
 .lg.wreck { color: #a87a3a; } .lg.treasure { color: #c0493a; }
 .lg.you { width: 0; height: 0; box-shadow: none; border: 0.4em solid transparent; border-left: 0.75em solid #ff9a6b; border-right: 0; filter: drop-shadow(0 0 0.08em #1b2a33); }

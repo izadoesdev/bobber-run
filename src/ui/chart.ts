@@ -4,7 +4,7 @@ import { schoolShown, schoolMood } from '../game/schools';
 import { SPECIES, PAINTS } from '../econ';
 import { poisNear, schoolsNear, claimableNear, heightAt, homesteadSite, LAIR } from '../world';
 import { livesAt } from '../species';
-import { mapTile, MT } from '../maptiles';
+import { drawTerrain } from './chartgl';
 import { ONLINE } from '../online';
 import { ISLANDS, watchExtra, islandPrice, islandColour } from '../islands';
 import type { Point, Poi } from '../types';
@@ -47,6 +47,16 @@ function inked(ctx: Ctx, s: string, x: number, y: number, u: number, fill: strin
   ctx.lineWidth = 3 * u; ctx.strokeStyle = 'rgba(27,42,51,0.85)'; ctx.strokeText(s, x, y);
   ctx.fillStyle = fill; ctx.fillText(s, x, y);
 }
+/** A name on a small parchment plate, its left end at (x, y): how a chart names its ports. */
+function plate(ctx: Ctx, s: string, x: number, y: number, u: number): void {
+  font(ctx, 12, u);
+  const w = ctx.measureText(s).width + 9 * u, h = 15 * u;
+  ctx.beginPath(); ctx.roundRect(x, y - h / 2, w, h, 3 * u);
+  ctx.fillStyle = 'rgba(27,42,51,0.35)'; ctx.fill();                     // a soft drop under it
+  ctx.beginPath(); ctx.roundRect(x, y - h / 2 - u, w, h, 3 * u);
+  rimmed(ctx, '#f4ead2', 1.2 * u);
+  ctx.fillStyle = COL.ink; ctx.textBaseline = 'middle'; ctx.fillText(s, x + 4.5 * u, y - 0.5 * u);
+}
 /** A closed path through `pts` ([x0, y0, x1, y1, ...]), scaled by `u`. */
 function poly(ctx: Ctx, u: number, ...pts: number[]): void {
   ctx.beginPath();
@@ -58,15 +68,13 @@ function rimmed(ctx: Ctx, fill: string, lw: number): void { ctx.fillStyle = fill
 
 /** Draws a chart centred on (cx, cy); `wpp` = world units per canvas pixel. */
 export function drawChart(ctx: Ctx, w: number, h: number, cx: number, cy: number, wpp: number, opt: ChartOptions = {}): void {
-  const t0 = performance.now(), budget = opt.budget ?? 6, u = opt.dpr || 1;
+  const budget = opt.budget ?? 6, u = opt.dpr || 1;
   const wx0 = cx - w / 2 * wpp, wy0 = cy - h / 2 * wpp;
   const S: Project = (x, y) => [(x - wx0) / wpp, (y - wy0) / wpp];
   if (opt.labels) drawn.clear();
   const seen: Seen = opt.labels ? (k, x, y) => { if (x > 0 && y > 0 && x < w && y < h) drawn.add(k); } : () => {};
   ctx.imageSmoothingEnabled = false;
-  ctx.fillStyle = '#4f7389';
-  ctx.fillRect(0, 0, w, h);
-  drawTiles(ctx, w, h, wx0, wy0, wpp, () => performance.now() - t0 < budget);
+  if (!drawTerrain(ctx, w, h, wx0, wy0, wpp, u, budget, !!opt.grid)) { ctx.fillStyle = '#4f7389'; ctx.fillRect(0, 0, w, h); }
   if (opt.zone != null) {
     // its own slice, not the map's leftovers, and in proportion to real time: a slow machine drawing few frames
     // builds more per frame, so the waters fill in about as fast everywhere
@@ -202,28 +210,9 @@ function drawZone(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp:
   }
 }
 
-// the baked map tiles; tiles not built yet are built while `inBudget()` holds and skipped otherwise
-function drawTiles(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp: number, inBudget: () => boolean): void {
-  const tpx = MT / wpp, size = Math.ceil(tpx) + 1, tx0 = Math.floor(wx0 / MT), tx1 = Math.floor((wx0 + w * wpp) / MT);
-  const ty0 = Math.floor(wy0 / MT), ty1 = Math.floor((wy0 + h * wpp) / MT);
-  // two passes: first the whole view in half-size tiles (a quarter of the work each), then sharp tiles as the budget
-  // allows, so a freshly opened or zoomed-out chart is covered at once and sharpens over a few frames
-  const sharp = tpx >= 24, missing: [number, number][] = [];
-  for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
-    const c = (sharp ? mapTile(tx, ty, false, 0) : null) ?? mapTile(tx, ty, inBudget(), 1);
-    if (c) ctx.drawImage(c, Math.floor((tx * MT - wx0) / wpp), Math.floor((ty * MT - wy0) / wpp), size, size);
-    if (sharp && !mapTile(tx, ty, false, 0)) missing.push([tx, ty]);
-  }
-  for (const [tx, ty] of missing) {
-    if (!inBudget()) break;
-    const c = mapTile(tx, ty, true, 0)!;
-    ctx.drawImage(c, Math.floor((tx * MT - wx0) / wpp), Math.floor((ty * MT - wy0) / wpp), size, size);
-  }
-}
-
 function drawGrid(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp: number, S: Project, u: number): void {
   const step = 512;
-  ctx.strokeStyle = 'rgba(40,30,20,0.18)';
+  ctx.strokeStyle = 'rgba(240,248,250,0.13)';
   ctx.lineWidth = u;
   for (let gx = Math.ceil(wx0 / step) * step; gx < wx0 + w * wpp; gx += step) {
     const [x] = S(gx, 0);
@@ -250,32 +239,46 @@ function drawSchools(ctx: Ctx, cx: number, cy: number, rad: number, S: Project, 
   ctx.globalAlpha = 1;
 }
 
-// an outlined square marker
-function square(ctx: Ctx, x: number, y: number, r: number, u: number, fill: string): void {
-  ctx.fillStyle = COL.ink; ctx.fillRect(x - r - u, y - r - u, (r + u) * 2, (r + u) * 2);
-  ctx.fillStyle = fill; ctx.fillRect(x - r, y - r, r * 2, r * 2);
-}
 function cross(ctx: Ctx, x: number, y: number, r: number, lw: number, col: string): void {
   ctx.strokeStyle = col; ctx.lineWidth = lw;
   ctx.beginPath(); ctx.moveTo(x - r, y - r); ctx.lineTo(x + r, y + r); ctx.moveTo(x + r, y - r); ctx.lineTo(x - r, y + r); ctx.stroke();
 }
 
 function drawPois(ctx: Ctx, pois: Poi[], S: Project, u: number, showUncharted: boolean, seen: Seen): void {
-  const s3 = 3 * u;
   for (const p of pois) {
     const [x, y] = S(p.x, p.y), found = G.found.has(p.id);
     seen(found ? p.type : 'uncharted', x, y);
-    if (!found && !showUncharted) {
-      square(ctx, x, y, 1.5 * u, u, COL.dim);
+    if (!found && !showUncharted) {                                    // something's there: a faint ring until you've seen it
+      ctx.beginPath(); ctx.arc(x, y, 2.4 * u, 0, 7); ctx.lineWidth = 1.2 * u; ctx.strokeStyle = 'rgba(240,248,250,0.55)'; ctx.stroke();
       continue;
     }
-    if (p.type === 'port') square(ctx, x, y, s3, u, found ? COL.port : COL.dim);
-    else if (p.type === 'light') {
-      ctx.fillStyle = COL.ink; ctx.fillRect(x - 2 * u, y - 4 * u, 4 * u, 8 * u);
-      ctx.fillStyle = found ? COL.light : COL.dim; ctx.fillRect(x - u, y - 3 * u, 2 * u, 6 * u);
-      ctx.fillStyle = COL.red; ctx.fillRect(x - u, y - u, 2 * u, 2 * u);
-    } else if (p.type === 'wreck') cross(ctx, x, y, s3, 1.6 * u, G.salvaged.has(p.id) ? '#7a5530' : COL.wreck);
+    if (p.type === 'port') portMark(ctx, x, y, u, found);
+    else if (p.type === 'light') lightMark(ctx, x, y, u, found);
+    else if (p.type === 'wreck') { const r = 3.4 * u; cross(ctx, x, y, r, 3.4 * u, COL.ink); cross(ctx, x, y, r, 1.8 * u, G.salvaged.has(p.id) ? '#9a7550' : COL.wreck); }
   }
+}
+/** A port: a gold disc with an anchor on it (grey until charted). */
+function portMark(ctx: Ctx, x: number, y: number, u: number, found: boolean): void {
+  ctx.beginPath(); ctx.arc(x, y, 5.6 * u, 0, 7); rimmed(ctx, found ? COL.port : COL.dim, 1.5 * u);
+  ctx.strokeStyle = COL.ink; ctx.lineWidth = 1.1 * u; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(x, y - 2.7 * u, 0.9 * u, 0, 7);
+  ctx.moveTo(x, y - 1.8 * u); ctx.lineTo(x, y + 2.9 * u);
+  ctx.moveTo(x - 1.7 * u, y - 0.7 * u); ctx.lineTo(x + 1.7 * u, y - 0.7 * u);
+  ctx.moveTo(x - 2.8 * u, y + 0.8 * u); ctx.quadraticCurveTo(x - 2.4 * u, y + 2.9 * u, x, y + 2.9 * u); ctx.quadraticCurveTo(x + 2.4 * u, y + 2.9 * u, x + 2.8 * u, y + 0.8 * u);
+  ctx.stroke(); ctx.lineCap = 'butt';
+}
+/** A lighthouse: a white tower with a red band, and once charted a warm glow round its lamp. */
+function lightMark(ctx: Ctx, x: number, y: number, u: number, found: boolean): void {
+  if (found) {
+    const g = ctx.createRadialGradient(x, y - 4 * u, 0, x, y - 4 * u, 11 * u);
+    g.addColorStop(0, 'rgba(255,232,150,0.6)'); g.addColorStop(1, 'rgba(255,232,150,0)');
+    ctx.fillStyle = g; ctx.fillRect(x - 11 * u, y - 15 * u, 22 * u, 22 * u);
+  }
+  poly(ctx, u, -2.8, 4.5, 2.8, 4.5, 1.7, -4, -1.7, -4); rimmed(ctx, found ? COL.light : COL.dim, 1.3 * u);
+  ctx.fillStyle = COL.red; ctx.fillRect(x - 2.3 * u, y - 0.2 * u, 4.6 * u, 1.8 * u);
+  ctx.fillStyle = COL.ink; ctx.fillRect(x - 2.2 * u, y - 6.4 * u, 4.4 * u, 2.6 * u);
+  ctx.fillStyle = found ? '#ffe08a' : COL.dim; ctx.fillRect(x - 1.3 * u, y - 5.7 * u, 2.6 * u, 1.4 * u);
 }
 
 function drawTreasure(ctx: Ctx, S: Project, u: number, seen: Seen): void {
@@ -302,12 +305,23 @@ function drawLair(ctx: Ctx, S: Project, u: number): void {
 function drawLabels(ctx: Ctx, pois: Poi[], S: Project, u: number): void {
   font(ctx, 12, u);
   ctx.textBaseline = 'middle';
-  for (const p of pois) {
-    if (!G.found.has(p.id) || p.type === 'wreck') continue;              // uncharted places stay unnamed; hovering says what they are
-    const [x, y] = S(p.x, p.y);
-    const s = p.type === 'port' ? p.name : p.name.replace(' Light', '');
-    inked(ctx, s, x + 6 * u, y, u, p.type === 'port' ? COL.port : COL.light);
+  // ports first, then lighthouses; a name goes right of its mark, else left, else not at all (hovering still says it)
+  const taken: number[][] = [];
+  const fits = (x0: number, y0: number, x1: number, y1: number): boolean => {
+    if (taken.some(r => x0 < r[2] && x1 > r[0] && y0 < r[3] && y1 > r[1])) return false;
+    taken.push([x0, y0, x1, y1]); return true;
+  };
+  const named = pois.filter(p => G.found.has(p.id) && p.type !== 'wreck').sort((a, b) => +(a.type !== 'port') - +(b.type !== 'port'));
+  for (const p of named) {
+    const [x, y] = S(p.x, p.y), port = p.type === 'port', s = port ? p.name : p.name.replace(' Light', '');
+    font(ctx, port ? 12 : 11, u);
+    const w = ctx.measureText(s).width + (port ? 9 : 4) * u, h = (port ? 16 : 13) * u, gap = (port ? 8 : 6) * u;
+    const right = fits(x + gap, y - h / 2, x + gap + w, y + h / 2), left = !right && fits(x - gap - w, y - h / 2, x - gap, y + h / 2);
+    if (!right && !left) continue;
+    const lx = right ? x + gap : x - gap - w;
+    if (port) plate(ctx, s, lx, y, u); else inked(ctx, s, lx, y - 2 * u, u, COL.light);
   }
+  font(ctx, 12, u);
   // contract destinations
   for (const c of G.active) {
     const q = pois.find(p => p.id === c.to);
@@ -422,7 +436,9 @@ function drawBoat(ctx: Ctx, S: Project, u: number): void {
   ctx.beginPath(); ctx.arc(0, 0, (8 + 9 * k) * u, 0, 7); ctx.lineWidth = 1.6 * u; ctx.strokeStyle = `rgba(255,246,214,${0.85 * (1 - k)})`; ctx.stroke();
   ctx.beginPath(); ctx.arc(0, 0, 8 * u, 0, 7); ctx.fillStyle = 'rgba(27,42,51,0.35)'; ctx.fill();
   ctx.rotate(b.a);
-  poly(ctx, u, 7.5, 0, -5, -4.5, -2.5, 0, -5, 4.5); rimmed(ctx, COL.you, 1.4 * u);
+  poly(ctx, u, 9, 0, -6, -5.5, -3, 0, -6, 5.5);
+  ctx.lineJoin = 'round'; ctx.lineWidth = 4.5 * u; ctx.strokeStyle = 'rgba(255,246,214,0.9)'; ctx.stroke();   // a pale halo, so it reads on land and sea
+  rimmed(ctx, COL.you, 1.6 * u);
   ctx.restore();
 }
 

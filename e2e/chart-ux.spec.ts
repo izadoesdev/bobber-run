@@ -113,3 +113,26 @@ test("a fish's waters on the chart are built once, even zoomed all the way out",
   await page.waitForTimeout(4000);
   expect(await built()).toBe(last);
 });
+
+test('the chart draws the land and sea themselves, not a flat fill', async ({ page }) => {
+  await openChart(page);
+  // a point of dry land and one of deep water near the boat, by the world's own heights
+  const pts = await page.evaluate(() => {
+    const { G, hAt } = window.BR; let land = null, sea = null;
+    for (let r = 40; r < 600 && (!land || !sea); r += 20) for (let a = 0; a < 6.28; a += 0.2) {
+      const x = G.boat.x + Math.cos(a) * r, y = G.boat.y + Math.sin(a) * r, h = hAt(x, y);
+      if (!land && h > 0.3) land = { x, y }; if (!sea && h < -0.45) sea = { x, y };
+    }
+    return { land, sea };
+  });
+  expect(pts.land && pts.sea).toBeTruthy();
+  const box = (await page.locator('.chartwrap canvas').boundingBox())!;
+  const rgb = async (p: { x: number; y: number }) => {
+    const [cx, cy] = await onChart(page, p.x, p.y);
+    return page.evaluate(([fx, fy]) => {
+      const c = document.querySelector('.chartwrap canvas') as HTMLCanvasElement, d = c.getContext('2d')!.getImageData(Math.round(fx * c.width), Math.round(fy * c.height), 1, 1).data;
+      return [d[0], d[1], d[2]];
+    }, [(cx - box.x) / box.width, (cy - box.y) / box.height]);
+  };
+  await expect.poll(async () => { const [l, s] = [await rgb(pts.land!), await rgb(pts.sea!)]; return s[2] > s[0] + 30 && Math.abs(l[0] - s[0]) + Math.abs(l[1] - s[1]) + Math.abs(l[2] - s[2]) > 60; }, { timeout: 15_000 }).toBe(true);
+});
