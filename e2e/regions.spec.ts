@@ -12,7 +12,10 @@ test('a story step that opens new waters says so, and a region names itself as y
   const title = page.locator('.region-title:not(.welcome)');
   await expect(title).toContainText('New waters open', { timeout: 15_000 });
   // into the next region east (open now): after a few seconds there, its name and a line about it come up
+  // (stepped through game time, a second at a go with a frame painted between: the banner and the title are timed in
+  // game seconds, and CI's software renderer runs the game clock several times slower than the wall clock)
   await page.evaluate(() => { const { G } = window.BR; G.boat.x += 2000; G.boat.vx = G.boat.vy = 0; });
-  await expect(title).not.toContainText('New waters', { timeout: 20_000 });
-  await expect(title.locator('small')).not.toBeEmpty({ timeout: 15_000 });
+  for (let k = 0; k < 6; k++) { await page.evaluate(() => { for (let i = 0; i < 30; i++) window.BR.sim(1 / 30); }); await page.waitForTimeout(200); }
+  await expect(title).not.toContainText('New waters', { timeout: 30_000 });
+  await expect(title.locator('small')).not.toBeEmpty({ timeout: 30_000 });
 });
