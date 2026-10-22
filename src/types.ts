@@ -397,6 +397,8 @@ interface Progress {
   maps: TreasureMap[];
   /** fish that broke your line and are still out there */
   escaped: Escapee[];
+  /** progress through each content pack (src/content), and the regions sailed into so far (packs can open on one) */
+  packs: Record<string, import('./content/types').PackState>; regionsSeen: string[];
   /** a spot the player marked on the chart: a line to it on the minimap and chart, cleared on arrival */
   waypoint: Point | null;
   /** helpers the player switched off (they still own them): the deckhand, the drift net, the crab pots */

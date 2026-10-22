@@ -1,5 +1,6 @@
 // The market: prices, selling (keeping fish back for contracts and the harbour), repairs and fish charts.
 import { isRunningNow, RUNNING_PRICE } from '../../tides';
+import { packSell } from '../../content/engine';
 import { SPECIES } from '../../econ';
 import { sfx } from '../../audio';
 import { track, bucket } from '../../analytics';
@@ -76,7 +77,7 @@ export function sell(p: Port): void {
   if (legend && !confirmed('sell-legend', `You have a legendary fish (${SPECIES[legend.sp].name}). Press Sell all again to sell it too`)) return;
   for (const f of G.hold) if (!keep.has(f)) sat[f.sp] = (sat[f.sp] || 0) + 1;
   G.hold = G.hold.filter(f => keep.has(f));
-  addCoins(tot); G.stats.sold++;
+  addCoins(tot); G.stats.sold++; packSell(tot);
   track('catch_sold', { fish: n, value_bucket: bucket(tot), port: p.name, sold_kept: all });
   sfx('coin'); setTimeout(() => sfx('coin', 0.7), 90);
   toast(`Sold ${n} fish for $${tot}`, 'good'); saveGame();

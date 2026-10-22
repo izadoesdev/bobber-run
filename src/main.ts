@@ -24,6 +24,8 @@ import { initAnalytics, trackFailure } from './analytics';
 import { initTelemetry, watchGame } from './telemetry';
 import { forceName } from './ui/menus';
 import { applySharedCatch, tickVisit } from './share';
+import { tickPacks, packJournal, packCatch } from './content/engine';
+import { biomeAt } from './biome';
 import { zoneStats } from './ui/chart';
 import { baseScale, targetScale, easeScale, shipZoom } from './camera';
 
@@ -97,6 +99,7 @@ export function tick(dt: number): void {
   forceName();
   applySharedCatch();
   tickVisit();
+  tickPacks(dt);
   updateLife(dt);
   const bs = boatRenderState(alpha);
   if (G.mode === 'play' || G.mode === 'sunk' || G.mode === 'title') updateCamera(dt, bs.x, bs.y);   // menus freeze the view behind them
@@ -139,6 +142,6 @@ declare global { interface Window { BR: Record<string, unknown> } }
 window.BR = {
   NET, NETAPI, ONLINE, render, SET, apply: () => { applySettings(); fit(); }, AUDIO: { renderOffline, SFX_NAMES },
   WX, setWeather, LIFE, LAIR, BOSS, MODELS, GAME, TUNE, G, guide, tick, sim: (dt: number) => { noRender = true; tick(dt); noRender = false; },
-  homePort, schoolsNear, poisNear, hAt, SPECIES, R, worldCaches, ZONES: zoneStats,
+  homePort, schoolsNear, poisNear, hAt, SPECIES, R, worldCaches, CONTENT: { packJournal, packCatch, biomeAt }, ZONES: zoneStats,
 };
 requestAnimationFrame(frame);

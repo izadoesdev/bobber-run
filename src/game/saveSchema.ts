@@ -29,6 +29,7 @@ const story: Schema<StoryState> = v.looseObject({ i: v.number(), base: stats, sh
 const contract: Schema<Contract> = v.looseObject({ id: v.string(), from: v.string(), to: v.string(), toName: v.string(), sp: v.number(), n: v.number(), reward: v.number(), day: v.optional(v.number()), bulk: v.optional(v.boolean()) });
 const treasure: Schema<TreasureMap> = v.looseObject({ id: v.string(), x: v.number(), y: v.number(), reward: v.number() });
 const escapee: Schema<Escapee> = v.looseObject({ school: v.string(), x: v.number(), y: v.number(), sp: v.number(), kg: v.number(), gold: v.optional(v.boolean()), day: v.number(), lost: v.number() });
+const packState = v.object({ i: v.pipe(v.number(), v.integer(), v.minValue(0)), n: v.pipe(v.number(), v.finite()), started: v.boolean() });
 const fleetBoat: Schema<GameState['fleet'][string]> = v.looseObject({ port: v.string(), portName: v.string(), earned: v.number() });
 const BOATS: BoatId[] = ['row', 'skiff', 'launch', 'trawler', 'schooner', 'drifter', 'flagship'];
 const PROJECTS: ProjectId[] = ['pier', 'market', 'drydock', 'lights', 'grand'];
@@ -46,7 +47,7 @@ export const saveSchema = v.object({
   stats: v.fallback(v.partial(stats), {}), story: v.fallback(v.nullable(story), null), gifts: mapOf(v.number()),
   pet: v.fallback(v.nullable(v.object({ name: v.string() }) satisfies Schema<Pet>), null), projects: listOf(v.picklist(PROJECTS)),
   fleet: mapOf(fleetBoat), dives: mapOf(v.number()), goalsDone: listOf(v.number()), cheated: bool(),
-  maps: listOf(treasure), escaped: listOf(escapee), waypoint: v.fallback(v.nullable(point), null),
+  maps: listOf(treasure), escaped: listOf(escapee), packs: mapOf(packState), regionsSeen: listOf(v.string()), waypoint: v.fallback(v.nullable(point), null),
   gearOff: mapOf(v.literal(true)), zones: mapOf(v.literal(true)), docks: mapOf(v.number()), streak: v.pipe(int(), v.transform(n => Math.min(5, Math.max(0, n)))),
   musicOn: bool(true), offers: mapOf(v.array(contract)), active: listOf(contract), pity: int(), clock: v.optional(v.number()),
 });
