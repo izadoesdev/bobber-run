@@ -11,12 +11,12 @@ const DIAG = Math.SQRT2;
 
 /** Open water at (x, y), deep enough to keep off the beach. */
 const isWater = (x: number, y: number): boolean => heightAt(x, y) < WATER;
-/** Whether a boat can sail straight from a to b (checked every few units). */
-export function clearLine(a: Point, b: Point): boolean {
-  const d = Math.hypot(b.x - a.x, b.y - a.y), n = Math.ceil(d / 6);
+/** Whether a boat can sail straight from a to b (checked every few units), with `pad` of water either side of its line. */
+export function clearLine(a: Point, b: Point, pad = 0): boolean {
+  const d = Math.hypot(b.x - a.x, b.y - a.y), n = Math.ceil(d / 6), sx = d ? -(b.y - a.y) / d * pad : 0, sy = d ? (b.x - a.x) / d * pad : 0;
   for (let i = 1; i < n; i++) {
-    const t = i / n;
-    if (!isWater(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)) return false;
+    const t = i / n, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
+    if (!isWater(x, y) || (pad && (!isWater(x + sx, y + sy) || !isWater(x - sx, y - sy)))) return false;
   }
   return true;
 }
@@ -53,10 +53,15 @@ const pack = (i: number, j: number): number => (i + OFF) * 65536 + (j + OFF);
 
 /**
  * A water route from `from` to `to`, as corner points ending at `to` (the start is left out), or null when there is
- * none within reach. A destination on land becomes the nearest water on the way to it.
+ * none within reach. A destination on land becomes the nearest water on the way to it. With a `pad` (a hull's half
+ * beam and a margin) the route keeps a grid step of water around it and its straight runs keep `pad` either side,
+ * so a wide ship doesn't clip the coast on a corner; where no such route exists it falls back to a narrow one.
  */
-export function findRoute(from: Point, to: Point): Point[] | null {
-  if (isWater(to.x, to.y) && clearLine(from, to)) return [to];
+export function findRoute(from: Point, to: Point, pad = 0): Point[] | null {
+  return (pad ? route(from, to, pad) : null) ?? route(from, to, 0);
+}
+function route(from: Point, to: Point, pad: number): Point[] | null {
+  if (isWater(to.x, to.y) && clearLine(from, to, pad)) return [to];
   const si = Math.round(from.x / STEP), sj = Math.round(from.y / STEP);
   let gi = Math.round(to.x / STEP), gj = Math.round(to.y / STEP);
   // a goal on land: walk back toward the start until there is water
@@ -70,9 +75,22 @@ export function findRoute(from: Point, to: Point): Point[] | null {
     return (dx + dy + (DIAG - 2) * Math.min(dx, dy)) * 1.05;     // octile, a touch greedy so long routes stay quick
   };
   const g = new Map<number, number>(), came = new Map<number, number>(), water = new Map<number, boolean>();
-  const wet = (i: number, j: number, k: number): boolean => {
+  const water1 = (i: number, j: number): boolean => {
+    const k = pack(i, j);
     let w = water.get(k);
     if (w === undefined) water.set(k, w = isWater(i * STEP, j * STEP));
+    return w;
+  };
+  // with a pad, a cell is only sailable with water in all eight cells round it (no new height samples: they're cached)
+  const roomy = new Map<number, boolean>();
+  const wet = (i: number, j: number, k: number): boolean => {
+    if (!pad) return water1(i, j);
+    let w = roomy.get(k);
+    if (w === undefined) {
+      w = water1(i, j);
+      for (let dj = -1; dj <= 1 && w; dj++) for (let di = -1; di <= 1 && w; di++) w = water1(i + di, j + dj);
+      roomy.set(k, w);
+    }
     return w;
   };
   const open = new Heap(), start = pack(si, sj);
@@ -104,7 +122,7 @@ export function findRoute(from: Point, to: Point): Point[] | null {
   let at: Point = from, i = 0;
   while (i < cells.length) {
     let j = cells.length - 1;
-    while (j > i && !clearLine(at, cells[j])) j--;
+    while (j > i && !clearLine(at, cells[j], pad)) j--;
     out.push(cells[j]); at = cells[j]; i = j + 1;
   }
   return out;

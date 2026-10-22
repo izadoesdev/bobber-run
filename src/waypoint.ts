@@ -3,7 +3,7 @@
 // waypoint is set and again whenever the next corner drops out of sight. Sailing within a boat length clears it.
 import { G } from './game';
 import { toast } from './game/feedback';
-import { setCourse } from './game/autopilot';
+import { roomFor, setCourse } from './game/autopilot';
 import { clearLine, findRoute } from './game/route';
 import { sfx } from './audio';
 import type { Point } from './types';
@@ -31,10 +31,10 @@ export function tickWaypoint(): void {
   const w = G.waypoint, b = G.boat;
   if (!w) return;
   if (Math.hypot(w.x - b.x, w.y - b.y) < ARRIVE) { clearWaypoint(); sfx('select'); toast('You reached your waypoint', 'good'); return; }
-  while (route.length > 1 && clearLine(b, route[1])) route.shift();            // corners already rounded
-  const lost = !route.length || !clearLine(b, route[0]);
+  while (route.length > 1 && clearLine(b, route[1], roomFor())) route.shift();   // corners already rounded
+  const lost = !route.length || !clearLine(b, route[0], roomFor());
   if ((plannedFor !== w || lost) && G.t - retryT > 1.5) {
     retryT = G.t; plannedFor = w;
-    route = findRoute(b, w) ?? [w];                                            // no way found: a straight line
+    route = findRoute(b, w, roomFor()) ?? [w];                                 // room for this hull; no way found: a straight line
   }
 }

@@ -34,6 +34,9 @@ interface Course {
 let course: Course | null = null;
 const held: Record<SteerKey, boolean> = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
 const arriveR = (): number => 3 + boatDef().B;
+/** Water to keep either side of the boat's line on a planned route: its half beam, a margin, and room for a long
+ *  stern to swing on the corners. */
+export const roomFor = (): number => { const bd = boatDef(); return bd.B + 3 + 0.15 * bd.L; };
 
 /** Where the boat is heading in the end, for the marker; null when not under way. */
 export const courseTarget = (): Point | null => course && (course.rest.at(-1) ?? course);
@@ -75,7 +78,7 @@ export function setCourse(x: number, y: number, quiet = false): boolean {
   if (t < arriveR()) { if (!quiet) sfx('deny'); if (course) dropCourse(); return false; }
   const prev = course, end = { x: b.x + dx * t, y: b.y + dy * t };
   // a click plans a way round anything in between; a held finger or a followed sailor just steers straight
-  const route = !quiet && !clearLine(b, end) ? findRoute(b, end) : null;
+  const route = !quiet && !clearLine(b, end, roomFor()) ? findRoute(b, end, roomFor()) : null;
   const [leg, ...rest] = route ?? [end];
   course = { x: leg.x, y: leg.y, rest, reelIn: !!f, side: prev?.side ?? 0, best: Math.hypot(leg.x - b.x, leg.y - b.y), bestT: G.t };
   if (!quiet) sfx('move', 0.5);
@@ -104,18 +107,18 @@ export function steerCourse(): void {
   if (!G.fish) c.reelIn = false;
   const b = G.boat, bd = boatDef();
   // round a corner once it's close, or as soon as the next one is in clear sight
-  while (c.rest.length && (Math.hypot(c.x - b.x, c.y - b.y) < 12 + bd.L || clearLine(b, c.rest[0]))) {
+  while (c.rest.length && (Math.hypot(c.x - b.x, c.y - b.y) < 12 + bd.L || clearLine(b, c.rest[0], roomFor()))) {
     const n = c.rest.shift()!;
     c.x = n.x; c.y = n.y; c.best = Math.hypot(n.x - b.x, n.y - b.y); c.bestT = G.t;
   }
   const dx = c.x - b.x, dy = c.y - b.y, d = Math.hypot(dx, dy), last = !c.rest.length;
   if (last && (d < 2 || (d < arriveR() && boatSpeed() < 3))) { dropCourse(); return; }   // there, and nearly stopped
   if (d < c.best - 2) { c.best = d; c.bestT = G.t; }
-  else if (G.t - c.bestT > 6) { dropCourse(); toast('No clear way there'); return; }
+  else if (G.t - c.bestT > 6 + 0.2 * bd.L) { dropCourse(); toast('No clear way there'); return; }   // a long hull takes longer to come round
   nearSolids();
 
   // a heading that clears the next stretch, veering further round an obstacle until one does (same side first)
-  const look = Math.min(d, 30 + boatSpeed() * 1.5), want = Math.atan2(dy, dx);
+  const look = Math.min(d, 30 + bd.L + boatSpeed() * 1.5), want = Math.atan2(dy, dx);
   let heading = want, ahead = clearRun(b.x, b.y, want, look);
   if (ahead < look) {
     let bestRun = ahead;
@@ -132,14 +135,17 @@ export function steerCourse(): void {
   // speed: what drag and backing oars (or engine) can still stop from, before the target and before the shore
   const k = 0.6 * bd.accel, brake = 20 * speedMul() * bd.accel * 0.45 * (bd.prop === 'SAIL' ? sailEfficiency() : 1);
   const stopFrom = (dist: number): number => { const s = Math.max(0, dist); return k * s + Math.sqrt(brake * s); };
-  const shore = clearRun(b.x, b.y, b.a, 30 + boatSpeed() * 2) - bd.L;
+  const shore = clearRun(b.x, b.y, b.a, bd.L + 30 + boatSpeed() * 2) - bd.L;   // clear water ahead of the bow
   const err = wrapAngle(heading - b.a), turnFirst = Math.abs(err) > 1.1;
-  let vMax = Math.min(last ? stopFrom(d - 2) : Infinity, stopFrom(shore - 3));   // no braking at a corner
+  // at a corner, slow by how sharp the turn onto the next leg is; at the end, to a stop
+  const next = c.rest[0], turn = next ? Math.abs(wrapAngle(Math.atan2(next.y - c.y, next.x - c.x) - want)) : Math.PI;
+  const cornerV = last ? 0 : 6 + 40 * Math.max(0, 1 - turn / 1.6) / Math.sqrt(bd.L / 13.5);
+  let vMax = Math.min(cornerV + stopFrom(d - 2), stopFrom(shore - 3));
   if (turnFirst) vMax = Math.min(vMax, 5);
-  if (ahead < 6 + bd.L) vMax = 0;                                       // boxed in: stop
+  if (ahead < look && ahead < 6 + bd.L) vMax = 0;                      // boxed in: stop
   const vf = b.vx * Math.cos(b.a) + b.vy * Math.sin(b.a);
 
-  const lead = wrapAngle(err - b.w * 0.3), dead = 0.05;                     // ease off early so it doesn't overshoot
+  const lead = wrapAngle(err - b.w * 0.4 * Math.sqrt(bd.L / 13.5)), dead = 0.05;   // ease off early (more for a heavy helm) so it doesn't overshoot
   press('ArrowRight', lead > dead);
   press('ArrowLeft', lead < -dead);
   press('ArrowUp', !turnFirst && vf < vMax - 0.5);
