@@ -19,6 +19,8 @@ const CELL = 560;                              // one archipelago cell
 // how big main islands are and how many islets survive: tuned for open channels between islands (about a fifth of the
 // sea near home is land). Scaling here keeps every island's centre, since the draws below don't change.
 const ISLAND_SCALE = 0.75, ISLET_KEEP = 0.5;
+// islands bought before World 3 keep the size they were bought at (Alderhaven, 0,0, never changed)
+const KEPT_SIZE = new Set(['0,-1']);
 const HOME_ISLAND: Point = { x: 280, y: 280 };
 const key = (i: number, j: number) => (i + 50000) * 100000 + (j + 50000);
 
@@ -47,7 +49,7 @@ function cellIslands(i: number, j: number): Island[] {
   let main: Island | null = null;
   if (i === 0 && j === 0) main = island(HOME_ISLAND.x, HOME_ISLAND.y, 145, 0.8, false, i, j);
   else if (r() < 0.72) {
-    const x = ox + CELL * (0.3 + 0.4 * r()), y = oy + CELL * (0.3 + 0.4 * r()), R = (75 + Math.pow(r(), 1.25) * 230) * ISLAND_SCALE, peak = 0.6 + 0.4 * r();
+    const x = ox + CELL * (0.3 + 0.4 * r()), y = oy + CELL * (0.3 + 0.4 * r()), R = (75 + Math.pow(r(), 1.25) * 230) * (KEPT_SIZE.has(`${i},${j}`) ? 1 : ISLAND_SCALE), peak = 0.6 + 0.4 * r();
     main = island(x, y, R, peak, false, i, j);
   }
   if (main) L.push(main);
