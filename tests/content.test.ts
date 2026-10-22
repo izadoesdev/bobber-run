@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import { PACKS } from '../src/content/packs';
 import { SPECIES } from '../src/species';
 import type { BiomeId } from '../src/biome';
+import { regionSite } from '../src/world';
 
 // Every content pack, checked: a typo in a species id, a character name or a region should fail here, not in a quest.
 const REGIONS: BiomeId[] = ['home', 'reef', 'kelp', 'volcanic', 'mangrove', 'warm', 'cold', 'open'];
@@ -31,6 +32,7 @@ for (const p of PACKS) test(`pack "${p.id}" is well formed`, () => {
     } else if ('sell' in o) expect(o.sell).toBeGreaterThan(0);
     else if ('chart' in o) expect(o.chart).toBeGreaterThan(0);
     else if ('visit' in o) expect(Number.isFinite(o.visit.x) && Number.isFinite(o.visit.y) && !!o.place).toBe(true);
+    else if ('site' in o) expect(regionSite(o.site), `${q.id}: site ${o.site}`).toBeDefined();
     expect((q.reward.coins ?? 0) >= 0 && (q.reward.coins ?? 0) <= 5000, `${q.id}: reward`).toBe(true);
   }
 });

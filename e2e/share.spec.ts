@@ -8,13 +8,22 @@ const recordLines = (page: Page) => page.addInitScript(() => {
     .observe(document, { subtree: true, childList: true, characterData: true });
 });
 const shown = (page: Page) => page.evaluate(() => (window as unknown as { __lines: string[] }).__lines.join(' | '));
+/** Open a link as a returning player (a save on this device), who gets a waypoint rather than a start by the spot. */
+async function asReturning(page: Page, query: string): Promise<void> {
+  await sail(page);
+  await page.evaluate(() => { window.BR.GAME.saveGame(); window.BR.G.mode = 'title'; });
+  await page.goto('/' + query);
+  await expect.poll(() => page.evaluate(() => window.BR?.G?.mode)).toBe('title');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => page.evaluate(() => window.BR.G.mode)).toBe('play');
+}
 
 // Shared catch links: /?catch=<species>&kg=<kg>&at=<x>,<y>&by=<name>. The visit points at the spot and says whose
 // catch it was; whatever came in the URL is checked first, and the address bar is tidied afterwards.
-test('a shared catch sets a waypoint, names the sailor and tidies the address @both', async ({ page }) => {
+test('a shared catch sets a waypoint for a returning player, names the sailor and tidies the address @both', async ({ page }) => {
   await recordLines(page);
-  await sail(page, '?offline&catch=perch&kg=1.4&at=2400,1800&by=Captain%20Kipper');
-  await expect.poll(() => page.evaluate(() => window.BR.G.waypoint)).toEqual({ x: 2400, y: 1800 });
+  await asReturning(page, '?offline&catch=perch&kg=1.4&at=2400,1800&by=Captain%20Kipper');
+  await expect.poll(() => page.evaluate(() => { const w = window.BR.G.waypoint; return w && Math.hypot(w.x - 2400, w.y - 1800) < 600; })).toBe(true);
   await expect.poll(() => shown(page)).toContain('Captain Kipper landed a Perch of 1.4 kg');
   expect(new URL(page.url()).search).toBe('?offline');
 });
@@ -46,7 +55,7 @@ test('a first-time visitor from a share link starts out by the shared spot', asy
   expect(where.toHome).toBeGreaterThan(600);
 });
 test('a share link pointing at land puts the waypoint on the nearest water', async ({ page }) => {
-  await sail(page, '?offline&catch=perch&at=900,-300&by=Tester');
+  await asReturning(page, '?offline&catch=perch&at=900,-300&by=Tester');
   const w = await page.evaluate(() => { const { G, hAt } = window.BR; return G.waypoint && { h: hAt(G.waypoint.x, G.waypoint.y) }; });
   expect(w).not.toBeNull();
   expect(w!.h).toBeLessThan(-0.05);                 // water, not forest

@@ -22,7 +22,7 @@ const mapOf = <T>(item: Schema<T>) => v.pipe(v.fallback(v.record(v.string(), v.u
   v.transform(o => Object.fromEntries(Object.entries(o).flatMap(([k, x]) => { const r = v.safeParse(item, x); return r.success ? [[k, r.output] as const] : []; }))));
 const point = v.object({ x: v.pipe(v.number(), v.finite()), y: v.pipe(v.number(), v.finite()) });
 
-const fish: Schema<Fish> = v.looseObject({ sp: v.number(), kg: v.number(), value: v.number(), trophy: v.boolean(), t: v.optional(v.number()), gold: v.optional(v.boolean()), variant: v.optional(v.string()) });
+const fish: Schema<Fish> = v.looseObject({ sp: v.number(), kg: v.number(), value: v.number(), trophy: v.boolean(), t: v.optional(v.number()), gold: v.optional(v.boolean()), variant: v.optional(v.string()), stars: v.optional(v.picklist([1, 2, 3] as const)), perfect: v.optional(v.literal(true)) });
 const logEntry: Schema<LogEntry> = v.looseObject({ n: v.number(), best: v.number(), trophy: v.optional(v.boolean()), at: v.optional(v.array(v.tuple([v.number(), v.number()]))), vars: v.optional(v.array(v.string())) });
 const stats = v.object({ caught: int(), sold: int(), upgrades: int(), lights: int(), contracts: int(), wrecks: int(), trophies: int(), night: int(), frenzy: int(), treasures: int(), storm: int() }) satisfies Schema<Stats>;
 const story: Schema<StoryState> = v.looseObject({ i: v.number(), base: stats, shown: v.boolean() });

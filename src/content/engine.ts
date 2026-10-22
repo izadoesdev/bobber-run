@@ -7,6 +7,7 @@ import { addCoins, toast } from '../game/feedback';
 import { isNight } from '../game/rules';
 import { biomeAt, type BiomeId } from '../biome';
 import { WX } from '../weather';
+import { regionSite } from '../world';
 import { SPECIES } from '../species';
 import type { Fish } from '../types';
 import { PACKS } from './packs';
@@ -36,6 +37,7 @@ export function progress(q: QuestDef, s: PackState): [number, number] {
   if ('chart' in o) return [Math.min(o.chart, [...G.found].filter(id => id.startsWith(o.kind + ':')).length), o.chart];
   if ('fund' in o) return [G.projects.includes(o.fund) ? 1 : 0, 1];
   const b = G.boat;
+  if ('site' in o) { const s = regionSite(o.site); return [s && Math.hypot(b.x - s.x, b.y - s.y) < (o.r ?? 90) ? 1 : 0, 1]; }
   return [Math.hypot(b.x - o.visit.x, b.y - o.visit.y) < (o.visit.r ?? 60) ? 1 : 0, 1];
 }
 const current = (p: Pack): { q: QuestDef; s: PackState } | null => { const s = stateOf(p), q = p.quests[s.i]; return q && s.started ? { q, s } : null; };
@@ -46,7 +48,8 @@ function fits(o: CatchObjective, fish: Fish, x: number, y: number): boolean {
   return (!o.species || sp?.id === o.species) && (!o.trophy || fish.trophy) && (!o.variant || fish.variant === o.variant)
     && (!o.region || biomeAt(x, y) === o.region) && (!o.night || isNight())
     && (!o.weather || WX.state === 'storm' || (o.weather === 'rain' && WX.state === 'rain'))
-    && (!o.fight || sp?.fight === o.fight) && (!o.kg || fish.kg >= o.kg) && (!o.lightRod || G.up.rod <= (sp?.rod ?? 0));
+    && (!o.fight || sp?.fight === o.fight) && (!o.kg || fish.kg >= o.kg) && (!o.lightRod || G.up.rod <= (sp?.rod ?? 0))
+    && (!o.stars || (fish.stars ?? 0) >= o.stars) && (!o.perfect || !!fish.perfect);
 }
 /**
  * A fish was landed at (x, y): it counts toward every running catch objective it fits. `byRod` is false for nets,

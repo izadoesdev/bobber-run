@@ -16,10 +16,13 @@ export type Objective =
       kg?: number;                  // at least this heavy
       lightRod?: true;              // on the lightest rod that can land it (no rod to spare)
       inARow?: true;                // the count must come in a row: a rod catch that doesn't fit starts it over
+      stars?: 1 | 2 | 3;            // at least this many stars (rod catches)
+      perfect?: true;               // landed after a perfect strike
     }
   | { sell: number }                                       // coins taken at the market while the quest runs
   | { chart: number; kind: 'port' | 'light' | 'wreck' }    // places on your chart, in all
   | { visit: { x: number; y: number; r?: number }; place: string }   // sail within r (default 60) of a spot; `place` names it
+  | { site: string; r?: number; place?: string }          // sail within r (default 90) of a region site (world.regionSite)
   | { fund: ProjectId };
 
 export interface Reward { coins?: number; bait?: Partial<Record<BaitKind, number>> }
