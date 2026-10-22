@@ -18,9 +18,9 @@ test('the first minute has no words; Maren speaks after the first catch without 
   expect(await page.evaluate(() => ({ speech: !!document.querySelector('.speech'), objective: !!document.querySelector('.chip.objective'), mode: window.BR.G.mode })))
     .toEqual({ speech: false, objective: false, mode: 'play' });
   await landFish(page);
-  // step 4 s of game time (past the welcome title and the catch animation, even on a slow CI machine), then skip the
-  // card's long first look; the card comes up when the animation ends, so it's cleared after
-  const who = await page.evaluate(() => { for (let i = 0; i < 120; i++) window.BR.sim(1 / 30); window.BR.G.card = null; return window.BR.speech()?.name; });
+  // step game time past the welcome title and the catch animation (however slowly CI paints), skip the card's long
+  // first look, then a second more for Maren's line to start
+  const who = await page.evaluate(() => { for (let i = 0; i < 120; i++) window.BR.sim(1 / 30); window.BR.G.card = null; for (let i = 0; i < 30; i++) window.BR.sim(1 / 30); return window.BR.speech()?.name; });
   expect(who).toBe('Maren');
   // the strip shows on the next painted frame, which on CI's software-rendered phone can take many seconds
   await expect(page.locator('.speech')).toContainText('Maren', { timeout: 30_000 });
