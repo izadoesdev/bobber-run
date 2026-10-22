@@ -1,6 +1,8 @@
-// Biomes: regions that look and live differently. A slow noise field picks coral shallows, kelp coasts, ember isles
-// and (south of home) mangroves; latitude sets warm and cold water, and the far north is the ice floes. Home waters
-// stay plain, and the regions start a couple of cells out.
+// Regions: the sea is divided into large named regions, a few thousand units across, laid out in latitude bands so the
+// climate runs smoothly from the ice of the far north through the temperate middle to the warm south. Each region has
+// a biome (coral shallows, kelp coast, ember isles, mangroves, or none) and a family of island themes (see below);
+// ember isles keep to the temperate middle, so they never touch ice or the warm south. Latitude also sets warm and cold
+// water for the fish. Home waters stay plain.
 import { createNoise2D } from 'simplex-noise';
 import Alea from 'alea';
 import { clamp, smooth01 } from './config';
@@ -15,8 +17,100 @@ export interface BiomeMix { reef: number; kelp: number; volcanic: number; mangro
 export type BiomeId = 'home' | 'reef' | 'kelp' | 'volcanic' | 'mangrove' | 'warm' | 'cold' | 'open';
 
 const nBio = createNoise2D(Alea('bobber-run', 'biome'));
-const F = 1 / 1500;                                         // features a few cells across
 const HOME = { x: 280, y: 280 };
+
+// ---------- regions ----------
+type Mixed = keyof BiomeMix;
+/** A kind of region: its name, dominant island theme, the related themes that turn up in it, and its biome. */
+interface Template { name: string; theme: ThemeId; related: readonly ThemeId[]; biome: BiomeId }
+const tpl = (name: string, theme: ThemeId, related: ThemeId[], biome: BiomeId): Template => ({ name, theme, related, biome });
+const GLACIER = tpl('Glacier Sound', 'glacier', ['fjord'], 'cold'), FROZEN = tpl('Frozen Reach', 'glacier', ['fjord'], 'cold');
+const FJORDS = tpl('Fjordlands', 'fjord', ['glacier', 'birch'], 'kelp');
+const PINES = tpl('Pinewood Isles', 'pine', ['birch', 'autumn'], 'kelp'), BIRCHES = tpl('Birchholm', 'birch', ['pine', 'autumn'], 'open');
+const CHALK = tpl('Chalk Downs', 'chalk', ['meadow', 'pine'], 'kelp'), BOG = tpl('Bogmoor', 'bog', ['pine', 'birch'], 'open');
+const ALDER = tpl('Alderhaven Reach', 'meadow', ['blossom', 'autumn'], 'home'), AMBER = tpl('Amber Isles', 'autumn', ['meadow', 'pine'], 'open');
+const EMBER = tpl('Ember Reach', 'blacksand', ['basalt', 'fungal'], 'volcanic'), BASALT = tpl('Basalt Shelf', 'basalt', ['blacksand'], 'volcanic'), FUNGAL = tpl('Fungal Hollows', 'fungal', ['basalt', 'bog'], 'volcanic');
+const BLOSSOM = tpl('Blossom Coast', 'blossom', ['meadow', 'autumn'], 'reef'), MEADOW = tpl('Meadowmere', 'meadow', ['blossom', 'chalk'], 'open');
+const MANGROVE = tpl('Mangrove Channels', 'mangrove', ['bog'], 'mangrove'), DELTA = tpl('Mangrove Delta', 'mangrove', ['bamboo'], 'mangrove');
+const ATOLLS = tpl('Sunlit Atolls', 'atoll', ['dunes', 'bamboo'], 'reef'), DUNES = tpl('Dune Coast', 'dunes', ['mesa', 'atoll'], 'warm');
+const MESAS = tpl('Red Mesas', 'mesa', ['dunes'], 'warm'), BAMBOO = tpl('Bamboo Reach', 'bamboo', ['atoll', 'mangrove'], 'reef');
+/**
+ * The bands, north to south: where each ends (y), how wide its regions run, and the kinds of region along it, in
+ * order (a region k along the band takes kinds[k mod n], so neighbours differ). The middle band holds Alderhaven
+ * (its region 0) and the ember isles; it touches only temperate bands.
+ */
+const BANDS: { y1: number; w: number; kinds: Template[] }[] = [
+  { y1: -5200, w: 3000, kinds: [FROZEN, GLACIER] },
+  { y1: -3200, w: 3200, kinds: [GLACIER, FJORDS, GLACIER, FJORDS, FJORDS] },
+  { y1: -1150, w: 3200, kinds: [PINES, BIRCHES, CHALK, PINES, BOG] },
+  { y1: 750, w: 3200, kinds: [ALDER, AMBER, FUNGAL, BLOSSOM, BASALT, EMBER] },
+  { y1: 2600, w: 3200, kinds: [MEADOW, CHALK, MANGROVE, MEADOW, BLOSSOM] },
+  { y1: 5200, w: 3200, kinds: [ATOLLS, MESAS, BAMBOO, DUNES, ATOLLS, DELTA] },
+  { y1: Infinity, w: 3000, kinds: [DUNES, ATOLLS, MESAS] },
+];
+/** A named region. */
+export interface Region { id: string; name: string; theme: ThemeId; related: readonly ThemeId[]; biome: BiomeId; centre: { x: number; y: number } }
+const regions = new Map<number, Region>();
+const bandTop = (b: number): number => b === 0 ? -Infinity : BANDS[b - 1].y1;
+// band edges and region edges wander, so no border runs ruler-straight
+const wobbleY = (x: number): number => 200 * nBio(x / 1900, 7.7);
+const wobbleX = (y: number): number => 300 * nBio(3.3, y / 1700);
+/** Where region k of band b is centred along it: Alderhaven's region sits on home, the rest jittered. */
+const seedX = (b: number, k: number): number => HOME.x + k * BANDS[b].w + (k ? (hash01(b, k, 301) - 0.5) * 0.5 * BANDS[b].w : 0);
+const kindOf = (b: number, k: number): Template => { const L = BANDS[b].kinds; return L[((k % L.length) + L.length) % L.length]; };
+function region(b: number, k: number): Region {
+  const key = b * 100000 + k;
+  let r = regions.get(key);
+  if (r) return r;
+  const T = kindOf(b, k), top = Math.max(bandTop(b), -6000), bot = Math.min(BANDS[b].y1, 6000);
+  // the regions in reach go by their plain name; a twin across home, or one far along the band, says which way it lies
+  const side = k < 0 ? 'West ' : 'East ', name = (Math.abs(k) >= 2 ? 'Far ' + side : k && kindOf(b, -k) === T ? side : '') + T.name;
+  r = { id: `${b}:${k}`, name, theme: T.theme, related: T.related, biome: T.biome, centre: { x: seedX(b, k), y: (top + bot) / 2 } };
+  regions.set(key, r);
+  return r;
+}
+/** Where a point lies: its band and region along it, and the nearest border: how far, and the region across it. */
+interface Place { band: number; k: number; edge: number; nb: number; nk: number }
+const place: Place = { band: 0, k: 0, edge: 0, nb: 0, nk: 0 };
+const cell = { k: 0, side: 0, across: 0 };
+/** Region index along band b at x (the nearest seed), how far its side edge is, and the region past that edge. */
+function cellIn(b: number, x: number): typeof cell {
+  const k0 = Math.round((x - HOME.x) / BANDS[b].w);
+  let d1 = Infinity, d2 = Infinity;
+  for (let k = k0 - 1; k <= k0 + 1; k++) {
+    const d = Math.abs(x - seedX(b, k));
+    if (d < d1) { cell.across = cell.k; d2 = d1; cell.k = k; d1 = d; } else if (d < d2) { cell.across = k; d2 = d; }
+  }
+  cell.side = (d2 - d1) / 2;
+  return cell;
+}
+function locate(x: number, y: number): Place {
+  const yy = y + wobbleY(x), xx = x + wobbleX(y);
+  let b = 0;
+  while (yy >= BANDS[b].y1) b++;
+  const c = cellIn(b, xx), up = yy - bandTop(b), down = BANDS[b].y1 - yy;
+  place.band = b; place.k = c.k; place.edge = c.side; place.nb = b; place.nk = c.across;
+  if (up < place.edge) { place.edge = up; place.nb = b - 1; place.nk = cellIn(b - 1, xx).k; }
+  if (down < place.edge) { place.edge = down; place.nb = b + 1; place.nk = cellIn(b + 1, xx).k; }
+  return place;
+}
+/** The named region at (x, y): for chart names, the entry banner, and everything that varies by region. */
+export function regionAt(x: number, y: number): Region { const p = locate(x, y); return region(p.band, p.k); }
+
+/**
+ * The volcanic weight of the biome field before regions (the slow noise blobs), kept only so world.ts can keep its
+ * volcano relief, and with it heightAt, exactly as it was. Nothing else should read it.
+ */
+export function legacyVolcanic(x: number, y: number): number {
+  const d = Math.hypot(x - HOME.x, y - HOME.y), away = smooth01((d - 650) / 550), F = 1 / 1500;
+  if (away <= 0) return 0;
+  const wm = warmth(y), cd = coldness(y), lead = (m: number, ...o: number[]): number => smooth01(m) * smooth01((m - Math.max(...o)) * 1.5 + 0.5);
+  const a = nBio(x * F, y * F), b = nBio(x * F + 57.3, y * F - 19.1), c = nBio(x * F * 1.1 - 91.4, y * F * 1.1 + 33.8), e = nBio(x * F * 1.3 + 140.2, y * F * 1.3 - 77.7);
+  const south = smooth01((y - 700) / 600) * (1 - smooth01((y - 3200) / 800));
+  const mr = (a - 0.28 + 0.3 * wm - 2 * cd) / 0.18, mk = (b - 0.28 + 0.2 * cd - 0.3 * wm) / 0.18 - cd, mv = (c - 0.36) / 0.18 - 2 * cd, mm = (e - 0.2) / 0.18 * south - 2 * (1 - south);
+  const reef = lead(mr, mk, mv, mm), kelp = lead(mk, mr, mv, mm), volcanic = lead(mv, mr, mk, mm), mangrove = lead(mm, mr, mk, mv);
+  return volcanic * away / Math.max(1, reef + kelp + volcanic + mangrove);
+}
 
 // Each island belongs to one region: around an island the field is read at its centre, so no island is half coral
 // and half ash. world.ts registers how to find that island (it imports this file, so this one can't import it).
@@ -29,23 +123,15 @@ export function biomeMix(x: number, y: number): BiomeMix {
   if (at) { x += (at.x - x) * at.w; y += (at.y - y) * at.w; }
   return fieldMix(x, y);
 }
+const BLEND = 220;                                          // biomes blend over this far either side of a region border
 function fieldMix(x: number, y: number): BiomeMix {
+  const m = { reef: 0, kelp: 0, volcanic: 0, mangrove: 0 };
   const d = Math.hypot(x - HOME.x, y - HOME.y), away = smooth01((d - 650) / 550);
-  if (away <= 0) return { reef: 0, kelp: 0, volcanic: 0, mangrove: 0 };
-  const wm = warmth(y), cd = coldness(y);
-  const a = nBio(x * F, y * F), b = nBio(x * F + 57.3, y * F - 19.1), c = nBio(x * F * 1.1 - 91.4, y * F * 1.1 + 33.8);
-  const e = nBio(x * F * 1.3 + 140.2, y * F * 1.3 - 77.7);
-  // mangroves keep to a band south of home, from about y = 900 down into the warm water
-  const south = smooth01((y - 700) / 600) * (1 - smooth01((y - 3200) / 800));
-  // how far past its threshold each biome is (in units of its fade width; above 1 it is fully there)
-  const mr = (a - 0.28 + 0.3 * wm - 2 * cd) / 0.18, mk = (b - 0.28 + 0.2 * cd - 0.3 * wm) / 0.18 - cd, mv = (c - 0.36) / 0.18 - 2 * cd;
-  const mm = (e - 0.2) / 0.18 * south - 2 * (1 - south);
-  // where two meet, each holds ground by how far ahead of the other it is, so borders blend over ~100 units
-  // instead of flipping; deep inside one biome the others fade out entirely
-  const lead = (m: number, ...others: number[]): number => smooth01(m) * smooth01((m - Math.max(...others)) * 1.5 + 0.5);
-  const reef = lead(mr, mk, mv, mm), kelp = lead(mk, mr, mv, mm), volcanic = lead(mv, mr, mk, mm), mangrove = lead(mm, mr, mk, mv);
-  const sum = reef + kelp + volcanic + mangrove, k = away / Math.max(1, sum);
-  return { reef: reef * k, kelp: kelp * k, volcanic: volcanic * k, mangrove: mangrove * k };
+  if (away <= 0) return m;
+  const p = locate(x, y), own = region(p.band, p.k).biome, across = region(p.nb, p.nk).biome, t = 0.5 + 0.5 * smooth01(p.edge / BLEND);
+  if (own in m) m[own as Mixed] += t * away;
+  if (across in m) m[across as Mixed] += (1 - t) * away;
+  return m;
 }
 
 /** The region a point belongs to, for names, species and sea life. */
@@ -66,8 +152,8 @@ export const BIOME_NAME: Record<BiomeId, string> = {
 };
 
 // ---------- island themes ----------
-// Every main island gets one theme, picked from its region and latitude and hashed from its centre, so neighbours
-// differ while a whole island (and the islets that ring it) shares one look. A theme is data: ground and water
+// Every main island gets one theme, mostly its region's (see islandTheme), and a whole island (and the islets that
+// ring it) shares one look. A theme is data: ground and water
 // colours for the ground shader and the chart, what grows there, what stands on its shores, and its air. Alderhaven
 // keeps the plain home look. Adding a theme is adding a record here.
 export type ThemeId = 'home' | 'meadow' | 'pine' | 'blossom' | 'autumn' | 'birch' | 'bog' | 'chalk' | 'bamboo' | 'atoll' | 'dunes'
@@ -212,36 +298,51 @@ export const THEMES: Record<ThemeId, Theme> = {
 };
 export const THEME_IDS = Object.keys(THEMES) as ThemeId[];
 
-// which themes each kind of water and climate picks from (repeats weight the pick)
-const POOLS: Record<string, readonly ThemeId[]> = {
-  nearHome: ['meadow', 'blossom', 'autumn', 'pine', 'birch'],
-  open: ['meadow', 'pine', 'blossom', 'autumn', 'birch', 'bog', 'chalk'],
-  warm: ['dunes', 'mesa', 'bamboo', 'atoll', 'mesa'],
-  cold: ['fjord', 'glacier', 'birch', 'basalt', 'fjord'], far: ['glacier', 'glacier', 'fjord'],
-  reef: ['atoll', 'blossom', 'bamboo', 'meadow'], reefWarm: ['atoll', 'atoll', 'bamboo', 'dunes'], reefCold: ['birch', 'fjord'],
-  kelp: ['pine', 'pine', 'birch', 'chalk', 'bog', 'autumn'], kelpWarm: ['chalk', 'dunes', 'bamboo'], kelpCold: ['fjord', 'fjord', 'birch', 'basalt'],
-  volcanic: ['blacksand', 'basalt', 'fungal'], volcanicCold: ['basalt', 'blacksand'],
-  mangrove: ['mangrove', 'mangrove', 'bog'],
-};
+// Which themes may sit side by side: neighbouring regions blend through these (the next theme along the shortest path
+// from one region's theme toward the other's), so ice never meets sand and the ember isles meet only basalt, chalk or bog.
+const NEXT_TO: [ThemeId, ThemeId][] = [
+  ['glacier', 'fjord'], ['fjord', 'birch'], ['birch', 'pine'], ['pine', 'meadow'], ['meadow', 'blossom'], ['blossom', 'bamboo'],
+  ['bamboo', 'atoll'], ['atoll', 'dunes'], ['dunes', 'mesa'], ['autumn', 'pine'], ['autumn', 'birch'], ['autumn', 'meadow'],
+  ['chalk', 'meadow'], ['chalk', 'pine'], ['bog', 'pine'], ['bog', 'birch'], ['bog', 'mangrove'], ['mangrove', 'bamboo'], ['mangrove', 'blossom'],
+  ['basalt', 'blacksand'], ['basalt', 'fungal'], ['basalt', 'chalk'], ['basalt', 'bog'], ['blacksand', 'chalk'], ['blacksand', 'bog'],
+  ['fungal', 'bog'], ['fungal', 'chalk'], ['home', 'meadow'],
+];
+const steps = new Map<string, ThemeId>();
+/** The theme one step from `a` toward `b` along NEXT_TO (b itself when they may touch, a when nothing links them). */
+export function stepToward(a: ThemeId, b: ThemeId): ThemeId {
+  if (a === b) return a;
+  const key = a + '>' + b, known = steps.get(key);
+  if (known) return known;
+  const prev = new Map<ThemeId, ThemeId>([[b, b]]), queue: ThemeId[] = [b];   // search back from b, so the first hop from a is read off directly
+  while (queue.length && !prev.has(a)) {
+    const t = queue.shift()!;
+    for (const [u, v] of NEXT_TO) for (const [p, q] of [[u, v], [v, u]] as const) if (p === t && !prev.has(q)) { prev.set(q, t); queue.push(q); }
+  }
+  const next = prev.get(a) ?? a;
+  steps.set(key, next);
+  return next;
+}
+const BRIDGE = 200;                                          // how far inside a region its border islands turn toward the neighbour's theme
 const themeCache = new Map<number, ThemeId>();
-/** The theme of the main island centred at (cx, cy): from its region and latitude, hashed from its centre. */
+/**
+ * The theme of the main island centred at (cx, cy). Most of a region's islands take its theme; patches of it (a slow
+ * noise, so they cluster) take one of its related themes; and near a border with a region of another theme, islands
+ * take the theme that bridges the two, so neighbouring regions meet through compatible looks.
+ */
 export function islandTheme(cx: number, cy: number): ThemeId {
-  const ix = Math.round(cx), iy = Math.round(cy), k = ix * 65536 + iy;
-  let t = themeCache.get(k);
+  const ix = Math.round(cx), iy = Math.round(cy), key = ix * 65536 + iy;
+  let t = themeCache.get(key);
   if (t) return t;
-  const d = Math.hypot(cx - HOME.x, cy - HOME.y), m = fieldMix(cx, cy), wm = warmth(cy), cd = coldness(cy);
-  const lat = (base: string): readonly ThemeId[] => POOLS[cd > 0.3 ? base + 'Cold' : wm > 0.3 ? base + 'Warm' : base] ?? POOLS[base];
-  let pool: readonly ThemeId[];
-  if (d < 1) pool = ['home'];
-  else if (m.reef > 0.5) pool = lat('reef');
-  else if (m.kelp > 0.5) pool = lat('kelp');
-  else if (m.volcanic > 0.5) pool = lat('volcanic');
-  else if (m.mangrove > 0.5) pool = POOLS.mangrove;
-  else if (cd > 0.3) pool = cd > 0.8 ? POOLS.far : POOLS.cold;
-  else if (wm > 0.3) pool = POOLS.warm;
-  else pool = d < 1100 ? POOLS.nearHome : POOLS.open;
-  t = pool[Math.floor(hash01(ix, iy, 913) * pool.length)];
-  themeCache.set(k, t);
+  if (Math.hypot(cx - HOME.x, cy - HOME.y) < 1) t = 'home';
+  else {
+    const p = locate(cx, cy), R = region(p.band, p.k), N = region(p.nb, p.nk);
+    if (p.edge < BRIDGE && N.theme !== R.theme && stepToward(R.theme, N.theme) !== N.theme) t = stepToward(R.theme, N.theme);
+    else {
+      const n = 0.5 + 0.5 * nBio(cx / 1500 + 31.1, cy / 1500 - 17.3);
+      t = n > 0.9 && R.related[0] ? R.related[0] : n < 0.08 && R.related[1] ? R.related[1] : R.theme;
+    }
+  }
+  themeCache.set(key, t);
   return t;
 }
 /** A small per-island shade (0..1) that nudges its colours, so two islands of one theme still differ. */
@@ -270,10 +371,6 @@ export function themeHold(x: number, y: number, islands: readonly IslandRef[], o
   out.w = theme === 'home' ? 0 : reach(s1) * smooth01((s2 - s1) / 0.3);
   return out;
 }
-// the open sea's own look, where no island holds: the region's most typical theme
-const SEA_THEME: Record<BiomeId, ThemeId> = { home: 'home', open: 'meadow', reef: 'atoll', kelp: 'pine', volcanic: 'blacksand', mangrove: 'mangrove', warm: 'dunes', cold: 'glacier' };
-/** The region's typical theme at a point, for the open sea where no island holds. */
-const seaTheme = (x: number, y: number): ThemeId => SEA_THEME[biomeAt(x, y)];
 /**
  * The nearest island's theme and how strongly it holds at (x, y), through the same island anchor biomeMix uses (no
  * island list needed, but it switches islands abruptly where two meet: fine for ambience, not for colours).
@@ -287,5 +384,5 @@ export function themeHoldAt(x: number, y: number, out: ThemeHold): ThemeHold {
 /** The theme of the place at (x, y): its island's on and around an island (Alderhaven's is 'home'), else the sea region's. */
 export function themeAt(x: number, y: number): ThemeId {
   const at = anchor(x, y);
-  return at && at.w > 0.5 ? islandTheme(at.x, at.y) : seaTheme(x, y);
+  return at && at.w > 0.5 ? islandTheme(at.x, at.y) : regionAt(x, y).theme;
 }

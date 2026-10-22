@@ -10,17 +10,17 @@ const landWithin = (x: number, y: number, d: number): boolean => {
 };
 
 describe('sea props', () => {
-  // the cold north, where the ice is, and the warm south
-  const north = seaPropsNear(1000, -2200, 900, [], true), south = seaPropsNear(300, 2300, 900, [], true);
+  // the cold north, where the ice is,, and the warm south
+  const north = seaPropsNear(1000, -3800, 900, [], true), south = seaPropsNear(300, 2300, 900, [], true);
   test('the same sea every time, and solid ones carry their scaled footprint', () => {
-    const again = seaPropsNear(1000, -2200, 900, [], true);
+    const again = seaPropsNear(1000, -3800, 900, [], true);
     expect(again.map(p => `${p.kind}${p.x},${p.y}`)).toEqual(north.map(p => `${p.kind}${p.x},${p.y}`));
     expect(north.filter(p => ICE.has(p.kind)).length).toBeGreaterThan(10);
     for (const p of [...north, ...south]) {
       expect(heightAt(p.x, p.y)).toBeLessThan(0);
       if (p.r > 0) expect(p.r).toBeGreaterThan(2 * p.scale);
     }
-    expect(seaPropsNear(1000, -2200, 900).every(p => p.r > 0)).toBe(true);   // physics gets only the solid ones
+    expect(seaPropsNear(1000, -3800, 900).every(p => p.r > 0)).toBe(true);   // physics gets only the solid ones
   });
   test('ice keeps to cold coasts, leaving open channels clear', () => {
     for (const p of north.filter(q => ICE.has(q.kind))) expect(landWithin(p.x, p.y, 90)).toBe(true);

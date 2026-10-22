@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { claimableNear } from '../src/world';
-import { THEMES, THEME_IDS, islandTheme, themeAt, themeHold, type ThemeHold, type ThemeId } from '../src/biome';
+import { THEMES, THEME_IDS, biomeMix, coldness, warmth, islandTheme, regionAt, themeAt, themeHold, type ThemeHold, type ThemeId } from '../src/biome';
 import { atmosAt } from '../src/weather';
 import type { Atmos } from '../src/biome';
 import * as MS from '../src/gl/meshes';
@@ -26,14 +26,28 @@ describe('island themes', () => {
     expect(themeAt(HOME.x, HOME.y)).toBe('home');
     expect(themeHold(HOME.x, HOME.y + 40, islands, hold()).w).toBe(0);
   });
-  test('islands vary: most themes appear, none dominates, neighbours mostly differ', () => {
-    const count = new Map<ThemeId, number>();
-    for (const c of islands) count.set(islandTheme(c.x, c.y), (count.get(islandTheme(c.x, c.y)) ?? 0) + 1);
-    expect(count.size).toBeGreaterThanOrEqual(15);
-    for (const n of count.values()) expect(n / islands.length).toBeLessThan(0.2);
-    let pairs = 0, same = 0;
-    for (const a of islands) for (const b of islands) if (a !== b && Math.hypot(a.x - b.x, a.y - b.y) < 700) { pairs++; if (islandTheme(a.x, a.y) === islandTheme(b.x, b.y)) same++; }
-    expect(same / pairs).toBeLessThan(0.35);
+  test('the world shows every theme, and none dominates', () => {
+    const count = new Map<ThemeId, number>(), wide = claimableNear(HOME.x, HOME.y, 7000);
+    for (const c of wide) count.set(islandTheme(c.x, c.y), (count.get(islandTheme(c.x, c.y)) ?? 0) + 1);
+    expect(count.size).toBe(THEME_IDS.length);
+    for (const n of count.values()) expect(n / wide.length).toBeLessThan(0.25);
+  });
+  // the same measure as scripts/probes/scatter.ts: islands read as regions, not a scatter
+  test('neighbouring islands share a region: same theme, same climate, and no ice next to sand or fire', () => {
+    const FAM: Record<string, string> = { home: 'T', meadow: 'T', blossom: 'T', autumn: 'T', pine: 'T', birch: 'T', bog: 'T', chalk: 'T',
+      dunes: 'W', mesa: 'W', bamboo: 'W', atoll: 'W', fjord: 'C', glacier: 'C', basalt: 'V', blacksand: 'V', fungal: 'V', mangrove: 'M' };
+    const isl = claimableNear(0, 0, 4500).map(c => ({ x: c.x, y: c.y, t: islandTheme(c.x, c.y) }));
+    let pairs = 0, same = 0, fam = 0;
+    const clash = new Set<string>();
+    for (let i = 0; i < isl.length; i++) for (let j = i + 1; j < isl.length; j++) {
+      const a = isl[i], b = isl[j];
+      if (Math.hypot(a.x - b.x, a.y - b.y) > 700) continue;
+      pairs++; if (a.t === b.t) same++;
+      if (FAM[a.t] === FAM[b.t]) fam++; else clash.add([FAM[a.t], FAM[b.t]].sort().join(''));
+    }
+    expect(same / pairs).toBeGreaterThanOrEqual(0.65);
+    expect(fam / pairs).toBeGreaterThanOrEqual(0.9);
+    for (const k of ['CW', 'CV', 'VW']) expect(clash.has(k), k).toBe(false);
   });
   test('themes follow latitude: no glaciers in the south, no deserts or atolls in the far north', () => {
     for (const c of islands) {
@@ -53,6 +67,25 @@ describe('island themes', () => {
       }
     }
     expect(flips).toBeGreaterThan(20);
+  });
+});
+
+describe('regions', () => {
+  test('home sits in Alderhaven Reach; every region in reach has a name, a theme and a biome', () => {
+    const home = regionAt(HOME.x, HOME.y);
+    expect(home.name).toBe('Alderhaven Reach');
+    expect(home.biome).toBe('home');
+    const names = new Set<string>();
+    for (let x = -4000; x <= 4500; x += 250) for (let y = -4000; y <= 4500; y += 250) {
+      const r = regionAt(x, y);
+      expect(THEMES[r.theme]).toBeDefined();
+      names.add(r.id + r.name);
+    }
+    expect(new Set([...names].map(n => n.replace(/^[-0-9:]+/, ''))).size).toBe(names.size);   // no two regions in reach share a name
+  });
+  test('the ember isles keep to the temperate middle: never in cold or warm water', () => {
+    for (let x = -6000; x <= 6000; x += 97) for (let y = -6000; y <= 6000; y += 97)
+      if (biomeMix(x, y).volcanic > 0.05) { expect(coldness(y)).toBeLessThan(0.35); expect(warmth(y)).toBeLessThan(0.35); }
   });
 });
 
