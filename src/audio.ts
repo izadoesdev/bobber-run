@@ -113,7 +113,7 @@ function buildGraph(ctx: BaseAudioContext, dest: AudioNode): Graph {
     o.connect(g).connect(wob.delayTime);
     o.start();
   }
-  tlp.type = 'lowpass'; tlp.frequency.value = 3200; tlp.Q.value = -1;
+  tlp.type = 'lowpass'; tlp.frequency.value = 7000; tlp.Q.value = 0;   // tape warmth without dulling the piano
   const duck = ctx.createGain();                                  // dips the music under sound effects, see duckMusic()
   send.gain.value = 0.55;                                         // what each music voice used to send on its own
   tapeIn.connect(wob).connect(tlp).connect(duck).connect(bus.music);
@@ -804,9 +804,9 @@ const piano = (c: BaseAudioContext, s: number, t: number, vel: number, dur: numb
   const t0 = c.currentTime + t, rate = Math.pow(2, (s - smp.s) / 12), end = Math.min(dur, smp.buf.duration / rate - 0.6);
   const src = c.createBufferSource(), lp = c.createBiquadFilter(), g = out(c, Math.max(-0.35, Math.min(0.35, s / 40)), 0);
   src.buffer = smp.buf; src.playbackRate.value = rate;
-  lp.type = 'lowpass'; lp.frequency.value = 900 + 4200 * vel * vel;   // a soft touch is a dark, felted tone
-  g.gain.setValueAtTime(0.66 * vel, t0);
-  g.gain.setValueAtTime(0.66 * vel, t0 + Math.max(0.05, end));
+  lp.type = 'lowpass'; lp.frequency.value = 2200 + 7000 * vel;        // a softer touch is a little darker
+  g.gain.setValueAtTime(0.5 * vel, t0);
+  g.gain.setValueAtTime(0.5 * vel, t0 + Math.max(0.05, end));
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + Math.max(0.05, end) + 0.6);                 // the damper comes down
   src.connect(lp).connect(g);
   src.start(t0); src.stop(t0 + Math.max(0.05, end) + 0.7);

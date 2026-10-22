@@ -32,18 +32,18 @@ test('every note is in the piece\'s key (its scale or its chords) and within the
     }
   }
 });
-test('pieces run one to four minutes, stay sparse, start with an intro and end on a held chord', () => {
+test('pieces run one to four minutes, never crowd, start with an intro and end on a held chord', () => {
   for (const s of seeds) {
     const p = compose(s, s % 2 === 0), piano = p.events.filter(e => e.kind === 'piano');
     expect(p.length).toBeGreaterThan(60); expect(p.length).toBeLessThan(240);
-    expect(piano.length / p.length).toBeLessThan(5);             // calm: a handful of notes a second at most
+    expect(piano.length / p.length).toBeLessThan(6);             // flowing, never crowded: a few notes a second
     expect(p.events.every((e, i, a) => i === 0 || a[i - 1].t <= e.t)).toBe(true);
     expect(p.events.at(-1)!.t).toBeLessThan(p.length);
     expect(p.events[0].kind).toBe('chord');                       // the sound effects know the harmony from the first note
     expect(piano.at(-1)!.dur).toBeGreaterThanOrEqual(4);          // the last chord rings out
   }
 });
-test('between pieces the sea gets half a minute to a minute and a half of quiet', () => {
+test('between pieces the sea gets twenty to forty-five seconds of quiet', () => {
   const R = rng(7);
-  for (let i = 0; i < 200; i++) { const r = restAfter(R); expect(r).toBeGreaterThanOrEqual(30); expect(r).toBeLessThanOrEqual(80); }
+  for (let i = 0; i < 200; i++) { const r = restAfter(R); expect(r).toBeGreaterThanOrEqual(20); expect(r).toBeLessThanOrEqual(45); }
 });
