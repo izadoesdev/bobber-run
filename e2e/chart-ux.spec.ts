@@ -171,3 +171,17 @@ test('a region not open yet says on the chart what opens it, and opens with the 
   await page.evaluate(() => { window.BR.G.story = { i: 3, base: {}, shown: true }; });
   await hoverUntil(page, at!.x, at!.y, /^(?!.*closed)/i);
 });
+
+test('sea charted far from home shows on the chart too', async ({ page }) => {
+  await openChart(page);
+  // sail (stepped) 22,000 units out, past the first fog window, and look at the chart there
+  const p = await page.evaluate(() => { const { G, sim } = window.BR; G.story = { i: 99, base: {}, shown: true }; G.mode = 'play';
+    for (let i = 0; i < 6; i++) { G.boat.x = -20000 + i * 60; G.boat.y = -10000; sim(0.3); }
+    G.map.x = G.map.y = 0; G.map.zoom = 1; G.mode = 'map'; return { x: G.boat.x + 180, y: G.boat.y }; });
+  const box = (await page.locator('.chartwrap canvas').boundingBox())!;
+  const [cx, cy] = await onChart(page, p.x, p.y);
+  await expect.poll(() => page.evaluate(([fx, fy]) => {
+    const c = document.querySelector('.chartwrap canvas') as HTMLCanvasElement, d = c.getContext('2d')!.getImageData(Math.round(fx * c.width), Math.round(fy * c.height), 1, 1).data;
+    return d[2] > d[0] + 20;                                           // sea blue, not the fog's parchment
+  }, [(cx - box.x) / box.width, (cy - box.y) / box.height]), { timeout: 15_000 }).toBe(true);
+});

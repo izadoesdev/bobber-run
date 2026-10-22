@@ -12,7 +12,8 @@ import { lockedAt, openKey } from '../game/regions';
 type GL = WebGL2RenderingContext;
 const SLOTS = 1024, HCOLS = 32, CCOLS = 16;  // tile slots, and how they're laid out in the two atlases
 const MAXL = 7;
-// the fog of war: one texel per 32-unit cell, 1024 x 1024 of them round the world's centre (+-16,384 units)
+// the fog of war: one texel per 32-unit cell, 1024 x 1024 of them (+-16,384 units) round a centre that follows the
+// view a chunk (1024 units) at a time, so a captain sailing far out still sees what they've charted
 const FOG_TEX = 1024, FOG_HALF = FOG_TEX * 32 / 2, FOG_CN = 32;
 
 const VS = `#version 300 es
@@ -35,7 +36,7 @@ void main() {
 const FS = `#version 300 es
 precision highp float;
 uniform sampler2D u_h, u_c, u_fog;
-uniform vec2 u_hsz, u_csz, u_view, u_origin;
+uniform vec2 u_hsz, u_csz, u_view, u_origin, u_fogAt;
 uniform float u_wpp, u_dpr, u_vig, u_fogOn;
 in vec2 v_uv;
 flat in float v_slot;
@@ -115,7 +116,7 @@ void main() {
   // the sea not seen yet: blank parchment, its edge ragged and singed like a chart still being drawn
   if (u_fogOn > 0.5) {
     // the 32-unit cells, blurred over nine taps so the edge runs smooth, then roughened with soft noise
-    vec2 fuv = (world + ${FOG_HALF}.0) / ${FOG_HALF * 2}.0, o = vec2(28.0 / ${FOG_HALF * 2}.0);
+    vec2 fuv = (world - u_fogAt + ${FOG_HALF}.0) / ${FOG_HALF * 2}.0, o = vec2(28.0 / ${FOG_HALF * 2}.0);
     float f = 0.0;
     for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) f += texture(u_fog, fuv + o * vec2(i, j)).r;
     f /= 9.0;
@@ -249,12 +250,21 @@ if (typeof requestIdleCallback === 'function') requestIdleCallback(() => { init(
 
 // seen chunks that changed since the last draw go up to the fog texture
 const fogBuf = new Uint8Array(FOG_CN * FOG_CN);
-function uploadFog(g: GL): void {
+let fogCx = 0, fogCy = 0;                                    // the chunk at the fog texture's centre
+/** Moves the fog texture's centre to the view's when the view has gone more than 6 chunks from it, then sends what changed. */
+function uploadFog(g: GL, vx: number, vy: number): void {
+  const cx = Math.floor(vx / 1024), cy = Math.floor(vy / 1024);
+  if (Math.abs(cx - fogCx) > 6 || Math.abs(cy - fogCy) > 6) {
+    fogCx = cx; fogCy = cy;
+    g.bindTexture(g.TEXTURE_2D, fTex);
+    g.texSubImage2D(g.TEXTURE_2D, 0, 0, 0, FOG_TEX, FOG_TEX, g.RED, g.UNSIGNED_BYTE, new Uint8Array(FOG_TEX * FOG_TEX));
+    for (const k of fogChunks()) fogDirty.add(k);
+  }
   if (!fogDirty.size) return;
   g.pixelStorei(g.UNPACK_ALIGNMENT, 1);
   g.bindTexture(g.TEXTURE_2D, fTex);
   for (const k of fogDirty) {
-    const [cx, cy] = k.split(',').map(Number), c = fogChunk(cx, cy), ox = cx * FOG_CN + FOG_TEX / 2, oy = cy * FOG_CN + FOG_TEX / 2;
+    const [cx, cy] = k.split(',').map(Number), c = fogChunk(cx, cy), ox = (cx - fogCx) * FOG_CN + FOG_TEX / 2, oy = (cy - fogCy) * FOG_CN + FOG_TEX / 2;
     if (!c || ox < 0 || oy < 0 || ox + FOG_CN > FOG_TEX || oy + FOG_CN > FOG_TEX) continue;
     for (let i = 0; i < FOG_CN * FOG_CN; i++) fogBuf[i] = c[i >> 3] & (1 << (i & 7)) ? 255 : 0;
     g.texSubImage2D(g.TEXTURE_2D, 0, ox, oy, FOG_CN, FOG_CN, g.RED, g.UNSIGNED_BYTE, fogBuf);
@@ -314,7 +324,8 @@ export function drawTerrain(ctx: CanvasRenderingContext2D, w: number, h: number,
   g.useProgram(prog.p);
   g.activeTexture(g.TEXTURE0); g.bindTexture(g.TEXTURE_2D, hTex); g.uniform1i(prog.u.u_h!, 0);
   g.activeTexture(g.TEXTURE1); g.bindTexture(g.TEXTURE_2D, cTex); g.uniform1i(prog.u.u_c!, 1);
-  uploadFog(g);
+  uploadFog(g, wx0 + w * wpp / 2, wy0 + h * wpp / 2);
+  g.uniform2f(prog.u.u_fogAt!, fogCx * 1024, fogCy * 1024);
   g.activeTexture(g.TEXTURE2); g.bindTexture(g.TEXTURE_2D, fTex); g.uniform1i(prog.u.u_fog!, 2);
   g.uniform1f(prog.u.u_fogOn!, fogOn ? 1 : 0);
   g.uniform2f(prog.u.u_hsz!, HCOLS * N, (SLOTS / HCOLS) * N);

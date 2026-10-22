@@ -4,9 +4,9 @@
 // and fun: weather, time of day, a frenzy, a golden school, lifting the fog, opening every region. Moving about and
 // the weather leave a save as it is; anything that hands out coins, gear or fish goes through the cheat console's
 // codes, which mark the save as cheated (off the world records and the coastwide fund), as cheats always have.
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { G, toast, saveGame, schoolActive, DAYLEN } from '../game';
-import { NET } from '../net';
+import { NET, adminPlayers, type AdminPlayer } from '../net';
 import { ONLINE } from '../online';
 import { W, H } from '../config';
 import { heightAt, homePort, regionSites, schoolsNear } from '../world';
@@ -49,6 +49,7 @@ const atClock = (frac: number): void => {
   const base = Math.floor(G.clock / DAYLEN) * DAYLEN;
   G.clock = base + (frac > (G.clock - base) / DAYLEN ? 0 : DAYLEN) + frac * DAYLEN;
 };
+const ago = (t: number): string => { const m = Math.max(0, (Date.now() - t) / 60000); return m < 1 ? 'just now' : m < 60 ? `${Math.round(m)} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
 const away = (x: number, y: number): string => `${Math.round(Math.hypot(x - G.boat.x, y - G.boat.y) / 10)} m`;
 /** Every sailor the relay has told us about, nearest first. */
 function sailors(): { uid: string; name: string; x: number; y: number }[] {
@@ -72,6 +73,15 @@ function regions(): typeof regionList & object {
 type Tab = 'sailors' | 'teleport' | 'fun';
 export function AdminPanel() {
   const [tab, setTab] = useState<Tab>('sailors'), [q, setQ] = useState(''), [xy, setXy] = useState('');
+  // every captain by name, online or not, in any sea (admin:players), a moment after typing stops
+  const [found, setFound] = useState<AdminPlayer[] | null>(null);
+  useEffect(() => {
+    setFound(null);
+    if (q.trim().length < 2) return;
+    let live = true;
+    const t = setTimeout(() => { void adminPlayers(q.trim()).then(r => { if (live) setFound(r ?? []); }); }, 400);
+    return () => { live = false; clearTimeout(t); };
+  }, [q]);
   if (!ADMIN.open || !isAdmin()) return null;
   const list = sailors().filter(s => !q || s.name.toLowerCase().includes(q.toLowerCase()));
   const go = (fn: () => void) => () => { fn(); };
@@ -82,7 +92,8 @@ export function AdminPanel() {
       <div class="admin-head"><b>Admin</b><span class="muted small">F9 to close</span></div>
       <div class="admin-tabs">{(['sailors', 'teleport', 'fun'] as Tab[]).map(t => <button class={'btn small-btn' + (t === tab ? ' on' : '')} onClick={() => setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</button>)}</div>
       {tab === 'sailors' && <>
-        <input class="admin-input" placeholder="Find a sailor by name" value={q} onInput={e => setQ((e.target as HTMLInputElement).value)} />
+        <div class="caps small">In your sea</div>
+        <input class="admin-input" placeholder="Find a sailor by name (2+ letters searches every captain)" value={q} onInput={e => setQ((e.target as HTMLInputElement).value)} />
         <div class="admin-list">
           {list.length ? list.slice(0, 40).map(s => (
             <div class="admin-row">
@@ -90,8 +101,21 @@ export function AdminPanel() {
               <button class="btn small-btn" title="Set a waypoint to them" onClick={go(() => { setWaypoint(s.x, s.y); toast(`Waypoint set to ${s.name}`, 'good'); })}>Sail</button>
               <button class="btn small-btn" title="Jump next to them" onClick={go(() => teleport(s.x + 40, s.y, s.name))}>Go</button>
             </div>
-          )) : <p class="muted small">No one in your sea {q ? 'by that name ' : ''}right now. Sailors show here once the relay reports them.</p>}
+          )) : <p class="muted small">No one in your sea {q ? 'by that name ' : ''}right now.</p>}
         </div>
+        {q.trim().length >= 2 && <>
+          <div class="caps small">All captains</div>
+          <div class="admin-list">
+            {found === null ? <p class="muted small">Searching…</p> : found.length ? found.filter((f): f is AdminPlayer & { x: number; y: number } => f.x != null && f.y != null).map(f => (
+              <div class="admin-row">
+                <span class="grow"><b>{f.name}</b>{f.online && <span class="gold small"> online</span>}
+                  <span class="muted small"> {away(f.x, f.y)} · {regionAt(f.x, f.y).name} · story {f.story ?? 0}{f.online || f.savedAt == null ? '' : ` · seen ${ago(f.savedAt)}`}</span></span>
+                <button class="btn small-btn" title="Set a waypoint to their last spot" onClick={go(() => { setWaypoint(f.x, f.y); toast(`Waypoint set to ${f.name}`, 'good'); })}>Sail</button>
+                <button class="btn small-btn" title="Jump next to their last spot" onClick={go(() => teleport(f.x + 40, f.y, f.name))}>Go</button>
+              </div>
+            )) : <p class="muted small">No captain by that name.</p>}
+          </div>
+        </>}
         <p class="muted small">{ONLINE.total ? `${ONLINE.total} sailing now` : ''}</p>
       </>}
       {tab === 'teleport' && <>

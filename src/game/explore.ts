@@ -78,13 +78,14 @@ export const revealPlace = (p: { x: number; y: number; type: string }): void => 
 
 const toB64 = (b: Uint8Array): string => btoa(String.fromCharCode(...b));
 const fromB64 = (s: string): Uint8Array => Uint8Array.from(atob(s), ch => ch.charCodeAt(0));
-// a save keeps at most this many chunks (about 100k characters, under the save's 120k for this field): the nearest home
+// a save keeps at most this many chunks (about 100k characters, under the save's 120k for this field): the nearest
+// the boat, so a captain far out keeps the sea round them
 const MAX_CHUNKS = 560;
 /** The seen sea as a save string. */
 export function exploredToSave(): string {
   let all = [...chunks];
   if (all.length > MAX_CHUNKS) {
-    const d = ([k]: [string, Uint8Array]) => { const [x, y] = k.split(',').map(Number); return x * x + y * y; };
+    const bx = G.boat.x / 1024, by = G.boat.y / 1024, d = ([k]: [string, Uint8Array]) => { const [x, y] = k.split(',').map(Number); return (x - bx) ** 2 + (y - by) ** 2; };
     all = all.sort((a, b) => d(a) - d(b)).slice(0, MAX_CHUNKS);
   }
   return all.map(([k, c]) => k + ':' + toB64(c)).join(';');
