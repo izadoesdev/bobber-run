@@ -8,6 +8,9 @@ import { toast } from './feedback';
 import { sfx } from '../audio';
 import { regionAt, type Region } from '../biome';
 import { QUESTS } from '../story';
+import { heightAt, poisNear } from '../world';
+import { SPECIES, livesAt } from '../species';
+import { seen } from './explore';
 
 /** Steps from home: the region grid distance (band and place along it) from Alderhaven Reach ('3:0'). */
 export function tier(id: string): number {
@@ -94,5 +97,37 @@ const ABOUT: Record<string, string> = {
   'Red Mesas': 'Flat red rock towers above warm seas.',
   'Bamboo Reach': 'Green bamboo isles and warm reefs.',
 };
+// ---------- a region's card ----------
+interface Survey { pts: number[]; fish: number[]; places: { id: string; type: string }[] }
+const surveys = new Map<string, Survey>();
+/** Region r surveyed once: sample points across it (water ones flagged), the fish that live there, its places. */
+function survey(r: Region): Survey {
+  let s = surveys.get(r.id);
+  if (s) return s;
+  const pts: number[] = [], fish = new Set<number>(), R = 1800, N = 16;
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const x = r.centre.x + (i / (N - 1) - 0.5) * 2 * R, y = r.centre.y + (j / (N - 1) - 0.5) * 2 * R;
+    if (regionAt(x, y).id !== r.id) continue;
+    pts.push(x, y);
+    const h = heightAt(x, y);
+    if (h < -0.05) for (let sp = 0; sp < SPECIES.length; sp++) if (!SPECIES[sp].legend && livesAt(sp, x, y, h)) fish.add(sp);
+  }
+  const places = poisNear(r.centre.x, r.centre.y, R).filter(p => regionAt(p.x, p.y).id === r.id).map(p => ({ id: p.id, type: p.type }));
+  s = { pts, fish: [...fish].sort((a, b) => SPECIES[a].base - SPECIES[b].base), places };
+  surveys.set(r.id, s);
+  return s;
+}
+/** What the chart's region card shows: how much of it you've seen, its places charted, and its fish (logged or not). */
+export function regionInfo(r: Region): { seenPct: number; charted: number; places: number; fish: { sp: number; logged: boolean }[] } {
+  const s = survey(r);
+  let n = 0;
+  for (let i = 0; i < s.pts.length; i += 2) if (seen(s.pts[i], s.pts[i + 1])) n++;
+  return {
+    seenPct: s.pts.length ? Math.round(n / (s.pts.length / 2) * 100) : 0,
+    charted: s.places.filter(p => G.found.has(p.id)).length, places: s.places.length,
+    fish: s.fish.map(sp => ({ sp, logged: !!G.log[SPECIES[sp].id] })),
+  };
+}
+
 /** A line about region r. */
 export const regionAbout = (r: Region): string => ABOUT[r.name.replace(/^(Far )?(West |East )/, '')] ?? '';

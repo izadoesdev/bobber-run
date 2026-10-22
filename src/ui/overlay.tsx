@@ -12,7 +12,8 @@ import { speech, voyage } from '../story';
 import { markerTarget, type Step } from '../game/guide';
 import { waypointRoute } from '../waypoint';
 import { coursePath } from '../game/autopilot';
-import { BIOME_NAME, biomeAt, type BiomeId } from '../biome';
+import { regionAt } from '../biome';
+import { newWaters, regionAbout } from '../game/regions';
 import { IslandSigns } from './island';
 import { Face } from './faces';
 import { BaitTag, Fish, Icon, Key, edgeFade, forTouch, keyed, viewPct } from './parts';
@@ -103,19 +104,24 @@ function Marker({ step, force }: { step: Step; force?: boolean }) {
 
 // the name of a region as you sail into it, once, like an area title; it waits until you've stayed a few seconds
 // so a wiggle along a border doesn't flash it
-let region: BiomeId | null = null, entering: BiomeId | null = null, enterT = 0, titleT = -99, checkT = -1;
+let region: string | null = null, entering: string | null = null, enterT = 0, titleT = -99, checkT = -1;
+let openedFor = -99, openedT = -99;
 function RegionTitle() {
   if (G.t - checkT > 0.5) {
     checkT = G.t;
-    const here = biomeAt(G.boat.x, G.boat.y);
+    const here = regionAt(G.boat.x, G.boat.y).id;
     if (region === null) region = here;                          // where you start is never announced
     else if (here === region) entering = null;
     else if (here !== entering) { entering = here; enterT = G.t; }
     else if (G.t - enterT > 3) { region = here; entering = null; titleT = G.t; }
   }
-  const age = G.t - titleT;
+  // new waters: once you're back at the helm (a quest's talk usually comes first), for five seconds
+  if (newWaters.at > openedFor && G.mode === 'play') { openedFor = newWaters.at; openedT = G.t; }
+  const age = G.t - titleT, opened = G.t - openedT;
+  if (opened < 5 && G.mode === 'play') return <div class={'region-title' + (opened > 4 ? ' out' : '')} aria-live="polite">New waters open<small>The rough water has calmed. Look at your chart</small></div>;
   if (age > 4.5 || !region || G.mode !== 'play') return null;
-  return <div class={'region-title' + (age > 3.6 ? ' out' : '')} aria-live="polite">{BIOME_NAME[region]}</div>;
+  const r = regionAt(G.boat.x, G.boat.y);
+  return <div class={'region-title' + (age > 3.6 ? ' out' : '')} aria-live="polite">{r.name}<small>{regionAbout(r)}</small></div>;
 }
 
 // the way to the waypoint (or to where the boat is sailing itself) as a trail of dots on the sea, rippling toward

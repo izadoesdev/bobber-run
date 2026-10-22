@@ -11,6 +11,9 @@ for (const story of [0, 7]) {
     for (let y = -3200; y <= 3200; y += 400) for (let x = -3600; x <= 3600; x += 400) { G.boat.x = b0.x + x; G.boat.y = b0.y + y; sim(0.26); }
     Object.assign(G.boat, b0); G.boat.vx = G.boat.vy = 0; G.map.x = G.map.y = 0; G.map.zoom = 2; G.mode = 'map';
   }, story);
-  await p.waitForTimeout(2500); await p.screenshot({ path: `/tmp/boatlab/regions-s${story}.png` });
+  await p.waitForTimeout(2500); await p.mouse.move(700, 380); await p.waitForTimeout(600); await p.screenshot({ path: `/tmp/boatlab/regions-s${story}.png` });
 }
+// the banner when a story step opens new waters
+await p.evaluate(() => { const { G, sim } = window.BR; G.mode = 'play'; G.story.i = 2; sim(0.3); G.story.i = 3; sim(0.3); G.talk = null; G.mode = 'play'; });
+await p.waitForTimeout(800); await p.screenshot({ path: '/tmp/boatlab/regions-open.png' });
 console.log(JSON.stringify(errs)); await b.close();

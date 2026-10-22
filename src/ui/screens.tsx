@@ -5,6 +5,8 @@ import { track } from '../analytics';
 import { isRunningNow } from '../tides';
 import { SPECIES, UPGRADES, PAINTS, SUPPLIES, fmtKg } from '../econ';
 import { homePort, heightAt, regionSite } from '../world';
+import { regionAt } from '../biome';
+import { opensAfter, regionAbout, regionInfo } from '../game/regions';
 import { livesAt, VARIANTS, type VariantId } from '../species';
 import { setWaypoint, clearWaypoint, sailToWaypoint, waypointMetres } from '../waypoint';
 import { openIsland } from './island';
@@ -92,6 +94,7 @@ export function Chart() {
             <b>{spot.title}</b>{spot.sub && <span class="muted">{spot.sub}</span>}{spot.act && <span class="gold">{spot.act}</span>}
           </div>
         )}
+        <RegionCard at={pick()?.at ?? G.boat} />
         <div class="chart-ctl">
           {(m.x || m.y) ? <button data-track="chart-recentre" class="btn small-btn" onClick={() => { m.x = m.y = 0; }}>Recentre</button> : null}
           <button data-track="chart-zoom-in" class="btn small-btn" aria-label="Zoom in" disabled={m.zoom === 1} onClick={() => { m.zoom = 1; }}>+</button>
@@ -228,6 +231,22 @@ function Stories() {
           {quest ? <span class="num">{have}/{want}</span> : <Icon k="star" size="s" />}
         </Item>
       ))}
+    </div>
+  );
+}
+/**
+ * The region under the pointer (else the one you're in): its name and what it's like, whether it's open, how much of it
+ * you've seen and charted, and its fish, the ones you've logged in colour and the rest as silhouettes.
+ */
+function RegionCard({ at }: { at: { x: number; y: number } }) {
+  const r = regionAt(at.x, at.y), shut = opensAfter(r), info = regionInfo(r), here = regionAt(G.boat.x, G.boat.y).id === r.id;
+  const logged = info.fish.filter(f => f.logged).length;
+  return (
+    <div class={'region-card chip' + (shut ? ' shut' : '')}>
+      <div class="rc-head"><b>{r.name}</b><span class={'rc-tag' + (shut ? ' shut' : '')}>{shut ? 'Closed' : here ? 'You are here' : 'Open'}</span></div>
+      <div class="muted">{shut ?? regionAbout(r)}</div>
+      {!shut && <div class="rc-stats"><span>Seen <b>{info.seenPct}%</b></span><span>Charted <b>{info.charted}/{info.places}</b></span><span>Fish <b>{logged}/{info.fish.length}</b></span></div>}
+      <div class="rc-fish">{info.fish.slice(0, 12).map(f => <span title={f.logged ? SPECIES[f.sp].name : 'Not logged yet'}><Fish sp={f.sp} size="s" cls={f.logged ? '' : 'sil'} /></span>)}{info.fish.length > 12 && <span class="muted">+{info.fish.length - 12}</span>}</div>
     </div>
   );
 }
