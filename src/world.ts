@@ -2,7 +2,7 @@
 // fish schools and floating crates. Everything is deterministic from the seed.
 import { nA, nB, nC, fbm, hash, hash01, mulberry } from './noise';
 import { pickSpecies, SP, SPECIES } from './econ';
-import { schoolLook } from './species';
+import { livesAt, schoolLook } from './species';
 import type { Point, Poi, Port, Wreck, School, Crate } from './types';
 import { createNoise2D } from 'simplex-noise';
 import Alea from 'alea';
@@ -538,10 +538,46 @@ function stepSlot(i: number, j: number, sl: HotSlot): void {
   const into = f * sl.period, left = (sl.duty - f) * sl.period;
   sl.spot.surf = sl.fixed ? 1 : up ? Math.min(1, into / SURF_S, left / SURF_S) : 0;
 }
+// One rare fish roams each wide stretch of sea: a lone school of something valuable that lives there, travelling a
+// loop through deep water on the game clock. It counts as a rare hotspot, so its sign shows from afar.
+const RC = 1400, ROAM_SPEED = 4;
+interface Roamer { path: Point[]; len: number; spot: Hotspot }
+const roamCells = new Map<number, Roamer | null>();
+function roamCell(i: number, j: number): Roamer | null {
+  const k = key(i, j);
+  if (roamCells.has(k)) return roamCells.get(k)!;
+  const r = mulberry(hash(i, j, 8111)), path: Point[] = [], cx = (i + 0.5) * RC, cy = (j + 0.5) * RC;
+  for (let t = 0; t < 60 && path.length < 5; t++) {
+    const a = path.length / 5 * Math.PI * 2 + (r() - 0.5) * 0.8, d = 250 + r() * 300, x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d;
+    if (heightAt(x, y) < -0.3) path.push({ x, y });
+  }
+  let ro: Roamer | null = null;
+  const d = Math.hypot(cx - HOME_ISLAND.x, cy - HOME_ISLAND.y);
+  const rare = path.length >= 3 && d > 700 ? [...SPECIES.keys()].filter(n => { const s = SPECIES[n]; return !s.legend && !s.special && s.base >= 30 && livesAt(n, path[0].x, path[0].y, heightAt(path[0].x, path[0].y)); }) : [];
+  if (rare.length) {
+    const sp = rare[Math.floor(r() * rare.length)], s = makeSchool(`r:${i},${j}`, path[0].x, path[0].y, sp, r, 2);
+    let len = 0;
+    for (let q = 0; q < path.length; q++) len += Math.hypot(path[(q + 1) % path.length].x - path[q].x, path[(q + 1) % path.length].y - path[q].y);
+    ro = { path, len, spot: { id: s.id, x: s.x, y: s.y, r: schoolReach(sp), surf: 1, bait: false, predator: false, rare: true, schools: [s] } };
+    stepRoamer(ro);
+  }
+  roamCells.set(k, ro);
+  return ro;
+}
+// where along its loop the roamer is at the hotspot clock
+function stepRoamer(ro: Roamer): void {
+  let d = (hotClock * ROAM_SPEED) % ro.len;
+  for (let q = 0; q < ro.path.length; q++) {
+    const a = ro.path[q], b = ro.path[(q + 1) % ro.path.length], seg = Math.hypot(b.x - a.x, b.y - a.y);
+    if (d <= seg) { const s = ro.spot.schools[0], f = d / seg; s.x = ro.spot.x = a.x + (b.x - a.x) * f; s.y = ro.spot.y = a.y + (b.y - a.y) * f; return; }
+    d -= seg;
+  }
+}
 /** Move the hotspots on to game clock `clock` (seconds): call once a frame from the game loop. */
 export function tickHotspots(clock: number): void {
   hotClock = clock;
   for (const [k, c] of hotCells) { const i = Math.floor(k / 100000) - 50000, j = (k % 100000) - 50000; for (const sl of c) stepSlot(i, j, sl); }
+  for (const ro of roamCells.values()) if (ro) stepRoamer(ro);
 }
 /** The hotspots up (or easing in or out) within the square of half-size rad; fills `out` if given. */
 export function hotspotsNear(x: number, y: number, rad: number, out: Hotspot[] = []): Hotspot[] {
@@ -549,6 +585,11 @@ export function hotspotsNear(x: number, y: number, rad: number, out: Hotspot[] =
   for (let j = Math.floor((y - rad) / HC); j <= Math.floor((y + rad) / HC); j++)
     for (let i = Math.floor((x - rad) / HC); i <= Math.floor((x + rad) / HC); i++)
       for (const sl of hotCell(i, j)) if (sl.spot.surf > 0 && sl.spot.r > 0 && Math.abs(sl.spot.x - x) < rad + sl.spot.r && Math.abs(sl.spot.y - y) < rad + sl.spot.r) out.push(sl.spot);
+  for (let j = Math.floor((y - rad) / RC); j <= Math.floor((y + rad) / RC); j++)
+    for (let i = Math.floor((x - rad) / RC); i <= Math.floor((x + rad) / RC); i++) {
+      const ro = roamCell(i, j);
+      if (ro && Math.abs(ro.spot.x - x) < rad + ro.spot.r && Math.abs(ro.spot.y - y) < rad + ro.spot.r) out.push(ro.spot);
+    }
   return out;
 }
 // the Old One's lair: deep open water far from home, fixed for this world
@@ -568,6 +609,11 @@ export function schoolsNear(x: number, y: number, rad: number, out: School[] = [
   for (let j = Math.floor((y - rad) / HC); j <= Math.floor((y + rad) / HC); j++)
     for (let i = Math.floor((x - rad) / HC); i <= Math.floor((x + rad) / HC); i++)
       for (const sl of hotCell(i, j)) for (const s of sl.spot.schools) if (Math.abs(s.x - x) < rad && Math.abs(s.y - y) < rad) out.push(s);
+  for (let j = Math.floor((y - rad) / RC); j <= Math.floor((y + rad) / RC); j++)
+    for (let i = Math.floor((x - rad) / RC); i <= Math.floor((x + rad) / RC); i++) {
+      const s = roamCell(i, j)?.spot.schools[0];
+      if (s && Math.abs(s.x - x) < rad && Math.abs(s.y - y) < rad) out.push(s);
+    }
   for (const p of poisNear(x, y, rad + 60, landmarkScratch)) if (p.school) out.push(p.school);
   return out;
 }
