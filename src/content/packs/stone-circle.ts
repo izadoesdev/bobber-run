@@ -13,7 +13,7 @@ export const stoneCircle: Pack = {
   quests: [
     {
       id: 'the-stones', by: 'bram', title: 'The old stones', goal: 'Sail to the Stone Circle',
-      hint: 'It stands inland on an island not far from home. Sail close to its shore.', obj: { site: 'legend-stoneCircle', r: 180, place: 'the Stone Circle' }, reward: { coins: 250 },
+      hint: 'It stands on an island not far from home.', obj: { site: 'legend-stoneCircle', place: 'the Stone Circle' }, reward: { coins: 250 },
       intro: ['Want a story? Not far from here, a ring of old stones stands on an island.', 'Nobody knows who put them there. Go and see them for me. My legs are too old.'],
       outro: ['Still standing? Good. They were old when my gran was young.'],
     },
