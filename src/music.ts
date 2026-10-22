@@ -139,35 +139,38 @@ export function compose(seed: number, night: boolean, avoid?: string): Piece {
   const motif = makeMotif(R, st.density, startDeg), motifB = makeMotif(R, [Math.max(2, st.density[0] - 1), st.density[1] - 1], startDeg + (R() < 0.5 ? 2 : -1));
   let t = 0, b = 0;                                                 // seconds and bars from the start
 
-  const accompany = (barT: number, chord: number[], first: boolean, vel: number, slow: number) => {
+  const accompany = (barT: number, chord: number[], first: boolean, vel: number, slow: number, left: number) => {
+    // `left`: seconds until the chord changes; with the pedal down, every note rings until then
     const pc = (((key + chord[0]) % 12) + 12) % 12, low = pc <= 4 ? pc - 12 : pc - 24;   // the root between F2 and E3
     const voice = [low, low + (chord[2] - chord[0]), low + 12 + (chord[1] - chord[0]), low + 12 + ((chord[3] ?? chord[0] + 12) - chord[0])];
     if (first) {
       events.push({ t: barT, kind: 'chord', s: 0, dur: 0, vel: 0, triad: triadOf(key, chord) });
-      events.push({ t: barT + human(), kind: 'bass', s: low - 12, dur: bar * st.barsPerChord * slow, vel: soft(0.55 * vel) });
-      if (st.texture === 'pad' || st.texture === 'ostinato') for (const s of voice.slice(1)) events.push({ t: barT, kind: 'pad', s, dur: bar * st.barsPerChord * slow, vel: 0.5 * vel });
+      events.push({ t: barT + human(), kind: 'bass', s: low - 12, dur: left, vel: soft(0.4 * vel) });
+      if (st.texture === 'pad') for (const s of voice.slice(1)) events.push({ t: barT, kind: 'pad', s, dur: left, vel: 0.5 * vel });
     }
     if (st.texture === 'arp') {
       const pattern = st.arpRate === 2 ? [0, 1, 2, 3, 2, 1, 2, 1] : [0, 1, 2, 3];
       const dt = st.arpRate === 2 ? eighth * slow : beat * slow;
-      pattern.forEach((k, i) => events.push({ t: barT + i * dt + human(), kind: 'piano', s: voice[k], dur: dt * 3, vel: soft((i % (st.arpRate === 2 ? 4 : 2) === 0 ? 0.42 : 0.3) * vel) }));
+      pattern.forEach((k, i) => events.push({ t: barT + i * dt + human(), kind: 'piano', s: voice[k], dur: Math.max(dt, left - i * dt), vel: soft((i % (st.arpRate === 2 ? 4 : 2) === 0 ? 0.36 : 0.26) * vel) }));
     } else if (st.texture === 'block') {
-      voice.forEach((s, i) => events.push({ t: barT + i * 0.028 + human(), kind: 'piano', s, dur: beat * 2.5 * slow, vel: soft(0.32 * vel) }));   // rolled
-      if (R() < 0.55) voice.slice(1).forEach((s, i) => events.push({ t: barT + beat * 2 * slow + i * 0.03 + human(), kind: 'piano', s, dur: beat * 1.8 * slow, vel: soft(0.2 * vel) }));
+      voice.forEach((s, i) => events.push({ t: barT + i * 0.04 + human(), kind: 'piano', s, dur: left, vel: soft(0.3 * vel) }));   // rolled
+      if (R() < 0.45) voice.slice(1).forEach((s, i) => events.push({ t: barT + beat * 2 * slow + i * 0.04 + human(), kind: 'piano', s, dur: Math.max(beat, left - beat * 2 * slow), vel: soft(0.18 * vel) }));
     } else if (st.texture === 'ostinato') {
-      [0, 1, 2, 1].forEach((k, i) => events.push({ t: barT + i * beat * slow + human(), kind: 'piano', s: voice[k], dur: beat * 2 * slow, vel: soft((i === 0 ? 0.36 : 0.26) * vel) }));
+      [0, 1, 2, 1].forEach((k, i) => events.push({ t: barT + i * beat * slow + human(), kind: 'piano', s: voice[k], dur: Math.max(beat, left - i * beat * slow), vel: soft((i === 0 ? 0.32 : 0.22) * vel) }));
     } else if (first && R() < 0.6) {
-      events.push({ t: barT + human(), kind: 'piano', s: voice[0], dur: bar * 1.5 * slow, vel: soft(0.28 * vel) });          // pads: now and then a low piano note
+      events.push({ t: barT + human(), kind: 'piano', s: voice[0], dur: left, vel: soft(0.26 * vel) });          // pads: now and then a low piano note
     }
   };
-  const sing = (phraseT: number, m: MotifNote[], bar0: number, lift: number, vel: number, slow: number) => {
+  const sing = (phraseT: number, m: MotifNote[], bar0: number, lift: number, vel: number, slow: number, octaves = false) => {
     for (const x of m) {
       const at = bar0 + Math.floor(x.on / 8), chord = chordAt(at).map(c => c + key + 12);
       // a passing note (a half step) sits between its two scale notes
       let s = melodyBase + step(st.scale, Math.round(x.deg) + lower + lift);   // `lift` moves the register in scale steps
       if (x.on % 4 === 0) s = nearestChordTone(s, chord);         // strong beats land on a chord tone
       while (s > 31) s -= 12;                                     // nothing above G6
-      events.push({ t: phraseT + x.on * eighth * slow + human(), kind: 'piano', s, dur: Math.max(x.len * eighth * slow * 1.6, 0.4), vel: soft(0.62 * vel) });
+      const at0 = phraseT + x.on * eighth * slow + human(), dur = Math.max(x.len * eighth * slow * 2.2, 1.2);
+      events.push({ t: at0, kind: 'piano', s, dur, vel: soft(0.55 * vel) });
+      if (octaves) events.push({ t: at0 + 0.012, kind: 'piano', s: s - 12, dur, vel: soft(0.32 * vel) });
     }
   };
 
@@ -175,9 +178,11 @@ export function compose(seed: number, night: boolean, avoid?: string): Piece {
     const slowEnd = sec.kind === 'outro';
     let cur = motif;
     for (let i = 0; i < sec.bars; i++, b++) {
-      const slow = slowEnd ? 1 + 0.06 * i : 1;                     // the outro slows a little toward the last chord
+      // the outro slows toward the last chord, and every section breathes a little at its end
+      const slow = slowEnd ? 1 + 0.06 * i : i === sec.bars - 1 ? 1.07 : 1;
       const vel = sec.kind === 'intro' ? 0.8 : sec.kind === 'B' ? 0.85 : sec.kind === 'outro' ? 0.75 - 0.1 * i : 1;
-      if (!(slowEnd && i % 2 === 1)) accompany(t, chordAt(b), b % st.barsPerChord === 0, vel, slow);
+      const left = (st.barsPerChord - (b % st.barsPerChord) + (slowEnd ? 1 : 0)) * bar * slow;
+      if (!(slowEnd && i % 2 === 1)) accompany(t, chordAt(b), b % st.barsPerChord === 0, vel, slow, left);
       if (i % 2 === 0 && i + 1 < sec.bars + (slowEnd ? 0 : 1)) {
         const phrase = i / 2;
         if (sec.kind === 'A' || sec.kind === 'A2') {
@@ -185,7 +190,7 @@ export function compose(seed: number, night: boolean, avoid?: string): Piece {
           if (phrase > 0 && R() < 0.2) { /* space */ } else {
             if (phrase % 2 === 1 || sec.kind === 'A2') cur = vary(cur, R);
             else if (phrase > 0) cur = motif;
-            sing(t, cur, b, sec.kind === 'A2' && R() < 0.35 ? st.scale.length : 0, 1, slow);   // the return, sometimes an octave up
+            sing(t, cur, b, sec.kind === 'A2' && R() < 0.35 ? st.scale.length : 0, 1, slow, sec.kind === 'A2' && R() < 0.5);   // the return, sometimes an octave up, sometimes in octaves
           }
         } else if (sec.kind === 'B' && R() < 0.75) {
           sing(t, phrase % 2 ? vary(motifB, R) : motifB, b, R() < 0.5 ? -3 : 0, 0.85, slow);

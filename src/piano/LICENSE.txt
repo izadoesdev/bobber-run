@@ -1,0 +1,4 @@
+Piano samples: Salamander Grand Piano V3 by Alexander Holm, licensed under Creative Commons Attribution 3.0
+(https://creativecommons.org/licenses/by/3.0/). Source: https://archive.org/details/SalamanderGrandPianoV3, taken from
+the Tone.js mirror (https://tonejs.github.io/audio/salamander/). Changed for the game: one note every minor third from
+C2 to C7, trimmed to 6 s with a 1.5 s fade, mono, 64 kbps MP3. Credited in the game at /privacy.html#credits.

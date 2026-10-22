@@ -782,21 +782,41 @@ export function soundscape(s: SoundscapeState, dt: number): void {
 }
 
 // ---------- music: quiet piano pieces with silence between them (composed in music.ts), through tape and reverb ----------
-// A felt piano: a soft hammer on a sine, a warm octave and twelfth that fade first, and a second string a few cents
-// off; high notes ring shorter, the way piano strings do.
-const piano = (c: BaseAudioContext, f: number, t: number, vel: number, dur: number) => {
-  const ring = Math.min(dur, 4.5) * (f > 700 ? 0.6 : f > 350 ? 0.85 : 1), lp = 900 + 2600 * vel;
-  tone(c, { f, t, a: 0.006, d: ring, vol: 0.075 * vel, lp });
-  tone(c, { f: f * 1.0025, t, a: 0.008, d: ring * 0.8, vol: 0.03 * vel, lp });
-  tone(c, { f: f * 2, t, a: 0.004, d: ring * 0.35, vol: 0.022 * vel, lp });
-  tone(c, { f: f * 3, t, a: 0.003, d: ring * 0.12, vol: 0.007 * vel, lp });
+// The piano is sampled: Salamander Grand Piano by Alexander Holm (CC BY 3.0), one note every minor third from C2 to C7,
+// trimmed and compressed in src/piano/. They load once audio is unlocked (never on the startup path); each note plays the
+// nearest sample re-pitched, softer notes darker (a felt piano), held like a sustain pedal and released gently.
+const PIANO_FILES = import.meta.glob('./piano/*.mp3', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+const PITCH: Record<string, number> = { C: 0, Ds: 3, Fs: 6, A: 9 };
+const pianoSamples: { s: number; buf: AudioBuffer }[] = [];
+let pianoLoad: Promise<void> | null = null, pianoReady = false;
+/** Fetch and decode the piano samples once (an AudioBuffer works in any context, so offline renders share them). */
+function loadPiano(ctx: BaseAudioContext): Promise<void> {
+  return pianoLoad ??= Promise.all(Object.entries(PIANO_FILES).map(async ([path, url]) => {
+    const [, name, oct] = path.match(/\/([A-Z]s?)(\d)\.mp3$/)!;
+    const buf = await ctx.decodeAudioData(await (await fetch(url)).arrayBuffer());
+    pianoSamples.push({ s: PITCH[name] + 12 * (Number(oct) - 4), buf });
+  })).then(() => { pianoSamples.sort((a, b) => a.s - b.s); pianoReady = true; }, () => { pianoLoad = null; pianoSamples.length = 0; });   // a failed load tries again later
+}
+const piano = (c: BaseAudioContext, s: number, t: number, vel: number, dur: number) => {
+  let smp = pianoSamples[0];
+  for (const x of pianoSamples) if (Math.abs(x.s - s) < Math.abs(smp.s - s)) smp = x;
+  if (!smp) return;
+  const t0 = c.currentTime + t, rate = Math.pow(2, (s - smp.s) / 12), end = Math.min(dur, smp.buf.duration / rate - 0.6);
+  const src = c.createBufferSource(), lp = c.createBiquadFilter(), g = out(c, Math.max(-0.35, Math.min(0.35, s / 40)), 0);
+  src.buffer = smp.buf; src.playbackRate.value = rate;
+  lp.type = 'lowpass'; lp.frequency.value = 900 + 4200 * vel * vel;   // a soft touch is a dark, felted tone
+  g.gain.setValueAtTime(0.66 * vel, t0);
+  g.gain.setValueAtTime(0.66 * vel, t0 + Math.max(0.05, end));
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + Math.max(0.05, end) + 0.6);                 // the damper comes down
+  src.connect(lp).connect(g);
+  src.start(t0); src.stop(t0 + Math.max(0.05, end) + 0.7);
 };
 const playEvent = (c: BaseAudioContext, e: MusicEvent, t: number): void => {
   if (e.kind === 'chord') { harmony = e.triad!; return; }          // what the pitched sound effects voice on
+  if (e.kind === 'piano' || e.kind === 'bass') { piano(c, e.s, t, e.vel, e.dur); return; }
+  // a warm pad under the slow pieces: two detuned triangles, filtered dark, swelling in and out
   const f = N(e.s);
-  if (e.kind === 'piano') piano(c, f, t, e.vel, e.dur);
-  else if (e.kind === 'bass') tone(c, { f, t, a: 0.05, hold: e.dur * 0.3, d: e.dur * 0.7, vol: 0.05 * e.vel, type: 'triangle', lp: 320 });
-  else for (const cents of [-6, 6]) tone(c, { f: f * Math.pow(2, cents / 1200), t, a: Math.min(2, e.dur * 0.3), hold: e.dur * 0.35, d: e.dur * 0.6, vol: 0.016 * e.vel, type: 'triangle', lp: 750, rev: 0.6 });
+  for (const cents of [-6, 6]) tone(c, { f: f * Math.pow(2, cents / 1200), t, a: Math.min(2.5, e.dur * 0.35), hold: e.dur * 0.3, d: e.dur * 0.6, vol: 0.011 * e.vel, type: 'triangle', lp: 650, rev: 0.7 });
 };
 
 const AHEAD = 0.25;                                              // notes are booked this far ahead on the audio clock
@@ -809,6 +829,7 @@ export function music(on: boolean, night: boolean): void {
   const now = ac.currentTime;
   if (!on) { tune.piece = null; tune.restUntil = -1; if (loops) loops.hiss.g.gain.setTargetAtTime(0, now, 0.5); return; }
   if (!tune.piece) {
+    if (!pianoReady) { void loadPiano(ac); return; }               // first the piano (audio is unlocked by now)
     if (tune.restUntil < 0) tune.restUntil = now + 4;            // music switched on, or the game just started: begin soon
     if (now < tune.restUntil) { if (loops) loops.hiss.g.gain.setTargetAtTime(0, now, 1.5); return; }
     tune.piece = compose(Math.floor(tune.R() * 2 ** 31), night, tune.last);
@@ -829,6 +850,7 @@ export function music(on: boolean, night: boolean): void {
 /** Render the start of a piece offline (tests and listening checks): `seed` picks it, as in play. */
 export async function renderMusicOffline(seed: number, night: boolean, secs = 20): Promise<{ piece: Piece; left: Float32Array; right: Float32Array }> {
   const off = new OfflineAudioContext(2, 44100 * secs, 44100), prevGraph = graph, prevHarmony = harmony, piece = compose(seed, night);
+  await loadPiano(off);
   try {
     graph = buildGraph(off, off.destination);
     curBus = 'music';
