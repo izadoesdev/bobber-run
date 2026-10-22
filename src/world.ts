@@ -20,7 +20,7 @@ const CELL = 560;                              // one archipelago cell
 // sea near home is land). Scaling here keeps every island's centre, since the draws below don't change.
 const ISLAND_SCALE = 0.75, ISLET_KEEP = 0.5;
 // islands bought before World 3 keep the size they were bought at (Alderhaven, 0,0, never changed)
-const KEPT_SIZE = new Set(['0,-1']);
+const KEPT_SIZE = new Set(['0,-1', '2,-2']);
 const HOME_ISLAND: Point = { x: 280, y: 280 };
 const key = (i: number, j: number) => (i + 50000) * 100000 + (j + 50000);
 
