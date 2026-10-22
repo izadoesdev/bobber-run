@@ -75,7 +75,7 @@ test('contracts pay far more with a big boat, refresh each day, and lean to your
   const ct = await page.evaluate(() => {
     const { G, GAME, SPECIES, homePort } = window.BR, hp = homePort();
     G.up.rod = 3; G.active = [];
-    const avg = () => { let t = 0, n = 0, tier = 0; for (let i = 0; i < 150; i++) { G.offers = {}; GAME.portItems(hp); for (const o of G.offers[hp.id]) { t += o.reward; n++; if (SPECIES[o.sp].rod === 3) tier++; } } return [t / n, tier / n]; };
+    const avg = () => { let t = 0, n = 0, tier = 0; for (let i = 0; i < 600; i++) { G.offers = {}; GAME.portItems(hp); for (const o of G.offers[hp.id]) { t += o.reward; n++; if (SPECIES[o.sp].rod === 3) tier++; } } return [t / n, tier / n]; };
     G.owned = ['row']; G.boatId = 'row'; const [row] = avg();
     G.owned = ['row', 'flagship']; G.boatId = 'flagship'; const [flag, tier] = avg();   // the Flagship's deck and keel land the big rod-3 fish
     G.offers = {}; GAME.portItems(hp); const first = G.offers[hp.id].map((o: { id: string }) => o.id).join();
