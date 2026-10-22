@@ -720,6 +720,7 @@ function placeSites(): RegionSite[] {
     found: for (let r = from; r < from + 2400; r += 120) for (let k = 0; k < 40; k++) {
       const a = k / 40 * Math.PI * 2 + hash01(r, k, 71) * 0.1, x = HOME_ISLAND.x + Math.cos(a) * r, y = HOME_ISLAND.y + Math.sin(a) * r, v = heightAt(x, y);
       if (ground === 'land' ? v < 0.1 || v > 0.55 : v > -0.04 || v < -0.2) continue;
+      if (ground === 'land' && ![0, 1, 2, 3, 4, 5, 6, 7].some(q => heightAt(x + Math.cos(q * Math.PI / 4) * 45, y + Math.sin(q * Math.PI / 4) * 45) < -0.06)) continue;   // in sight of a boat
       if (!fits(biomeAt(x, y)) || !clear(x, y, 400)) continue;
       out.push({ id: `legend-${legend}`, kind: 'legend', biome: biomeAt(x, y), legend, x, y, a: hash01(r, k, 72) * Math.PI * 2 });
       taken.push({ x, y });
