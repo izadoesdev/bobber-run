@@ -12,6 +12,7 @@ import { NET } from '../net';
 import { QUESTS, CHAPTERS, PEOPLE, currentQuest, questProgress, story } from '../story';
 import { guide, guideOn, stepLine } from '../game/guide';
 import { chartPerks } from '../game/rules';
+import { packJournal } from '../content/engine';
 import type { UpgradeKey } from '../types';
 import { drawChart, compassRose, zoneKnown, chartAt, drawn, type Legend } from './chart';
 import { Canvas, Cell, Fish, Hint, HullStat, Icon, Key, Pips, Stat, boatPreview, type DrawFn } from './parts';
@@ -212,6 +213,21 @@ export function Logbook() {
 }
 
 // ---------- ship + hold ----------
+/** The story packs you've opened: each one's name, its current quest with progress and hint, or that it's done. */
+function Stories() {
+  const packs = packJournal();
+  if (!packs.length) return null;
+  return (
+    <div>
+      <div class="list-head caps">Stories</div>
+      {packs.map(({ pack, quest, have, want }) => (
+        <Item k="map" name={pack.name} sub={quest ? `${quest.title}: ${quest.goal}${quest.hint ? `. ${quest.hint}` : ''}` : 'Done'}>
+          {quest ? <span class="num">{have}/{want}</span> : <Icon k="star" size="s" />}
+        </Item>
+      ))}
+    </div>
+  );
+}
 /** What charting the coast has earned so far, and what the next lighthouse or landmark adds. */
 function ChartedPerks() {
   const { speed, hold } = chartPerks(), places = Math.max(0, G.found.size - 1), lights = [...G.found].filter(id => id.startsWith('light:')).length;
@@ -332,6 +348,7 @@ export function Journal() {
             );
           })}
           {!cur && <><p class="gold">The story is complete. Nell is home.</p><p><span class="caps">Next step</span> {stepLine()}</p></>}
+          <Stories />
         </div>
         {cur && (
           <aside class="detail paper">

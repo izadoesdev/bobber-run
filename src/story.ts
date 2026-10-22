@@ -126,14 +126,24 @@ export function talkNext(skip = false): void {
 // quest) plays as one-line speech while you sail, never stopping the boat. Later quests talk as before.
 let said: { lines: TalkLine[]; at: number } | null = null;
 const LINE_S = 7;
-/** The line being said without pausing, if any. */
-export function speech(): { who: Speaker; text: string } | null {
-  if (!said) return null;
-  const i = Math.floor((G.t - said.at) / LINE_S);
-  if (i >= said.lines.length) { said = null; return null; }
-  if (G.mode !== 'play') return null;
-  const [who, text] = said.lines[i];
-  return { who, text };
+// lines from the content packs (src/content) are said the same way, after anything the main story is saying
+let asides: { name: string; text: string }[] = [], asideAt = 0;
+/** Queue story-pack lines to be said one by one while you sail. */
+export function sayAside(lines: { name: string; text: string }[]): void {
+  if (!asides.length) asideAt = G.t;
+  asides.push(...lines);
+}
+/** The line being said without pausing, if any: the main story's first, then the packs'. `who` is set for the main cast. */
+export function speech(): { who?: Speaker; name: string; text: string } | null {
+  if (said) {
+    const i = Math.floor((G.t - said.at) / LINE_S);
+    if (i >= said.lines.length) said = null;
+    else { if (G.mode !== 'play') return null; const [who, text] = said.lines[i]; return { who, name: PEOPLE[who].name, text }; }
+  }
+  if (!asides.length || G.mode !== 'play') return null;
+  const i = Math.floor((G.t - asideAt) / LINE_S);
+  if (i >= asides.length) { asides = []; return null; }
+  return asides[i];
 }
 /** When the current voyage started from the water, for the welcome title. */
 export const voyage = { startedAt: -99 };

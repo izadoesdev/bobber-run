@@ -8,6 +8,8 @@ import { Leaderboard } from './leaders';
 import { IslandDialog } from './island';
 import { SailorCard } from './sailorcard';
 import { render } from 'preact';
+import { setPackTalk } from '../content/engine';
+import { sayAside } from '../story';
 import { G } from '../game';
 import { Hud, Toasts } from './hud';
 import { Port } from './port';
@@ -18,6 +20,7 @@ let root: HTMLElement | null = null, dirty = true, lastMode = '', lastAt = 0;
 const LIVE = new Set(['play', 'sunk', 'emote']);   // the sailing view: world-pinned labels move with the camera
 export function initUI(el: HTMLElement): void {
   root = el;
+  setPackTalk(sayAside);                                // story packs speak in the same one-line strip as the main story
   const poke = (): void => { dirty = true; };
   for (const ev of ['keydown', 'keyup', 'pointerdown', 'pointerup', 'pointermove', 'wheel', 'input', 'resize']) addEventListener(ev, poke, { capture: true, passive: true });
 }

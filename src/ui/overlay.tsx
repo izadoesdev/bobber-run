@@ -8,7 +8,7 @@ import { schoolsNear } from '../world';
 import { SET } from '../settings';
 import { EMOTES } from '../net';
 import { ONLINE } from '../online';
-import { PEOPLE, speech, voyage } from '../story';
+import { speech, voyage } from '../story';
 import { markerTarget, type Step } from '../game/guide';
 import { waypointRoute } from '../waypoint';
 import { coursePath } from '../game/autopilot';
@@ -38,7 +38,7 @@ function Speech() {
   if (!s || G.fish || G.card || G.t - voyage.startedAt < 3.6) return null;   // after the welcome title has faded
   return (
     <div class="speech chip" role="status" aria-live="polite">
-      <Icon k={s.who} size="l" /><span><b class="gold">{PEOPLE[s.who].name}</b> {forTouch(s.text)}</span>
+      {s.who ? <Icon k={s.who} size="l" /> : <span class="speech-initial" aria-hidden="true">{s.name[0]}</span>}<span><b class="gold">{s.name}</b> {forTouch(s.text)}</span>
     </div>
   );
 }
