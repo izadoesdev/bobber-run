@@ -42,5 +42,11 @@ export const kelpForest: Pack = {
       intro: ['Gus says the old giant has something caught on its fin.', 'It only comes up after dark. Will you bring it in for me?'],
       outro: ["My shell! It was tangled on the fin all this time. Gran's necklace is home.", 'gus: Well fished. The kelp forest owes you one.'],
     },
+    {
+      id: 'gran-house', by: 'mari', title: "Gran's house", goal: 'Sail to the kelp village',
+      hint: 'The village is on an island in the kelp forest.', obj: { site: 'kelp-village', place: 'the kelp village' }, reward: { coins: 450 },
+      intro: ['Gran lives in the village on the kelp island.', 'Come with me. I want to give her the necklace myself.'],
+      outro: ['She put it on right away.', 'gus: She cried a bit. The good kind.'],
+    },
   ],
 };

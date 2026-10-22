@@ -42,5 +42,11 @@ export const coralReach: Pack = {
       intro: ['Tib was right about one thing. A reef shark patrols the edge.', 'Land it, so I can see how big it has grown.'],
       outro: ['What a fish. A reef with sharks is a healthy reef. The count is good.', 'tib: So the count is good? Really?'],
     },
+    {
+      id: 'reef-feast', by: 'tib', title: 'A feast for the count', goal: 'Sail to the reef village',
+      hint: 'Its jetty is on the coral island nearest home.', obj: { site: 'reef-village', place: 'the reef village' }, reward: { coins: 400, bait: { shrimp: 5 } },
+      intro: ['The count is good, so the village is having a feast tonight.', 'Sail over to our village. Mara saved you a seat.'],
+      outro: ['You came! Sit down, the fish is nearly ready.', 'mara: Thank you for this year. Come back for the next count.'],
+    },
   ],
 };

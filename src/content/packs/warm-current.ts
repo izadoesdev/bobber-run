@@ -43,5 +43,11 @@ export const warmCurrent: Pack = {
       intro: ['Kofi says he will join us if we land a big mahi-mahi.', 'One last catch, then. Make it a trophy.'],
       outro: ['Look at those colours! Now Kofi has to keep his word.', 'kofi: All right, all right. I am coming with you.'],
     },
+    {
+      id: 'kofi-hat', by: 'kofi', title: 'My good hat', goal: 'Take Kofi to the warm village',
+      hint: 'The village is on an island in the southern seas.', obj: { site: 'warm-village', place: 'the warm village' }, reward: { coins: 500, bait: { glow: 3 } },
+      intro: ['Before we go anywhere, take me home to the village.', 'I am not sailing without my good hat.'],
+      outro: ['Home. And here is my hat.', 'ines: You look silly in it.', 'pip: Silly! Silly!'],
+    },
   ],
 };

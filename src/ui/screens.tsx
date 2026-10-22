@@ -4,7 +4,7 @@ import { G, logged, cap, boatDef, equipment, fishValue, speedMul, deckLvl, deckB
 import { track } from '../analytics';
 import { isRunningNow } from '../tides';
 import { SPECIES, UPGRADES, PAINTS, SUPPLIES, fmtKg } from '../econ';
-import { homePort, heightAt } from '../world';
+import { homePort, heightAt, regionSite } from '../world';
 import { livesAt, VARIANTS, type VariantId } from '../species';
 import { setWaypoint, clearWaypoint, sailToWaypoint, waypointMetres } from '../waypoint';
 import { openIsland } from './island';
@@ -223,11 +223,30 @@ function Stories() {
       <div class="list-head caps">Stories</div>
       {packs.map(({ pack, quest, have, want }) => (
         <Item k="map" name={pack.name} sub={quest ? `${quest.title}: ${quest.goal}${quest.hint ? `. ${quest.hint}` : ''}` : 'Done'}>
+          {quest && 'site' in quest.obj && !have && <SailToSite id={quest.obj.site} r={quest.obj.r ?? 90} />}
           {quest ? <span class="num">{have}/{want}</span> : <Icon k="star" size="s" />}
         </Item>
       ))}
     </div>
   );
+}
+/**
+ * A story's place to sail to: a waypoint on open water beside it (villages and some legends stand on land), and off
+ * you go. Villages face the sea along their angle; otherwise the nearest water on rings around the spot, inside the
+ * distance that counts as arriving.
+ */
+function SailToSite({ id, r: reach }: { id: string; r: number }) {
+  const go = () => {
+    const s = regionSite(id);
+    if (!s) return;
+    let at = { x: s.x, y: s.y };
+    found: for (let r = 0; r < reach - 5; r += 10) for (let k = 0; k < 24; k++) {
+      const a = s.a + k / 24 * Math.PI * 2, x = s.x + Math.cos(a) * r, y = s.y + Math.sin(a) * r;
+      if (heightAt(x, y) < -0.06) { at = { x, y }; break found; }
+    }
+    setWaypoint(at.x, at.y); sailToWaypoint(); G.mode = 'play';
+  };
+  return <button data-track="story-sail" class="btn small-btn" onClick={go}>Sail there</button>;
 }
 /** What charting the coast has earned so far, and what the next lighthouse or landmark adds. */
 function ChartedPerks() {

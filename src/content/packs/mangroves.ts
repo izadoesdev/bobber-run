@@ -42,5 +42,11 @@ export const mangroves: Pack = {
       intro: ['The ferry can not stop. Joss says a new ferry hand must bring in a tarpon first.', 'I am too small. Will you catch one for me? Then I will ask him. Out loud.'],
       outro: ['joss: Wren, you want the ferry? With the snook and the map and all?', 'Yes. And you can ride for free.'],
     },
+    {
+      id: 'first-run', by: 'wren', title: 'The first ferry run', goal: 'Sail to the mangrove village',
+      hint: 'The village is on an island in the mangroves.', obj: { site: 'mangrove-village', place: 'the mangrove village' }, reward: { coins: 450, bait: { shrimp: 5 } },
+      intro: ['My first ferry run! Lead the way to the village and I will follow.', 'joss: Go slow. Wren still steers like a crab.'],
+      outro: ['We made it, and nobody fell in.', 'joss: Not bad for a crab collector.'],
+    },
   ],
 };

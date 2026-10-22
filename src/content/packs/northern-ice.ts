@@ -42,5 +42,11 @@ export const northernIce: Pack = {
       intro: ['Gran can not see at night, but I can. Monkfish only bite after dark.', 'Catch one while I watch the water. Then she will know I can be her eyes.'],
       outro: ['hilde: A monkfish, in the dark. All right, Nils. You steer at night, I steer by day.', 'We keep the boat!'],
     },
+    {
+      id: 'show-the-boat', by: 'nils', title: 'Show the boat', goal: 'Sail to the cold village',
+      hint: 'The village is on an island in the cold north.', obj: { site: 'cold-village', place: 'the cold village' }, reward: { coins: 500, bait: { glow: 3 } },
+      intro: ['Gran wants the whole village to see the boat.', 'Lead the way. I will be right behind you.'],
+      outro: ['hilde: There. Everyone saw it.', 'Gran is smiling. She never smiles.'],
+    },
   ],
 };

@@ -13,6 +13,12 @@ import { mangroves } from './mangroves';
 import { northernIce } from './northern-ice';
 import { lighthouseKeepers } from './lighthouse-keepers';
 import { nellVoyages } from './nell-voyages';
+import { stoneCircle } from './stone-circle';
+import { sunkenTemple } from './sunken-temple';
+import { wreckGraveyard } from './wreck-graveyard';
+import { crystalCave } from './crystal-cave';
+import { whaleFall } from './whale-fall';
+import { iceboundShip } from './icebound-ship';
 import { rival } from './rival';
 
-export const PACKS: Pack[] = [emberIsles, coastSurvey, stormSeason, nightMarket, alderhavenDocks, coralReach, warmCurrent, kelpForest, mangroves, northernIce, lighthouseKeepers, nellVoyages, rival];
+export const PACKS: Pack[] = [emberIsles, coastSurvey, stormSeason, nightMarket, alderhavenDocks, coralReach, warmCurrent, kelpForest, mangroves, northernIce, lighthouseKeepers, nellVoyages, rival, stoneCircle, sunkenTemple, wreckGraveyard, crystalCave, whaleFall, iceboundShip];
