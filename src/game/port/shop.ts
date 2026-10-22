@@ -38,7 +38,7 @@ function buyPaint(pt: Paint): void {
     sfx('select'); toast(`Your boat is now painted ${pt.name.toLowerCase()}`); markBought(pt.id); saveGame();
     return;
   }
-  if (!spend(pt.cost)) return;
+  if (pt.earn || !spend(pt.cost)) { if (pt.earn) deny(); return; }   // earned paints are never for sale
   G.paints.push(pt.id); G.paint = pt.id;
   track('paint_bought', { paint: pt.id, cost: pt.cost });
   sfx('levelup'); toast(`Bought ${pt.name.toLowerCase()} paint`, 'good'); celebrate(); markBought(pt.id); saveGame();
@@ -111,6 +111,11 @@ export function shipyardItems(p: Port, items: Rows): void {
   header(items, 'PAINT');
   for (const pt of PAINTS) {
     const own = G.paints.includes(pt.id), on = G.paint === pt.id;
+    if (pt.earn && !own) {                                   // earned, never sold: the row says how
+      items.push({ kind: 'paint', key: pt.id, paint: pt.id, boat: boatDef(), label: pt.name, sub: 'Earned, not sold', cost: null, right: 'Earn it', ok: false, why: pt.earn, action: 'Buy', act: deny,
+        what: `${pt.earn} and this paint is yours. Paint only changes how your boat looks.` });
+      continue;
+    }
     items.push({
       kind: 'paint', key: pt.id, paint: pt.id, boat: boatDef(), label: pt.name, sub: own ? 'Owned' : 'Looks only', cost: own ? null : pt.cost,
       right: on ? 'On' : own ? 'Owned' : money(pt.cost), ok: own ? !on : G.coins >= pt.cost,

@@ -76,4 +76,7 @@ export const PAINTS: Paint[] = [
   { id: 'midnight', name: 'Midnight', cost: 160, ramp: ['#141c2c', '#22304a', '#34486a'] },
   { id: 'sunny', name: 'Sunflower', cost: 160, ramp: ['#a47f22', '#d9ae3e', '#f0cf6a'] },
   { id: 'gold', name: 'Gilded', cost: 5000, ramp: ['#8a6a1e', '#c49a32', '#f0cf6a'] },
+  { id: 'pearl', name: 'Pearl', cost: 0, earn: 'Catch 5 different kinds of variant', ramp: ['#b8b4ac', '#dcd8cf', '#f4f1ea'] },
+  { id: 'trophyred', name: 'Trophy Red', cost: 0, earn: 'Land a trophy of 10 different species', ramp: ['#5e1f1a', '#8f2c22', '#c0493a'] },
+  { id: 'kingfisher', name: 'Kingfisher', cost: 0, earn: 'Reach Gold mastery (100 catches) with 10 species', ramp: ['#1d4f6e', '#2f86a8', '#e08a3c'] },
 ];

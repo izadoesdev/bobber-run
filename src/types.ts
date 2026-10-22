@@ -111,7 +111,7 @@ export type BaitKind = 'shrimp' | 'glow' | 'chum';
 /** Chum is thrown, not fished with, so it can't be the selected bait. */
 export type BaitChoice = 'none' | Exclude<BaitKind, 'chum'>;
 export interface Supply { name: string; n: number; cost: number; what: string }
-export interface Paint { id: string; name: string; cost: number; ramp?: [string, string, string] }
+export interface Paint { id: string; name: string; cost: number; ramp?: [string, string, string]; /** paints that are earned, never sold: how (game/mastery.ts grants them) */ earn?: string }
 
 // ---------- world (world.ts) ----------
 interface SegmentSolid { kind: 'seg'; ax: number; ay: number; bx: number; by: number; r: number }
