@@ -568,14 +568,14 @@ function deepBloom(): boolean {
   });
   if (!cands.length) return false;
   const s = cands[Math.floor(Math.random() * cands.length)];
-  startFrenzy(s, 180);
+  startFrenzy(s, 120);
   if (!G.waypoint) setWaypoint(s.x, s.y);
   toast(`A deep bloom far out: ${SPECIES[s.sp].name} rising, ${Math.round(boatDist(s) / 10)} m ${dirTo(b.x, b.y, s.x, s.y)}`, 'good');
   sfx('gulls');
   return true;
 }
 export function updateFrenzy(dt: number): void {
-  if (WX.state === 'storm') G.nextFrenzy -= dt;         // storms bring frenzies sooner
+  if (WX.state === 'storm') G.nextFrenzy -= dt * 0.5;   // storms bring frenzies sooner
   if (G.frenzy && Math.random() < dt * 7) {             // fish breaking the surface
     const s = G.frenzy.s, x = s.x + jitter(22), y = s.y + jitter(14);
     spawn({ kind: 'ring', x, y, life: 0.7, r0: 1, grow: 4 });
@@ -583,7 +583,7 @@ export function updateFrenzy(dt: number): void {
   }
   if (G.frenzy && G.t > G.frenzy.until) {
     G.frenzy = null;
-    G.nextFrenzy = G.t + (70 + Math.random() * 50) * (G.up.radio ? 0.65 : 1);
+    G.nextFrenzy = G.t + (300 + Math.random() * 240) * (G.up.radio ? 0.8 : 1);   // an event: one every 5 to 9 minutes
   }
   if (!G.frenzy && G.t > G.nextFrenzy && deckLvl() >= 2 && Math.random() < 0.5 && deepBloom()) return;
   if (!G.frenzy && G.t > G.nextFrenzy) {
@@ -593,7 +593,7 @@ export function updateFrenzy(dt: number): void {
     });
     if (cands.length) {
       const s = cands[Math.floor(Math.random() * cands.length)];
-      startFrenzy(s, 70);
+      startFrenzy(s, 40);
       toast(`Feeding frenzy! ${SPECIES[s.sp].name} are biting fast. Follow the gulls`, 'good');
       sfx('gulls');
     } else G.nextFrenzy = G.t + 20;

@@ -92,7 +92,7 @@ const UPGRADE_STAT: Record<UpgradeKey, [string, (l: number) => string]> = {
   lantern: ['Night light', l => `${((21 + 19 * l) / 21).toFixed(1)}x reach`],
   spyglass: ['Charting range', l => `${[1, 1.5, 2][l]}x`],
   sextant: ['Sextant', l => ['off', 'points to the nearest uncharted place', 'marks every uncharted place'][l]],
-  radio: ['Feeding frenzies', l => l ? 'every 45 to 80 s' : 'every 70 to 120 s'],
+  radio: ['Feeding frenzies', l => l ? 'every 4 to 7 minutes' : 'every 5 to 9 minutes'],
   deckhand: ['Bonus catch', l => pct([0, 0.25, 0.4][l]) + ' chance'],
   cook: ['Sale price', l => `+${10 * l}%`],
   quarter: ['Contracts', l => `${3 + l} at once, pay +${15 * l}%`],

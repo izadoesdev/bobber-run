@@ -90,7 +90,7 @@ export function newGame(): void {
     coins: 15, coinsShown: 15, earned: 0, paint: 'classic', paints: ['classic'], up: freshUpgrades(), bait: { shrimp: 3, glow: 0, chum: 1 }, baitSel: 'shrimp',
     hold: [], log: {}, found: new Set(), salvaged: new Set(), sat: {}, fish: null, parts: [], toasts: [], floaters: [], boatId: 'row', owned: ['row'],
     stats: freshStats(), goalsDone: [], cheated: false, maps: [], escaped: [], packs: {}, regionsSeen: [], explored: '', unlocked: [], waypoint: null, gearOff: {}, zones: {}, docks: {}, streak: 0, offers: {}, active: [], pity: 0,
-    clock: DAYLEN * 0.08, frenzy: null, nextFrenzy: 45, card: null, projects: [], fleet: {}, dives: {}, gifts: {}, pet: null, dry: 0, story: null, talk: null,
+    clock: DAYLEN * 0.08, frenzy: null, nextFrenzy: 240, card: null, projects: [], fleet: {}, dives: {}, gifts: {}, pet: null, dry: 0, story: null, talk: null,
   };
   Object.assign(G, fresh);
   const home = homePort();
