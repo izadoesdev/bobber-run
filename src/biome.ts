@@ -94,6 +94,54 @@ function locate(x: number, y: number): Place {
   if (down < place.edge) { place.edge = down; place.nb = b + 1; place.nk = cellIn(b + 1, xx).k; }
   return place;
 }
+/** A stretch of border between regions a and b (ids), as world points [x0, y0, x1, y1, ...]. */
+export interface RegionBorder { a: string; b: string; pts: number[] }
+/**
+ * The region borders within the box (x0, y0)-(x1, y1), traced from the same curves locate() uses: band edges where
+ * y + wobbleY(x) reaches a band's end, and side edges where x + wobbleX(y) reaches the midpoint between two seeds.
+ * A point every `step` units; a run splits where the regions either side change. For the chart, once per view.
+ */
+export function regionBorders(x0: number, y0: number, x1: number, y1: number, step = 32): RegionBorder[] {
+  const out: RegionBorder[] = [];
+  let run: RegionBorder | null = null;
+  const end = (): void => { if (run && run.pts.length >= 4) out.push(run); run = null; };
+  const add = (a: string, b: string, x: number, y: number): void => {
+    if (!run || run.a !== a || run.b !== b) {
+      const last = run?.pts.slice(-2);
+      end();
+      run = { a, b, pts: last ?? [] };                     // a new pair picks up where the last run stopped, so the line stays whole
+    }
+    run.pts.push(x, y);
+  };
+  // band edges: band b over band b + 1
+  for (let b = 0; b < BANDS.length - 1; b++) {
+    const edge = BANDS[b].y1;
+    if (edge < y0 - 250 || edge > y1 + 250) continue;
+    for (let x = x0; x <= x1 + step; x += step) {
+      const y = edge - wobbleY(x);
+      if (y < y0 || y > y1) { end(); continue; }
+      const xx = x + wobbleX(y), up = cellIn(b, xx).k, down = cellIn(b + 1, xx).k;
+      add(`${b}:${up}`, `${b + 1}:${down}`, x, y);
+    }
+    end();
+  }
+  // side edges inside each band: between region k and k + 1
+  for (let b = 0; b < BANDS.length; b++) {
+    const top = bandTop(b), bot = BANDS[b].y1;
+    if (bot < y0 - 250 || top > y1 + 250) continue;
+    const w = BANDS[b].w, k0 = Math.floor((x0 - HOME.x) / w) - 2, k1 = Math.ceil((x1 - HOME.x) / w) + 1;
+    for (let k = k0; k <= k1; k++) {
+      const m = (seedX(b, k) + seedX(b, k + 1)) / 2;
+      for (let y = Math.max(y0, top - 250); y <= Math.min(y1, bot + 250) + step; y += step) {
+        const x = m - wobbleX(y), yy = y + wobbleY(x);
+        if (x < x0 || x > x1 || yy < top || yy >= bot) { end(); continue; }
+        add(`${b}:${k}`, `${b}:${k + 1}`, x, y);
+      }
+      end();
+    }
+  }
+  return out;
+}
 /** The named region at (x, y): for chart names, the entry banner, and everything that varies by region. */
 export function regionAt(x: number, y: number): Region { const p = locate(x, y); return region(p.band, p.k); }
 

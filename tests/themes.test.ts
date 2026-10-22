@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { claimableNear } from '../src/world';
-import { THEMES, THEME_IDS, biomeMix, coldness, warmth, islandTheme, regionAt, themeAt, themeHold, type ThemeHold, type ThemeId } from '../src/biome';
+import { THEMES, THEME_IDS, biomeMix, coldness, warmth, islandTheme, regionAt, regionBorders, themeAt, themeHold, type ThemeHold, type ThemeId } from '../src/biome';
 import { atmosAt } from '../src/weather';
 import type { Atmos } from '../src/biome';
 import * as MS from '../src/gl/meshes';
@@ -118,4 +118,18 @@ describe('theme data matches the meshes', () => {
       for (const [k] of [...T.land, ...T.sea]) expect(props.has(k), `${id} places ${k}`).toBe(true);
     }
   });
+});
+
+test('region borders run between the regions they name', () => {
+  const borders = regionBorders(-4000, -4000, 4500, 4500, 40);
+  expect(borders.length).toBeGreaterThan(10);
+  let checked = 0, bad = 0;
+  for (const { a, b, pts } of borders) for (let i = 2; i < pts.length - 2; i += 6) {
+    const x = pts[i], y = pts[i + 1], seen = new Set<string>();
+    for (const [dx, dy] of [[25, 0], [-25, 0], [0, 25], [0, -25], [18, 18], [-18, -18], [18, -18], [-18, 18]]) seen.add(regionAt(x + dx, y + dy).id);
+    checked++;
+    if (!seen.has(a) || !seen.has(b)) bad++;
+  }
+  expect(checked).toBeGreaterThan(200);
+  expect(bad / checked).toBeLessThan(0.03);       // only where three regions meet can a sample miss one side
 });
