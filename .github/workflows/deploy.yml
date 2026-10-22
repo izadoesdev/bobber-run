@@ -1,6 +1,6 @@
 # Production deploys: once CI has passed on a push to main, put that commit's image (built by image.yml) live on Unkey
-# and wait until bobber.databuddy.cc serves it. A red build never deploys. Needs the repo secret UNKEY_API_KEY, a
-# root key limited to deployments for the bobber-run project; without it the job only leaves a notice.
+# and check bobber.databuddy.cc answers once the deployment is ready. A red build never deploys. Needs the repo secret
+# UNKEY_API_KEY, a root key limited to deployments for the bobber-run project; without it the job only leaves a notice.
 name: Deploy
 
 on:
@@ -45,7 +45,6 @@ jobs:
       - name: Deploy to Unkey
         if: steps.key.outputs.ok == 'true'
         run: |
-          before=$(curl -fsSI "$SITE/" | grep -i '^last-modified:' | cut -d' ' -f2- | tr -d '\r')
           body=$(jq -nc --arg image "$IMAGE" '{project: "bobber-run", app: "web", environment: "production", oci: {image: $image}}')
           res=$(curl -sS -X POST https://api.unkey.com/v2/deployments.createDeployment -H "Authorization: Bearer $UNKEY_API_KEY" -H 'Content-Type: application/json' -d "$body")
           id=$(jq -r '.data.deploymentId // empty' <<< "$res")
@@ -59,10 +58,10 @@ jobs:
             sleep 5
           done
           [ "$status" = ready ] || { echo "::error::deployment $id still '$status' after 5 minutes"; exit 1; }
-          # every image build stamps new files, so the page's last-modified moves once the new build is serving
-          for i in $(seq 1 36); do
-            now=$(curl -fsSI "$SITE/" | grep -i '^last-modified:' | cut -d' ' -f2- | tr -d '\r')
-            if [ -n "$now" ] && [ "$now" != "$before" ] && curl -fsS "$SITE/health" > /dev/null; then echo "live: $SITE last-modified $now"; exit 0; fi
+          # the image keeps fixed file times, so check the site answers and serves a bundle, not that last-modified moved
+          for i in $(seq 1 24); do
+            js=$(curl -fsS "$SITE/" | grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' | head -1)
+            if [ -n "$js" ] && curl -fsS -o /dev/null "$SITE$js" && curl -fsS -o /dev/null "$SITE/health"; then echo "live: $SITE serves $js"; exit 0; fi
             sleep 5
           done
-          echo "::error::$SITE still serves the build from $before"; exit 1
+          echo "::error::$SITE isn't answering after deployment $id"; exit 1
