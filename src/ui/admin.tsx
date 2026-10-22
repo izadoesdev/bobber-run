@@ -1,0 +1,137 @@
+// The admin panel: for accounts the server says are admins (NET.profile.admin), opened with F9 or the shield chip.
+// Find sailors (online ones from the relay, and any captain by name once the server search is there) and sail or
+// jump to them; teleport to coordinates, a region, a village or legend, home, or wherever you click on the chart;
+// and fun: weather, time of day, a frenzy, a golden school, lifting the fog, opening every region. Moving about and
+// the weather leave a save as it is; anything that hands out coins, gear or fish goes through the cheat console's
+// codes, which mark the save as cheated (off the world records and the coastwide fund), as cheats always have.
+import { useState } from 'preact/hooks';
+import { G, toast, saveGame, schoolActive, DAYLEN } from '../game';
+import { NET } from '../net';
+import { ONLINE } from '../online';
+import { W, H } from '../config';
+import { heightAt, homePort, regionSites, schoolsNear } from '../world';
+import { regionAt } from '../biome';
+import { setWeather } from '../weather';
+import { runCheat, CHEATS } from '../cheats';
+import { reveal } from '../game/explore';
+import { setWaypoint } from '../waypoint';
+import { sfx } from '../audio';
+import type { WeatherState } from '../types';
+
+export const isAdmin = (): boolean => !!NET.profile?.admin;
+/** The panel's state: open, and whether the next chart click teleports instead of setting a waypoint. */
+export const ADMIN = { open: false, clickTeleport: false };
+
+if (typeof window !== 'undefined') window.addEventListener('keydown', e => {
+  if (e.key !== 'F9' || !isAdmin() || e.repeat) return;
+  e.preventDefault(); ADMIN.open = !ADMIN.open; sfx('select');
+});
+
+/** Jump the boat to (x, y): onto the nearest open water, its region opened so rough water doesn't push it back, the sea round it seen. */
+export function teleport(x: number, y: number, why = ''): void {
+  let at = { x, y };
+  found: for (let r = 0; r <= 400; r += 20) for (let k = 0; k < 24; k++) {
+    const a = k / 24 * Math.PI * 2, px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+    if (heightAt(px, py) < -0.08) { at = { x: px, y: py }; break found; }
+  }
+  const id = regionAt(at.x, at.y).id;
+  if (!G.unlocked.includes(id)) G.unlocked.push(id);
+  const b = G.boat;
+  Object.assign(b, { x: at.x, y: at.y, px: at.x, py: at.y, vx: 0, vy: 0, w: 0, helm: 0, thr: 0 });
+  G.cam.x = b.x - W / 2; G.cam.y = b.y - H / 2; G.look.x = G.look.y = 0;
+  G.fish = null; G.waypoint = null;
+  reveal(at.x, at.y, 400);
+  if (G.mode === 'map' || G.mode === 'port') G.mode = 'play';
+  toast(`Teleported${why ? ' to ' + why : ''} (${Math.round(at.x)}, ${Math.round(at.y)})`, 'good'); sfx('discover'); saveGame();
+}
+
+const atClock = (frac: number): void => {
+  const base = Math.floor(G.clock / DAYLEN) * DAYLEN;
+  G.clock = base + (frac > (G.clock - base) / DAYLEN ? 0 : DAYLEN) + frac * DAYLEN;
+};
+const away = (x: number, y: number): string => `${Math.round(Math.hypot(x - G.boat.x, y - G.boat.y) / 10)} m`;
+/** Every sailor the relay has told us about, nearest first. */
+function sailors(): { uid: string; name: string; x: number; y: number }[] {
+  const byUid = new Map<string, { uid: string; name: string; x: number; y: number }>();
+  for (const f of ONLINE.far) byUid.set(f.uid, f);
+  for (const s of ONLINE.sailors) byUid.set(s.uid, { uid: s.uid, name: s.name, x: s.x, y: s.y });
+  return [...byUid.values()].sort((a, b) => Math.hypot(a.x - G.boat.x, a.y - G.boat.y) - Math.hypot(b.x - G.boat.x, b.y - G.boat.y));
+}
+// the regions worth jumping to: one point inside each, found once on a coarse sweep of the known seas
+let regionList: { id: string; name: string; x: number; y: number }[] | null = null;
+function regions(): typeof regionList & object {
+  if (regionList) return regionList;
+  const seen = new Map<string, { id: string; name: string; x: number; y: number }>();
+  for (let y = -12000; y <= 12000; y += 700) for (let x = -24000; x <= 24000; x += 700) {
+    const r = regionAt(x, y);
+    if (!seen.has(r.id)) seen.set(r.id, { id: r.id, name: r.name, x: r.centre.x, y: r.centre.y });
+  }
+  return regionList = [...seen.values()].sort((a, b) => Math.hypot(a.x, a.y) - Math.hypot(b.x, b.y));
+}
+
+type Tab = 'sailors' | 'teleport' | 'fun';
+export function AdminPanel() {
+  const [tab, setTab] = useState<Tab>('sailors'), [q, setQ] = useState(''), [xy, setXy] = useState('');
+  if (!ADMIN.open || !isAdmin()) return null;
+  const list = sailors().filter(s => !q || s.name.toLowerCase().includes(q.toLowerCase()));
+  const go = (fn: () => void) => () => { fn(); };
+  const weather = (s: WeatherState) => go(() => { setWeather(s); toast(`Weather: ${s}`, 'good'); });
+  const clock = (f: number, name: string) => go(() => { atClock(f); toast(`Time: ${name}`, 'good'); });
+  return (
+    <div class="admin panel" onPointerDown={e => e.stopPropagation()}>
+      <div class="admin-head"><b>Admin</b><span class="muted small">F9 to close</span></div>
+      <div class="admin-tabs">{(['sailors', 'teleport', 'fun'] as Tab[]).map(t => <button class={'btn small-btn' + (t === tab ? ' on' : '')} onClick={() => setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</button>)}</div>
+      {tab === 'sailors' && <>
+        <input class="admin-input" placeholder="Find a sailor by name" value={q} onInput={e => setQ((e.target as HTMLInputElement).value)} />
+        <div class="admin-list">
+          {list.length ? list.slice(0, 40).map(s => (
+            <div class="admin-row">
+              <span class="grow"><b>{s.name}</b><span class="muted small"> {away(s.x, s.y)} · {regionAt(s.x, s.y).name}</span></span>
+              <button class="btn small-btn" title="Set a waypoint to them" onClick={go(() => { setWaypoint(s.x, s.y); toast(`Waypoint set to ${s.name}`, 'good'); })}>Sail</button>
+              <button class="btn small-btn" title="Jump next to them" onClick={go(() => teleport(s.x + 40, s.y, s.name))}>Go</button>
+            </div>
+          )) : <p class="muted small">No one in your sea {q ? 'by that name ' : ''}right now. Sailors show here once the relay reports them.</p>}
+        </div>
+        <p class="muted small">{ONLINE.total ? `${ONLINE.total} sailing now` : ''}</p>
+      </>}
+      {tab === 'teleport' && <>
+        <div class="admin-row">
+          <input class="admin-input grow" placeholder="x, y" value={xy} onInput={e => setXy((e.target as HTMLInputElement).value)}
+            onKeyDown={e => { if (e.key === 'Enter') (e.currentTarget.nextElementSibling as HTMLButtonElement)?.click(); }} />
+          <button class="btn small-btn" onClick={go(() => { const m = /(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/.exec(xy); if (m) teleport(+m[1], +m[2]); else toast('Type two numbers, like -19611, -11884', 'bad'); })}>Go</button>
+        </div>
+        <div class="admin-row">
+          <button class="btn small-btn" onClick={go(() => { const h = homePort(); teleport(h.dock.x, h.dock.y, 'Alderhaven'); })}>Home</button>
+          <button class={'btn small-btn' + (ADMIN.clickTeleport ? ' on' : '')} onClick={go(() => { ADMIN.clickTeleport = !ADMIN.clickTeleport; if (ADMIN.clickTeleport) G.mode = 'map'; })}>{ADMIN.clickTeleport ? 'Click the chart…' : 'Click on chart'}</button>
+        </div>
+        <div class="caps small">Regions</div>
+        <div class="admin-list">{regions().map(r => <button class="btn small-btn admin-chip" onClick={go(() => teleport(r.x, r.y, r.name))}>{r.name}</button>)}</div>
+        <div class="caps small">Villages and legends</div>
+        <div class="admin-list">{regionSites().map(s => <button class="btn small-btn admin-chip" onClick={go(() => teleport(s.x, s.y, s.id))}>{s.id.replace('legend-', '').replace(/-village$/, ' village')}</button>)}</div>
+      </>}
+      {tab === 'fun' && <>
+        <div class="caps small">Weather</div>
+        <div class="admin-row">{(['clear', 'rain', 'storm'] as WeatherState[]).map(s => <button class="btn small-btn" onClick={weather(s)}>{s}</button>)}</div>
+        <div class="caps small">Time</div>
+        <div class="admin-row"><button class="btn small-btn" onClick={clock(0.06, 'dawn')}>Dawn</button><button class="btn small-btn" onClick={clock(0.3, 'noon')}>Noon</button><button class="btn small-btn" onClick={clock(0.6, 'dusk')}>Dusk</button><button class="btn small-btn" onClick={clock(0.75, 'night')}>Night</button></div>
+        <div class="caps small">Sea</div>
+        <div class="admin-row">
+          <button class="btn small-btn" onClick={go(() => { const s = schoolsNear(G.boat.x, G.boat.y, 400).find(schoolActive); if (!s) return toast('No school nearby', 'bad'); s.stock = Math.max(s.stock, 8); G.frenzy = { s, until: G.t + 70 }; toast('A feeding frenzy!', 'good'); })}>Frenzy</button>
+          <button class="btn small-btn" onClick={go(() => { const s = schoolsNear(G.boat.x, G.boat.y, 400).find(schoolActive); if (!s) return toast('No school nearby', 'bad'); s.gold = true; toast('That school is golden now', 'good'); })}>Golden school</button>
+          <button class="btn small-btn" onClick={go(() => { reveal(G.boat.x, G.boat.y, 3000); toast('The fog lifts for 300 m round you', 'good'); })}>Lift fog</button>
+          <button class="btn small-btn" onClick={go(() => { for (const r of regions()) if (!G.unlocked.includes(r.id)) G.unlocked.push(r.id); toast('Every region is open to you', 'good'); saveGame(); })}>Open all regions</button>
+          <button class="btn small-btn" onClick={go(() => { G.god = !G.god; toast(G.god ? 'Your hull cannot be damaged' : 'Your hull is mortal again', 'good'); })}>{G.god ? 'Mortal hull' : 'Unsinkable'}</button>
+        </div>
+        <div class="caps small">Cheats <span class="muted">(mark this save as cheated)</span></div>
+        <div class="admin-list">{CHEATS.filter(c => !['stormy', 'clearsky', 'nightfall', 'daybreak', 'frenzy', 'unsinkable', 'homeward'].includes(c.code)).map(c =>
+          <button class="btn small-btn admin-chip" title={c.what} onClick={go(() => runCheat(c.code))}>{c.code}</button>)}</div>
+      </>}
+    </div>
+  );
+}
+
+/** The shield chip in the corner that opens the panel (admins only). */
+export function AdminChip() {
+  if (!isAdmin() || ADMIN.open) return null;
+  return <button class="chip admin-chip-open" data-track="admin-open" title="Admin tools (F9)" onClick={() => { ADMIN.open = true; sfx('select'); }}>Admin</button>;
+}

@@ -539,3 +539,14 @@ html.touch #ui .speech { bottom: auto; top: 12%; }   /* phones are short: up whe
 @keyframes face-talk { 0% { opacity: 1; } 50% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .face .blink, .face .mouth { animation: none; } }
 .stamp.grade { margin-left: 0.4em; } .stamp.grade.g1 { color: #c08a5a; border-color: #c08a5a; } .stamp.grade.g2 { color: #b8c0c6; border-color: #b8c0c6; } .stamp.grade.g3 { color: var(--gold); border-color: var(--gold); }   /* bronze, silver, gold */
+/* the admin panel (admins only, F9): a narrow panel down the left, over the game */
+.admin { position: absolute; left: 0.9em; top: 4.2em; z-index: 40; width: 23em; max-height: calc(100% - 6em); overflow: auto; display: flex; flex-direction: column; gap: 0.45em; padding: 0.7em 0.8em; pointer-events: auto; font-size: var(--fs-s); }
+.admin-head { display: flex; justify-content: space-between; align-items: baseline; } .admin-head b { font-family: var(--font-head); font-size: 1.3em; color: var(--gold); }
+.admin-tabs, .admin-row { display: flex; gap: 0.35em; align-items: center; flex-wrap: wrap; }
+.admin .btn.on { box-shadow: inset 0 0 0 0.12em var(--gold); color: var(--gold); }
+.admin-input { font: inherit; padding: 0.3em 0.5em; border-radius: 0.3em; border: 0.1em solid #5a4630; background: #1b1410; color: #f6eedc; min-width: 0; }
+.admin-list { display: flex; flex-direction: column; gap: 0.25em; max-height: 16em; overflow: auto; }
+.admin-list:has(.admin-chip) { flex-direction: row; flex-wrap: wrap; }
+.admin-chip { text-transform: none; }
+.admin-chip-open { position: absolute; left: 0.9em; bottom: 0.9em; z-index: 30; pointer-events: auto; color: var(--gold); }
+html.touch .admin-chip-open { bottom: auto; top: 50%; }

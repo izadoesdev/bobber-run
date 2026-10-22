@@ -17,6 +17,7 @@ import { chartPerks } from '../game/rules';
 import { GRADES, grade } from '../game/mastery';
 import { packJournal } from '../content/engine';
 import { Face } from './faces';
+import { ADMIN, teleport } from './admin';
 import type { UpgradeKey } from '../types';
 import { drawChart, compassRose, zoneKnown, chartAt, drawn, type Legend } from './chart';
 import { Canvas, Cell, Fish, Hint, HullStat, Icon, Key, Pips, Stat, boatPreview, type DrawFn } from './parts';
@@ -56,6 +57,7 @@ export function Chart() {
   const click = (): void => {
     const { at, spot } = pick() ?? {};
     if (!spot || !at) return;
+    if (ADMIN.clickTeleport) { ADMIN.clickTeleport = false; teleport(at.x, at.y); return; }   // the admin panel's click-to-teleport
     if (spot.island) openIsland(spot.island, 'map');
     else if (spot.clear) clearWaypoint();
     else if (!spot.none) { const to = spot.snap && heightAt(spot.snap.x, spot.snap.y) < -0.05 ? spot.snap : at; setWaypoint(to.x, to.y); }

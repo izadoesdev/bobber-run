@@ -13,6 +13,7 @@ import { sayAside } from '../story';
 import { G } from '../game';
 import { Hud, Toasts } from './hud';
 import { Port } from './port';
+import { AdminChip, AdminPanel } from './admin';
 import { Chart, Journal, Logbook, Ship } from './screens';
 import { Cheats, Controls, EmotePick, Finale, Online, Pause, Settings, Sunk, Talk, Title } from './menus';
 
@@ -55,6 +56,7 @@ function App() {
       {m === 'journal' && <Journal />}
       {m === 'leaders' && <Leaderboard />}
       {m === 'island' && <IslandDialog />}
+      {m !== 'title' && <><AdminChip /><AdminPanel /></>}
       {m !== 'title' && <Toasts low={m !== 'play' && m !== 'sunk'} />}
     </div>
   );
