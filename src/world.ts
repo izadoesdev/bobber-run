@@ -14,8 +14,11 @@ import { smooth01 } from './config';
  * carries the same number): a save from an older layout keeps its progress but forgets everything tied to places,
  * and starts at Alderhaven (game/save.ts). 1: the first world; 2: bigger islands, coves and mountains.
  */
-export const WORLD = 2;
+export const WORLD = 3;
 const CELL = 560;                              // one archipelago cell
+// how big main islands are and how many islets survive: tuned for open channels between islands (about a fifth of the
+// sea near home is land). Scaling here keeps every island's centre, since the draws below don't change.
+const ISLAND_SCALE = 0.75, ISLET_KEEP = 0.5;
 const HOME_ISLAND: Point = { x: 280, y: 280 };
 const key = (i: number, j: number) => (i + 50000) * 100000 + (j + 50000);
 
@@ -44,7 +47,7 @@ function cellIslands(i: number, j: number): Island[] {
   let main: Island | null = null;
   if (i === 0 && j === 0) main = island(HOME_ISLAND.x, HOME_ISLAND.y, 145, 0.8, false, i, j);
   else if (r() < 0.72) {
-    const x = ox + CELL * (0.3 + 0.4 * r()), y = oy + CELL * (0.3 + 0.4 * r()), R = 75 + Math.pow(r(), 1.25) * 230, peak = 0.6 + 0.4 * r();
+    const x = ox + CELL * (0.3 + 0.4 * r()), y = oy + CELL * (0.3 + 0.4 * r()), R = (75 + Math.pow(r(), 1.25) * 230) * ISLAND_SCALE, peak = 0.6 + 0.4 * r();
     main = island(x, y, R, peak, false, i, j);
   }
   if (main) L.push(main);
@@ -59,7 +62,8 @@ function cellIslands(i: number, j: number): Island[] {
     }
     const sandbar = r() < 0.3;
     const R = 12 + r() * 28;
-    L.push(island(x, y, R, sandbar ? 0.1 + 0.08 * r() : 0.45 + 0.4 * r(), true));
+    const islet = island(x, y, R, sandbar ? 0.1 + 0.08 * r() : 0.45 + 0.4 * r(), true);
+    if (hash01(i * 8 + q, j, 77) < ISLET_KEEP) L.push(islet);
   }
   cells.set(k, L);
   return L;
@@ -717,9 +721,9 @@ function placeSites(): RegionSite[] {
   }
   // a legend: the first fitting spot on rings out from its distance, in its region, on land or in the shallows
   for (const [legend, fits, from, ground] of LEGENDS) {
-    found: for (let r = from; r < from + 2400; r += 120) for (let k = 0; k < 40; k++) {
-      const a = k / 40 * Math.PI * 2 + hash01(r, k, 71) * 0.1, x = HOME_ISLAND.x + Math.cos(a) * r, y = HOME_ISLAND.y + Math.sin(a) * r, v = heightAt(x, y);
-      if (ground === 'land' ? v < 0.1 || v > 0.55 : v > -0.04 || v < -0.2) continue;
+    found: for (let r = from; r < from + 4800; r += 120) for (let k = 0, n = Math.ceil(r * Math.PI * 2 / 60); k < n; k++) {   // a sample every ~60 units round the ring
+      const a = k / n * Math.PI * 2 + hash01(r, k, 71) * 0.1, x = HOME_ISLAND.x + Math.cos(a) * r, y = HOME_ISLAND.y + Math.sin(a) * r, v = heightAt(x, y);
+      if (ground === 'land' ? v < 0.1 || v > 0.7 : v > -0.04 || v < -0.2) continue;
       if (ground === 'land' && ![0, 1, 2, 3, 4, 5, 6, 7].some(q => heightAt(x + Math.cos(q * Math.PI / 4) * 45, y + Math.sin(q * Math.PI / 4) * 45) < -0.06)) continue;   // in sight of a boat
       if (!fits(biomeAt(x, y)) || !clear(x, y, 400)) continue;
       out.push({ id: `legend-${legend}`, kind: 'legend', biome: biomeAt(x, y), legend, x, y, a: hash01(r, k, 72) * Math.PI * 2 });
