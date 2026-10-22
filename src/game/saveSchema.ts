@@ -47,7 +47,8 @@ export const saveSchema = v.object({
   stats: v.fallback(v.partial(stats), {}), story: v.fallback(v.nullable(story), null), gifts: mapOf(v.number()),
   pet: v.fallback(v.nullable(v.object({ name: v.string() }) satisfies Schema<Pet>), null), projects: listOf(v.picklist(PROJECTS)),
   fleet: mapOf(fleetBoat), dives: mapOf(v.number()), goalsDone: listOf(v.number()), cheated: bool(),
-  maps: listOf(treasure), escaped: listOf(escapee), packs: mapOf(packState), regionsSeen: listOf(v.string()), waypoint: v.fallback(v.nullable(point), null),
+  maps: listOf(treasure), escaped: listOf(escapee), packs: mapOf(packState), regionsSeen: listOf(v.string()),
+  explored: v.fallback(v.pipe(v.string(), v.maxLength(120_000)), ''), unlocked: listOf(v.string()), waypoint: v.fallback(v.nullable(point), null),
   gearOff: mapOf(v.literal(true)), zones: mapOf(v.literal(true)), docks: mapOf(v.number()), streak: v.pipe(int(), v.transform(n => Math.min(5, Math.max(0, n)))),
   musicOn: bool(true), offers: mapOf(v.array(contract)), active: listOf(contract), pity: int(), clock: v.optional(v.number()),
 });

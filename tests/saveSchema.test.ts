@@ -32,3 +32,8 @@ test('entries keep fields this schema does not list, so data added later is neve
   expect(s.hold[0]).toMatchObject({ variant: 'albino', future: 'kept' });
   expect(s.log.perch).toMatchObject({ vars: ['albino'], later: 7 });
 });
+test('the fog of war is kept as written, and one too big for a cloud save starts over (it is reseeded from the chart)', () => {
+  expect(parseSave({ explored: 'AAEC', unlocked: ['north', 7] })).toMatchObject({ explored: 'AAEC', unlocked: ['north'] });
+  expect(parseSave({ explored: 'A'.repeat(130_000) }).explored).toBe('');
+  expect(parseSave({}).explored).toBe('');
+});

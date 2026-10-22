@@ -402,6 +402,8 @@ interface Progress {
   escaped: Escapee[];
   /** progress through each content pack (src/content), and the regions sailed into so far (packs can open on one) */
   packs: Record<string, import('./content/types').PackState>; regionsSeen: string[];
+  /** the fog of war lifted so far (encoded by game/explore.ts), and the regions the player has opened */
+  explored: string; unlocked: string[];
   /** a spot the player marked on the chart: a line to it on the minimap and chart, cleared on arrival */
   waypoint: Point | null;
   /** helpers the player switched off (they still own them): the deckhand, the drift net, the crab pots */
