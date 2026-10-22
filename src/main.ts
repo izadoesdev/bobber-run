@@ -14,7 +14,7 @@ import { SET, applySettings } from './settings';
 import { updateStory, speech } from './story';
 import { initNet, netTick, NET } from './net';
 import { ONLINE } from './online';
-import { renderOffline, SFX_NAMES } from './audio';
+import { renderOffline, renderMusicOffline, SFX_NAMES } from './audio';
 import { homePort, schoolsNear, poisNear, hAt, LAIR, BOSS, trimWorld, worldCaches } from './world';
 import { updateLife, LIFE } from './life';
 import { WX, setWeather } from './weather';
@@ -142,7 +142,7 @@ addEventListener('beforeunload', () => { if (G.mode !== 'title') saveGame(); });
 // debug and test hooks: the e2e suite (e2e/) drives the game through these
 declare global { interface Window { BR: Record<string, unknown> } }
 window.BR = {
-  NET, NETAPI, ONLINE, render, SET, apply: () => { applySettings(); fit(); }, AUDIO: { renderOffline, SFX_NAMES },
+  NET, NETAPI, ONLINE, render, SET, apply: () => { applySettings(); fit(); }, AUDIO: { renderOffline, renderMusicOffline, SFX_NAMES },
   WX, setWeather, LIFE, LAIR, BOSS, MODELS, GAME, TUNE, G, guide, tick, sim: (dt: number) => { noRender = true; tick(dt); noRender = false; },
   homePort, schoolsNear, poisNear, hAt, SPECIES, R, worldCaches, speech, CONTENT: { packJournal, packCatch, biomeAt }, ZONES: zoneStats,
 };

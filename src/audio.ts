@@ -2,6 +2,7 @@
 // Everything is synthesised from filtered noise, damped sines and physically-modelled bubbles
 // (a sine whose pitch rises as it decays), mixed through a gentle compressor with a shared reverb send.
 // Pitched sounds are voiced on the chord the music is playing, so nothing ever clashes with it.
+import { compose, restAfter, rng, type MusicEvent, type Piece } from './music';
 
 type Bus = 'sfx' | 'music' | 'amb';
 type NoiseColor = 'white' | 'pink' | 'brown';
@@ -158,8 +159,8 @@ function noise(ctx: BaseAudioContext, kind: NoiseColor): AudioBuffer {
 }
 
 // ---------- harmony shared by the music and every pitched sound ----------
-// The music is in C major: a C-pentatonic melody over I-vi-IV-V by day and vi-iii-IV-I at night. Pitched effects are
-// voiced on the chord the music is currently on, so rewards and UI blips land inside the harmony instead of against it.
+// Pitched effects are voiced on the chord the music is currently on (music.ts sends each chord change), so rewards and UI
+// blips land inside the harmony instead of against it; between pieces they keep the last one.
 let harmony: Chord = [0, 4, 7];
 const N = (s: number) => 440 * Math.pow(2, (s - 9) / 12);       // semitones from C4 → Hz (0 = C4)
 // the i-th note of the current chord counting up (0 root, 1 third, 2 fifth, 3 root an octave up, -1 fifth below...).
@@ -780,48 +781,63 @@ export function soundscape(s: SoundscapeState, dt: number): void {
   schoolEvents(ac, dtc);
 }
 
-// ---------- music: mallet melody over slow pads and a soft bass, C pentatonic, through tape and reverb ----------
-const DAY: Chord[] = [[0, 4, 7], [9, 12, 16], [5, 9, 12], [7, 11, 14]];
-const NIGHT: Chord[] = [[9, 12, 16], [4, 7, 11], [5, 9, 12], [0, 4, 7]];
-const PENTA = [0, 2, 4, 7, 9];
-let bar = 0, beat = 0, beatAt = -1, chordIdx = 0;
-const AHEAD = 0.15;                                              // beats are booked this far ahead on the audio clock
+// ---------- music: quiet piano pieces with silence between them (composed in music.ts), through tape and reverb ----------
+// A felt piano: a soft hammer on a sine, a warm octave and twelfth that fade first, and a second string a few cents
+// off; high notes ring shorter, the way piano strings do.
+const piano = (c: BaseAudioContext, f: number, t: number, vel: number, dur: number) => {
+  const ring = Math.min(dur, 4.5) * (f > 700 ? 0.6 : f > 350 ? 0.85 : 1), lp = 900 + 2600 * vel;
+  tone(c, { f, t, a: 0.006, d: ring, vol: 0.075 * vel, lp });
+  tone(c, { f: f * 1.0025, t, a: 0.008, d: ring * 0.8, vol: 0.03 * vel, lp });
+  tone(c, { f: f * 2, t, a: 0.004, d: ring * 0.35, vol: 0.022 * vel, lp });
+  tone(c, { f: f * 3, t, a: 0.003, d: ring * 0.12, vol: 0.007 * vel, lp });
+};
+const playEvent = (c: BaseAudioContext, e: MusicEvent, t: number): void => {
+  if (e.kind === 'chord') { harmony = e.triad!; return; }          // what the pitched sound effects voice on
+  const f = N(e.s);
+  if (e.kind === 'piano') piano(c, f, t, e.vel, e.dur);
+  else if (e.kind === 'bass') tone(c, { f, t, a: 0.05, hold: e.dur * 0.3, d: e.dur * 0.7, vol: 0.05 * e.vel, type: 'triangle', lp: 320 });
+  else for (const cents of [-6, 6]) tone(c, { f: f * Math.pow(2, cents / 1200), t, a: Math.min(2, e.dur * 0.3), hold: e.dur * 0.35, d: e.dur * 0.6, vol: 0.016 * e.vel, type: 'triangle', lp: 750, rev: 0.6 });
+};
 
-/** Called every frame: books the beats due in the next AHEAD seconds at their exact times, so the rhythm holds steady
- * however uneven the frames are (a background tab runs at 15 fps). */
+const AHEAD = 0.25;                                              // notes are booked this far ahead on the audio clock
+const tune = { piece: null as Piece | null, at: 0, next: 0, restUntil: -1, last: undefined as string | undefined, R: rng(Date.now()) };
+
+/** Called every frame: plays the current piece's notes at their exact times, so the timing holds however uneven the frames
+ * are, then rests before writing the next piece (night picks the night styles). */
 export function music(on: boolean, night: boolean): void {
   if (!ac || ac.state !== 'running') return;
   const now = ac.currentTime;
-  if (loops) loops.hiss.g.gain.setTargetAtTime(on ? 0.003 : 0, now, 0.5);   // tape hiss only while music plays
-  if (!on) { beatAt = -1; return; }
-  if (beatAt < now) beatAt = now + (beatAt < 0 ? 1.5 : 0.05);  // starting, or back from a stall: pick up, don't catch up
+  if (!on) { tune.piece = null; tune.restUntil = -1; if (loops) loops.hiss.g.gain.setTargetAtTime(0, now, 0.5); return; }
+  if (!tune.piece) {
+    if (tune.restUntil < 0) tune.restUntil = now + 4;            // music switched on, or the game just started: begin soon
+    if (now < tune.restUntil) { if (loops) loops.hiss.g.gain.setTargetAtTime(0, now, 1.5); return; }
+    tune.piece = compose(Math.floor(tune.R() * 2 ** 31), night, tune.last);
+    tune.last = tune.piece.style; tune.at = now + 0.3; tune.next = 0;
+  }
+  if (loops) loops.hiss.g.gain.setTargetAtTime(0.003, now, 0.5); // tape hiss only while a piece plays
+  const p = tune.piece;
   curBus = 'music';
-  for (; beatAt < now + AHEAD; beatAt += night ? 0.75 : 0.6) {
-    try { playBeat(ac, beatAt - now, night); } catch { /* a missed note is harmless */ }
+  for (; tune.next < p.events.length && tune.at + p.events[tune.next].t < now + AHEAD; tune.next++) {
+    const e = p.events[tune.next], when = tune.at + e.t - now;
+    if (when < -0.1 && e.kind !== 'chord') continue;              // back from a stall (a hidden tab): skip, don't pile up
+    try { playEvent(ac, e, Math.max(0, when)); } catch { /* a missed note is harmless */ }
   }
   curBus = 'sfx';
+  if (now > tune.at + p.length) { tune.piece = null; tune.restUntil = now + restAfter(tune.R); }
 }
-function playBeat(c: AudioContext, t: number, night: boolean): void {
-  const tempo = night ? 0.75 : 0.6, prog = night ? NIGHT : DAY, base = night ? 0 : 12;
-  if (beat === 0) {                                              // new bar: a warm pad chord and its root in the bass every 2 bars
-    if (bar % 2 === 0) {
-      chordIdx = (chordIdx + 1) % 4;
-      const chord = prog[chordIdx], root = chord[0];
-      for (const s of chord) for (const cents of [-5, 5]) {
-        tone(c, { f: N(base - 12 + s) * Math.pow(2, cents / 1200), t, a: 1.5, hold: tempo * 5, d: 2.6, vol: 0.011, type: 'triangle', lp: 700, rev: 0.6 });
-      }
-      tone(c, { f: N(root - (root >= 4 ? 24 : 12)), t, a: 0.4, hold: tempo * 4, d: 2.5, vol: 0.04, type: 'triangle', lp: 380 });
-    }
-    bar++;
+
+/** Render the start of a piece offline (tests and listening checks): `seed` picks it, as in play. */
+export async function renderMusicOffline(seed: number, night: boolean, secs = 20): Promise<{ piece: Piece; left: Float32Array; right: Float32Array }> {
+  const off = new OfflineAudioContext(2, 44100 * secs, 44100), prevGraph = graph, prevHarmony = harmony, piece = compose(seed, night);
+  try {
+    graph = buildGraph(off, off.destination);
+    curBus = 'music';
+    for (const e of piece.events) if (e.t < secs) playEvent(off, e, e.t);
+  } finally {
+    curBus = 'sfx'; graph = prevGraph; harmony = prevHarmony;
   }
-  harmony = prog[chordIdx];                                      // what the pitched sound effects voice on
-  if (Math.random() < (night ? 0.35 : 0.45)) {
-    const s = Math.random() < 0.6
-      ? harmony[Math.floor(Math.random() * 3)]
-      : PENTA[Math.floor(Math.random() * 5)] + (Math.random() < 0.15 ? 12 : 0);
-    mallet(c, N(base + s), t, night ? 0.05 : 0.06, 1.1, 0.55);
-  }
-  beat = (beat + 1) % 4;
+  const buf = await off.startRendering();
+  return { piece, left: buf.getChannelData(0), right: buf.getChannelData(1) };
 }
 
 // ---------- offline rendering, used by tests to inspect levels and spectra ----------
