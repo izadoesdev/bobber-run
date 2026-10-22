@@ -11,7 +11,7 @@ import { TUNE, G, physicsStep, update, updateCamera, refreshSolids, newGame, sav
 import { initRender, render, R, prefetch, boatRenderState } from './gl/renderer';
 import { initUI, drawUI } from './ui/index';
 import { SET, applySettings } from './settings';
-import { updateStory } from './story';
+import { updateStory, speech } from './story';
 import { initNet, netTick, NET } from './net';
 import { ONLINE } from './online';
 import { renderOffline, SFX_NAMES } from './audio';
@@ -144,6 +144,6 @@ declare global { interface Window { BR: Record<string, unknown> } }
 window.BR = {
   NET, NETAPI, ONLINE, render, SET, apply: () => { applySettings(); fit(); }, AUDIO: { renderOffline, SFX_NAMES },
   WX, setWeather, LIFE, LAIR, BOSS, MODELS, GAME, TUNE, G, guide, tick, sim: (dt: number) => { noRender = true; tick(dt); noRender = false; },
-  homePort, schoolsNear, poisNear, hAt, SPECIES, R, worldCaches, CONTENT: { packJournal, packCatch, biomeAt }, ZONES: zoneStats,
+  homePort, schoolsNear, poisNear, hAt, SPECIES, R, worldCaches, speech, CONTENT: { packJournal, packCatch, biomeAt }, ZONES: zoneStats,
 };
 requestAnimationFrame(frame);

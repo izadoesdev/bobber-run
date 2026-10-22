@@ -20,7 +20,9 @@ test('the first minute has no words; Maren speaks after the first catch without 
   await landFish(page);
   // step 4 s of game time (past the welcome title and the catch animation, even on a slow CI machine), then skip the
   // card's long first look; the card comes up when the animation ends, so it's cleared after
-  await page.evaluate(() => { for (let i = 0; i < 120; i++) window.BR.sim(1 / 30); window.BR.G.card = null; });
-  await expect(page.locator('.speech')).toContainText('Maren', { timeout: 10_000 });
+  const who = await page.evaluate(() => { for (let i = 0; i < 120; i++) window.BR.sim(1 / 30); window.BR.G.card = null; return window.BR.speech()?.name; });
+  expect(who).toBe('Maren');
+  // the strip shows on the next painted frame, which on CI's software-rendered phone can take many seconds
+  await expect(page.locator('.speech')).toContainText('Maren', { timeout: 30_000 });
   expect(await page.evaluate(() => window.BR.G.mode)).toBe('play');   // spoken while sailing: no conversation screen
 });
