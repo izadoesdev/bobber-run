@@ -135,7 +135,8 @@ export function loadGame(): void {
       if (!o) return;
       d = migrateOld(o);
     }
-    if ((d.world ?? 1) < WORLD) d = forNewWorld(d);   // also covers a cloud save, which net.ts writes here first
+    const moved = (d.world ?? 1) < WORLD;
+    if (moved) d = forNewWorld(d);                      // also covers a cloud save, which net.ts writes here first
     const s = parseSave(d);                             // every field present, of the right type (saveSchema.ts)
     const loaded: Partial<GameState> = {
       coins: s.coins, coinsShown: s.coins, earned: s.earned, up: { ...G.up, ...s.up }, hold: s.hold, log: s.log, boatId: s.boatId, owned: s.owned,
@@ -146,6 +147,7 @@ export function loadGame(): void {
     };
     Object.assign(G, loaded);
     fleetWhileAway(s.savedAt);                                     // the fleet kept fishing while the game was closed
+    if (moved) toast('The coast has changed while you were away. Your boat, coins and logbook are safe, but your chart starts fresh');
     // retired upgrades (bilge pumps went into Plating): give back what they cost, once
     const refund = retiredRefund(G.up);
     if (refund > 0) { G.coins += refund; G.coinsShown = G.coins; G.up.bilge = 0; toast(`Bilge pumps now come with Plating: refunded $${refund}`, 'good'); }

@@ -18,6 +18,7 @@ test('a save from an older world keeps progress and starts at Alderhaven', async
     const key = 'bobber-run-save-v3', d = JSON.parse(localStorage.getItem(key)!);
     Object.assign(d, { world: 1, waypoint: { x: 5000, y: 5000 }, salvaged: ['wreck:1,1'] });
     localStorage.setItem(key, JSON.stringify(d));
+    localStorage.setItem = () => { };                     // or the save on pagehide writes the live game back over it
   });
   await page.reload();
   await expect.poll(() => page.evaluate(() => window.BR?.G?.mode)).toBe('title');
@@ -25,4 +26,5 @@ test('a save from an older world keeps progress and starts at Alderhaven', async
   await expect.poll(() => page.evaluate(() => window.BR.G.mode)).toBe('play');
   const s = await page.evaluate(() => { const { G, homePort } = window.BR, h = homePort(); return { coins: G.coins, waypoint: G.waypoint, salvaged: [...G.salvaged], nearHome: Math.hypot(G.boat.x - h.x, G.boat.y - h.y) < 400 }; });
   expect(s).toEqual({ coins: 777, waypoint: null, salvaged: [], nearHome: true });
+  await expect(page.locator('#ui')).toContainText('The coast has changed while you were away');
 });
