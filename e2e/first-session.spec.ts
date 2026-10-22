@@ -4,7 +4,9 @@ import { test, expect, sail, landFish } from './fixtures';
 test('a new visitor starts on the water beside a school, within seconds @both', async ({ page }) => {
   const t0 = Date.now();
   await sail(page);                                         // fails unless a biting school is within 200 units
-  expect(Date.now() - t0).toBeLessThan(15_000);
+  // a guard against a startup that hangs, not a speed test: this machine and CI's run several browsers on software
+  // rendering at once (scripts/probes/startup.mjs measures real load time)
+  expect(Date.now() - t0).toBeLessThan(30_000);
 });
 test('the first catch always lands, and its card says what it is worth @both', async ({ page }) => {
   await sail(page);
