@@ -8,7 +8,7 @@ test("the catch card shows the market's value and marks today's featured fish", 
   await page.evaluate(() => { window.BR.G.stats.caught = 1; });   // so this lands as a second catch: its card shows the value from its first frame
   await landFish(page);
   const want = await page.evaluate(() => { const { G, GAME } = window.BR; G.card.t = -60; return '$' + Math.round(GAME.fishValue(G.card.fish)).toLocaleString('en-US'); });
-  await expect(page.locator('.card')).toContainText(want);
+  await expect(page.locator('.card')).toContainText(want, { timeout: 15_000 });   // the card shows on the next frame, which can take seconds under parallel load
   // the same fish, as one of today's featured species
   const featured = await page.evaluate(() => { const { G, GAME, SPECIES } = window.BR; G.card.t = -60; const base = { ...G.card.fish, variant: undefined };   // a variant (a tiny one sells x0.6) would hide the doubling
     for (let i = 0; i < SPECIES.length; i++) { const f = { ...base, sp: i }; if (!SPECIES[i].legend && GAME.fishValue(f) >= 1.9 * f.value) { G.card.fish = f; return i; } } return -1; });
