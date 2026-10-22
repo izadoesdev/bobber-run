@@ -6,7 +6,7 @@ import { schoolLook } from './species';
 import type { Point, Poi, Port, Wreck, School, Crate } from './types';
 import { createNoise2D } from 'simplex-noise';
 import Alea from 'alea';
-import { biomeMix, coldness, setBiomeAnchor } from './biome';
+import { biomeAt, biomeMix, coldness, setBiomeAnchor, type BiomeId } from './biome';
 import { smooth01 } from './config';
 
 /**
@@ -633,6 +633,60 @@ function siteIn(c: Claimable, lo: number, hi: number): Point | null {
   }
   return best;
 }
+// ---------- region sites: a village in each region, and legend spots ----------
+// Places the region stories happen: a small village on an island of each region near home, where its characters live,
+// and six legends further out. Fixed for this world and found by id ('reef-village', 'legend-sunkenTemple'), so a quest
+// can send a player to one.
+export interface RegionSite { id: string; kind: 'village' | 'legend'; biome: BiomeId; legend?: string; x: number; y: number; a: number }
+const VILLAGE_BIOMES: BiomeId[] = ['reef', 'kelp', 'volcanic', 'mangrove', 'cold', 'warm'];
+// legend, the region it belongs to, how far from home, and whether it stands on land or in the shallows
+const LEGENDS: [string, (b: BiomeId) => boolean, number, 'land' | 'shallows'][] = [
+  ['sunkenTemple', b => b === 'reef' || b === 'warm', 1500, 'shallows'],
+  ['stoneCircle', b => b === 'open' || b === 'home', 900, 'land'],
+  ['wreckGraveyard', b => b === 'open' || b === 'kelp', 1800, 'shallows'],
+  ['crystalCave', b => b === 'volcanic', 1200, 'land'],
+  ['whaleFall', b => b === 'cold' || b === 'open', 1600, 'shallows'],
+  ['iceboundShip', b => b === 'cold', 2200, 'shallows'],
+];
+let placed: RegionSite[] | null = null;
+function placeSites(): RegionSite[] {
+  const out: RegionSite[] = [], taken: Point[] = [];
+  const clear = (x: number, y: number, gap: number): boolean => taken.every(t => Math.hypot(t.x - x, t.y - y) > gap)
+    && !poisNear(x, y, 90).some(p => p.type !== 'wreck' && Math.hypot(p.x - x, p.y - y) < 80);
+  const isles = claimableNear(HOME_ISLAND.x, HOME_ISLAND.y, 4200).filter(c => c.key !== '0,0')
+    .sort((a, b) => Math.hypot(a.x - HOME_ISLAND.x, a.y - HOME_ISLAND.y) - Math.hypot(b.x - HOME_ISLAND.x, b.y - HOME_ISLAND.y));
+  // a village: dry ground near the island's shore, facing open water, clear of where a homestead would stand
+  for (const biome of VILLAGE_BIOMES) for (const c of isles) {
+    if (biomeAt(c.x, c.y) !== biome) continue;
+    const home = homesteadSite(c);
+    let best: RegionSite | null = null, score = -Infinity;
+    for (let k = 0; k < 24; k++) for (const f of [0.5, 0.65, 0.8]) {
+      const a = k / 24 * Math.PI * 2, x = c.x + Math.cos(a) * c.R * f, y = c.y + Math.sin(a) * c.R * f, v = heightAt(x, y);
+      if (v < 0.06 || v > 0.5 || heightAt(x + Math.cos(a) * 40, y + Math.sin(a) * 40) > -0.05) continue;   // the sea within a jetty's reach
+      if ((home && Math.hypot(home.x - x, home.y - y) < 110) || !clear(x, y, 200)) continue;
+      const sc = -Math.hypot(x - HOME_ISLAND.x, y - HOME_ISLAND.y) + f * 40;
+      if (sc > score) { score = sc; best = { id: `${biome}-village`, kind: 'village', biome, x, y, a }; }
+    }
+    if (best) { out.push(best); taken.push(best); break; }
+  }
+  // a legend: the first fitting spot on rings out from its distance, in its region, on land or in the shallows
+  for (const [legend, fits, from, ground] of LEGENDS) {
+    found: for (let r = from; r < from + 2400; r += 120) for (let k = 0; k < 40; k++) {
+      const a = k / 40 * Math.PI * 2 + hash01(r, k, 71) * 0.1, x = HOME_ISLAND.x + Math.cos(a) * r, y = HOME_ISLAND.y + Math.sin(a) * r, v = heightAt(x, y);
+      if (ground === 'land' ? v < 0.1 || v > 0.55 : v > -0.04 || v < -0.2) continue;
+      if (!fits(biomeAt(x, y)) || !clear(x, y, 400)) continue;
+      out.push({ id: `legend-${legend}`, kind: 'legend', biome: biomeAt(x, y), legend, x, y, a: hash01(r, k, 72) * Math.PI * 2 });
+      taken.push({ x, y });
+      break found;
+    }
+  }
+  return out;
+}
+/** Every region site, placed once. */
+export const regionSites = (): RegionSite[] => placed ??= placeSites();
+export const regionSite = (id: string): RegionSite | undefined => regionSites().find(s => s.id === id);
+/** The region sites within the square of half-size rad. */
+export const regionSitesNear = (x: number, y: number, rad: number): RegionSite[] => regionSites().filter(s => Math.abs(s.x - x) < rad + 60 && Math.abs(s.y - y) < rad + 60);
 /** The nearest point of open water (depth beyond `depth`) to (x, y), searching outward in rings; (x, y) if none. */
 export function nearestWater(x: number, y: number, depth = -0.12): Point {
   if (heightAt(x, y) < depth) return { x, y };

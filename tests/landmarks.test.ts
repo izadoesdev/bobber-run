@@ -3,7 +3,7 @@
 // claimable island its centre; and piers reach water, lights stand on land, wrecks lie in the sea. Changing the world
 // on purpose means bumping WORLD in world.ts (older saves then forget places) and re-recording the fixture with it.
 import { describe, expect, test } from 'bun:test';
-import { WORLD, cellPois, claimableNear, heightAt, homesteadSite } from '../src/world';
+import { WORLD, cellPois, claimableNear, heightAt, homesteadSite, regionSites } from '../src/world';
 import fixture from './fixtures/landmarks.json';
 
 const R = 7;
@@ -49,5 +49,16 @@ describe('landmarks', () => {
     }
     expect(bad).toEqual([]);
     expect(placed / claims.length).toBeGreaterThan(0.97);       // nearly every island has room for one
+  });
+  test('every region has its village and every legend its spot, clear of harbours and lighthouses', () => {
+    const s = regionSites(), bad: string[] = [];
+    expect(s.map(x => x.id).sort()).toEqual(['cold-village', 'kelp-village', 'legend-crystalCave', 'legend-iceboundShip', 'legend-stoneCircle',
+      'legend-sunkenTemple', 'legend-whaleFall', 'legend-wreckGraveyard', 'mangrove-village', 'reef-village', 'volcanic-village', 'warm-village']);
+    for (const x of s) {
+      const h = heightAt(x.x, x.y);
+      if (x.kind === 'village' && h < 0.05) bad.push(`${x.id} in the water`);
+      for (const p of live.values()) if (p.type !== 'wreck' && Math.hypot(p.x - x.x, p.y - x.y) < 80) bad.push(`${x.id} by ${p.id}`);
+    }
+    expect(bad).toEqual([]);
   });
 });
