@@ -1,6 +1,6 @@
 # Production deploys: once CI has passed on a push to main, put that commit's image (built by image.yml) live on Unkey
 # and check bobber.databuddy.cc answers once the deployment is ready. A red build never deploys. Needs the repo secret
-# UNKEY_API_KEY, a root key limited to deployments for the bobber-run project; without it the job only leaves a notice.
+# UNKEY_API_KEY, a root key limited to deployments for the bobber-run project; without it the job fails.
 name: Deploy
 
 on:
@@ -33,7 +33,9 @@ jobs:
       - name: Check the deploy key is set
         id: key
         run: |
-          if [ -z "$UNKEY_API_KEY" ]; then echo "::notice::UNKEY_API_KEY is not set, so nothing was deployed"; echo "ok=false" >> "$GITHUB_OUTPUT"; else echo "ok=true" >> "$GITHUB_OUTPUT"; fi
+          # red, not a quiet skip: a green tick must mean the site was updated
+          if [ -z "$UNKEY_API_KEY" ]; then echo "::error::UNKEY_API_KEY is not set, so nothing was deployed"; exit 1; fi
+          echo "ok=true" >> "$GITHUB_OUTPUT"
 
       - name: Wait for the image
         if: steps.key.outputs.ok == 'true'
