@@ -8,6 +8,7 @@ import { toast } from './feedback';
 import { sfx } from '../audio';
 import { regionAt, type Region } from '../biome';
 import { QUESTS } from '../story';
+import { track } from '../analytics';
 import { heightAt, poisNear } from '../world';
 import { SPECIES, livesAt } from '../species';
 import { seen } from './explore';
@@ -37,6 +38,7 @@ export function opensAfter(r: Region): string | null {
 
 // ---------- the border ----------
 let lastOpen: { x: number; y: number } | null = null, warnedAt = -99, inside = 0;
+const blockedOnce = new Set<string>();
 /**
  * While sailing: the push (world units per second squared) that turns the boat back out of a closed region, or null
  * in open water. It points back the way the boat came in and grows the deeper it goes, so a boat is turned within a
@@ -50,6 +52,7 @@ export function lockPush(x: number, y: number, dt: number): { x: number; y: numb
     warnedAt = G.t;
     const r = regionAt(x, y);
     toast(`Rough water: ${r.name}. ${opensAfter(r)}`, 'bad'); sfx('slap', 0.6);
+    if (!blockedOnce.has(r.id)) { blockedOnce.add(r.id); track('region_blocked', { region: r.name, step: tier(r.id), story_i: storyAt() }); }
   }
   const dx = lastOpen.x - x, dy = lastOpen.y - y, d = Math.hypot(dx, dy) || 1, k = 120 + 260 * Math.min(1, inside);
   return { x: dx / d * k, y: dy / d * k };
@@ -67,6 +70,7 @@ export function tickRegions(): void {
   openTier = t;
   if (!up) return;                                                   // a different save loaded
   toast('New waters are open: sail out past the rough water', 'good'); sfx('fanfare', 0.6);
+  track('region_opened', { step: t, story_i: storyAt() });
   newWaters.at = G.t; newWaters.tier = t;
 }
 /** A short key for which regions are open: it changes whenever the chart's shading must (a step opens, a region is kept). */

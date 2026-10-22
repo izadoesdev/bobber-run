@@ -5,15 +5,12 @@
 // offshore, soft depth, hill shading and contour lines on land, floes in the far north. Pan and zoom cost nothing
 // but the draw; the result is copied into the 2D chart, which draws its marks on top.
 import { program, type Program } from '../gl/glutil';
-import { heightAt, claimableNear } from '../world';
-import { chartBands } from '../maptiles';
+import { sampleTile, N, NC, BANDS, BASE } from './chartsample';
 import { fogDirty, fogChunk, fogChunks } from '../game/explore';
 import { lockedAt, openKey } from '../game/regions';
 
 type GL = WebGL2RenderingContext;
-const N = 33, NC = 9, BANDS = 7;            // height samples per side, colour samples per side, colour bands
 const SLOTS = 1024, HCOLS = 32, CCOLS = 16;  // tile slots, and how they're laid out in the two atlases
-const BASE = 128;                           // world units per tile side at level 0 (samples every 4 units)
 const MAXL = 7;
 // the fog of war: one texel per 32-unit cell, 1024 x 1024 of them round the world's centre (+-16,384 units)
 const FOG_TEX = 1024, FOG_HALF = FOG_TEX * 32 / 2, FOG_CN = 32;
@@ -144,6 +141,8 @@ void main() {
 }`;
 
 interface Tile { slot: number; used: number }
+/** Tiles built so far, for tests and probes. */
+export const terrainStats = { tiles: 0, built: 0 };
 let gl: GL | null = null, glc: HTMLCanvasElement | null = null, prog: Program | null = null, failed = false;
 let hTex: WebGLTexture | null = null, cTex: WebGLTexture | null = null, fTex: WebGLTexture | null = null, vao: WebGLVertexArrayObject | null = null, inst: WebGLBuffer | null = null;
 const tiles = new Map<number, Tile>(), free: number[] = [];
@@ -196,45 +195,53 @@ function init(): boolean {
   }
 }
 
-// float to half float, for the R16F height atlas
-const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
-function half(v: number): number {
-  f32[0] = v;
-  const x = u32[0], s = (x >>> 16) & 0x8000, e = ((x >>> 23) & 0xff) - 112, m = x & 0x7fffff;
-  if (e <= 0) return s;
-  if (e >= 31) return s | 0x7c00;
-  return s | (e << 10) | (m >>> 13);
+// ---------- sampling the world, mostly off the main thread ----------
+// Tiles are sampled by a worker (chartworker.ts) and uploaded when they arrive; until then a coarser cached level
+// stands in. Without a worker they're sampled here, within the frame's budget.
+type Sample = { k: number; l: number; tx: number; ty: number; h: Uint16Array; c: Uint8Array };
+const pending = new Set<number>(), arrived: Sample[] = [], MAX_PENDING = 12;
+let worker: Worker | null | undefined;
+function getWorker(): Worker | null {
+  if (worker !== undefined) return worker;
+  try {
+    worker = new Worker(new URL('./chartworker.ts', import.meta.url), { type: 'module' });
+    worker.onmessage = (e: MessageEvent<Sample>) => { pending.delete(e.data.k); arrived.push(e.data); };
+    worker.onerror = () => { worker?.terminate(); worker = null; pending.clear(); };   // sample on the main thread instead
+  } catch { worker = null; }
+  return worker;
 }
-
-const hBuf = new Uint16Array(N * N), cBuf = new Uint8Array(NC * BANDS * NC * 4), bands = new Float32Array(BANDS * 3);
-/** Samples tile (l, tx, ty) of the world and uploads it into a free slot (the least recently drawn, if none is free). */
-function build(g: GL, l: number, tx: number, ty: number): Tile {
+/** Ask for tile (l, tx, ty): from the worker if there is one, else sampled now. True if it's there to draw now. */
+function request(g: GL, l: number, tx: number, ty: number, now: boolean): Tile | undefined {
+  const k = key(l, tx, ty), w = getWorker();
+  if (w) {
+    if (!pending.has(k) && pending.size < MAX_PENDING) { pending.add(k); w.postMessage({ k, l, tx, ty }); }
+    return undefined;
+  }
+  if (!now) return undefined;
+  const h = new Uint16Array(N * N), c = new Uint8Array(NC * BANDS * NC * 4);
+  sampleTile(l, tx, ty, h, c);
+  return place(g, { k, l, tx, ty, h, c });
+}
+/** Puts a sampled tile into a free slot (the least recently drawn, if none is free), marking closed regions. */
+function place(g: GL, t: Sample): Tile {
   let slot = free.pop();
   if (slot === undefined) {
     let oldK = -1, old: Tile | null = null;
-    for (const [k, t] of tiles) if (t.used < frame && (!old || t.used < old.used)) { old = t; oldK = k; }
+    for (const [k, e] of tiles) if (e.used < frame && (!old || e.used < old.used)) { old = e; oldK = k; }
     if (!old) { old = tiles.values().next().value!; oldK = tiles.keys().next().value!; }
     tiles.delete(oldK); slot = old.slot;
   }
-  const side = BASE << l, step = side / (N - 1), x0 = tx * side, y0 = ty * side;
-  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) hBuf[j * N + i] = half(heightAt(x0 + i * step, y0 + j * step));
-  const cstep = side / (NC - 1), islands = claimableNear(x0 + side / 2, y0 + side / 2, side * 0.75 + 460);
-  for (let j = 0; j < NC; j++) for (let i = 0; i < NC; i++) {
-    chartBands(x0 + i * cstep, y0 + j * cstep, islands, bands);
-    for (let b = 0; b < BANDS; b++) {
-      const o = (j * NC * BANDS + b * NC + i) * 4;
-      cBuf[o] = bands[b * 3] * 255; cBuf[o + 1] = bands[b * 3 + 1] * 255; cBuf[o + 2] = bands[b * 3 + 2] * 255; cBuf[o + 3] = 255;
-    }
-    if (lockedAt(x0 + i * cstep, y0 + j * cstep)) cBuf[(j * NC * BANDS + i) * 4 + 3] = 0;   // band 0's alpha: a closed region
-  }
+  const side = BASE << t.l, cstep = side / (NC - 1), x0 = t.tx * side, y0 = t.ty * side;
+  for (let j = 0; j < NC; j++) for (let i = 0; i < NC; i++) if (lockedAt(x0 + i * cstep, y0 + j * cstep)) t.c[(j * NC * BANDS + i) * 4 + 3] = 0;   // band 0's alpha: a closed region
   g.pixelStorei(g.UNPACK_ALIGNMENT, 1);
   g.bindTexture(g.TEXTURE_2D, hTex);
-  g.texSubImage2D(g.TEXTURE_2D, 0, (slot % HCOLS) * N, Math.floor(slot / HCOLS) * N, N, N, g.RED, g.HALF_FLOAT, hBuf);
+  g.texSubImage2D(g.TEXTURE_2D, 0, (slot % HCOLS) * N, Math.floor(slot / HCOLS) * N, N, N, g.RED, g.HALF_FLOAT, t.h);
   g.bindTexture(g.TEXTURE_2D, cTex);
-  g.texSubImage2D(g.TEXTURE_2D, 0, (slot % CCOLS) * NC * BANDS, Math.floor(slot / CCOLS) * NC, NC * BANDS, NC, g.RGBA, g.UNSIGNED_BYTE, cBuf);
-  const t = { slot, used: frame };
-  tiles.set(key(l, tx, ty), t);
-  return t;
+  g.texSubImage2D(g.TEXTURE_2D, 0, (slot % CCOLS) * NC * BANDS, Math.floor(slot / CCOLS) * NC, NC * BANDS, NC, g.RGBA, g.UNSIGNED_BYTE, t.c);
+  const e = { slot, used: frame };
+  tiles.set(t.k, e);
+  terrainStats.built++;
+  return e;
 }
 
 // the shader compiles while the game idles after loading, not on the chart's first open
@@ -255,8 +262,6 @@ function uploadFog(g: GL): void {
   fogDirty.clear();
 }
 let instData = new Float32Array(10 * 256), builtFor = '';
-/** Tiles built so far, for tests and probes. */
-export const terrainStats = { tiles: 0, built: 0 };
 
 /**
  * Draws the terrain of the view whose top-left is world (wx0, wy0), `wpp` world units per canvas pixel, into `ctx`.
@@ -272,6 +277,7 @@ export function drawTerrain(ctx: CanvasRenderingContext2D, w: number, h: number,
     tiles.clear();
   }
   frame++;
+  for (const t of arrived.splice(0)) if (!tiles.has(t.k)) place(g, t);
   if (glc.width < w || glc.height < h) { glc.width = Math.max(glc.width, w); glc.height = Math.max(glc.height, h); }
   // the level whose samples fall 2 to 4 canvas pixels apart
   const L = Math.max(0, Math.min(MAXL, Math.floor(Math.log2(Math.max(1e-3, wpp)))));
@@ -283,12 +289,12 @@ export function drawTerrain(ctx: CanvasRenderingContext2D, w: number, h: number,
   // cover the view at once with a coarse level (few, quick tiles), then sharpen nearest-first while the budget lasts
   const C = Math.min(MAXL, L + 2), cside = BASE << C;
   for (let ty = Math.floor(wy0 / cside); ty <= Math.floor((wy0 + h * wpp) / cside); ty++) for (let tx = Math.floor(wx0 / cside); tx <= Math.floor((wx0 + w * wpp) / cside); tx++)
-    if (!tiles.has(key(C, tx, ty))) build(g, C, tx, ty);
+    if (!tiles.has(key(C, tx, ty))) request(g, C, tx, ty, performance.now() - t0 < budget);
   let n = 0;
   if (instData.length < want.length * 10) instData = new Float32Array(want.length * 10 * 2);
   for (const [tx, ty] of want) {
     let t = tiles.get(key(L, tx, ty));
-    if (!t && performance.now() - t0 < budget) { t = build(g, L, tx, ty); terrainStats.built++; }
+    if (!t) t = request(g, L, tx, ty, performance.now() - t0 < budget);
     // the tile itself, or the part of the nearest cached ancestor that covers it
     let l = L, ax = tx, ay = ty, u0 = 0, v0 = 0, span = 1;
     while (!t && l < MAXL) {
