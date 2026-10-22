@@ -1,0 +1,68 @@
+# Production deploys: once CI has passed on a push to main, put that commit's image (built by image.yml) live on Unkey
+# and wait until bobber.databuddy.cc serves it. A red build never deploys. Needs the repo secret UNKEY_API_KEY, a
+# root key limited to deployments for the bobber-run project; without it the job only leaves a notice.
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    # only CI runs from pushes to this repo's main (not pull requests, not forks)
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}:${{ github.event.workflow_run.head_sha }}
+      SITE: https://bobber.databuddy.cc
+      UNKEY_API_KEY: ${{ secrets.UNKEY_API_KEY }}
+    steps:
+      - name: Check the deploy key is set
+        id: key
+        run: |
+          if [ -z "$UNKEY_API_KEY" ]; then echo "::notice::UNKEY_API_KEY is not set, so nothing was deployed"; echo "ok=false" >> "$GITHUB_OUTPUT"; else echo "ok=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Wait for the image
+        if: steps.key.outputs.ok == 'true'
+        run: |
+          # image.yml builds it in parallel with CI and is usually done first
+          for i in $(seq 1 60); do docker manifest inspect "$IMAGE" > /dev/null 2>&1 && exit 0; sleep 10; done
+          echo "::error::$IMAGE never appeared"; exit 1
+
+      - name: Deploy to Unkey
+        if: steps.key.outputs.ok == 'true'
+        run: |
+          before=$(curl -fsSI "$SITE/" | grep -i '^last-modified:' | cut -d' ' -f2- | tr -d '\r')
+          body=$(jq -nc --arg image "$IMAGE" '{project: "bobber-run", app: "web", environment: "production", oci: {image: $image}}')
+          res=$(curl -sS -X POST https://api.unkey.com/v2/deployments.createDeployment -H "Authorization: Bearer $UNKEY_API_KEY" -H 'Content-Type: application/json' -d "$body")
+          id=$(jq -r '.data.deploymentId // empty' <<< "$res")
+          [ -n "$id" ] || { echo "::error::Unkey refused the deployment: $(jq -c '.error // .' <<< "$res")"; exit 1; }
+          echo "deployment $id for $IMAGE"
+          for i in $(seq 1 60); do
+            res=$(curl -sS -X POST https://api.unkey.com/v2/deployments.getDeployment -H "Authorization: Bearer $UNKEY_API_KEY" -H 'Content-Type: application/json' -d "{\"deploymentId\":\"$id\"}")
+            status=$(jq -r '.data.status // empty' <<< "$res")
+            [ "$status" = ready ] && break
+            [ "$status" = failed ] && { echo "::error::deployment failed: $(jq -c '.data.error // .error' <<< "$res")"; exit 1; }
+            sleep 5
+          done
+          [ "$status" = ready ] || { echo "::error::deployment $id still '$status' after 5 minutes"; exit 1; }
+          # every image build stamps new files, so the page's last-modified moves once the new build is serving
+          for i in $(seq 1 36); do
+            now=$(curl -fsSI "$SITE/" | grep -i '^last-modified:' | cut -d' ' -f2- | tr -d '\r')
+            if [ -n "$now" ] && [ "$now" != "$before" ] && curl -fsS "$SITE/health" > /dev/null; then echo "live: $SITE last-modified $now"; exit 0; fi
+            sleep 5
+          done
+          echo "::error::$SITE still serves the build from $before"; exit 1
