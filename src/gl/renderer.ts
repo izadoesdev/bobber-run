@@ -760,9 +760,10 @@ const LEGEND_GLOW: Record<string, readonly number[]> = { crystalCave: [0.45, 0.9
   wreckGraveyard: [0.5, 1.0, 0.7], whaleFall: [0.5, 0.8, 1.0], iceboundShip: [0.75, 0.9, 1.0] };
 
 // ---------- hotspot signs: how players find fish ----------
-// Gulls wheel and dive over bait, a dark knot of bait flickers silver under the surface, predators boil the water
-// where they feed, and a golden fish puts a faint shimmer on the spot. Everything scales with how far the spot has
-// surfaced, and is sized to read from a zoomed-out view.
+// Quiet signs that say "fish here": a couple of gulls resting by a bait ball, a dark knot of bait that now and then
+// flicks silver, slow rings, the odd swirl where a predator feeds, and a faint shimmer for a golden fish. Diving gulls,
+// boils and spray belong to a real feeding frenzy only. Everything scales with how far the spot has surfaced; from a
+// zoomed-out view a few gulls circle high over the spot so it can still be found.
 const signs: Hotspot[] = [];
 // how far out the view is zoomed, for the signs: 1 up close (>= ~3 screen pixels per world unit) .. 3.5 at the widest;
 // farK runs 0..1 over the same range. Signs grow and the far-only cues fade in with it, so close up they stay subtle.
@@ -774,21 +775,25 @@ const spotSeed = (h: Hotspot): number => frac(h.x * 0.0137 + h.y * 0.0071);
 /** where the bait ball sits: on the bait school, else the spot's centre */
 const ballAt = (h: Hotspot, out: number[]): number[] => { const s = h.schools[0]; out[0] = s ? s.x : h.x; out[1] = s ? s.y : h.y; return out; };
 const ball = [0, 0];
-// a predator's boil: one burst at a time, somewhere new in the spot every BOIL_S seconds
-const BOIL_S = 1.1, boil = [0, 0, 0];
+// a predator feeding: now and then a small swirl somewhere in the spot (one every SWIRL_S or so, lasting a moment)
+const SWIRL_S = 8, SWIRL_ON = 0.16, boil = [0, 0, 0];
+/** where this spot's current swirl is, and how far through it (out[2] 0..1), or -1 between swirls */
 function boilAt(h: Hotspot, out: number[]): number[] {
-  const c = G.t / BOIL_S + spotSeed(h), n = Math.floor(c);
-  out[0] = h.x + (hash01(n, 1, h.x | 0) - 0.5) * Math.max(10, h.r); out[1] = h.y + (hash01(n, 2, h.y | 0) - 0.5) * Math.max(8, h.r * 0.7); out[2] = c - n;
+  const c = G.t / (SWIRL_S * (0.8 + spotSeed(h) * 0.5)) + spotSeed(h), n = Math.floor(c), f = c - n;
+  out[0] = h.x + (hash01(n, 1, h.x | 0) - 0.5) * Math.max(10, h.r); out[1] = h.y + (hash01(n, 2, h.y | 0) - 0.5) * Math.max(8, h.r * 0.7);
+  out[2] = f < SWIRL_ON ? f / SWIRL_ON : -1;
   return out;
 }
 function drawGulls(h: Hotspot): void {
-  const n = h.bait ? 6 : h.predator ? 3 : 0, up = smooth01((h.surf - 0.15) / 0.6), seed = spotSeed(h) * 6.283;
-  if (!n || up <= 0.01) return;
-  for (let k = 0; k < n; k++) {
-    const dir = k % 2 ? 1 : -1, a = G.t * (0.55 + k * 0.09) * dir + k * 1.9 + seed, r = (10 + h.r * 0.3 + (k % 3) * 6) * (1 + farK * 0.6);
-    const dv = frac(G.t / (3.2 + k * 0.7) + k * 0.31 + seed), dive = dv < 0.18 ? Math.sin(Math.PI * dv / 0.18) : 0;   // now and then one folds and drops
-    const z = (15 + (k % 3) * 5) * (1 - dive * 0.85) * (1 + farK * 0.5) + (1 - up) * 45, rr = r * (1 - dive * 0.7);   // they arrive from on high as the spot surfaces
-    inst(MS.gullMesh(dive > 0.2 ? 0 : Math.floor(G.t * 5 + k * 0.7) % 2), h.x + Math.cos(a) * rr, h.y + Math.sin(a) * rr * 0.6, a + dir * Math.PI / 2, 1.05 * Math.pow(signFar, 0.8), z, -dive * 1.1);   // a bigger flock from afar
+  const up = smooth01((h.surf - 0.15) / 0.6), seed = spotSeed(h) * 6.283;
+  if (!h.bait || up <= 0.01) return;
+  for (let k = 0; k < 2; k++) {                          // a couple resting on the water by the bait, bobbing, drifting a little
+    const a = seed + k * 2.6 + Math.sin(G.t * 0.07 + k) * 0.6, r = 8 + h.r * 0.25 + k * 5;
+    inst(MS.gullMesh(0), h.x + Math.cos(a) * r, h.y + Math.sin(a) * r * 0.6, a + 1.2, 0.95, -0.2 + Math.sin(G.t * 1.6 + k * 2) * 0.12 + (1 - up) * 40);
+  }
+  for (let k = 0, far = Math.round(farK * 3); k < far; k++) {   // from afar, a few gliding slowly high overhead (never diving)
+    const dir = k % 2 ? 1 : -1, a = G.t * (0.22 + k * 0.04) * dir + k * 2.1 + seed, r = (14 + h.r * 0.4) * (1 + farK * 0.4);
+    inst(MS.gullMesh(0), h.x + Math.cos(a) * r, h.y + Math.sin(a) * r * 0.6, a + dir * Math.PI / 2, 1.05 * Math.pow(signFar, 0.8), 24 + k * 5 + (1 - up) * 45);
   }
 }
 function signFoam(): void {
@@ -803,17 +808,16 @@ function signFoam(): void {
     }
     if (h.bait) {                                         // nervous water over the ball: rings swelling out, mostly ripple
       ballAt(h, ball);
-      for (let i = 0; i < 2; i++) { const ph = frac(G.t * 0.32 + i / 2 + seed); foam(ball[0], ball[1], 12 + ph * 30, (1 - ph) * 0.9 * k, 1, 0, 0.75, 0.55); }
-      for (let i = 0; i < 4; i++) {                       // and the surface shivers with little rings
-        const c = G.t * 1.3 + i / 4 + seed, n = Math.floor(c), ph = c - n;
+      { const ph = frac(G.t * 0.16 + seed); foam(ball[0], ball[1], 12 + ph * 26, (1 - ph) * 0.6 * k, 1, 0, 0.75, 0.55); }
+      for (let i = 0; i < 2; i++) {                       // and the surface shivers with the odd little ring
+        const c = G.t * 0.55 + i / 2 + seed, n = Math.floor(c), ph = c - n;
         foam(ball[0] + (hash01(n, i, 21) - 0.5) * 14, ball[1] + (hash01(n, i, 22) - 0.5) * 9, 3 + ph * 6, (1 - ph) * 0.8 * k, 1, 0, 1, 0.15);
       }
     }
-    if (h.predator) {                                     // the boil: a burst of white water and a ring
-      boilAt(h, boil);
+    if (h.predator && boilAt(h, boil)[2] >= 0) {          // the swirl: a small knot of white water and a ring spreading from it
       const ph = boil[2];
-      foam(boil[0], boil[1], 6 + ph * 10, (1 - ph) * 1.3 * k, 0, 0, 1, 1);
-      foam(boil[0], boil[1], 9 + ph * 22, (1 - ph) * 0.9 * k, 1, 0, 1, 0.6);
+      foam(boil[0], boil[1], 4 + ph * 5, (1 - ph) * 0.7 * k, 0, 0, 1, 1);
+      foam(boil[0], boil[1], 6 + ph * 14, (1 - ph) * 0.6 * k, 1, 0, 1, 0.6);
     }
   }
 }
@@ -841,16 +845,8 @@ function signPoints(glow: boolean): void {
         const a = G.t * (1.3 + (i % 3) * 0.45) * (i % 2 ? 1 : -1) + i * 2.4, r = 1.5 + (i % 5) * 1.4 + Math.sin(G.t * 2.1 + i) * 0.8;
         point(ball[0] + Math.cos(a) * r, ball[1] + Math.sin(a) * r * 0.7, -0.6, (2.6 + (i % 3) * 0.9) * Math.sqrt(signFar), 0.04, 0.09, 0.14, 0.55 * k);
       }
-      for (let i = 0; i < 4; i++) if (hash01(q, i, sd) < 0.45)   // silver flicks as the fish turn
+      for (let i = 0; i < 4; i++) if (hash01(q, i, sd) < 0.12)   // the odd silver flick as a fish turns
         point(ball[0] + (hash01(q, i, sd + 3) - 0.5) * 11, ball[1] + (hash01(q, i, sd + 4) - 0.5) * 8, 0.1, 1.1, 1.7, 1.8, 1.9, 0.95 * k);
-    }
-    if (h.predator) {                                     // spray thrown up by the boil
-      boilAt(h, boil);
-      const ph = boil[2], n = Math.floor(G.t / BOIL_S);
-      for (let i = 0; i < 6; i++) {
-        const a = i / 6 * 6.283 + hash01(n, i, 7), r = 1 + ph * (3 + hash01(n, i, 8) * 3);
-        point(boil[0] + Math.cos(a) * r, boil[1] + Math.sin(a) * r * 0.6, Math.sin(Math.PI * Math.min(1, ph * 1.4)) * (2.5 + hash01(n, i, 9) * 3), 1.3, 1.3, 1.35, 1.4, (1 - ph) * k);
-      }
     }
     if (h.rare) for (let i = 0; i < 3; i++) {             // a faint gold shimmer on the water
       const qq = q + i * 13;

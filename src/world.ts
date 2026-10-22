@@ -469,6 +469,8 @@ export interface Hotspot {
 }
 interface HotSlot { k: number; period: number; phase: number; duty: number; fixed: boolean; n: number; up: boolean; spot: Hotspot }
 const HC = 420, HSLOTS = 3, SURF_S = 10, HOME_R = 300, RARE_SPOT = 0.1, CLUSTER = 4;
+// round Alderhaven the sea stays calm: past the one cluster that is always up, only one slot in a cell surfaces, rarely
+const CALM_R = 1150, CALM_DUTY = 0.12;
 const BAIT_FISH = new Set([SP.anchovy, SP.sardine, SP.herring]);
 const hotCells = new Map<number, HotSlot[]>();
 let hotClock = 0;
@@ -523,12 +525,14 @@ function hotCell(i: number, j: number): HotSlot[] {
   const k = key(i, j);
   let c = hotCells.get(k);
   if (c) return c;
-  const home = Math.hypot((i + 0.5) * HC - HOME_ISLAND.x, (j + 0.5) * HC - HOME_ISLAND.y) < HOME_R;
+  const dHome = Math.hypot((i + 0.5) * HC - HOME_ISLAND.x, (j + 0.5) * HC - HOME_ISLAND.y), home = dHome < HOME_R, calm = dHome < CALM_R;
   c = [];
   for (let q = 0; q < HSLOTS; q++) {
     const period = 420 + hash01(i * 5 + q, j, 61) * 300;   // seven to twelve minutes a cycle
     const spot: Hotspot = { id: `h:${i},${j},${q}`, x: 0, y: 0, r: 0, surf: 0, bait: false, predator: false, rare: false, schools: [] };
-    c.push({ k: q, period, phase: q / HSLOTS + hash01(i, j * 5 + q, 62) * 0.2, duty: 0.55, fixed: home && q === 0, n: -1, up: false, spot });
+    const duty = !calm ? 0.55 : q === 0 ? CALM_DUTY : 0;
+    const phase = calm ? hash01(i, j, 63) : q / HSLOTS + hash01(i, j * 5 + q, 62) * 0.2;   // calm cells out of step, so they don't all surface at the start
+    c.push({ k: q, period, phase, duty, fixed: home && q === 0, n: -1, up: false, spot });
   }
   hotCells.set(k, c);
   for (const sl of c) stepSlot(i, j, sl);
