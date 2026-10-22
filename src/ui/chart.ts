@@ -7,7 +7,7 @@ import { livesAt } from '../species';
 import { drawTerrain } from './chartgl';
 import { seen as isSeen, revealPlace } from '../game/explore';
 import { regionAt, regionBorders, type Region, type RegionBorder } from '../biome';
-import { regionOpen, regionOpenId, opensAfter, regionAbout } from '../game/regions';
+import { regionOpen, regionOpenId, opensAfter, regionAbout, lockedAt } from '../game/regions';
 import { ONLINE } from '../online';
 import { ISLANDS, watchExtra, islandPrice, islandColour } from '../islands';
 import type { Point, Poi } from '../types';
@@ -33,6 +33,8 @@ export interface ChartOptions {
   zone?: number | null;
   /** the player's waypoint: its water route from the boat as a dashed line, and a marker (or a rim arrow on the minimap) */
   waypoint?: Point | null;
+  /** a box (canvas px) the region names keep out of: the region card sits there */
+  avoid?: { x0: number; y0: number; x1: number; y1: number } | null;
   /** mark unclaimed islands too (the full chart) */
   islands?: boolean;
 }
@@ -86,7 +88,7 @@ export function drawChart(ctx: Ctx, w: number, h: number, cx: number, cy: number
     drawZone(ctx, w, h, wx0, wy0, wpp, opt.zone, S, u, () => performance.now() - tz < slice);
   }
   if (opt.grid) drawGrid(ctx, w, h, wx0, wy0, wpp, S, u);
-  if (opt.labels) { drawRegionBorders(ctx, w, h, wx0, wy0, wpp, S, u); drawRegionNames(ctx, w, h, wx0, wy0, wpp, u); }
+  if (opt.labels) { drawRegionBorders(ctx, w, h, wx0, wy0, wpp, S, u); drawRegionNames(ctx, w, h, wx0, wy0, wpp, u, opt.avoid ?? null); }
 
   const son = sonarLvl();                  // 1 shows schools, 2 colours them by species, 3 stars legends
   const showUncharted = (opt.sextant ?? 0) >= 2;
@@ -242,7 +244,7 @@ function drawRegionBorders(ctx: Ctx, w: number, h: number, wx0: number, wy0: num
  * The regions' names, engraved across the water: each at the middle of the part of it in view, so the one you're in
  * is always named. A region not open yet says what opens it, under a padlock.
  */
-function drawRegionNames(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp: number, u: number): void {
+function drawRegionNames(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp: number, u: number, avoid: ChartOptions['avoid']): void {
   const seen = new Map<string, { r: Region; x: number; y: number; n: number }>(), NX = 14, NY = 9;
   for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
     const px = (i + 0.5) / NX * w, py = (j + 0.5) / NY * h, r = regionAt(wx0 + px * wpp, wy0 + py * wpp);
@@ -253,7 +255,9 @@ function drawRegionNames(ctx: Ctx, w: number, h: number, wx0: number, wy0: numbe
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (const { r, x: sx, y: sy, n } of seen.values()) {
     if (n < 4) continue;                                     // a sliver at the edge: named when you look its way
-    const x = sx / n, y = sy / n, open = regionOpen(r), name = r.name.toUpperCase().split('').join('\u200A');
+    let x = sx / n, y = sy / n;
+    if (avoid && x > avoid.x0 - 120 * u && x < avoid.x1 + 120 * u && y > avoid.y0 - 40 * u && y < avoid.y1 + 30 * u) { x = avoid.x1 + 130 * u; }   // out from under the card
+    const open = regionOpen(r), name = r.name.toUpperCase().split('').join('\u200A');
     ctx.font = `${Math.round(26 * u)}px Jersey, monospace`;
     ctx.lineWidth = 5 * u; ctx.strokeStyle = 'rgba(244,234,210,0.55)'; ctx.strokeText(name, x, y);
     ctx.fillStyle = open ? 'rgba(27,42,51,0.62)' : 'rgba(27,42,51,0.8)'; ctx.fillText(name, x, y);
@@ -580,7 +584,7 @@ export function nearestUncharted(): { p: Poi; d: number } | null {
   const b = G.boat;
   let best: Poi | null = null, bd = 1e9;
   for (const p of poisNear(b.x, b.y, 2600)) {
-    if (G.found.has(p.id)) continue;
+    if (G.found.has(p.id) || lockedAt(p.x, p.y)) continue;
     const d = Math.hypot(p.x - b.x, p.y - b.y);
     if (d < bd) { bd = d; best = p; }
   }

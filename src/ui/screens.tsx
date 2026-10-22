@@ -43,7 +43,10 @@ export function Chart() {
   const m = G.map, base = m.zoom === 1 ? 2.2 : 4.6;           // world units per CSS pixel
   const step = guide(), on = guideOn(), target = on ? step.at ?? null : null;
   const draw: DrawFn = (ctx, w, h, dpr) => {
-    drawChart(ctx, w, h, G.boat.x + m.x, G.boat.y + m.y, base / dpr, { dpr, labels: true, grid: true, budget: 10, sextant: G.up.sextant, target, waypoint: G.waypoint, islands: true, zone: m.zoneSp });
+    // the region card, in canvas pixels, so region names don't sit under it
+    const card = document.querySelector('.region-card')?.getBoundingClientRect(), cv = ctx.canvas.getBoundingClientRect();
+    const avoid = card && card.width ? { x0: (card.left - cv.left) * dpr, y0: (card.top - cv.top) * dpr, x1: (card.right - cv.left) * dpr, y1: (card.bottom - cv.top) * dpr } : null;
+    drawChart(ctx, w, h, G.boat.x + m.x, G.boat.y + m.y, base / dpr, { dpr, labels: true, grid: true, budget: 10, sextant: G.up.sextant, target, waypoint: G.waypoint, islands: true, zone: m.zoneSp, avoid });
     compassRose(ctx, w - 34 * dpr, 42 * dpr, 20 * dpr);
   };
   if (tip && performance.now() > tip.until) tip = null;
@@ -258,6 +261,8 @@ function RegionCard({ at }: { at: { x: number; y: number } }) {
  * distance that counts as arriving.
  */
 function SailToSite({ id, r: reach }: { id: string; r: number }) {
+  const site = regionSite(id), shut = site && opensAfter(regionAt(site.x, site.y));
+  if (shut) return <span class="muted small" title="Rough water turns boats back until then">{shut}</span>;   // in a region that isn't open yet
   const go = () => {
     const s = regionSite(id);
     if (!s) return;

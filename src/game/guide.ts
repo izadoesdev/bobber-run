@@ -3,6 +3,7 @@
 // Also the first-session tips: a few gentle notes at the right moments, each shown once.
 import { SPECIES, SP, UPGRADES, PROJECTS, BOATS } from '../econ';
 import { poisNear, schoolsNear, homePort, LAIR } from '../world';
+import { lockedAt } from './regions';
 import { SET } from '../prefs';
 import { currentQuest, type Quest } from '../story';
 import type { BoatDef, Poi, Point, Port, Project, ProjectId, School, UpgradeKey } from '../types';
@@ -31,16 +32,17 @@ export interface Step {
 // ---------- places ----------
 const chartedPorts = (): Port[] => [...G.found].filter(id => id.startsWith('port:')).map(portById);
 /** The nearest charted port. */
-const nearestPort = (): Port => nearest(chartedPorts()) || homePort();
+const nearestPort = (): Port => nearest(chartedPorts().filter(p => !lockedAt(p.x, p.y))) || homePort();
 const SEARCH = 2600;
 /** The nearest landmark within SEARCH that passes `ok`. */
-const poiNear = (ok: (p: Poi) => boolean): Poi | null => nearest(poisNear(G.boat.x, G.boat.y, SEARCH), ok);
+// the guide never points into a region that isn't open yet: rough water would turn the boat back
+const poiNear = (ok: (p: Poi) => boolean): Poi | null => nearest(poisNear(G.boat.x, G.boat.y, SEARCH), p => ok(p) && !lockedAt(p.x, p.y));
 const full = (): boolean => G.hold.length >= cap();
 const dockNear = (): number => 30 + boatDef().L;
 const canCatch = (s: School): boolean => !s.boss && canLand(s.sp);
 /** The nearest school that will bite now and that your rod can land, optionally of a kind. */
 function nearestSchool(ok: (s: School) => boolean = () => true, rad = 700): School | null {
-  return nearest(schoolsNear(G.boat.x, G.boat.y, rad), s => canCatch(s) && schoolActive(s) && ok(s));
+  return nearest(schoolsNear(G.boat.x, G.boat.y, rad), s => canCatch(s) && schoolActive(s) && !lockedAt(s.x, s.y) && ok(s));
 }
 
 // ---------- steps ----------
