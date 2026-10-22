@@ -10,7 +10,8 @@ import { NET, EMOTES, HAD_ACCOUNT_KEY, account, deleteAccount, onlineCount, sign
 import { voyageStarted } from '../telemetry';
 import { PEOPLE, currentQuest } from '../story';
 import type { NetForm, Talk as TalkState } from '../types';
-import { Cell, Hint, Icon, Key, byPointer, keyLabel, forTouch } from './parts';
+import { Cell, Hint, Key, byPointer, keyLabel, forTouch } from './parts';
+import { Face } from './faces';
 import { track } from '../analytics';
 import { money } from '../config';
 
@@ -291,7 +292,7 @@ export function Talk({ t }: { t: TalkState }) {
   return (
     <div class="talk-wrap" onClick={() => press(' ')}>
       <div class="talk panel rivets">
-        <div class="portrait"><Icon k={who} size="xl" /></div>
+        <div class="portrait"><Face who={who} name={person.name} role={person.role} size="l" talking line={text} /></div>
         <div class="grow">
           <div class="row"><span class="title gold">{person.name}</span><span class="muted small">{person.role}</span></div>
           <p class="line">{forTouch(text)}</p>

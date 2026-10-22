@@ -6,6 +6,8 @@ test('a story pack opens, speaks while you sail, and shows in the journal', asyn
   await sail(page);
   await page.evaluate(() => { const { G } = window.BR; G.talk = null; G.story = { i: 99, base: { ...G.stats }, shown: true }; G.regionsSeen.push('volcanic'); });
   await expect(page.locator('.speech')).toContainText('Oda', { timeout: 15_000 });
+  await expect(page.locator('.speech .face img').first()).toHaveJSProperty('complete', true);   // a portrait, not an initial
+  expect(await page.locator('.speech .face img').first().evaluate(i => (i as HTMLImageElement).naturalWidth)).toBeGreaterThan(10);
   expect(await page.evaluate(() => window.BR.G.mode)).toBe('play');
   await page.evaluate(() => { const { G } = window.BR; G.journalBack = 'play'; G.mode = 'journal'; });
   await expect(page.locator('.journal-list')).toContainText('The Ember Isles', { timeout: 15_000 });   // a screen switch waits for the next frame

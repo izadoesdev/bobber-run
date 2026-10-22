@@ -517,5 +517,15 @@ html.touch #ui .speech { bottom: auto; top: 12%; }   /* phones are short: up whe
 .head .perks { display: inline-flex; align-items: center; gap: 0.35em; font-size: var(--fs-s); margin-left: auto; }
 .card .title .stars { color: var(--gold); font-size: 0.8em; } .card .title .stars .off { opacity: 0.25; }
 .bait-tag { display: inline-flex; align-items: center; gap: 0.7em; margin-left: 0.6em; } .bait-tag > span { display: inline-flex; align-items: center; gap: 0.25em; } .bait-tag .key { font-size: 0.85em; }
-.speech-initial { flex: none; width: 2.2em; height: 2.2em; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: #7a5530; color: #fff6dc; font-family: var(--font-head); font-size: 1.1em; box-shadow: 0 0 0 0.12em #e2b94a; }   /* story-pack people have no portrait yet */
+/* portraits (faces.tsx): a bust in a gold-rimmed medallion of its own colour; it blinks now and then, and talks while a line is new */
+.face { position: relative; flex: none; display: inline-block; width: 2.6em; height: 2.6em; border-radius: 50%; overflow: hidden; background: radial-gradient(circle at 50% 30%, hsl(var(--hue) 42% 58%), hsl(var(--hue) 38% 30%) 75%); box-shadow: inset 0 -0.3em 0.5em rgba(0,0,0,0.25), 0 0 0 0.12em #e2b94a, 0 0 0 0.24em #2a1f17; }
+.face img { position: absolute; left: 50%; bottom: -4%; width: 84%; transform: translateX(-50%); image-rendering: pixelated; }
+.face .blink { opacity: 0; animation: face-blink 4.6s steps(1) infinite; }
+.face .mouth { opacity: 0; animation: face-talk 0.28s steps(1) 7; }
+.face-s { width: 2.2em; height: 2.2em; }
+.face-l { width: 100%; height: 100%; border-radius: var(--r); }
+.d-icon .face-l { width: 6em; height: 6em; border-radius: 50%; }
+@keyframes face-blink { 0% { opacity: 0; } 95% { opacity: 1; } 98% { opacity: 0; } }
+@keyframes face-talk { 0% { opacity: 1; } 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .face .blink, .face .mouth { animation: none; } }
 .stamp.grade { margin-left: 0.4em; } .stamp.grade.g1 { color: #c08a5a; border-color: #c08a5a; } .stamp.grade.g2 { color: #b8c0c6; border-color: #b8c0c6; } .stamp.grade.g3 { color: var(--gold); border-color: var(--gold); }   /* bronze, silver, gold */

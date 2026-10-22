@@ -127,18 +127,18 @@ export function talkNext(skip = false): void {
 let said: { lines: TalkLine[]; at: number } | null = null;
 const LINE_S = 7;
 // lines from the content packs (src/content) are said the same way, after anything the main story is saying
-let asides: { name: string; text: string }[] = [], asideAt = 0;
+let asides: { name: string; role?: string; text: string }[] = [], asideAt = 0;
 /** Queue story-pack lines to be said one by one while you sail. */
-export function sayAside(lines: { name: string; text: string }[]): void {
+export function sayAside(lines: { name: string; role?: string; text: string }[]): void {
   if (!asides.length) asideAt = G.t;
   asides.push(...lines);
 }
 /** The line being said without pausing, if any: the main story's first, then the packs'. `who` is set for the main cast. */
-export function speech(): { who?: Speaker; name: string; text: string } | null {
+export function speech(): { who?: Speaker; name: string; role?: string; text: string } | null {
   if (said) {
     const i = Math.floor((G.t - said.at) / LINE_S);
     if (i >= said.lines.length) said = null;
-    else { if (G.mode !== 'play') return null; const [who, text] = said.lines[i]; return { who, name: PEOPLE[who].name, text }; }
+    else { if (G.mode !== 'play') return null; const [who, text] = said.lines[i]; return { who, name: PEOPLE[who].name, role: PEOPLE[who].role, text }; }
   }
   if (!asides.length || G.mode !== 'play') return null;
   const i = Math.floor((G.t - asideAt) / LINE_S);

@@ -14,6 +14,7 @@ import { waypointRoute } from '../waypoint';
 import { coursePath } from '../game/autopilot';
 import { BIOME_NAME, biomeAt, type BiomeId } from '../biome';
 import { IslandSigns } from './island';
+import { Face } from './faces';
 import { BaitTag, Fish, Icon, Key, edgeFade, forTouch, keyed, viewPct } from './parts';
 
 /** Everything drawn over the sea while sailing. `wp` is the player's waypoint, which takes the arrow from the guide. */
@@ -38,7 +39,7 @@ function Speech() {
   if (!s || G.fish || G.card || G.t - voyage.startedAt < 3.6) return null;   // after the welcome title has faded
   return (
     <div class="speech chip" role="status" aria-live="polite">
-      {s.who ? <Icon k={s.who} size="l" /> : <span class="speech-initial" aria-hidden="true">{s.name[0]}</span>}<span><b class="gold">{s.name}</b> {forTouch(s.text)}</span>
+      <Face who={s.who} name={s.name} role={s.role ?? ''} talking line={s.text} /><span><b class="gold">{s.name}</b> {forTouch(s.text)}</span>
     </div>
   );
 }

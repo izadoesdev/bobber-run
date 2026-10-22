@@ -14,6 +14,7 @@ import { guide, guideOn, stepLine } from '../game/guide';
 import { chartPerks } from '../game/rules';
 import { GRADES, grade } from '../game/mastery';
 import { packJournal } from '../content/engine';
+import { Face } from './faces';
 import type { UpgradeKey } from '../types';
 import { drawChart, compassRose, zoneKnown, chartAt, drawn, type Legend } from './chart';
 import { Canvas, Cell, Fish, Hint, HullStat, Icon, Key, Pips, Stat, boatPreview, type DrawFn } from './parts';
@@ -222,7 +223,7 @@ function Stories() {
     <div>
       <div class="list-head caps">Stories</div>
       {packs.map(({ pack, quest, have, want }) => (
-        <Item k="map" name={pack.name} sub={quest ? `${quest.title}: ${quest.goal}${quest.hint ? `. ${quest.hint}` : ''}` : 'Done'}>
+        <Item k="map" face={pack.characters.find(c => c.id === quest?.by) ?? pack.characters[0]} name={pack.name} sub={quest ? `${quest.title}: ${quest.goal}${quest.hint ? `. ${quest.hint}` : ''}` : 'Done'}>
           {quest && 'site' in quest.obj && !have && <SailToSite id={quest.obj.site} r={quest.obj.r ?? 90} />}
           {quest ? <span class="num">{have}/{want}</span> : <Icon k="star" size="s" />}
         </Item>
@@ -273,8 +274,8 @@ function Variants({ sp, got }: { sp: number; got: readonly string[] }) {
 }
 const VARIANT_IDS = Object.keys(VARIANTS) as VariantId[];
 /** A non-interactive list row: icon, name over a line of detail, then whatever goes on the right. */
-const Item = ({ k, name, sub, cls = '', children }: { k: string; name: string; sub: string; cls?: string; children?: ComponentChildren }) =>
-  <div class={'item static' + cls}><Icon k={k} /><div class="grow"><div>{name}</div><div class="sub">{sub}</div></div>{children}</div>;
+const Item = ({ k, face, name, sub, cls = '', children }: { k: string; face?: { name: string; role: string }; name: string; sub: string; cls?: string; children?: ComponentChildren }) =>
+  <div class={'item static' + cls}>{face ? <Face name={face.name} role={face.role} size="s" /> : <Icon k={k} />}<div class="grow"><div>{name}</div><div class="sub">{sub}</div></div>{children}</div>;
 // a golden fish (always a trophy too) gets a small gold coin badge in place of the trophy star
 const GOLD_DOT = { display: 'inline-block', width: '0.75em', height: '0.75em', borderRadius: '50%', background: 'radial-gradient(circle at 35% 35%, #fff6d6, #f0cf6a 45%, #b0832a)', boxShadow: '0 0 0 0.1em #1b2a33', verticalAlign: 'middle' } as const;
 const BAITS = ['shrimp', 'glow', 'chum'] as const;
@@ -365,7 +366,7 @@ export function Journal() {
               <div>
                 <div class="list-head caps">Chapter {ci + 1}: {c}</div>
                 {qs.filter(([, i]) => i <= st.i).map(([q, i]) => (
-                  <Item cls={i === st.i ? ' sel' : ''} k={q.by} name={q.title} sub={i < st.i ? 'Done' : q.goal}>
+                  <Item cls={i === st.i ? ' sel' : ''} k={q.by} face={PEOPLE[q.by]} name={q.title} sub={i < st.i ? 'Done' : q.goal}>
                     {i === st.i && pr ? <span class="num">{pr.have}/{pr.want}</span> : <Icon k="star" size="s" />}
                   </Item>
                 ))}
@@ -377,7 +378,7 @@ export function Journal() {
         </div>
         {cur && (
           <aside class="detail paper">
-            <div class="d-icon"><Icon k={cur.by} size="xl" /></div><h2>{cur.title}</h2>
+            <div class="d-icon"><Face who={cur.by} name={PEOPLE[cur.by].name} role={PEOPLE[cur.by].role} size="l" /></div><h2>{cur.title}</h2>
             <p class="muted">{PEOPLE[cur.by].name}, {PEOPLE[cur.by].role}</p>{cur.intro.map(([, line]) => <p>{line}</p>)}
             <p><span class="caps">Goal</span> {cur.goal}{pr && pr.want > 1 ? ` (${pr.have}/${pr.want})` : ''}</p>
             <p><span class="caps">Next step</span> {stepLine()}</p>

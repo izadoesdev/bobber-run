@@ -1,0 +1,17 @@
+import { chromium } from '@playwright/test';
+const b = await chromium.launch({ args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
+const p = await (await b.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 })).newPage();
+const errs = []; p.on('pageerror', e => errs.push(e.message));
+await p.goto(process.argv[2] + '?offline'); await p.waitForTimeout(3500);
+await p.evaluate(() => { const { G } = window.BR; G.talk = null; G.story = { i: 99, base: { ...G.stats }, shown: true }; G.regionsSeen.push('reef', 'kelp'); G.mode = 'play'; });
+await p.locator('.speech').waitFor({ timeout: 15000 });
+await p.waitForTimeout(300);
+await p.screenshot({ path: (process.argv[3] || '/tmp/boatlab/') + 'f-speech.png', clip: { x: 300, y: 560, width: 680, height: 160 } });
+await p.evaluate(() => { const { G } = window.BR; G.talk = { lines: [['nell', 'You found the old wreck. I knew you would.'], ['maren', 'Hello there.']], i: 0, back: 'play' }; G.mode = 'talk'; });
+await p.waitForTimeout(600);
+await p.screenshot({ path: (process.argv[3] || '/tmp/boatlab/') + 'f-talk.png' });
+await p.evaluate(() => { const { G } = window.BR; G.talk = null; G.story.i = 5; G.journalBack = 'play'; G.mode = 'journal'; });
+await p.waitForTimeout(800);
+await p.screenshot({ path: (process.argv[3] || '/tmp/boatlab/') + 'f-journal.png' });
+console.log(JSON.stringify(errs));
+await b.close();
