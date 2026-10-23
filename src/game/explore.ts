@@ -43,7 +43,7 @@ export function reveal(x: number, y: number, r: number): void {
 }
 
 /** How far the boat sees, by spyglass. */
-export const sightRange = (): number => 260 * [1, 1.25, 1.5][G.up.spyglass ?? 0];
+const sightRange = (): number => 260 * [1, 1.25, 1.5][G.up.spyglass ?? 0];
 // charted landmarks light up the chart round them: a lighthouse most of all
 const LANDMARK_R: Record<string, number> = { light: 520, port: 380, wreck: 160 };
 
@@ -82,7 +82,7 @@ const fromB64 = (s: string): Uint8Array => Uint8Array.from(atob(s), ch => ch.cha
 // the boat, so a captain far out keeps the sea round them
 const MAX_CHUNKS = 560;
 /** The seen sea as a save string. */
-export function exploredToSave(): string {
+function exploredToSave(): string {
   let all = [...chunks];
   if (all.length > MAX_CHUNKS) {
     const bx = G.boat.x / 1024, by = G.boat.y / 1024, d = ([k]: [string, Uint8Array]) => { const [x, y] = k.split(',').map(Number); return (x - bx) ** 2 + (y - by) ** 2; };
@@ -94,7 +94,7 @@ export function exploredToSave(): string {
  * Loads the seen sea from a save string, with home and the boat's surroundings seen. (A save from before the fog
  * gets the sea round its charted places back as the chart comes to them: see revealPlace.)
  */
-export function exploredFromSave(s: string | undefined, home: { x: number; y: number }): void {
+function exploredFromSave(s: string | undefined, home: { x: number; y: number }): void {
   chunks.clear(); fogDirty.clear(); fog.version++;
   for (const part of (s ?? '').split(';')) {
     const m = /^(-?\d+),(-?\d+):([A-Za-z0-9+/=]+)$/.exec(part);

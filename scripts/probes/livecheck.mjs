@@ -1,0 +1,11 @@
+import { chromium } from '@playwright/test';
+const b = await chromium.launch({ args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
+const p = await (await b.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 })).newPage();
+const errs = [], workers = [], csp = [];
+p.on('pageerror', e => errs.push(e.message)); p.on('worker', w => workers.push(w.url().split('/').pop()));
+p.on('console', m => { if (/Content Security Policy|Refused/i.test(m.text())) csp.push(m.text().slice(0, 120)); });
+await p.goto('https://bobber.databuddy.cc/?offline'); await p.waitForTimeout(5000);
+await p.evaluate(() => { const { G } = window.BR; G.talk = null; G.mode = 'map'; G.map.zoom = 2; });
+await p.waitForTimeout(3000); await p.screenshot({ path: '/tmp/boatlab/live-chart.png' });
+console.log(JSON.stringify({ errs, workers, csp }));
+await b.close();

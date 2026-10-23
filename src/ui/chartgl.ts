@@ -142,8 +142,6 @@ void main() {
 }`;
 
 interface Tile { slot: number; used: number }
-/** Tiles built so far, for tests and probes. */
-export const terrainStats = { tiles: 0, built: 0 };
 let gl: GL | null = null, glc: HTMLCanvasElement | null = null, prog: Program | null = null, failed = false;
 let hTex: WebGLTexture | null = null, cTex: WebGLTexture | null = null, fTex: WebGLTexture | null = null, vao: WebGLVertexArrayObject | null = null, inst: WebGLBuffer | null = null;
 const tiles = new Map<number, Tile>(), free: number[] = [];
@@ -241,7 +239,6 @@ function place(g: GL, t: Sample): Tile {
   g.texSubImage2D(g.TEXTURE_2D, 0, (slot % CCOLS) * NC * BANDS, Math.floor(slot / CCOLS) * NC, NC * BANDS, NC, g.RGBA, g.UNSIGNED_BYTE, t.c);
   const e = { slot, used: frame };
   tiles.set(t.k, e);
-  terrainStats.built++;
   return e;
 }
 
@@ -321,7 +318,6 @@ export function drawTerrain(ctx: CanvasRenderingContext2D, w: number, h: number,
   // in from a coarser level (only while the worker has room after the view's own)
   if (worker) for (let ty = ty0 - 1; ty <= ty1 + 1; ty++) for (let tx = tx0 - 1; tx <= tx1 + 1; tx++)
     if ((tx < tx0 || tx > tx1 || ty < ty0 || ty > ty1) && pending.size < MAX_PENDING - 4 && !tiles.has(key(L, tx, ty))) request(g, L, tx, ty, false);
-  terrainStats.tiles = tiles.size;
   g.viewport(0, glc.height - h, w, h);
   g.disable(g.BLEND);
   g.clearColor(0.31, 0.45, 0.54, 1); g.clear(g.COLOR_BUFFER_BIT);

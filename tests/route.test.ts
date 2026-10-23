@@ -1,12 +1,12 @@
 import { expect, test } from 'bun:test';
 import { G } from '../src/game/state';
 import { heightAt, homePort } from '../src/world';
-import { planRoute, findRoute, clearLine } from '../src/game/route';
+import { planRoute, clearLine } from '../src/game/route';
 import { seaPropsNear } from '../src/seaprops';
 import type { Point } from '../src/types';
 
 // Routes round islands for a ship: every point on open water with room for the hull, evenly spaced, kept off the
-// coast (further than the old tight route), and planned quickly. Trips are pairs of open-water points near home whose
+// coast, and planned quickly. Trips are pairs of open-water points near home whose
 // straight line crosses land.
 G.story = { i: 99, base: {}, shown: true } as typeof G.story;          // every region open
 const water = (x: number, y: number): boolean => heightAt(x, y) < -0.07;
@@ -30,7 +30,7 @@ const mean = (a: number[]): number => a.reduce((s, v) => s + v, 0) / a.length;
 
 
 test('ship routes keep to open water with room for the hull, evenly spaced, and off the coast', () => {
-  const pad = 12, list = trips(40), clearNew: number[] = [], clearOld: number[] = [];
+  const pad = 12, list = trips(40), clearNew: number[] = [];
   let found = 0, t0 = performance.now(), tPlan = 0;
   for (const [a, b] of list) {
     seaPropsNear(a.x, a.y, 330);                                      // the sea round the boat is built in a game; time the plan, not that
@@ -45,14 +45,12 @@ test('ship routes keep to open water with room for the hull, evenly spaced, and 
       prev = p;
     }
     clearNew.push(Math.min(...plan.pts.slice(0, -1).map(p => shore(p.x, p.y))));      // closest it comes to land
-    const old = findRoute(a, b, pad);
-    if (old) { const pts: Point[] = []; let q = a; for (const c of old) { const d = Math.hypot(c.x - q.x, c.y - q.y); for (let t = 12; t < d; t += 12) pts.push({ x: q.x + (c.x - q.x) * t / d, y: q.y + (c.y - q.y) * t / d }); q = c; } if (pts.length) clearOld.push(Math.min(...pts.map(p => shore(p.x, p.y)))); }
   }
   const ms = tPlan / list.length;
   void t0;
-  console.log(`routes ${found}/${list.length}, closest to land on average: new ${mean(clearNew).toFixed(1)} vs old ${mean(clearOld).toFixed(1)}, ${ms.toFixed(1)} ms a plan`);
+  console.log(`routes ${found}/${list.length}, closest to land on average ${mean(clearNew).toFixed(1)} (the old tight routes: 11.6), ${ms.toFixed(1)} ms a plan`);
   expect(found / list.length).toBeGreaterThan(0.9);
-  expect(mean(clearNew)).toBeGreaterThan(mean(clearOld));
+  expect(mean(clearNew)).toBeGreaterThan(16);                     // mid-channel: the old corner-hugging planner managed 11.6
   expect(ms).toBeLessThan(40);
 }, 60_000);
 

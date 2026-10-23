@@ -18,7 +18,7 @@ import { setWaypoint } from '../waypoint';
 import { sfx } from '../audio';
 import type { WeatherState } from '../types';
 
-export const isAdmin = (): boolean => !!NET.profile?.admin;
+const isAdmin = (): boolean => !!NET.profile?.admin;
 /** The panel's state: open, and whether the next chart click teleports instead of setting a waypoint. */
 export const ADMIN = { open: false, clickTeleport: false };
 

@@ -17,7 +17,7 @@ import { SET } from '../settings';
 
 const COL = { you: '#ff9a6b', port: '#f0cf6a', light: '#efe9dc', wreck: '#dcb074', dim: '#8a949c', ink: '#1b2a33', red: '#c0493a', green: '#8fd48a' };
 
-export interface ChartOptions {
+interface ChartOptions {
   /** ms to spend building missing map tiles this frame; the rest are drawn on later frames */
   budget?: number;
   /** canvas pixels per CSS pixel: marks and labels scale with it */
@@ -545,7 +545,7 @@ export function compassRose(ctx: Ctx, x: number, y: number, r: number): void {
 
 // ---------- what's under the pointer ----------
 /** What the chart shows at a spot and what clicking it does: open an island's card, clear the waypoint, set one (snapped to a mark), or nothing. */
-export interface Spot { title: string; sub?: string; act?: string; island?: string; snap?: Point; clear?: boolean; none?: boolean }
+interface Spot { title: string; sub?: string; act?: string; island?: string; snap?: Point; clear?: boolean; none?: boolean }
 const away = (p: Point): string => `${Math.max(1, Math.round(Math.hypot(p.x - G.boat.x, p.y - G.boat.y) / 10))} m ${dirTo(G.boat.x, G.boat.y, p.x, p.y)}`;
 const SAIL = 'Click to sail here';
 /** The claimable island whose land is at (x, y), if any. */

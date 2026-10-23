@@ -6,8 +6,8 @@ test('the chart opens and closes with M', async ({ page }) => {
   // under heavy CPU load a synthetic key can miss a frame, so press again only while the mode hasn't changed
   const pressUntil = (mode: string) => expect(async () => {
     if (await page.evaluate(() => window.BR.G.mode) !== mode) await page.keyboard.press('m');
-    await expect.poll(() => page.evaluate(() => window.BR.G.mode), { timeout: 1500 }).toBe(mode);
-  }).toPass({ timeout: 10_000 });
+    await expect.poll(() => page.evaluate(() => window.BR.G.mode), { timeout: 3000 }).toBe(mode);
+  }).toPass({ timeout: 30_000 });                                      // a starved CI renderer can take seconds per frame
   await pressUntil('map');
   await pressUntil('play');
 });

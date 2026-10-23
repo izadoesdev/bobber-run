@@ -10,7 +10,7 @@ export function tier(id: string): number {
   return Math.abs(b - 3) + Math.abs(k);
 }
 // the story quest (index) that must be done for each step out; past the last, the last one's
-export const OPENS_AFTER = [0, 3, 7, 10, 13, 14];
+const OPENS_AFTER = [0, 3, 7, 10, 13, 14];
 export const needFor = (t: number): number => OPENS_AFTER[Math.min(t, OPENS_AFTER.length - 1)];
 export const storyAt = (): number => G.story?.i ?? 0;
 
