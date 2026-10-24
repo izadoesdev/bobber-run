@@ -89,6 +89,12 @@ export function initAnalytics(): void {
     trackWebVitals: true, trackErrors: true, trackInteractions: true, trackOutgoingLinks: true, trackAttributes: true, trackHashChanges: true,
     enableBatching: true, enableRetries: true, samplingRate: 1,
   }));
+  // Session replay of the page around the game (pointer, clicks, menus), with all text and input masked.
+  // The game canvas is not recorded. Recording starts at the player's first input.
+  const replay = document.createElement('script');
+  replay.src = 'https://cdn.databuddy.cc/replay.js?v=2';
+  replay.dataset.clientId = CLIENT_ID;
+  document.head.appendChild(replay);
   setGlobalProperties({ build: __BUILD__ });
 }
 
