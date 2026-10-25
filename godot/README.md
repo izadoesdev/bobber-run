@@ -19,7 +19,15 @@ The port of the browser game in `../src`, one slice at a time. Web first: GDScri
 | --- | --- |
 | `src/core` | deterministic building blocks (`seed.gd`: the lattice hash and PRNG) |
 | `src/rules` | game rules shared with the server (`island_rules.gd`) |
+| `src/dev`, `scenes` | scenes to run while the port grows (`island_chart.tscn`: every buyable island, from the rules) |
 | `tests` | headless tests (`test_*.gd`), the runner, and `fixtures/` recorded from the TypeScript |
+
+## Running it
+
+```sh
+Godot --path godot                                  # the main scene; drag to pan, wheel to zoom
+Godot --path godot -- --snap=out.png                # save the first frame and quit
+```
 
 ## Running the tests
 
