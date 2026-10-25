@@ -423,6 +423,8 @@ interface Progress {
   treasury: number; realmRate: number;
   /** each owned boat's hull (a share of its strength) when you last left it; the boat you sail is G.boat.hp */
   hulls: Record<string, number>;
+  /** the fitted parts (econ.BOAT_PARTS) of each boat you own but aren't sailing; the one you sail has them in up */
+  boatUp: Record<string, Record<string, number>>;
   musicOn: boolean;
   /** port id -> contracts on offer there */
   offers: Record<string, Contract[]>;

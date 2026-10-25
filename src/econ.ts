@@ -31,6 +31,11 @@ export const FLEET_PER_MIN: Record<BoatId, number> = {
   flagship: 240, icebreaker: 210, yacht: 220, motoryacht: 300, superyacht: 520,
 };
 export const FLEET_HOLD_MIN = 10;
+/**
+ * Upgrades fitted to a boat rather than carried by you: each boat keeps its own levels of these, and a new boat comes
+ * bare. Your fishing gear and crew (rod, reel, line, tackle, spyglass, sextant, deckhand, cook) go with you to any boat.
+ */
+export const BOAT_PARTS: readonly UpgradeKey[] = ['prop', 'hull', 'hold', 'bilge', 'anchor', 'net', 'ice', 'sonar', 'lantern', 'radio', 'quarter', 'pots', 'keel', 'harpoon', 'bell'];
 // Restoring Alderhaven: the long goal. Each project takes coins and donated fish, unlocks something, and the last one ends the story.
 // need: { any: n } fish of any kind; { kinds: n } different species; { trophy: n } trophy fish; { sp: id, n } a particular species
 export const PROJECTS: Project[] = [

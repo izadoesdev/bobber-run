@@ -1,5 +1,5 @@
 // The outfitter (upgrades and supplies) and the shipyard (boats and paint).
-import { BOATS, UPGRADES, UPGRADE_KEYS, UP_CATS, PAINTS, SUPPLIES, BAIT_KINDS, PROJECTS } from '../../econ';
+import { BOATS, BOAT_PARTS, UPGRADES, UPGRADE_KEYS, UP_CATS, PAINTS, SUPPLIES, BAIT_KINDS, PROJECTS } from '../../econ';
 import { sfx } from '../../audio';
 import { track } from '../../analytics';
 import { BOAT_MODELS } from '../../models';
@@ -64,6 +64,10 @@ export function boardOwned(bd: BoatDef): void {
  */
 function switchBoat(bd: BoatDef, bought = false): void {
   G.hulls[G.boatId] = Math.min(1, G.boat.hp / hpMax());
+  G.boatUp[G.boatId] = Object.fromEntries(BOAT_PARTS.map(k => [k, G.up[k]]));   // its fitted parts stay with it
+  const parts = G.boatUp[bd.id] ?? {};
+  for (const k of BOAT_PARTS) G.up[k] = parts[k] ?? 0;
+  delete G.boatUp[bd.id];
   G.boatId = bd.id;
   G.boat.hp = Math.round(hpMax() * (bought ? 1 : G.hulls[bd.id] ?? 1));
   while (G.hold.length > cap()) G.hold.pop();
@@ -91,7 +95,7 @@ export function outfitterItems(items: Rows): void {
       items.push({
         kind: 'upgrade', key: k, icon: k, label: u.name(boatDef()), cost: !maxed && !locked ? cost : null, right: locked ? 'Dry dock' : maxed ? 'Max' : money(cost),
         ok: !locked && !maxed && G.coins >= cost, why: locked ? `Fund "${DRYDOCK.name}" first, in the Harbour tab at Alderhaven` : maxed ? 'Fully upgraded' : short(cost),
-        action: 'Buy', act: () => buy(k), what: maxed ? null : u.lv[lvl], pips: [lvl, max],
+        action: 'Buy', act: () => buy(k), what: maxed ? null : BOAT_PARTS.includes(k) ? `For your ${boatDef().name}: ${u.lv[lvl]}` : u.lv[lvl], pips: [lvl, max],
       });
     }
   }
