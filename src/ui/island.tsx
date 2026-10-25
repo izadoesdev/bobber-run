@@ -8,7 +8,7 @@ import { NET, buyIsland, claimIsland, renameIsland, releaseIsland, uploadIslandL
 import { ISLANDS, islandLanding, islandPrice, stashLogo } from '../islands';
 import { sailToWaypoint, setWaypoint } from '../waypoint';
 import { pixelLogo, type Logo } from './logo';
-import { edgeFade, viewPct } from './parts';
+import { edgeFade, pin, viewPct } from './parts';
 import { track, bucket, flushAnalytics } from '../analytics';
 
 /** Owners' links open in a new tab, after saying plainly that they leave the game. */
@@ -27,7 +27,7 @@ export function IslandSigns() {
     const site = homesteadSite(c) ?? c, [x, y] = viewPct(site.x, site.y + 6), a = edgeFade(x, y, 6, 94, 24, 90);
     if (!a) return null;
     return (
-      <div class={'island-sign' + (row.mine ? ' mine' : '')} key={c.key} style={{ left: x + '%', top: y + '%', opacity: a, pointerEvents: a < 0.5 ? 'none' : undefined }}>
+      <div class={'island-sign' + (row.mine ? ' mine' : '')} key={c.key} style={{ ...pin(x, y), opacity: a, pointerEvents: a < 0.5 ? 'none' : undefined }}>
         <button data-track="island-sign" class="sign-main" onClick={() => openIsland(c.key, 'play')}>{row.logoUrl && <img src={row.logoUrl} alt="" />}
           <span class="txt"><span>{row.name}</span><span class="who">{row.mine ? 'your island' : `by ${row.owner}`}</span></span></button>
         {row.url && <button data-track="island-sign-visit" class="sign-link" title={row.url} onClick={() => visit(row.url!)}>visit ↗</button>}

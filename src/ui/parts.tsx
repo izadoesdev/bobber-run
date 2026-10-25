@@ -20,6 +20,26 @@ export function BaitTag() {
   );
 }
 export const viewPct = (x: number, y: number): [number, number] => [(x - G.cam.x) / W * 100, (y - G.cam.y) / H * 100];
+// the UI's size in CSS pixels, kept by a ResizeObserver so reading it every frame costs nothing
+const uiSize = { w: 0, h: 0 };
+let watchingUi = false;
+function watchUi(): void {
+  const el = document.getElementById('ui');
+  if (!el) return;
+  watchingUi = true;
+  const set = (): void => { uiSize.w = el.clientWidth; uiSize.h = el.clientHeight; };
+  set();
+  new ResizeObserver(set).observe(el);
+}
+/**
+ * Style that puts an element at view % (x, y), for things pinned to the sea: moved by `translate` (on its own layer,
+ * see .pin in ui.css) rather than left/top, so following the sea every frame needs no layout or repaint. With left/top
+ * the UI's whole layer was repainted and re-rastered 60 times a second, about a fifth of the game's CPU.
+ */
+export function pin(x: number, y: number): { translate: string } {
+  if (!watchingUi) watchUi();
+  return { translate: `${(x * uiSize.w / 100).toFixed(1)}px ${(y * uiSize.h / 100).toFixed(1)}px` };
+}
 /**
  * How much of a label at view % (x, y) shows: all of it inside the box [x0, x1] x [y0, y1], fading out over `band` %
  * at its edges, so labels slide away as the view moves instead of blinking out at a hard line.

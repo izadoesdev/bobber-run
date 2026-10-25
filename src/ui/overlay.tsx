@@ -16,7 +16,7 @@ import { regionAt } from '../biome';
 import { newWaters, regionAbout } from '../game/regions';
 import { IslandSigns } from './island';
 import { Face } from './faces';
-import { BaitTag, Fish, Icon, Key, edgeFade, forTouch, keyed, viewPct } from './parts';
+import { BaitTag, Fish, Icon, Key, edgeFade, forTouch, keyed, pin, viewPct } from './parts';
 
 /** Everything drawn over the sea while sailing. `wp` is the player's waypoint, which takes the arrow from the guide. */
 export function SeaLayer({ step, wp }: { step: Step; wp: Step | null }) {
@@ -77,25 +77,32 @@ function Marker({ step, force }: { step: Step; force?: boolean }) {
     return [box.left + x / 100 * box.width, box.top + y / 100 * box.height];
   };
   const [tx, ty] = toPx(p.x, p.y), col = force ? WAYPOINT_COL : TARGET_COL;
-  const pct = (x: number, y: number) => ({ left: (x - box.left) / box.width * 100 + '%', top: (y - box.top) / box.height * 100 + '%' });
+  const pct = (x: number, y: number) => pin((x - box.left) / box.width * 100, (y - box.top) / box.height * 100);
   if (tx > box.left + 2 * em && tx < box.right - 2 * em && ty > box.top + 3 * em && ty < box.bottom - 2 * em && !covered(tx, ty - 1.6 * em, em)) {
     if (force) return null;                         // a waypoint in view has its buoy
+    // the bob moves the pin itself (a compositor move); the shadow is drawn in, not a CSS filter, which had the
+    // compositor redo a drop shadow every frame the pennant moved (a fifth of the game's CPU on its own)
     const bob = SET.calm ? 0 : Math.sin(G.t * 3) * 0.3;
     return (
-      <div key="guide-on" aria-hidden="true" style={{ position: 'absolute', ...pct(tx, ty), transform: `translate(-50%, ${-130 - bob * 40}%)`, pointerEvents: 'none', filter: 'drop-shadow(0 0.12em 0 #000a)' }}>
-        <svg viewBox="0 0 16 16" width="1.5em" height="1.5em" style={{ display: 'block' }}>
+      <div key="guide-on" class="pin marker on" aria-hidden="true" style={pct(tx, ty - bob * 0.6 * em)}>
+        <svg viewBox="0 0 16 17.3" width="1.5em" height="1.62em">
+          <path d="M2.5 4.3 L13.5 4.3 L8 13.8 Z" fill="#000a" stroke="#000a" stroke-width="1.5" stroke-linejoin="round" />
           <path d="M2.5 3 L13.5 3 L8 12.5 Z" fill={col} stroke="#1b2a33" stroke-width="1.5" stroke-linejoin="round" />
         </svg>
       </div>
     );
   }
-  // off screen (or under a panel): an arrow on a ring around the boat, pointing the way
-  const [bx, by] = toPx(G.boat.x, G.boat.y), a = Math.atan2(ty - by, tx - bx);
+  // off screen (or under a panel): an arrow on a ring around the boat, pointing the way, in whole degrees so it is
+  // redrawn only when it visibly turns; its shadow is a second arrow just below, so it stays below as the arrow turns
+  const [bx, by] = toPx(G.boat.x, G.boat.y), a = Math.atan2(ty - by, tx - bx), turn = `${Math.round(a * 180 / Math.PI)}deg`;
   let R = Math.min(box.width, box.height) * 0.3;
   while (R > 4 * em && covered(bx + Math.cos(a) * R, by + Math.sin(a) * R, 1.5 * em)) R -= em;   // pulled in past a panel
   return (
-    <div key="guide-off" aria-hidden="true" style={{ position: 'absolute', ...pct(bx + Math.cos(a) * R, by + Math.sin(a) * R), transform: 'translate(-50%, -50%)', pointerEvents: 'none' }}>
-      <svg viewBox="0 0 16 16" width="1.6em" height="1.6em" style={{ display: 'block', transform: `rotate(${a}rad)`, filter: 'drop-shadow(0 0.12em 0 #000a)' }}>
+    <div key="guide-off" class="pin marker off" aria-hidden="true" style={pct(bx + Math.cos(a) * R, by + Math.sin(a) * R)}>
+      <svg class="shade" viewBox="0 0 16 16" style={{ rotate: turn }}>
+        <path d="M14.5 8 L2.5 2.5 L5.5 8 L2.5 13.5 Z" fill="#000a" stroke="#000a" stroke-width="1.4" stroke-linejoin="round" />
+      </svg>
+      <svg viewBox="0 0 16 16" style={{ rotate: turn }}>
         <path d="M14.5 8 L2.5 2.5 L5.5 8 L2.5 13.5 Z" fill={col} stroke="#1b2a33" stroke-width="1.4" stroke-linejoin="round" />
       </svg>
     </div>
@@ -141,14 +148,14 @@ function RouteDots() {
     const s = total - k * DOT_GAP;
     while (seg < xs.length - 2 && cum[seg + 1] < s) seg++;
     const t = (s - cum[seg]) / ((cum[seg + 1] - cum[seg]) || 1), [x, y] = viewPct(xs[seg] + (xs[seg + 1] - xs[seg]) * t, ys[seg] + (ys[seg + 1] - ys[seg]) * t);
-    if (inView(x, y)) dots.push(<i key={k} style={{ left: x + '%', top: y + '%', animationDelay: k * 0.11 + 's' }} />);
+    if (inView(x, y)) dots.push(<i key={k} style={{ ...pin(x, y), animationDelay: k * 0.11 + 's' }} />);
   }
   const end = G.waypoint, [ex, ey] = end ? viewPct(end.x, end.y) : [-9, -9];
   return (
     <div class="route" aria-hidden="true">
       {dots}
       {end && inView(ex, ey) && (
-        <svg class="buoy" viewBox="0 0 16 24" style={{ left: ex + '%', top: ey + '%' }}>
+        <svg class="buoy" viewBox="0 0 16 24" style={pin(ex, ey)}>
           <path d="M8 1 V9" stroke="#2a1f17" stroke-width="1.2" />
           <path d="M8.6 1.5 L14 3.6 L8.6 5.7 Z" fill="#f0cf6a" stroke="#2a1f17" stroke-width="0.8" stroke-linejoin="round" />
           <path d="M4 9 H12 L13 16 Q8 18.5 3 16 Z" fill="#e05a45" stroke="#2a1f17" stroke-width="1" stroke-linejoin="round" />
@@ -165,7 +172,7 @@ const CHAT_MS = 6500, CHAT_MAX = 120;
 function ChatBubble({ text, at, x, y, mine }: { text: string; at: number; x: number; y: number; mine?: boolean }) {
   const age = Date.now() - at, fade = Math.min(1, Math.max(0, (CHAT_MS - age) / 500));
   return (
-    <div class={'bubble say' + (mine ? ' mine' : '')} style={{ left: x + '%', top: y + '%', opacity: fade }}>
+    <div class={'bubble say' + (mine ? ' mine' : '')} style={{ ...pin(x, y), opacity: fade }}>
       {text.length > CHAT_MAX ? text.slice(0, CHAT_MAX - 1) + '…' : text}
     </div>
   );
@@ -178,18 +185,18 @@ function worldLabels(): JSX.Element[] {
   if (G.up.spyglass >= 2 && !G.fish) for (const s of schoolsNear(G.boat.x, G.boat.y, 120)) {
     if (!schoolActive(s) || s.boss) continue;
     const [x, y] = viewPct(s.x, s.y - 6), a = edgeFade(x, y, 4, 96, 30, 92) * Math.min(1, (120 - Math.hypot(s.x - G.boat.x, s.y - G.boat.y)) / 30);
-    if (a > 0) labels.push(<div class="label-world bare" key={'f' + s.id} style={{ left: x + '%', top: y + '%', opacity: 0.7 * a }} title={SPECIES[s.sp].name}><Fish sp={s.sp} size="s" /></div>);
+    if (a > 0) labels.push(<div class="label-world bare" key={'f' + s.id} style={{ ...pin(x, y), opacity: 0.7 * a }} title={SPECIES[s.sp].name}><Fish sp={s.sp} size="s" /></div>);
   }
   // other sailors: a name tag, plus a speech bubble for a few seconds after they greet or chat (the newer wins)
   const now = Date.now(), fresh = (at: number) => now - at < 4500, said = SET.chat === 'off' ? new Map<string, { text: string; at: number }>() : ONLINE.chat;
   for (const s of ONLINE.sailors) {
     const [x, y] = viewPct(s.x, s.y - 22), a = edgeFade(x, y, 2, 98, 6, 96, 3);
     if (!a) continue;
-    labels.push(<div class="label-world chip sailor" key={'n' + s.uid} style={{ left: x + '%', top: y + '%', opacity: a }}>{s.name}</div>);
+    labels.push(<div class="label-world chip sailor" key={'n' + s.uid} style={{ ...pin(x, y), opacity: a }}>{s.name}</div>);
     const line = said.get(s.uid), talking = line && now - line.at < CHAT_MS && (s.emote == null || line.at > s.emoteAt);
     if (talking) labels.push(<ChatBubble key={'c' + s.uid} text={line.text} at={line.at} x={x} y={y - 6.5} />);
     else if (s.emote != null && fresh(s.emoteAt)) {
-      labels.push(<div class="bubble" key={'b' + s.uid} style={{ left: x + '%', top: y - 5 + '%' }}>{EMOTES[s.emote]}</div>);
+      labels.push(<div class="bubble" key={'b' + s.uid} style={pin(x, y - 5)}>{EMOTES[s.emote]}</div>);
     }
   }
   const mine = said.get('me'), [mx, my] = viewPct(G.boat.x, G.boat.y - 24);
@@ -197,7 +204,7 @@ function worldLabels(): JSX.Element[] {
   if (mine && now - mine.at < CHAT_MS && mine.at > emoteAt) {
     labels.push(<ChatBubble key="me-chat" text={mine.text} at={mine.at} x={mx} y={my} mine />);
   } else if (G.myEmote && G.t - G.myEmote.t < 4.5) {
-    labels.push(<div class="bubble mine" key="me" style={{ left: mx + '%', top: my + '%' }}>{EMOTES[G.myEmote.i]}</div>);
+    labels.push(<div class="bubble mine" key="me" style={pin(mx, my)}>{EMOTES[G.myEmote.i]}</div>);
   }
   return labels;
 }
@@ -213,7 +220,7 @@ function FirstHint() {
   if (!cast && G.t - movedAt < 6) return null;
   const [x, y] = viewPct(b.x, b.y + 16);
   return (
-    <div class="prompt-world first-hint" aria-hidden="true" style={{ left: x + '%', top: y + '%' }}>
+    <div class="prompt-world first-hint" aria-hidden="true" style={pin(x, y)}>
       {cast ? <><Key k=" " pad="A" /><Icon k="rod" size="s" /></> : <><Key k="ArrowUp" pad="LS" /><Icon k="hull" size="s" /></>}
     </div>
   );
@@ -224,5 +231,5 @@ function BoatPrompt() {
   if (!G.stats.caught) return <FirstHint />;
   if (!G.prompt || G.fish || G.card || G.mode !== 'play') return null;
   const [x, y] = viewPct(G.boat.x, G.boat.y + 16);
-  return <div class="prompt-world" style={{ left: x + '%', top: y + '%' }}>{keyed(G.prompt)}{G.nearSchool && <BaitTag />}</div>;
+  return <div class="prompt-world" style={pin(x, y)}>{keyed(G.prompt)}{G.nearSchool && <BaitTag />}</div>;
 }

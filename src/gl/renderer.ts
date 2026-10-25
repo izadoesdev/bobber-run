@@ -34,6 +34,8 @@ export interface RenderOptions {
   /** internal resolution scale for the 'smooth' style (adapted when quality is 'auto') */
   scale: number;
   quality: Quality;
+  /** the GPU's ms per frame over the last adaptation window, where it can be timed (Smooth style on auto) */
+  gpuMs?: number;
   /** post effect strengths, 0..1 */
   fx: { bloom: number; tilt: number; grade: number; ink?: number };
 }
@@ -76,6 +78,7 @@ function offerReload(): void {
 // programs, buffers and vertex arrays; every target and mesh is (re)built on demand afterwards
 function setupGL(): void {
   hdr = !!gl.getExtension('EXT_color_buffer_float');
+  timer = undefined;
   PG = {
     ground: program(gl, SH.QUAD_VS, SH.GROUND_FS), mesh: program(gl, SH.MESH_VS, SH.MESH_FS),
     foam: program(gl, SH.FOAM_VS, SH.FOAM_FS), part: program(gl, SH.PART_VS, SH.PART_FS), beam: program(gl, SH.BEAM_VS, SH.BEAM_FS),
@@ -1445,9 +1448,30 @@ function begin(pg: Program, dst: Target, src: Target): void {
   intoUsed(dst); gl.useProgram(pg.p);
   bindTex(pg, 'uT', src.tex, 0); U2(pg, 'uUVS', UVS[0], UVS[1]);
 }
-// dynamic resolution: keep frames under ~20ms by trading internal resolution
+// dynamic resolution for the Smooth style. Where the browser can time the GPU (timer queries) it steers by how long
+// the GPU takes per frame: frames capped at 60 a second never run late, so going by frame time alone let a laptop's
+// GPU run flat out (and hot) without ever stepping down. Without timer queries, by frame time.
 const QUALITY_SCALE: Record<Quality, number> = { auto: 1, high: 1, medium: 0.75, low: 0.5 };
-let lastT = 0, acc = 0, frames = 0;
+const GPU_HIGH = 7, GPU_LOW = 3.5;              // GPU ms per frame: above, a lower resolution; below, a higher one
+let lastT = 0, acc = 0, frames = 0, gpuAcc = 0, gpuN = 0;
+type Timer = { ext: { TIME_ELAPSED_EXT: GLenum; GPU_DISJOINT_EXT: GLenum }; open: WebGLQuery[]; q: WebGLQuery | null };
+let timer: Timer | null | undefined;            // undefined until first asked for (and after the context is rebuilt)
+const timed = (): boolean => !PIXEL[SET.pixel] && R.quality === 'auto';
+function gpuBegin(): void {
+  if (!timed()) return;
+  if (timer === undefined) { const ext = gl.getExtension('EXT_disjoint_timer_query_webgl2'); timer = ext ? { ext, open: [], q: null } : null; }
+  if (!timer || timer.open.length > 4) return;
+  timer.q = gl.createQuery(); gl.beginQuery(timer.ext.TIME_ELAPSED_EXT, timer.q);
+}
+function gpuEnd(): void {
+  if (!timer) return;
+  if (timer.q) { gl.endQuery(timer.ext.TIME_ELAPSED_EXT); timer.open.push(timer.q); timer.q = null; }
+  while (timer.open.length && gl.getQueryParameter(timer.open[0], gl.QUERY_RESULT_AVAILABLE)) {   // earlier frames', in order
+    const q = timer.open.shift()!;
+    if (!gl.getParameter(timer.ext.GPU_DISJOINT_EXT)) { gpuAcc += gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6; gpuN++; }
+    gl.deleteQuery(q);
+  }
+}
 function adaptScale(): void {
   if (PIXEL[SET.pixel]) return;                   // pixel styles are already cheap; their size is fixed
   if (R.quality !== 'auto') { R.scale = QUALITY_SCALE[R.quality] || 1; return; }
@@ -1456,14 +1480,21 @@ function adaptScale(): void {
   if (dt <= 0 || dt > 250) return;
   acc += dt; frames++;
   if (acc < 1500) return;
-  const avg = acc / frames;
-  acc = 0; frames = 0;
-  if (avg > 20 && R.scale > 0.5) R.scale = Math.max(0.5, R.scale - 0.125);
-  else if (avg < 13 && R.scale < 1) R.scale = Math.min(1, R.scale + 0.125);
+  const avg = acc / frames, gpu = gpuN >= 10 ? gpuAcc / gpuN : null;
+  acc = 0; frames = 0; gpuAcc = 0; gpuN = 0;
+  if (gpu !== null) R.gpuMs = gpu;
+  const busy = gpu !== null ? gpu > GPU_HIGH : avg > 20, idle = gpu !== null ? gpu < GPU_LOW : avg < 13;
+  if (busy && R.scale > 0.5) R.scale = Math.max(0.5, R.scale - 0.125);
+  else if (idle && R.scale < 1) R.scale = Math.min(1, R.scale + 0.125);
 }
 export function render(alpha: number): void {
   if (lost) return;
   adaptScale();
+  gpuBegin();
+  drawFrame(alpha);
+  gpuEnd();
+}
+function drawFrame(alpha: number): void {
   const F = ensureField(), FB = ensureTargets(), px = FB.px, bs = boatRenderState(alpha);
   // Pixel styles draw upx render pixels per world unit: one per art pixel (two for crisp), but never more than the
   // screen shows. The world is drawn with the camera snapped to whole render pixels, so static things (lighthouses,

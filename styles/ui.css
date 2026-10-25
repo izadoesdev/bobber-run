@@ -105,7 +105,10 @@ h2, .title { font-size: var(--fs-xl); }
 .mini { position: absolute; right: 0.9em; top: 0.8em; width: 8.4em; }
 .mini .ring { width: 8.4em; height: 8.4em; border-radius: 50%; padding: 0.35em; background: radial-gradient(circle at 35% 30%, #f6dc8a, #a87a2a 55%, #5a3a10); box-shadow: 0 0.25em 0 rgba(0,0,0,0.35), 0 0.5em 1em rgba(0,0,0,0.3); position: relative; }
 .mini canvas { width: 100%; height: 100%; border-radius: 50%; display: block; cursor: pointer; pointer-events: auto; }
-.mini .compass { width: 100%; height: 100%; display: block; border-radius: 50%; cursor: pointer; pointer-events: auto; }
+.mini .compass { position: relative; width: 100%; height: 100%; display: block; border-radius: 50%; cursor: pointer; pointer-events: auto; }
+.mini .compass svg, .mini .vane svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* the parts that turn: each on its own layer, turned by the rotate property (hud.tsx), so turning repaints nothing */
+.mini .turn { will-change: rotate; }
 .mini .compass .cpt { font: 13px var(--font-head); fill: #f0d27a; fill-opacity: 0.85; text-anchor: middle; dominant-baseline: central; }
 .mini .n { position: absolute; top: -0.15em; left: 50%; transform: translateX(-50%); font-family: var(--font-head); color: #2a1f17; background: #f0d27a; border-radius: 0.3em; padding: 0 0.3em; }
 /* the fishing dial: a brass ship's instrument, the same size at every stage; hints float above it */
@@ -438,7 +441,8 @@ html.touch #ui .screen:has(.chartwrap) .foot { padding-right: 130px; }
 .chip.objective .row { gap: 0.4em; align-items: flex-start; }
 .chip.contracts { gap: 0.7em; } .chip.contracts span { display: inline-flex; align-items: center; gap: 0.2em; }
 .mini .wind { position: absolute; left: -0.6em; bottom: -0.4em; display: flex; flex-direction: column; align-items: center; }
-.mini .wind .vane { width: 2.8em; height: 2.8em; filter: drop-shadow(0 0.1em 0 rgba(0,0,0,0.35)); }
+.mini .wind .vane { position: relative; width: 2.8em; height: 2.8em; }
+.mini .wind .vane svg:first-child { filter: drop-shadow(0 0.1em 0 rgba(0,0,0,0.35)); }   /* on the still face only: a filter over a turning layer is redone every frame */
 .mini .wind.quiet .vane { width: 2.2em; height: 2.2em; opacity: 0.85; }
 .mini .wind .pct { font-size: 0.7em; margin-top: -0.3em; padding: 0 0.3em; border-radius: 0.3em; background: var(--chip); }
 .mini .day { position: absolute; left: 50%; bottom: -0.55em; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 0.25em;
@@ -472,7 +476,19 @@ html.touch #ui .screen:has(.chartwrap) .foot { padding-right: 130px; }
 .chip.waypoint { gap: 0.4em; } .chip.waypoint .go { pointer-events: auto; cursor: pointer; color: var(--gold); border: 1px solid rgba(240,207,106,0.6); border-radius: var(--r); padding: 0 0.45em; margin-left: 0.2em; }
 .chip.waypoint .go:hover { background: rgba(240,207,106,0.15); }
 /* the route on the sea: dots that ripple toward the waypoint, and a buoy at it */
-.route { position: absolute; inset: 0; pointer-events: none; }
+/* pinned to the sea: placed by the translate property (parts.tsx pin), each on its own layer, so following the camera
+   every frame is a compositor move, not a layout and a repaint of the whole UI */
+.pin, .prompt-world, .label-world, .bubble, .island-sign, .route .buoy { position: absolute; left: 0; top: 0; will-change: translate; }
+.route i { left: 0; top: 0; }
+/* the objective: a pennant over it (its box is 1.62em with the drawn-in shadow; its top sits 1.95em above the spot), or an
+   arrow round the boat with its shadow a second arrow 0.12em below */
+.marker { pointer-events: none; }
+.marker svg { display: block; }
+.marker.on { transform: translate(-50%, -120%); }
+.marker.off { width: 1.6em; height: 1.6em; transform: translate(-50%, -50%); }
+.marker.off svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.marker.off .shade { translate: 0 0.12em; }
+.route { position: absolute; inset: 0; pointer-events: none; will-change: transform; }
 .route i { position: absolute; width: 0.42em; height: 0.42em; margin: -0.21em 0 0 -0.21em; background: #e6efec; border-radius: 50%; box-shadow: 0 0 0 0.09em #1b2a33, 0 0.1em 0 0.05em #0006; animation: route-ripple 1.8s ease-in-out infinite; }
 @keyframes route-ripple { 0%, 100% { opacity: 0.3; transform: scale(0.75); } 45% { opacity: 0.95; transform: scale(1.05); } }
 .route .buoy { position: absolute; width: 1.3em; height: 1.95em; transform: translate(-50%, -88%); filter: drop-shadow(0 0.1em 0 #0008); animation: bob-buoy 2.4s ease-in-out infinite; }

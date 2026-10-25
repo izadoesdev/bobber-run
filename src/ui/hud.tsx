@@ -75,17 +75,23 @@ const miniKey = (): string => { const b = G.boat; return `${Math.round(b.x * 10)
  * marks as the chart. The minimap setting swaps in the map.
  */
 function CompassFace({ target, un, onClick }: { target: Point | null; un: Point | null; onClick: () => void }) {
-  const b = G.boat, at = (p: Point) => `rotate(${Math.atan2(p.y - b.y, p.x - b.x) * 180 / Math.PI})`, far = (p: Point) => Math.hypot(p.x - b.x, p.y - b.y) > 20;
+  // the face is drawn once; the heading and each rim mark are their own layer turned by CSS (see .compass .turn), so
+  // a turning boat only moves layers (it redrew the compass, ring and shadow included, every degree it turned)
+  const deg = (a: number) => `${Math.round(a * 180 / Math.PI)}deg`;
+  const b = G.boat, at = (p: Point) => deg(Math.atan2(p.y - b.y, p.x - b.x)), far = (p: Point) => Math.hypot(p.x - b.x, p.y - b.y) > 20;
+  const turn = (a: string, mark: JSX.Element) => <svg class="turn" viewBox="-50 -50 100 100" style={{ rotate: a }}>{mark}</svg>;
   return (
-    <svg class="compass" viewBox="-50 -50 100 100" role="img" aria-label="Compass: open the sea chart (M)" onClick={onClick} data-track="compass-open">
-      <circle r="47" fill="#1b2a33" fill-opacity="0.78" />
-      {Array.from({ length: 16 }, (_, i) => { const a = i * Math.PI / 8, r0 = i % 4 ? 42 : 37; return <line key={i} x1={Math.cos(a) * r0} y1={Math.sin(a) * r0} x2={Math.cos(a) * 46} y2={Math.sin(a) * 46} stroke="#f0d27a" stroke-opacity={i % 4 ? 0.35 : 0.8} stroke-width={i % 4 ? 1 : 2} />; })}
-      {([['E', 30, 0], ['S', 0, 30], ['W', -30, 0]] as const).map(([l, x, y]) => <text key={l} x={x} y={y} class="cpt">{l}</text>)}
-      <g transform={`rotate(${b.a * 180 / Math.PI})`}><path d="M18 0 L-10 -7 L-5 0 L-10 7 Z" fill="#ff9a6b" stroke="#1b2a33" stroke-width="2" stroke-linejoin="round" /></g>
-      {un && <g transform={at(un)}><rect x="37" y="-3.5" width="7" height="7" fill="#b8c0c6" stroke="#1b2a33" stroke-width="1.5" /></g>}
-      {G.waypoint && far(G.waypoint) && <g transform={at(G.waypoint)}><path d="M41 -5.5 L46.5 0 L41 5.5 L35.5 0 Z" fill="#e6efec" stroke="#1b2a33" stroke-width="1.5" /></g>}
-      {target && far(target) && <g transform={at(target)}><path d="M48 0 L36 -8 L39 0 L36 8 Z" fill="#f0cf6a" stroke="#1b2a33" stroke-width="1.8" stroke-linejoin="round" /></g>}
-    </svg>
+    <div class="compass" role="img" aria-label="Compass: open the sea chart (M)" onClick={onClick} data-track="compass-open">
+      <svg viewBox="-50 -50 100 100">
+        <circle r="47" fill="#1b2a33" fill-opacity="0.78" />
+        {Array.from({ length: 16 }, (_, i) => { const a = i * Math.PI / 8, r0 = i % 4 ? 42 : 37; return <line key={i} x1={Math.cos(a) * r0} y1={Math.sin(a) * r0} x2={Math.cos(a) * 46} y2={Math.sin(a) * 46} stroke="#f0d27a" stroke-opacity={i % 4 ? 0.35 : 0.8} stroke-width={i % 4 ? 1 : 2} />; })}
+        {([['E', 30, 0], ['S', 0, 30], ['W', -30, 0]] as const).map(([l, x, y]) => <text key={l} x={x} y={y} class="cpt">{l}</text>)}
+      </svg>
+      {turn(deg(b.a), <path d="M18 0 L-10 -7 L-5 0 L-10 7 Z" fill="#ff9a6b" stroke="#1b2a33" stroke-width="2" stroke-linejoin="round" />)}
+      {un && turn(at(un), <rect x="37" y="-3.5" width="7" height="7" fill="#b8c0c6" stroke="#1b2a33" stroke-width="1.5" />)}
+      {G.waypoint && far(G.waypoint) && turn(at(G.waypoint), <path d="M41 -5.5 L46.5 0 L41 5.5 L35.5 0 Z" fill="#e6efec" stroke="#1b2a33" stroke-width="1.5" />)}
+      {target && far(target) && turn(at(target), <path d="M48 0 L36 -8 L39 0 L36 8 Z" fill="#f0cf6a" stroke="#1b2a33" stroke-width="1.8" stroke-linejoin="round" />)}
+    </div>
   );
 }
 /**
@@ -132,18 +138,21 @@ function Minimap({ step }: { step: Step }) {
 // streaks the stronger it blows. For sails the rim shows how well you're using it; oars and engines get a quiet version.
 const windWord = (): string => WX.wind < 0.1 ? 'Light breeze' : WX.wind < 0.35 ? 'Breeze' : WX.wind < 0.7 ? 'Fresh wind' : 'Gale';
 function WindVane({ sail, eff }: { sail: boolean; eff: number }) {
-  const rel = windAngle() - G.boat.a, k = 0.35 + 0.65 * WX.wind, len = 7 + 6 * k;
+  // in whole degrees and quarter units: the wind eases forever, and every hair it moved redrew the vane each frame
+  const rel = Math.round((windAngle() - G.boat.a) * 180 / Math.PI), len = Math.round((7 + 6 * (0.35 + 0.65 * WX.wind)) * 4) / 4;
   const rim = !sail ? '#8a949c' : eff > 0.9 ? '#9ad98f' : eff > 0.6 ? '#f2d36b' : '#ef8a72';
   return (
-    <svg class="vane" viewBox="-20 -20 40 40" aria-label={`Wind ${windWord().toLowerCase()}${sail ? `, sails at ${Math.round(eff * 100)}%` : ''}`}>
-      <circle r="17" fill="#1b2a33" fill-opacity="0.55" stroke={rim} stroke-width={sail ? 2.6 : 1.4} />
-      <path d="M0 -8 L3 -3 L3 6 L0 8 L-3 6 L-3 -3 Z" fill="#d6c38c" stroke="#2a1f17" stroke-width="0.8" />
-      <g transform={`rotate(${rel * 180 / Math.PI})`}>
+    <div class="vane" role="img" aria-label={`Wind ${windWord().toLowerCase()}${sail ? `, sails at ${Math.round(eff * 100)}%` : ''}`}>
+      <svg viewBox="-20 -20 40 40">
+        <circle r="17" fill="#1b2a33" fill-opacity="0.55" stroke={rim} stroke-width={sail ? 2.6 : 1.4} />
+        <path d="M0 -8 L3 -3 L3 6 L0 8 L-3 6 L-3 -3 Z" fill="#d6c38c" stroke="#2a1f17" stroke-width="0.8" />
+      </svg>
+      <svg class="turn" viewBox="-20 -20 40 40" style={{ rotate: `${rel}deg` }}>
         {[-5, 5].slice(0, WX.wind > 0.35 ? 2 : 0).map(o => <line x1={o} y1={len - 2} x2={o} y2={-len + 6} stroke="#e6efec" stroke-opacity="0.45" stroke-width="1" />)}
         <line x1="0" y1={len} x2="0" y2={-len + 2} stroke="#f6eedc" stroke-width="1.8" stroke-linecap="round" />
         <path d={`M0 ${-len - 2} L4 ${-len + 4} L-4 ${-len + 4} Z`} fill="#f6eedc" />
-      </g>
-    </svg>
+      </svg>
+    </div>
   );
 }
 

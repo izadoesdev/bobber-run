@@ -556,6 +556,31 @@ export function sfx(name: SfxName, vol = 1, pan = 0): void {
 }
 
 // ---------- continuous soundscape ----------
+// Web Audio renders everything connected to the speakers whatever its volume, so a silent loop (rain on a clear day,
+// the stove at sea, the engine on a sailboat, the drone near shore) cost as much as a loud one: all together about as
+// much CPU as the rest of the game. Each looping voice is unplugged once it has been silent a while, and plugged back
+// in when it's wanted.
+interface Plug { dest: AudioNode; on: boolean; quietAt: number }
+const plugs = new Map<GainNode, Plug>();
+/** Voice gain g, routed to dest only while it has a volume (see level). */
+function plug(g: GainNode, dest: AudioNode): void {
+  g.gain.value = 0;
+  plugs.set(g, { dest, on: false, quietAt: -1 });
+}
+/** Ease voice g toward volume v with time constant tc; plug it in for a volume, unplug it ten time constants into silence. */
+function level(g: GainNode, v: number, t: number, tc: number): void {
+  const p = plugs.get(g);
+  if (!p) { g.gain.setTargetAtTime(v, t, tc); return; }
+  if (v < 2e-4) v = 0;                                           // -74 dB: silence
+  if (v > 0) {
+    p.quietAt = -1;
+    if (!p.on) { g.connect(p.dest); p.on = true; }
+  } else if (p.on) {
+    if (p.quietAt < 0) p.quietAt = t;
+    else if (t - p.quietAt > tc * 10 + 0.2) { g.disconnect(); p.on = false; }
+  }
+  if (p.on) g.gain.setTargetAtTime(v, t, tc);
+}
 interface LoopVoice { g: GainNode; fl: BiquadFilterNode }
 interface Engine { g: GainNode; o1: OscillatorNode; o2: OscillatorNode; lfo: OscillatorNode; lp: BiquadFilterNode }
 type LoopName = 'sea' | 'lap' | 'wash' | 'spray' | 'surf' | 'wind' | 'rain' | 'luff' | 'roof' | 'stove' | 'hiss' | 'school';
@@ -569,8 +594,8 @@ function loopSource(ctx: AudioContext, kind: NoiseColor, type: BiquadFilterType,
   const fl = ctx.createBiquadFilter();
   fl.type = type; fl.frequency.value = f; fl.Q.value = q;
   const g = ctx.createGain();
-  g.gain.value = 0;
-  s.connect(fl).connect(g).connect(dest);
+  s.connect(fl).connect(g);
+  plug(g, dest);
   s.start(0, Math.random() * 2);
   return { g, fl };
 }
@@ -605,8 +630,8 @@ function startDrone(ctx: AudioContext, dest: AudioNode): GainNode {
   breath.gain.value = 0.7; lfo.frequency.value = 0.07; lfoG.gain.value = 0.3;
   lfo.connect(lfoG).connect(breath.gain);
   for (const f of [49, 73.6, 98.4]) { const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f; o.connect(lp); o.start(); }
-  g.gain.value = 0;
-  lp.connect(breath).connect(g).connect(dest);
+  lp.connect(breath).connect(g);
+  plug(g, dest);
   lfo.start();
   return g;
 }
@@ -629,10 +654,10 @@ function startEngine(ctx: AudioContext, gr: Graph): Engine {
   lfo.frequency.value = 9;
   lfoG.gain.value = 0.3;
   lfo.connect(lfoG).connect(am.gain);
-  g.gain.value = 0;
   o1.connect(pre);
   o2.connect(pre);
-  pre.connect(sh).connect(lp).connect(am).connect(g).connect(gr.bus.sfx);
+  pre.connect(sh).connect(lp).connect(am).connect(g);
+  plug(g, gr.bus.sfx);
   o1.start(); o2.start(); lfo.start();
   return { g, o1, o2, lfo, lp };
 }
@@ -734,7 +759,7 @@ interface SoundscapeState {
 export function soundscape(s: SoundscapeState, dt: number): void {
   if (!ac || !loops || ac.state !== 'running') return;
   const L = loops, t = ac.currentTime;
-  const set = (node: GainNode, v: number, tc = 0.15) => node.gain.setTargetAtTime(v, t, tc);
+  const set = (node: GainNode, v: number, tc = 0.15) => level(node, v, t, tc);
   lapPhase += dt * (0.7 + Math.random() * 0.6);
   const swell = 0.5 + 0.5 * Math.sin(t * 0.33) * Math.sin(t * 0.21 + 1);
   set(L.sea.g, s.mute ? 0 : 0.045 + 0.035 * swell + 0.03 * s.wind, 0.5);
@@ -827,15 +852,15 @@ const tune = { piece: null as Piece | null, at: 0, next: 0, restUntil: -1, last:
 export function music(on: boolean, night: boolean): void {
   if (!ac || ac.state !== 'running') return;
   const now = ac.currentTime;
-  if (!on) { tune.piece = null; tune.restUntil = -1; if (loops) loops.hiss.g.gain.setTargetAtTime(0, now, 0.5); return; }
+  if (!on) { tune.piece = null; tune.restUntil = -1; if (loops) level(loops.hiss.g, 0, now, 0.5); return; }
   if (!tune.piece) {
     if (!pianoReady) { void loadPiano(ac); return; }               // first the piano (audio is unlocked by now)
     if (tune.restUntil < 0) tune.restUntil = now + 4;            // music switched on, or the game just started: begin soon
-    if (now < tune.restUntil) { if (loops) loops.hiss.g.gain.setTargetAtTime(0, now, 1.5); return; }
+    if (now < tune.restUntil) { if (loops) level(loops.hiss.g, 0, now, 1.5); return; }
     tune.piece = compose(Math.floor(tune.R() * 2 ** 31), night, tune.last);
     tune.last = tune.piece.style; tune.at = now + 0.3; tune.next = 0;
   }
-  if (loops) loops.hiss.g.gain.setTargetAtTime(0.003, now, 0.5); // tape hiss only while a piece plays
+  if (loops) level(loops.hiss.g, 0.003, now, 0.5); // tape hiss only while a piece plays
   const p = tune.piece;
   curBus = 'music';
   for (; tune.next < p.events.length && tune.at + p.events[tune.next].t < now + AHEAD; tune.next++) {
