@@ -58,7 +58,8 @@ export interface Species {
 
 /** Gear that catches on its own, and can be switched off. */
 export type Helper = 'deckhand' | 'net' | 'pots';
-export type BoatId = 'row' | 'skiff' | 'launch' | 'trawler' | 'schooner' | 'drifter' | 'flagship';
+export type BoatId = 'row' | 'canoe' | 'skiff' | 'jetski' | 'launch' | 'trawler' | 'speedboat' | 'catamaran' | 'schooner' | 'cruiser' | 'drifter' | 'research'
+  | 'flagship' | 'icebreaker' | 'yacht' | 'motoryacht' | 'superyacht';
 type Propulsion = 'OARS' | 'SAIL' | 'ENGINE';
 export interface BoatDef {
   id: BoatId;
@@ -82,6 +83,10 @@ export interface BoatDef {
   harpoon?: number;
   /** deck size: 1 lands the sea giants (Trawler and up), 2 the very largest (Flagship) */
   deck?: number;
+  /** yachts: guests aboard pay this much more for every catch you sell (0.1 = 10%) */
+  luxury?: number;
+  /** a reinforced bow: ice floes and bergs part for it instead of stopping it */
+  ice?: true;
   what: string;
   /** project that unlocks it at the shipyard */
   req?: ProjectId;
@@ -416,6 +421,8 @@ interface Progress {
   streak: number;
   /** your islands' income waiting to be collected (at any of them), and what they bring in a minute, last known */
   treasury: number; realmRate: number;
+  /** each owned boat's hull (a share of its strength) when you last left it; the boat you sail is G.boat.hp */
+  hulls: Record<string, number>;
   musicOn: boolean;
   /** port id -> contracts on offer there */
   offers: Record<string, Contract[]>;

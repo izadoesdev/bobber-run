@@ -6,16 +6,30 @@ export { warmth, coldness } from './biome';
 
 export const BOATS: BoatDef[] = [
   { id: 'row',     name: 'Rowboat',      cost: 0,    speed: 1.0,  accel: 1.0, turn: 1.0,  hold: 4,  hp: 100, L: 13.5, B: 5.8, prop: 'OARS',   sonar: 0, net: 0, what: 'Quiet oars give you 60% more time for a perfect strike' },
+  { id: 'canoe',   name: 'Canoe',        cost: 150,  speed: 1.2,  accel: 1.25, turn: 1.35, hold: 3, hp: 70,  L: 12,   B: 3.2, prop: 'OARS',   sonar: 0, net: 0, what: 'Light and silent: turns on the spot, and a paddle gives you time for a perfect strike' },
   { id: 'skiff',   name: 'Sail Skiff',   cost: 450,  speed: 1.45, accel: 0.9, turn: 0.95, hold: 7,  hp: 140, L: 16.5, B: 6.4, prop: 'SAIL',   sonar: 0, net: 0, what: 'Sails: fastest when the wind blows from the side' },
+  { id: 'jetski',  name: 'Jet Ski',      cost: 1400, speed: 2.35, accel: 2.4, turn: 1.7,  hold: 2,  hp: 70,  L: 6,    B: 2.5, prop: 'ENGINE', sonar: 0, net: 0, what: 'The quickest way to see the coast, with room for two fish. Fish hate it' },
   { id: 'launch',  name: 'Motor Launch', cost: 1800, speed: 1.95, accel: 1.5, turn: 1.05, hold: 10, hp: 210, L: 17.5, B: 7,   prop: 'ENGINE', sonar: 0, net: 0, what: 'Engine: fast in any direction, but speeding near fish scares them away' },
   { id: 'trawler', name: 'Trawler',      cost: 5000, speed: 2.15, accel: 0.8, turn: 0.75, hold: 18, hp: 360, L: 23,   B: 9,   prop: 'ENGINE', sonar: 1, net: 3, deck: 1, what: 'A sturdy engine boat, big enough to land sea giants', req: 'pier' },
+  { id: 'speedboat', name: 'Speedboat',  cost: 7500, speed: 2.75, accel: 2.0, turn: 1.15, hold: 9,  hp: 240, L: 15,   B: 5.5, prop: 'ENGINE', sonar: 0, net: 0, what: 'Twin outboards: crosses the sea in no time, but carries little', req: 'pier' },
+  { id: 'catamaran', name: 'Catamaran',  cost: 11000, speed: 2.55, accel: 1.1, turn: 0.9, hold: 16, hp: 320, L: 20,   B: 9,   prop: 'SAIL',   sonar: 0, net: 0, keel: 1, what: 'Two hulls: fast under sail and steady in a gale', req: 'pier' },
   // the big ships: unlocked by restoring Alderhaven's harbour, not by money alone
   { id: 'schooner', name: 'Schooner',     cost: 15000, speed: 2.4, accel: 0.85, turn: 0.62, hold: 26, hp: 520, L: 32, B: 10, prop: 'SAIL', sonar: 1, net: 0, crew: 1, deck: 1, what: 'Two masts: the fastest ship when the wind blows from the side', req: 'drydock' },
+  { id: 'cruiser',  name: 'Day Cruiser',   cost: 24000, speed: 2.45, accel: 1.4, turn: 0.9, hold: 14, hp: 420, L: 22, B: 7.5, prop: 'ENGINE', sonar: 1, net: 0, luxury: 0.1, what: 'A small yacht: guests aboard make every catch you sell worth 10% more', req: 'drydock' },
   { id: 'drifter',  name: 'Steam Drifter', cost: 25000, speed: 2.3, accel: 0.7, turn: 0.62, hold: 34, hp: 700, L: 36, B: 11, prop: 'ENGINE', sonar: 2, net: 3, keel: 1, deck: 1, what: 'Steam power that rides out the worst storms', req: 'drydock' },
-  { id: 'flagship', name: 'Flagship',      cost: 50000, speed: 2.6, accel: 0.75, turn: 0.62, hold: 50, hp: 1000, L: 46, B: 14, prop: 'ENGINE', sonar: 3, net: 3, keel: 2, crew: 2, harpoon: 1, deck: 2, what: 'The finest ship afloat, fully crewed, with a deck for the very largest fish', req: 'lights' },
+  { id: 'research', name: 'Research Vessel', cost: 32000, speed: 2.2, accel: 0.9, turn: 0.75, hold: 22, hp: 560, L: 28, B: 9, prop: 'ENGINE', sonar: 3, net: 0, deck: 1, what: 'The best sonar afloat: every school by species, and legendary fish starred on the chart', req: 'drydock' },
+  { id: 'flagship', name: 'Flagship',      cost: 50000, speed: 2.6, accel: 0.75, turn: 0.62, hold: 50, hp: 1000, L: 46, B: 14, prop: 'ENGINE', sonar: 3, net: 3, keel: 2, crew: 2, harpoon: 1, deck: 2, what: 'The finest working ship afloat, fully crewed, with a deck for the very largest fish', req: 'lights' },
+  { id: 'icebreaker', name: 'Icebreaker',  cost: 70000, speed: 2.0, accel: 0.6, turn: 0.55, hold: 36, hp: 1500, L: 34, B: 11.5, prop: 'ENGINE', sonar: 2, net: 0, keel: 2, deck: 2, ice: true, what: 'A reinforced bow: ice floes and bergs part for it, and the far north opens up', req: 'lights' },
+  { id: 'yacht',    name: 'Sailing Yacht', cost: 85000, speed: 2.85, accel: 0.95, turn: 0.7, hold: 24, hp: 700, L: 30, B: 8, prop: 'SAIL', sonar: 1, net: 0, crew: 1, luxury: 0.15, what: 'A racing yacht with a teak deck: the fastest sail afloat, and catches sell for 15% more', req: 'lights' },
+  // the yachts of a kingdom
+  { id: 'motoryacht', name: 'Motor Yacht', cost: 160000, speed: 2.7, accel: 1.0, turn: 0.65, hold: 34, hp: 1000, L: 38, B: 11, prop: 'ENGINE', sonar: 2, net: 0, crew: 2, deck: 1, luxury: 0.25, what: 'Three decks of glass and teak: catches sell for 25% more', req: 'lights' },
+  { id: 'superyacht', name: 'Superyacht', cost: 650000, speed: 2.85, accel: 0.9, turn: 0.6, hold: 50, hp: 1800, L: 52, B: 13, prop: 'ENGINE', sonar: 3, net: 0, keel: 2, crew: 2, harpoon: 1, deck: 2, luxury: 0.4, what: 'The jewel of a kingdom, with a pool and a helipad: catches sell for 40% more', req: 'grand' },
 ];
 /** What a spare boat brings in per minute while you sail another one (the Fleet Office), and how many minutes it can hold. */
-export const FLEET_PER_MIN: Record<BoatId, number> = { row: 8, skiff: 18, launch: 35, trawler: 70, schooner: 110, drifter: 160, flagship: 240 };
+export const FLEET_PER_MIN: Record<BoatId, number> = {
+  row: 8, canoe: 6, skiff: 18, jetski: 12, launch: 35, trawler: 70, speedboat: 50, catamaran: 85, schooner: 110, cruiser: 120, drifter: 160, research: 150,
+  flagship: 240, icebreaker: 210, yacht: 220, motoryacht: 300, superyacht: 520,
+};
 export const FLEET_HOLD_MIN = 10;
 // Restoring Alderhaven: the long goal. Each project takes coins and donated fish, unlocks something, and the last one ends the story.
 // need: { any: n } fish of any kind; { kinds: n } different species; { trophy: n } trophy fish; { sp: id, n } a particular species

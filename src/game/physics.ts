@@ -8,7 +8,8 @@ import { OAR } from '../models';
 import { BOATS } from '../econ';
 import { ONLINE } from '../online';
 import type { Poi, Solid, Sway } from '../types';
-import { seaPropsNear, type SeaProp } from '../seaprops';
+import { seaPropsNear, type SeaProp, type SeaPropKind } from '../seaprops';
+const ICE_KINDS = new Set<SeaPropKind>(['floeS', 'floeM', 'floeL', 'berg', 'iceberg']);
 import { G, inp } from './state';
 import { boatDef, chartPerks, hpMax, keelLvl, speedMul, sailEfficiency, windAngle, toWorld } from './rules';
 import { spawn, toast, jitter, burst } from './feedback';
@@ -42,7 +43,8 @@ const propSolid = (p: SeaProp): Solid => {
 export function solidsNear(rad: number, out: Solid[]): void {
   out.length = 0;
   for (const p of poisNear(G.boat.x, G.boat.y, rad, nearPois)) if (p.solid) out.push(p.solid);
-  for (const p of seaPropsNear(G.boat.x, G.boat.y, rad, nearProps)) out.push(propSolid(p));
+  const breaker = !!boatDef().ice;                         // an icebreaker's bow parts ice instead of stopping on it
+  for (const p of seaPropsNear(G.boat.x, G.boat.y, rad, nearProps)) if (!(breaker && ICE_KINDS.has(p.kind))) out.push(propSolid(p));
 }
 /** Everything solid near the boat; refreshed once per frame rather than every physics step. */
 const solids: Solid[] = [];

@@ -154,11 +154,12 @@ function buildHull(V: Vox, { HL, HB, HZ, paint, stripe = M.paint, gun = M.gun, d
   }
   return { hw, top };
 }
+// boats other than the rowboat are built the first time they're shown, not when the game loads
+function lazyVox(build: () => Vox): () => Vox { let v: Vox | null = null; return () => v ??= build(); }
 function sailor(V: Vox, u: number, z: number, coat: number = M.coat): void { V.box(u, u + 1, -1, 1, z, z + 3, coat); V.box(u, u + 1, -1, 1, z + 4, z + 5, M.skin); V.box(u, u + 1, -1, 1, z + 6, z + 6, M.hat); }
 
-const SKIFF = new Vox(-20, 20, -12, 12, 31);
-(() => {
-  const V = SKIFF, { hw } = buildHull(V, { HL: 16.5, HB: 6.4, HZ: 5, paint: M.skiff, stripe: M.paint });
+const SKIFF = lazyVox(() => {
+  const V = new Vox(-20, 20, -12, 12, 31), { hw } = buildHull(V, { HL: 16.5, HB: 6.4, HZ: 5, paint: M.skiff, stripe: M.paint });
   for (const [a, b] of [[-3, -2], [7, 8]]) for (let u = a; u <= b; u++) for (let v = -8; v <= 8; v++) if (Math.abs(v) <= hw(u, 4) - 0.6 && !V.get(u, v, 4)) V.set(u, v, 4, M.seat);
   V.box(4, 4, 0, 0, 1, 29, M.post);                                   // mast
   V.line([4, 1, 8], [-11, 2, 8], M.oar);                              // boom
@@ -166,24 +167,22 @@ const SKIFF = new Vox(-20, 20, -12, 12, 31);
   for (let u = 6; u <= 14; u++) { const topz = Math.round(6 + (15 - u) * 2); for (let z = 7; z <= Math.min(topz, 26); z++) { V.set(u, 0, z, M.sail); V.set(u, -1, z, M.sail); } }
   sailor(V, -13, 4);
   V.line([-16, 0, 6], [-12, 0, 7], M.oar);
-  V.finalize();
-})();
+  return V.finalize();
+});
 
-const LAUNCH = new Vox(-21, 21, -12, 12, 16);
-(() => {
-  const V = LAUNCH; buildHull(V, { HL: 17.5, HB: 7, HZ: 6, paint: M.navy, stripe: M.redp, gun: M.gun, deckFrom: 6 });
+const LAUNCH = lazyVox(() => {
+  const V = new Vox(-21, 21, -12, 12, 16); buildHull(V, { HL: 17.5, HB: 7, HZ: 6, paint: M.navy, stripe: M.redp, gun: M.gun, deckFrom: 6 });
   V.box(-1, 5, -4, 4, 6, 9, M.white);
   V.box(5, 5, -3, 3, 8, 9, M.window); for (const v of [-4, 4]) V.box(0, 4, v, v, 8, 8, M.window);
   V.box(-2, 6, -5, 5, 10, 10, M.stripe);
   V.box(-11, -10, -4, 4, 4, 4, M.seat);
   sailor(V, -7, 4, M.orange);
   V.box(-19, -17, -1, 1, 3, 8, M.iron); V.box(-19, -17, -1, 1, 9, 9, M.redp); V.box(-18, -18, 0, 0, 0, 2, M.iron);
-  V.finalize();
-})();
+  return V.finalize();
+});
 
-const TRAWLER = new Vox(-27, 27, -13, 13, 30);
-(() => {
-  const V = TRAWLER, { hw } = buildHull(V, { HL: 23, HB: 9, HZ: 8, paint: M.trawl, stripe: M.white, gun: M.redp, deckZ: 5, floorMat: M.plank });
+const TRAWLER = lazyVox(() => {
+  const V = new Vox(-27, 27, -13, 13, 30), { hw } = buildHull(V, { HL: 23, HB: 9, HZ: 8, paint: M.trawl, stripe: M.white, gun: M.redp, deckZ: 5, floorMat: M.plank });
   V.box(-14, -5, -5, 5, 6, 13, M.white);
   V.box(-5, -5, -4, 4, 11, 12, M.window); for (const v of [-5, 5]) V.box(-13, -7, v, v, 11, 11, M.window);
   V.box(-15, -4, -6, 6, 14, 14, M.roof);
@@ -194,8 +193,8 @@ const TRAWLER = new Vox(-27, 27, -13, 13, 30);
   V.box(9, 11, 2, 4, 6, 7, M.crate); V.box(13, 14, -3, -2, 6, 6, M.crate);
   for (const [u, z] of [[-10, 9], [-9, 9], [-8, 9], [-10, 10], [-8, 10], [-10, 11], [-9, 11], [-8, 11]]) V.set(u, 6, z, (u + z) % 2 ? M.redp : M.white);
   sailor(V, 0, 6, M.orange);
-  V.finalize();
-})();
+  return V.finalize();
+});
 
 // ---------- big ships: shared helpers ----------
 // a flat sheet (sail) filling the convex polygon pts = [[u, z], ...], two voxels thick at v = vAt(u)
@@ -213,9 +212,8 @@ function sail(V: Vox, pts: [number, number][], vAt: (u: number) => number, m: nu
 function drum(V: Vox, cu: number, cz: number, r: number, v0: number, v1: number, m: number): void { for (let u = Math.floor(cu - r); u <= cu + r; u++) for (let z = Math.floor(cz - r); z <= cz + r; z++) if (Math.hypot(u - cu, z - cz) <= r) V.box(u, u, v0, v1, z, z, m); }
 
 // ---------- schooner: two masts, gaff sails and a jib, raised quarterdeck with the helm ----------
-const SCHOONER = new Vox(-38, 45, -12, 12, 48);
-(() => {
-  const V = SCHOONER, FORE = 13, MAIN = -7;
+const SCHOONER = lazyVox(() => {
+  const V = new Vox(-38, 45, -12, 12, 48), FORE = 13, MAIN = -7;
   buildHull(V, { HL: 32, HB: 10, HZ: 9, paint: M.schoon, stripe: M.schband, deckZ: 6, floorMat: M.plank });
   for (let u = -32; u <= -18; u++) for (let v = -9; v <= 9; v++) if (V.get(u, v, 6) === M.plank) { V.set(u, v, 7, M.plank2); V.set(u, v, 8, M.plank); }
   for (let v = -6; v <= 6; v++) { V.set(-18, v, 10, M.gun); if (v % 3 === 0) V.set(-18, v, 9, M.gun); }      // quarterdeck rail
@@ -245,13 +243,12 @@ const SCHOONER = new Vox(-38, 45, -12, 12, 48);
   V.line([30, 0, 11], [44, 0, 14], M.oar); V.line([44, 0, 13], [32, 0, 3], M.iron);                        // bowsprit, bobstay
   V.line([44, 0, 14], [FORE, 0, 39], M.post); V.line([30, 0, 12], [FORE, 0, 32], M.post); V.line([FORE, 0, 40], [MAIN, 0, 44], M.post);
   sailor(V, 10, 7); sailor(V, -31, 9, M.stripe);
-  V.finalize();
-})();
+  return V.finalize();
+});
 
 // ---------- steam drifter: black hull, tall raked black funnel with a red band, wheelhouse aft, mizzen with a riding sail ----------
-const DRIFTER = new Vox(-41, 40, -13, 13, 44);
-(() => {
-  const V = DRIFTER, { hw } = buildHull(V, { HL: 36, HB: 11, HZ: 10, paint: M.coal, stripe: M.dred, gun: M.iron, deckZ: 7, floorMat: M.plank });
+const DRIFTER = lazyVox(() => {
+  const V = new Vox(-41, 40, -13, 13, 44), { hw } = buildHull(V, { HL: 36, HB: 11, HZ: 10, paint: M.coal, stripe: M.dred, gun: M.iron, deckZ: 7, floorMat: M.plank });
   V.box(-9, 3, -3, 3, 8, 9, M.buff); V.box(-9, -7, -2, 2, 10, 10, M.window);                               // engine casing + skylight
   for (let z = 10; z <= 30; z++) {                                                                          // funnel, raked aft
     const cu = -2 - Math.floor((z - 10) / 6);
@@ -289,13 +286,12 @@ const DRIFTER = new Vox(-41, 40, -13, 13, 44);
   V.line([-30, 0, 12], [-40, 0, 12], M.oar); V.line([-30, 0, 27], [-38, 0, 31], M.oar);
   V.line([22, 0, 33], [36, 0, 13], M.post); V.line([22, 0, 34], [-30, 0, 32], M.iron);
   sailor(V, 14, 8);
-  V.finalize();
-})();
+  return V.finalize();
+});
 
 // ---------- flagship: big stern trawler with a white superstructure, gantry, crane, lifeboats, harpoon ----------
-const FLAGSHIP = new Vox(-48, 50, -16, 16, 46);
-(() => {
-  const V = FLAGSHIP, { hw } = buildHull(V, { HL: 46, HB: 14, HZ: 12, paint: M.fhull, stripe: M.fband, gun: M.white, deckZ: 9, floorMat: M.fdeck, sternPow: 8, transom: 0.9 });
+const FLAGSHIP = lazyVox(() => {
+  const V = new Vox(-48, 50, -16, 16, 46), { hw } = buildHull(V, { HL: 46, HB: 14, HZ: 12, paint: M.fhull, stripe: M.fband, gun: M.white, deckZ: 9, floorMat: M.fdeck, sternPow: 8, transom: 0.9 });
   for (let u = 28; u <= 46; u++) for (let v = -14; v <= 14; v++) if (V.get(u, v, 9) === M.fdeck) { V.box(u, u, v, v, 10, 11, M.white); V.set(u, v, 12, M.fdeck); }   // fo'c'sle
   // superstructure in three tiers, portholes and a wraparound bridge
   const house = (u0: number, u1: number, w: number, z0: number, z1: number) => { for (let u = u0; u <= u1; u++) { const h = Math.min(w, Math.floor(hw(u, 12) - 1.5)); V.box(u, u, -h, h, z0, z1, M.white); } };
@@ -340,10 +336,143 @@ const FLAGSHIP = new Vox(-48, 50, -16, 16, 46);
   V.box(43, 43, -2, 2, 15, 17, M.ironp); V.set(47, 0, 17, M.steel); V.set(48, 0, 17, M.redp);
   for (let du = -1; du <= 1; du++) for (let dv = -1; dv <= 1; dv++) if (du || dv) V.set(38 + du, -4 + dv, 13, M.paint);
   sailor(V, -8, 10, M.orange);
-  V.finalize();
-})();
+  return V.finalize();
+});
+// ---------- the new fleet: small craft, sport boats and yachts ----------
+const Y = {
+  teak: mat(['#6e4a2a', '#9a6a3e', '#c08a52']), cream: mat(['#c8c0a8', '#e8e2cc', '#fbf8ec']), chrome: mat(['#8a949c', '#c8d0d6', '#f0f4f6']),
+  tint: mat(['#16222c', '#22344a', '#36506a']), pool: mat(['#2a7ea8', '#3fa8d0', '#7fd8f0']), jet: mat(['#a8281e', '#d8402e', '#f06a4a']),
+  rubber: mat(['#1a1c1e', '#2a2e32', '#3e4448']), ice: mat(['#7e1e1a', '#a82a22', '#d04030']), yellow: mat(['#b8902a', '#e0b83a', '#f6d860']),
+  carbon: mat(['#1c2430', '#28344a', '#3a4a64']), canoe: mat(['#7a4a24', '#a8683a', '#d08c52']),
+};
+/** A deckhouse: walls from z0 to z1 with a band of tinted windows at zw, a roof of `roof` over it. */
+function house(V: Vox, u0: number, u1: number, hv: number, z0: number, z1: number, zw: number, wall: number = M.white, roof: number = M.white): void {
+  V.box(u0, u1, -hv, hv, z0, z1, wall);
+  for (let u = u0; u <= u1; u++) for (const v of [-hv, hv]) V.set(u, v, zw, Y.tint);
+  for (let v = -hv + 1; v < hv; v++) V.set(u1, v, zw, Y.tint);
+  V.box(u0 - 1, u1 + 1, -hv - 1, hv + 1, z1 + 1, z1 + 1, roof);
+}
+/** Two hulls side by side, `off` either side of the centreline. */
+function twinHulls(V: Vox, spec: HullSpec, off: number): void {
+  const T = new Vox(V.u0, V.u0 + V.nu - 1, -Math.ceil(spec.HB + 2), Math.ceil(spec.HB + 2), V.nz);
+  buildHull(T, spec);
+  T.each((u, v, z, m) => { V.set(u, v - off, z, m); V.set(u, v + off, z, m); });
+}
+const CANOE = lazyVox(() => {
+  const V = new Vox(-13, 13, -4, 4, 10); buildHull(V, { HL: 12, HB: 3.2, HZ: 3, paint: Y.canoe, stripe: Y.canoe, gun: M.gun, sternPow: 1.7 });
+  for (const u of [-6, 6]) V.box(u, u, -2, 2, 2, 2, M.seat);
+  sailor(V, -5, 1, M.orange);
+  V.line([-3, -4, 3], [1, 3, 7], M.oar); V.box(-4, -3, -5, -4, 2, 3, M.blade);
+  return V.finalize();
+});
+const JETSKI = lazyVox(() => {
+  const V = new Vox(-7, 7, -4, 4, 11);
+  for (let u = -6; u <= 6; u++) {
+    const w = Math.round(2.5 * Math.sqrt(Math.max(0, 1 - Math.pow(Math.max(0, u) / 6.5, 2))) - (u < -5 ? 0.5 : 0));
+    for (let v = -w; v <= w; v++) { V.set(u, v, 0, Y.rubber); V.set(u, v, 1, Y.jet); if (Math.abs(v) < w || u > 3) V.set(u, v, 2, u > 2 ? Y.jet : M.white); }
+  }
+  V.box(-4, -1, -1, 1, 3, 3, Y.rubber);                                     // the seat
+  V.box(2, 2, -2, 2, 4, 4, Y.chrome); V.box(2, 2, 0, 0, 3, 3, Y.chrome);    // handlebars
+  V.box(3, 4, -1, 1, 3, 3, Y.tint);                                         // the little screen
+  sailor(V, -2, 3, M.redp);
+  return V.finalize();
+});
+const SPEEDBOAT = lazyVox(() => {
+  const V = new Vox(-16, 16, -7, 7, 12); buildHull(V, { HL: 15, HB: 5.5, HZ: 4, paint: M.white, stripe: M.redp, gun: M.white, deckFrom: 3, transom: 0.85, sternPow: 6 });
+  for (let v = -4; v <= 4; v++) V.set(3, v, 5, Y.tint); for (const v of [-4, 4]) V.set(2, v, 5, Y.tint);   // windscreen
+  for (let u = 4; u <= 13; u++) V.set(u, 0, 4, Y.yellow);                                                   // racing stripe on the foredeck
+  V.box(-4, -1, -3, -1, 2, 3, M.seat); V.box(-4, -1, 1, 3, 2, 3, M.seat); V.box(-11, -7, -3, 3, 2, 3, M.seat);
+  for (const v of [-2, 2]) { V.box(-15, -14, v, v, 1, 5, M.iron); V.box(-15, -14, v, v, 6, 6, Y.rubber); }  // twin outboards
+  sailor(V, -2, 2, M.navy);
+  return V.finalize();
+});
+const CATAMARAN = lazyVox(() => {
+  const V = new Vox(-21, 21, -10, 10, 42); twinHulls(V, { HL: 20, HB: 2.6, HZ: 4, paint: M.white, stripe: M.navy, gun: M.white }, 6);
+  for (let u = -10; u <= 12; u++) for (let v = -5; v <= 5; v++) V.set(u, v, 4, u > 0 ? M.net : M.plank);   // trampoline forward, deck aft
+  house(V, -10, -2, 5, 5, 6, 6);
+  V.box(2, 2, 0, 0, 5, 39, Y.chrome); V.line([2, 0, 9], [-15, 0, 9], Y.chrome);   // mast and boom
+  sail(V, [[-14, 10], [1, 10], [1, 37]], () => 0);
+  sail(V, [[4, 7], [18, 6], [4, 33]], () => 0, M.sail);
+  sailor(V, -14, 4, M.orange);
+  return V.finalize();
+});
+const RESEARCH = lazyVox(() => {
+  const V = new Vox(-30, 30, -11, 11, 34); buildHull(V, { HL: 28, HB: 9, HZ: 7, paint: M.navy, stripe: M.white, gun: M.white, deckZ: 5, floorMat: M.plank, transom: 0.8 });
+  house(V, -2, 14, 6, 8, 14, 12);
+  house(V, 6, 14, 5, 16, 18, 17);                                                       // the bridge
+  for (let du = -3; du <= 3; du++) for (let dv = -3; dv <= 3; dv++) for (let dz = 0; dz <= 3; dz++) if (Math.hypot(du, dv, dz) <= 3.2) V.set(4 + du, dv, 22 + dz, M.white);   // radar dome
+  V.box(4, 4, 0, 0, 16, 21, M.iron); V.box(10, 10, 0, 0, 19, 27, M.iron); V.box(10, 10, -3, 3, 25, 25, M.iron);
+  for (const v of [-6, 6]) V.line([-24, v, 8], [-28, v * 0.7, 18], M.orange); V.box(-28, -28, -4, 4, 18, 18, M.orange);   // the A-frame
+  V.box(-16, -9, -4, -1, 8, 10, M.orange); V.box(-16, -9, 1, 4, 8, 10, M.white);       // lab containers
+  for (const v of [-7, 7]) V.box(-2, 3, v, v, 10, 11, M.orange);                         // lifeboats
+  sailor(V, -20, 6, M.orange);
+  return V.finalize();
+});
+const CRUISER = lazyVox(() => {
+  const V = new Vox(-24, 24, -9, 9, 22); buildHull(V, { HL: 22, HB: 7.5, HZ: 5, paint: M.white, stripe: M.navy, gun: M.white, deckFrom: 6, deckZ: 3, floorMat: Y.teak, transom: 0.85, sternPow: 6 });
+  house(V, -4, 10, 5, 6, 8, 7);
+  for (const [u, v] of [[-4, -5], [-4, 5], [2, -5], [2, 5]]) V.box(u, u, v, v, 10, 12, Y.chrome);
+  V.box(-5, 3, -6, 6, 13, 13, M.white);                                              // flybridge hardtop
+  V.box(-18, -12, -5, 5, 4, 4, Y.cream); V.box(-18, -18, -5, 5, 5, 6, Y.cream);     // stern seating
+  V.box(-23, -21, -4, 4, 2, 2, Y.teak);                                              // swim platform
+  sailor(V, 0, 9, M.navy);
+  return V.finalize();
+});
+const YACHT = lazyVox(() => {
+  const V = new Vox(-32, 38, -10, 10, 66); buildHull(V, { HL: 30, HB: 8, HZ: 4, paint: Y.carbon, stripe: M.white, gun: Y.chrome, deckFrom: -22, deckZ: 3, floorMat: Y.teak, transom: 0.8 });
+  for (let u = -22; u <= 26; u++) for (let v = -6; v <= 6; v++) if (V.get(u, v, 4) === M.plank) V.set(u, v, 4, Y.teak);
+  V.box(-6, 8, -3, 3, 5, 6, Y.cream); for (const u of [-4, 0, 4]) for (const v of [-3, 3]) V.set(u, v, 6, Y.tint);   // cabin trunk
+  V.box(6, 6, 0, 0, 5, 63, Y.chrome); V.line([6, 0, 9], [-22, 0, 9], Y.chrome);        // mast and boom
+  sail(V, [[-21, 10], [5, 10], [5, 61]], () => 0);
+  sail(V, [[8, 7], [32, 6], [8, 57]], () => 0);
+  for (let a = 0; a < 12; a++) V.set(-21, Math.round(Math.cos(a / 12 * 6.28) * 2), 7 + Math.round(Math.sin(a / 12 * 6.28) * 2), Y.chrome);   // the wheel
+  sailor(V, -24, 4, M.white);
+  return V.finalize();
+});
+const ICEBREAKER = lazyVox(() => {
+  const V = new Vox(-36, 38, -14, 14, 40); buildHull(V, { HL: 34, HB: 11.5, HZ: 9, paint: Y.ice, stripe: M.white, gun: M.white, deckZ: 6, floorMat: M.steel, transom: 0.7, sternPow: 6 });
+  V.each((u, v, z, m) => { if (u > 18 && z <= 5 && (m === Y.ice || m === M.bottom)) V.set(u, v, z, M.coal); });   // the ice belt on the bow
+  house(V, 2, 20, 7, 10, 21, 18);
+  for (let z = 12; z <= 16; z += 4) for (let u = 3; u <= 19; u += 2) for (const v of [-7, 7]) V.set(u, v, z, Y.tint);
+  house(V, 14, 21, 9, 23, 25, 24);                                                         // the bridge, wider than the house
+  V.box(-5, -1, -2, 2, 10, 24, Y.ice); V.box(-5, -1, -2, 2, 25, 26, M.coal);               // funnel
+  V.box(-30, -16, -9, 9, 9, 9, M.steel); V.box(-20, -20, 0, 0, 10, 20, M.orange); V.line([-20, 0, 20], [-30, 0, 14], M.orange);   // aft deck and crane
+  sailor(V, -24, 9, M.orange);
+  return V.finalize();
+});
+const MOTORYACHT = lazyVox(() => {
+  const V = new Vox(-40, 40, -13, 13, 38); buildHull(V, { HL: 38, HB: 11, HZ: 6, paint: M.white, stripe: M.navy, gun: M.white, deckZ: 4, floorMat: Y.teak, deckFrom: 10, transom: 0.85, sternPow: 6 });
+  house(V, -20, 22, 8, 7, 11, 9);
+  house(V, -14, 16, 7, 12, 15, 14);
+  V.box(-8, 8, -6, 6, 16, 17, M.white);
+  for (const [u, v] of [[-8, -6], [-8, 6], [8, -6], [8, 6]]) V.box(u, u, v, v, 18, 19, Y.chrome);
+  V.box(-9, 9, -7, 7, 20, 20, M.white);                                                    // hardtop
+  V.box(4, 4, -4, 4, 21, 24, Y.chrome); V.box(4, 4, -2, 2, 25, 25, M.white);               // radar arch
+  V.box(-36, -31, -2, 2, 5, 5, Y.rubber); V.box(-35, -32, -1, 1, 6, 6, M.white);           // the tender
+  V.box(-28, -22, -5, 5, 5, 5, Y.cream);                                                   // sun loungers
+  sailor(V, 0, 16, M.navy);
+  return V.finalize();
+});
+const SUPERYACHT = lazyVox(() => {
+  const V = new Vox(-54, 56, -16, 16, 44); buildHull(V, { HL: 52, HB: 13, HZ: 7, paint: Y.carbon, stripe: M.gilt, gun: M.white, deckZ: 5, floorMat: Y.teak, deckFrom: 20, transom: 0.85, sternPow: 6 });
+  house(V, -34, 30, 10, 8, 12, 10);
+  house(V, -26, 24, 9, 13, 17, 15);
+  house(V, -16, 16, 8, 18, 21, 20);
+  house(V, -6, 8, 6, 22, 24, 23);
+  for (let u = -35; u <= 31; u++) for (const v of [-11, 11]) V.set(u, v, 13, M.gilt);    // gold trim along the main deck
+  V.box(0, 0, 0, 0, 26, 33, Y.chrome); for (let dz = 0; dz <= 2; dz++) for (let dv = -2; dv <= 2; dv++) if (Math.hypot(dv, dz) <= 2.2) V.set(0, dv, 34 + dz, M.white);   // mast and dome
+  for (let u = -47; u <= -37; u++) for (let v = -6; v <= 6; v++) V.set(u, v, 6, Math.abs(v) === 6 || u === -47 || u === -37 ? Y.cream : Y.pool);   // the pool
+  for (let u = 34; u <= 47; u++) for (let v = -8; v <= 8; v++) {                         // the helipad
+    const d = Math.hypot(u - 40.5, v);
+    if (d <= 7.5) V.set(u, v, 9, d > 6.5 ? M.gilt : M.steel);
+  }
+  for (let v = -3; v <= 3; v++) { V.set(38, v, 10, M.white); V.set(43, v, 10, M.white); } for (let u = 38; u <= 43; u++) V.set(u, 0, 10, M.white);   // H
+  for (const v of [-11, 11]) V.box(-20, -12, v, v, 9, 10, M.white);                       // tenders in their davits
+  sailor(V, 2, 22, M.navy);
+  return V.finalize();
+});
 // smoke outlets in local [u, v, z] (top centre of each funnel)
-export const FUNNEL: Partial<Record<BoatId, Vec3>> = { drifter: [-5, 0, 31], flagship: [-1, 0, 30] };
+export const FUNNEL: Partial<Record<BoatId, Vec3>> = { drifter: [-5, 0, 31], flagship: [-1, 0, 30], icebreaker: [-3, 0, 27] };
 
 export interface BoatModel {
   vox: Vox;
@@ -356,12 +485,22 @@ export interface BoatModel {
 }
 export const BOAT_MODELS: Record<BoatId, BoatModel> = {
   row: { vox: BOAT, oars: true, rad: BOAT_RAD, outlineZ: HZ + 1, hull: M.paint },
-  skiff: { vox: SKIFF, rad: 21, outlineZ: 6, hull: M.skiff },
-  launch: { vox: LAUNCH, rad: 22, outlineZ: 7, hull: M.navy },
-  trawler: { vox: TRAWLER, rad: 28, outlineZ: 9, hull: M.trawl },
-  schooner: { vox: SCHOONER, rad: 46, outlineZ: 10, hull: M.schoon },
-  drifter: { vox: DRIFTER, rad: 42, outlineZ: 11, hull: M.coal },
-  flagship: { vox: FLAGSHIP, rad: 50, outlineZ: 13, hull: M.fhull },
+  skiff: { get vox() { return SKIFF(); }, rad: 21, outlineZ: 6, hull: M.skiff },
+  launch: { get vox() { return LAUNCH(); }, rad: 22, outlineZ: 7, hull: M.navy },
+  trawler: { get vox() { return TRAWLER(); }, rad: 28, outlineZ: 9, hull: M.trawl },
+  schooner: { get vox() { return SCHOONER(); }, rad: 46, outlineZ: 10, hull: M.schoon },
+  drifter: { get vox() { return DRIFTER(); }, rad: 42, outlineZ: 11, hull: M.coal },
+  flagship: { get vox() { return FLAGSHIP(); }, rad: 50, outlineZ: 13, hull: M.fhull },
+  canoe: { get vox() { return CANOE(); }, rad: 15, outlineZ: 4, hull: Y.canoe },
+  jetski: { get vox() { return JETSKI(); }, rad: 10, outlineZ: 3, hull: Y.jet },
+  speedboat: { get vox() { return SPEEDBOAT(); }, rad: 18, outlineZ: 5, hull: M.white },
+  catamaran: { get vox() { return CATAMARAN(); }, rad: 24, outlineZ: 5, hull: M.white },
+  research: { get vox() { return RESEARCH(); }, rad: 33, outlineZ: 8, hull: M.navy },
+  cruiser: { get vox() { return CRUISER(); }, rad: 26, outlineZ: 6, hull: M.white },
+  yacht: { get vox() { return YACHT(); }, rad: 40, outlineZ: 5, hull: Y.carbon },
+  icebreaker: { get vox() { return ICEBREAKER(); }, rad: 40, outlineZ: 10, hull: Y.ice },
+  motoryacht: { get vox() { return MOTORYACHT(); }, rad: 43, outlineZ: 7, hull: M.white },
+  superyacht: { get vox() { return SUPERYACHT(); }, rad: 58, outlineZ: 8, hull: Y.carbon },
 };
 export const hasOars = (id: BoatId): boolean => !!BOAT_MODELS[id].oars;
 
@@ -373,7 +512,18 @@ interface Mount {
   ice: Vec3; tackle: Vec3; net: Vec3 | null; ant: Vec3; anchor: Vec3;
   crates: Vec3[]; pile: Vec3[];
 }
+/** Gear spots for a hull of half-length L and half-beam B with its deck at z: a reasonable layout for boats without their own. */
+function autoMount(L: number, B: number, z: number): Mount {
+  const u = (k: number) => Math.round(L * k), v = (k: number) => Math.round(B * k);
+  return {
+    crew: [u(0.3), v(-0.4), z], cook: [u(-0.45), v(0.3), z], pump: [u(-0.35), v(0.45), z], flag: [u(-0.9), 0, z + 1], lamp: [u(-0.85), 0, z + 1], sonar: [u(0.4), v(-0.3), z],
+    rod: [[u(-0.6), v(0.6), z + 1], [u(-0.8), v(0.9), z + 8]], ice: [u(-0.5), v(-0.4), z], tackle: [u(-0.55), v(0.35), z], net: null, ant: [u(-0.75), v(0.5), z + 1], anchor: [u(0.85), v(0.3), z + 1],
+    crates: [[u(0.2), v(-0.5), z], [u(0.2), v(0.4), z], [u(-0.6), v(0.1), z]], pile: [[u(0.05), -1, z], [u(0.1), 1, z], [u(0.15), -1, z], [u(0.05), 1, z], [u(0.1), -2, z], [u(0.15), 2, z]],
+  };
+}
 const MOUNT: Record<BoatId, Mount> = {
+  canoe: autoMount(12, 3.2, 2), jetski: autoMount(6, 2.5, 3), speedboat: autoMount(15, 5.5, 2), catamaran: autoMount(20, 5, 5), research: autoMount(28, 9, 6),
+  cruiser: autoMount(22, 7.5, 4), yacht: autoMount(30, 8, 4), icebreaker: autoMount(34, 11.5, 7), motoryacht: autoMount(38, 11, 5), superyacht: autoMount(52, 13, 6),
   row: { crew: [7, 0, 5], cook: [-10, -2, 5], pump: [-6, 3, 2], flag: [-13, 0, 6], lamp: [-12, 0, 6], sonar: [7, -2, 5], rod: [[-8, 4, 6], [-13, 8, 13]], ice: [-8, -2, 2], tackle: [-9, 2, 5], net: [10, 0, 7], ant: [-11, 4, 6], anchor: [12, 3, 6],
     crates: [[5, -3, 2], [3, -3, 2], [-10, 1, 5]], pile: [[3, -1, 2], [4, 1, 2], [5, -1, 2], [6, 1, 2], [3, 1, 2], [5, 1, 2]] },
   skiff: { crew: [-3, -2, 5], cook: [-9, 2, 2], pump: [-5, 3, 2], flag: [4, 0, 30], lamp: [-14, 3, 6], sonar: [7, 2, 5], rod: [[-8, 4, 5], [-13, 8, 12]], ice: [-6, -3, 2], tackle: [-2, 2, 5], net: [-10, 0, 2], ant: [-14, -3, 6], anchor: [15, 3, 6],
@@ -391,7 +541,10 @@ const MOUNT: Record<BoatId, Mount> = {
 };
 function cloneVox(V: Vox): Vox { const c = new Vox(V.u0, V.u0 + V.nu - 1, V.v0, V.v0 + V.nv - 1, V.nz); c.d.set(V.d); return c; }
 const PLATE = [0, M.copper, M.ironp, M.steel, M.gilt];   // hull plating material by level (0 = unplated)
-const STRIPE: Record<BoatId, number> = { row: M.stripe, skiff: M.paint, launch: M.redp, trawler: M.redp, schooner: M.schband, drifter: M.dred, flagship: M.fband };   // the visible waterline band that plating replaces
+const STRIPE: Record<BoatId, number> = {
+  row: M.stripe, skiff: M.paint, launch: M.redp, trawler: M.redp, schooner: M.schband, drifter: M.dred, flagship: M.fband, canoe: Y.canoe, jetski: M.white,
+  speedboat: M.redp, catamaran: M.navy, research: M.white, cruiser: M.navy, yacht: M.white, icebreaker: M.white, motoryacht: M.navy, superyacht: M.gilt,
+};   // the visible waterline band that plating replaces
 /** What a boat visibly carries: paint, plating and the level of each piece of fitted gear (0 = none). */
 export interface Fit {
   paint: string;

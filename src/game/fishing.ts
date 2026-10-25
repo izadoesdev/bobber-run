@@ -212,7 +212,7 @@ const surgeWithin = (pattern: (ph: number) => number, ph: number, rate: number, 
 function strikeWindows(sp: Species): [number, number] {
   const rod = G.up.rod, rare = clamp(0.7 + 0.06 * sp.w, 0.75, 1);
   const relaxed = (SET.strike === 'relaxed' ? 1.6 : 1) * (1 + 0.2 * Math.min(3, G.dry)) * rare * (G.stats.caught < NEW_CAPTAIN ? 1.5 : 1);   // pity: each miss widens the window
-  const perfect = ((G.boatId === 'row' ? 0.32 : 0.2) + 0.03 * rod + 0.05 * Math.max(0, G.up.tackle - 1)) * relaxed;
+  const perfect = ((boatDef().prop === 'OARS' ? 0.32 : 0.2) + 0.03 * rod + 0.05 * Math.max(0, G.up.tackle - 1)) * relaxed;
   return [perfect, (0.75 + 0.12 * rod) * relaxed];
 }
 

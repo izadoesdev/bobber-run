@@ -31,7 +31,7 @@ export function saveGame(): void {
       savedAt: Date.now(), world: WORLD, coins: G.coins, earned: G.earned, up: G.up, hp: b.hp, hold: G.hold, log: G.log, boatId: G.boatId, owned: G.owned,
       bait: G.bait, baitSel: G.baitSel, paint: G.paint, paints: G.paints, found: [...G.found], salvaged: [...G.salvaged], lastPort: G.lastPort, x: b.x, y: b.y, a: b.a,
       stats: G.stats, story: G.story, gifts: G.gifts, pet: G.pet, projects: G.projects, fleet: G.fleet, dives: G.dives,
-      goalsDone: G.goalsDone, cheated: G.cheated, maps: G.maps, escaped: G.escaped, packs: G.packs, regionsSeen: G.regionsSeen, explored: G.explored, unlocked: G.unlocked, waypoint: G.waypoint, gearOff: G.gearOff, zones: G.zones, docks: G.docks, streak: G.streak, treasury: G.treasury, realmRate: G.realmRate, musicOn: G.musicOn, offers: G.offers, active: G.active, pity: G.pity, clock: G.clock,
+      goalsDone: G.goalsDone, cheated: G.cheated, maps: G.maps, escaped: G.escaped, packs: G.packs, regionsSeen: G.regionsSeen, explored: G.explored, unlocked: G.unlocked, waypoint: G.waypoint, gearOff: G.gearOff, zones: G.zones, docks: G.docks, streak: G.streak, treasury: G.treasury, realmRate: G.realmRate, hulls: G.hulls, musicOn: G.musicOn, offers: G.offers, active: G.active, pity: G.pity, clock: G.clock,
     };
     localStorage.setItem(KEY, JSON.stringify(data));
     netSaved();
@@ -97,7 +97,7 @@ export function newGame(): void {
   const fresh: Partial<GameState> = {
     coins: 15, coinsShown: 15, earned: 0, paint: 'classic', paints: ['classic'], up: freshUpgrades(), bait: { shrimp: 3, glow: 0, chum: 1 }, baitSel: 'shrimp',
     hold: [], log: {}, found: new Set(), salvaged: new Set(), sat: {}, fish: null, parts: [], toasts: [], floaters: [], boatId: 'row', owned: ['row'],
-    stats: freshStats(), goalsDone: [], cheated: false, maps: [], escaped: [], packs: {}, regionsSeen: [], explored: '', unlocked: [], waypoint: null, gearOff: {}, zones: {}, docks: {}, streak: 0, treasury: 0, realmRate: 0, offers: {}, active: [], pity: 0,
+    stats: freshStats(), goalsDone: [], cheated: false, maps: [], escaped: [], packs: {}, regionsSeen: [], explored: '', unlocked: [], waypoint: null, gearOff: {}, zones: {}, docks: {}, streak: 0, treasury: 0, realmRate: 0, hulls: {}, offers: {}, active: [], pity: 0,
     clock: DAYLEN * 0.08, frenzy: null, nextFrenzy: 240, card: null, projects: [], fleet: {}, dives: {}, gifts: {}, pet: null, dry: 0, story: null, talk: null,
   };
   Object.assign(G, fresh);
@@ -152,7 +152,7 @@ export function loadGame(): void {
       bait: { ...G.bait, ...s.bait }, baitSel: s.baitSel, paint: s.paint, paints: s.paints, found: new Set(s.found), salvaged: new Set(s.salvaged),
       lastPort: s.lastPort || G.lastPort, stats: { ...G.stats, ...s.stats }, story: s.story, gifts: s.gifts, pet: s.pet, projects: s.projects,
       fleet: s.fleet, dives: s.dives, goalsDone: s.goalsDone, cheated: s.cheated, maps: s.maps, escaped: s.escaped, packs: s.packs, regionsSeen: s.regionsSeen, explored: s.explored, unlocked: s.unlocked, gearOff: s.gearOff, zones: s.zones,
-      docks: s.docks, streak: s.streak, treasury: s.treasury, realmRate: s.realmRate, waypoint: s.waypoint, musicOn: s.musicOn, offers: s.offers, active: s.active, pity: s.pity, clock: s.clock ?? G.clock,
+      docks: s.docks, streak: s.streak, treasury: s.treasury, realmRate: s.realmRate, hulls: s.hulls, waypoint: s.waypoint, musicOn: s.musicOn, offers: s.offers, active: s.active, pity: s.pity, clock: s.clock ?? G.clock,
     };
     Object.assign(G, loaded);
     fleetWhileAway(s.savedAt);                                     // the fleet kept fishing while the game was closed

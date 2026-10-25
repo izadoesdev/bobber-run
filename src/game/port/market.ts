@@ -8,7 +8,7 @@ import { CREW_RANGE, ONLINE, crewBonus } from '../../online';
 import type { Fish, Port } from '../../types';
 import { money } from '../../config';
 import { G } from '../state';
-import { cap, fishValue, hpMax } from '../rules';
+import { boatDef, cap, fishValue, hpMax } from '../rules';
 import { addCoins, toast } from '../feedback';
 import { saveGame } from '../save';
 import { confirmed, header, spend, type Rows } from './kit';
@@ -50,10 +50,10 @@ export const keptBack = (): Set<Fish> => reserved().all;
 /** Other players' boats within crew range of a point. */
 export const sailorsNear = (x: number, y: number): number => ONLINE.sailors.filter(s => Math.hypot(s.x - x, s.y - y) < CREW_RANGE).length;
 /** Everything a sale is multiplied by besides the port's price: the cook's smoking and the crew bonus for sailors nearby. */
-export const saleBonus = (): { cook: number; crew: number } => ({ cook: 0.1 * G.up.cook, crew: crewBonus(G.boat.x, G.boat.y) });
+export const saleBonus = (): { cook: number; crew: number; lux: number } => ({ cook: 0.1 * G.up.cook, crew: crewBonus(G.boat.x, G.boat.y), lux: boatDef().luxury ?? 0 });
 /** What "Sell all" pays. With `all`, fish kept back for contracts and the harbour are sold too. */
 export function saleValue(p: Port, all = false): { tot: number; n: number; kept: number; harbour: number } {
-  const r = reserved(), keep = all ? new Set<Fish>() : r.all, sold: Record<number, number> = {}, b = saleBonus(), mul = (1 + b.cook) * (1 + b.crew);
+  const r = reserved(), keep = all ? new Set<Fish>() : r.all, sold: Record<number, number> = {}, b = saleBonus(), mul = (1 + b.cook) * (1 + b.crew) * (1 + b.lux);
   let tot = 0, n = 0;
   for (const f of G.hold) {
     if (keep.has(f)) continue;
@@ -87,7 +87,7 @@ export function sell(p: Port): void {
 export const REALM_PRICE = 1.3;
 /** What selling at your island would pay, and how many fish (kept-back fish stay aboard, as at any port). */
 export function realmSaleValue(): { tot: number; n: number } {
-  const keep = reserved().all, b = saleBonus(), mul = REALM_PRICE * (1 + b.cook) * (1 + b.crew);
+  const keep = reserved().all, b = saleBonus(), mul = REALM_PRICE * (1 + b.cook) * (1 + b.crew) * (1 + b.lux);
   let tot = 0, n = 0;
   for (const f of G.hold) if (!keep.has(f)) { tot += Math.round(fishValue(f) * mul); n++; }
   return { tot, n };

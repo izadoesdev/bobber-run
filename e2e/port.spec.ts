@@ -22,6 +22,11 @@ test('the outfitter sells an upgrade and the shipyard a boat', async ({ page }) 
   await page.evaluate(() => { const { G, GAME } = window.BR; GAME.portItems(G.menu.port).find((i: { key?: string }) => i.key === 'hold').act(); });
   expect(await page.evaluate(() => window.BR.G.up.hold)).toBe(1);
   await page.evaluate(tab('SHIPYARD'));
+  await page.evaluate(() => { window.BR.G.boat.hp = 30; });                           // a battered rowboat
   await page.evaluate(() => { const { G, GAME } = window.BR; for (let k = 0; k < 2 && !G.owned.includes('skiff'); k++) GAME.portItems(G.menu.port).find((i: { boat?: { id: string }; paint?: unknown }) => i.boat?.id === 'skiff' && !i.paint)?.act(); });
   expect(await page.evaluate(() => window.BR.G.owned)).toContain('skiff');
+  // a new boat comes off the slip sound; the old one waits as it was left
+  expect(await page.evaluate(() => window.BR.G.boat.hp / window.BR.GAME.hpMax())).toBe(1);
+  await page.evaluate(() => { const { G, GAME } = window.BR; GAME.portItems(G.menu.port).find((i: { boat?: { id: string }; paint?: unknown }) => i.boat?.id === 'row' && !i.paint)?.act(); });
+  expect(await page.evaluate(() => [window.BR.G.boatId, window.BR.G.boat.hp])).toEqual(['row', 30]);
 });

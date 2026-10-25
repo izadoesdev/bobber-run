@@ -47,7 +47,7 @@ function buyPaint(pt: Paint): void {
 function buyBoat(bd: BoatDef): void {
   if (G.owned.includes(bd.id)) { boardOwned(bd); return; }
   if (!spend(bd.cost)) return;
-  G.owned.push(bd.id); switchBoat(bd);
+  G.owned.push(bd.id); switchBoat(bd, true);
   track('boat_bought', { boat: bd.id, cost: bd.cost });
   sfx('fanfare'); toast(`You bought the ${bd.name}!`, 'good'); celebrate(); markBought(bd.id); saveGame();
 }
@@ -58,11 +58,14 @@ export function boardOwned(bd: BoatDef): void {
   track('boat_switched', { boat: bd.id });
   toast(`Now sailing the ${bd.name}`); sfx('select'); markBought(bd.id); saveGame();
 }
-/** Change boats, keeping the same share of hull (switching is not a free repair) and dropping fish that no longer fit. */
-function switchBoat(bd: BoatDef): void {
-  const health = G.boat.hp / hpMax();
+/**
+ * Change boats, dropping fish that no longer fit. A new boat comes off the slip sound; each boat you own keeps its own
+ * hull as you left it (switching isn't a free repair, and a battered boat stays battered until you take it out again).
+ */
+function switchBoat(bd: BoatDef, bought = false): void {
+  G.hulls[G.boatId] = Math.min(1, G.boat.hp / hpMax());
   G.boatId = bd.id;
-  G.boat.hp = Math.round(hpMax() * Math.min(health, 1));
+  G.boat.hp = Math.round(hpMax() * (bought ? 1 : G.hulls[bd.id] ?? 1));
   while (G.hold.length > cap()) G.hold.pop();
 }
 

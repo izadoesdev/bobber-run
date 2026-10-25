@@ -15,7 +15,7 @@ test('a valid save comes through unchanged', () => {
   expect(s).toMatchObject({ ...good, stats: { caught: 9 } });
 });
 test('wrong types fall back to defaults instead of breaking the load', () => {
-  const s = parseSave({ coins: 'lots', boatId: 'yacht', owned: [], waypoint: { x: 'a' }, streak: 99, musicOn: 'yes', a: Infinity });
+  const s = parseSave({ coins: 'lots', boatId: 'submarine', owned: [], waypoint: { x: 'a' }, streak: 99, musicOn: 'yes', a: Infinity });
   expect(s).toMatchObject({ coins: 0, boatId: 'row', owned: ['row'], waypoint: null, streak: 5, musicOn: true, a: 0 });
 });
 test('lists and maps keep the good entries and drop the rest', () => {

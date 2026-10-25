@@ -31,7 +31,7 @@ const treasure: Schema<TreasureMap> = v.looseObject({ id: v.string(), x: v.numbe
 const escapee: Schema<Escapee> = v.looseObject({ school: v.string(), x: v.number(), y: v.number(), sp: v.number(), kg: v.number(), gold: v.optional(v.boolean()), day: v.number(), lost: v.number() });
 const packState = v.object({ i: v.pipe(v.number(), v.integer(), v.minValue(0)), n: v.pipe(v.number(), v.finite()), started: v.boolean() });
 const fleetBoat: Schema<GameState['fleet'][string]> = v.looseObject({ port: v.string(), portName: v.string(), earned: v.number() });
-const BOATS: BoatId[] = ['row', 'skiff', 'launch', 'trawler', 'schooner', 'drifter', 'flagship'];
+const BOATS: BoatId[] = ['row', 'canoe', 'skiff', 'jetski', 'launch', 'trawler', 'speedboat', 'catamaran', 'schooner', 'cruiser', 'drifter', 'research', 'flagship', 'icebreaker', 'yacht', 'motoryacht', 'superyacht'];
 const PROJECTS: ProjectId[] = ['pier', 'market', 'drydock', 'lights', 'grand'];
 
 /** A loaded save with every field present and the right type (numbers finite, lists and maps holding valid entries). */
@@ -51,7 +51,7 @@ export const saveSchema = v.object({
   explored: v.fallback(v.pipe(v.string(), v.maxLength(120_000)), ''), unlocked: listOf(v.string()), waypoint: v.fallback(v.nullable(point), null),
   gearOff: mapOf(v.literal(true)), zones: mapOf(v.literal(true)), docks: mapOf(v.number()), streak: v.pipe(int(), v.transform(n => Math.min(5, Math.max(0, n)))),
   musicOn: bool(true), offers: mapOf(v.array(contract)), active: listOf(contract), pity: int(), clock: v.optional(v.number()),
-  treasury: num(), realmRate: num(),
+  treasury: num(), realmRate: num(), hulls: mapOf(v.pipe(v.number(), v.minValue(0), v.maxValue(1))),
 });
 export type ParsedSave = v.InferOutput<typeof saveSchema>;
 /** Check a stored save; anything that isn't an object at all loads as an empty one (every field at its default). */
