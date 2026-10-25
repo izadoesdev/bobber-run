@@ -36,6 +36,14 @@ static func hash01(x: int, y: int, s: int = 0) -> float:
 	return hash32(x, y, s) / float(_U32)
 
 
+## The 32-bit FNV-1a hash of a string's characters (world.ts idSalt), unsigned.
+static func fnv1a(text: String) -> int:
+	var h := i32(2166136261)
+	for k in text.length():
+		h = imul(h ^ text.unicode_at(k), 16777619)
+	return ushr(h, 0)
+
+
 ## The small seeded PRNG (noise.ts mulberry): next() returns floats in [0, 1), the same sequence as the TypeScript.
 class Mulberry:
 	var _a: int

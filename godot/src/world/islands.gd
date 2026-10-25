@@ -27,6 +27,8 @@ class Island:
 	var reach2 := ROUND_REACH2
 	## how mountainous its interior is (0 for islets)
 	var mountains := 0.0
+	## the headings of its coves, deepest first (where a port is tried first)
+	var coves := PackedFloat32Array()
 
 	func _init(x_: float, y_: float, r_: float, peak_: float, islet_: bool) -> void:
 		x = x_; y = y_; R = r_; peak = peak_; islet = islet_
@@ -107,6 +109,10 @@ static func _shape_coast(isle: Island, home: bool) -> void:
 			bends.append(Vector3(Seed.hash01(sx, sy, 52 + k) * TAU, 0.14 + 0.16 * Seed.hash01(sx, sy, 56 + k), -(0.3 + 0.3 * Seed.hash01(sx, sy, 60 + k))))
 	for k in 1 + int(Seed.hash01(sx, sy, 64) * 3):
 		bends.append(Vector3(Seed.hash01(sx, sy, 65 + k) * TAU, 0.2 + 0.3 * Seed.hash01(sx, sy, 69 + k), 0.3 + 0.6 * Seed.hash01(sx, sy, 73 + k)))
+	var cove_list := bends.filter(func(b: Vector3) -> bool: return b.z < 0.0)
+	cove_list.sort_custom(func(p: Vector3, q: Vector3) -> bool: return p.z < q.z)
+	for b: Vector3 in cove_list:
+		isle.coves.append(b.x)
 	var lowest := sqrt(ROUND_REACH2) * isle.R / _MAX_REACH  # clipped so its land stays within the cells heights look at
 	var narrowest := 1.0
 	isle.coast.resize(_COAST_N + 1)

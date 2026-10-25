@@ -77,7 +77,7 @@ func _start_spot() -> Vector2:
 
 
 # How the port is checked without someone at the keyboard: `-- --autofish` plays the fishing until a fish is landed
-# (and exits 1 if none is, so CI can run it headless); `-- --snap=out.png [--sail=seconds] [--zoom=z] [--at=x,y]`
+# (and exits 1 if none is, so CI can run it headless), and `--autosell` then docks at Alderhaven and sells it; `-- --snap=out.png [--sail=seconds] [--zoom=z] [--at=x,y]`
 # waits for the sea round the boat to bake, holds the throttle that long, saves a screenshot and quits.
 func _dev_hooks() -> void:
 	var args := {}
@@ -95,9 +95,11 @@ func _dev_hooks() -> void:
 	while not _tiles.ready_around(Vector2(_boat.x, _boat.y), _tiles.keep_radius):
 		await get_tree().process_frame
 	if args.has("autofish"):
-		var landed := await _autofish()
+		var ok := await _autofish()
+		if ok and args.has("autosell"):
+			ok = await _autosell()
 		if not args.has("snap"):
-			get_tree().quit(0 if landed else 1)
+			get_tree().quit(0 if ok else 1)
 			return
 	var sail := float(args.get("sail", "0"))
 	if sail > 0.0:
@@ -148,3 +150,37 @@ func _autofish() -> bool:
 	Input.action_release("cast")
 	print("autofish: ", "landed %s, %.2f kg, $%d" % [landed[0].name, landed[0].kg, landed[0].value] if landed else "nothing landed in a minute")
 	return not landed.is_empty()
+
+
+# Tie up at Alderhaven's pier and sell the hold as a player would (E to dock, Space on the focused Sell all); whether
+# the coins came in and the hold emptied.
+func _autosell() -> bool:
+	var home := Ports.home()
+	var off := home.end + Vector2.from_angle(home.ang) * 12.0
+	_boat.place_at(off.x, off.y, home.ang + PI)
+	while not _tiles.ready_around(off, 1):
+		await get_tree().process_frame
+	var before := State.coins
+	var fish := State.hold.size()
+	await _tap("interact")
+	if State.docked == null:
+		print("autosell: couldn't dock at ", home.name)
+		return false
+	if OS.get_cmdline_user_args().has("--snap-docked"):
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("/tmp/godot-docked.png")
+	await _tap("ui_accept")
+	var ok := State.coins > before and State.hold.is_empty()
+	print("autosell: docked at %s, sold %d fish for $%d (purse $%d)" % [home.name, fish, State.coins - before, State.coins])
+	return ok
+
+
+# A press and release of `action` as real input events, so focused buttons hear it as well as polled actions.
+func _tap(action: String) -> void:
+	for pressed in [true, false]:
+		var e := InputEventAction.new()
+		e.action = action
+		e.pressed = pressed
+		Input.parse_input_event(e)
+		await get_tree().process_frame
+		await get_tree().process_frame

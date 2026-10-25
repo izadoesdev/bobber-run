@@ -10,6 +10,8 @@ extends Node3D
 const _DRAFT := 0.028
 const _RESTITUTION := 0.2
 const _FRICTION := 0.35
+## a pier's half width, round its core
+const _PIER_R := 3.5
 
 @export var tiles: WorldTiles
 @export var boat_id := "row"
@@ -59,6 +61,10 @@ func stats() -> Dictionary:
 
 
 func _physics_process(dt: float) -> void:
+	if State.docked != null:                          # tied up at a pier: the boat rests where it lies
+		vx = 0.0; vy = 0.0; w = 0.0
+		_place()
+		return
 	var thrust := Input.get_action_strength("sail_forward")
 	var reverse := Input.get_action_strength("sail_back")
 	var steer := Input.get_action_strength("steer_right") - Input.get_action_strength("steer_left")
@@ -93,6 +99,7 @@ func _physics_process(dt: float) -> void:
 	x += vx * dt
 	y += vy * dt
 	_land_contacts()
+	_pier_contacts()
 	_place()
 
 
@@ -135,6 +142,53 @@ func _land_contacts() -> void:
 			var jt := clampf(-vt / (1.0 + rt * rt / inertia), -_FRICTION * j, _FRICTION * j)
 			vx += jt * tx; vy += jt * ty; w += rt * jt / inertia
 		if not hit:
+			break
+
+
+# Piers are solid: each touches the hull at its deepest edge (hull edges, not points, so a pier end can't slip between
+# them), pushed out with the same impulses as land.
+func _pier_contacts() -> void:
+	var piers := Ports.near(Vector2(x, y), 60.0 + float(_stats.L))
+	if piers.is_empty():
+		return
+	var inertia := 200.0 * pow(_stats.L / 13.5, 2.0)
+	for pass_ in 3:
+		var c := cos(a)
+		var s := sin(a)
+		var hull := PackedVector2Array()
+		for p in _hull:
+			hull.append(Vector2(x + p.x * c - p.y * s, y + p.x * s + p.y * c))
+		var any := false
+		for port in piers:
+			var a0 := Vector2(port.x, port.y)
+			var a1 := a0 + Vector2.from_angle(port.ang) * 27.0
+			var deepest := -1.0
+			var at := Vector2.ZERO
+			var n := Vector2.ZERO
+			for k in hull.size():
+				var e0 := hull[k]
+				var e1 := hull[(k + 1) % hull.size()]
+				var pq := Geometry2D.get_closest_points_between_segments(e0, e1, a0, a1)
+				var d := pq[0].distance_to(pq[1])
+				if d < _PIER_R and _PIER_R - d > deepest:
+					deepest = _PIER_R - d
+					at = pq[0]
+					n = (pq[0] - pq[1]) / d if d > 1e-4 else Vector2(-(e1 - e0).y, (e1 - e0).x).normalized()
+			if deepest < 0.0:
+				continue
+			any = true
+			var rx := at.x - x
+			var ry := at.y - y
+			x += n.x * deepest * 0.4
+			y += n.y * deepest * 0.4
+			var vpx := vx - w * ry
+			var vpy := vy + w * rx
+			var vn := vpx * n.x + vpy * n.y
+			if vn < 0.0:
+				var rn := rx * n.y - ry * n.x
+				var j := -(1.0 + _RESTITUTION) * vn / (1.0 + rn * rn / inertia)
+				vx += j * n.x; vy += j * n.y; w += rn * j / inertia
+		if not any:
 			break
 
 

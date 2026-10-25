@@ -1,17 +1,20 @@
 // Exports the game's data for the Godot port (godot/data), so the port reads the TypeScript's own tables and models
 // instead of keeping copies that could drift: each boat's stats and its voxel model (as the shipyard shows it, with
-// no gear fitted), the rowboat's oars, the trees, rocks and bushes that grow on the islands, and the fish species. Re-run after changing them: bun scripts/godot-export.ts
+// no gear fitted), the rowboat's oars, the harbours, the trees, rocks and bushes that grow on the islands, and the
+// fish species. Re-run after changing them: bun scripts/godot-export.ts
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { BOATS } from '../src/econ';
 import { decorate, PLAIN, OAR, M } from '../src/models';
 import { RGB, EMISSIVE, type Vox } from '../src/voxel';
 import { TREE_BUILD, TREE_KINDS, fishVox } from '../src/gl/meshes';
+import { HARBOURS } from '../src/landmarks';
 import { SPECIES, HABITAT, schoolLook } from '../src/species';
 
 const out = new URL('../godot/data/', import.meta.url);
 mkdirSync(new URL('boats/', out), { recursive: true });
 mkdirSync(new URL('trees/', out), { recursive: true });
 mkdirSync(new URL('fish/', out), { recursive: true });
+mkdirSync(new URL('harbours/', out), { recursive: true });
 const hex = (c: readonly number[]): string => '#' + c.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');   // (RGB holds 0..255)
 
 // a voxel model: its box (u along the boat, bow +u; v across, starboard +v; z up), one byte per voxel (0 empty, else
@@ -31,6 +34,8 @@ function model(V: Vox) {
 for (const b of BOATS) writeFileSync(new URL(`boats/${b.id}.json`, out), JSON.stringify(model(decorate(b.id, PLAIN))) + '\n');
 // the stats the sailing needs, as the game has them
 writeFileSync(new URL('boats.json', out), JSON.stringify(BOATS.map(({ id, name, speed, accel, turn, L, B, prop, hp, hold }) => ({ id, name, speed, accel, turn, L, B, prop, hp, hold })), null, 1) + '\n');
+// the harbours: each design's model, the pier along +u from where it meets the land (0 is Alderhaven's)
+HARBOURS.forEach((build, k) => writeFileSync(new URL(`harbours/${k}.json`, out), JSON.stringify(model(build())) + '\n'));
 // trees, rocks and bushes, each kind's model
 for (const k of TREE_KINDS) writeFileSync(new URL(`trees/${k}.json`, out), JSON.stringify(model(TREE_BUILD[k]())) + '\n');
 // fish: each species' table entry, how its school looks, its fish model, and where it lives. Its waters are a function

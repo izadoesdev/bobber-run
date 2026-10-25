@@ -35,7 +35,6 @@ var tension := 0.0
 var progress := 0.0
 var surge := 0.0
 var reeling := false
-var hold: Array[Dictionary] = []
 ## the school a cast would go to, or null
 var target: Schools.School
 
@@ -100,11 +99,14 @@ func _draw_line() -> void:
 
 ## Fish the boat can still carry.
 func room() -> int:
-	return int(boat.stats().hold) - hold.size()
+	return int(boat.stats().hold) - State.hold.size()
 
 
 func _process(dt: float) -> void:
 	var cast := Input.is_action_just_pressed("cast")
+	if State.docked != null:
+		target = null
+		return
 	if stage == Stage.NONE:
 		target = _nearest_school()
 		if cast and target and boat.speed() < 10.0:
@@ -213,7 +215,7 @@ func _land() -> void:
 	var fish := { sp = school.sp, name = sp.name, kg = _kg, stars = stars, value = maxi(1, roundi(float(sp.base) * (0.55 + 0.9 * _size) * _STAR_VALUE[stars - 1])) }
 	school.stock -= 1
 	if room() > 0:
-		hold.append(fish)
+		State.add_fish(fish)
 		caught.emit(fish)
 	else:
 		said.emit("Your hold is full: the %s goes back" % sp.name)

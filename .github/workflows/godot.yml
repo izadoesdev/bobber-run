@@ -31,5 +31,5 @@ jobs:
           unzip -q godot.zip && mv "Godot_v${GODOT}_linux.x86_64" godot-bin
       - run: ./godot-bin --headless --path godot --import
       - run: ./godot-bin --headless --path godot --script res://tests/run_tests.gd
-      - name: The fishing plays end to end (cast, strike, reel, land a fish)
-        run: ./godot-bin --headless --path godot -- --autofish
+      - name: The game plays end to end (cast, strike, reel, land a fish, dock at Alderhaven and sell it)
+        run: ./godot-bin --headless --path godot -- --autofish --autosell

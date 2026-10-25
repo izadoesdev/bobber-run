@@ -15,6 +15,11 @@ static func boat_mesh(id: String) -> ArrayMesh:
 	return _load("boats/" + id)
 
 
+## The mesh of harbour design `k` (0 is Alderhaven's), built once.
+static func harbour_mesh(k: int) -> ArrayMesh:
+	return _load("harbours/%d" % k)
+
+
 ## The mesh of a fish of species `id`, built once.
 static func fish_mesh(id: String) -> ArrayMesh:
 	return _load("fish/" + id)

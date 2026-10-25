@@ -27,10 +27,10 @@ The port of the browser game in `../src`, one slice at a time. Web first: GDScri
 | `src/world` | the world: each cell's islands (`islands.gd`), the one terrain height function and its tiles (`terrain.gd`), and the baker that builds tiles within a frame budget (`tile_baker.gd`) |
 | `src/world` (cont.) | `world_tiles.gd`: the baked tiles round the boat, and smooth height reads from them for sailing and collisions |
 | `src/render` | drawing: the ground shader (water bands, surf, land bands and relief, dithered pixel art), voxel models to meshes |
-| `src/game` | the game: `game.gd` (camera, pixel viewport, zoom, dev hooks), `boat.gd` (sailing physics, ported), `oars.gd`, `fishing.gd` (cast, bite, strike, reel; ported) |
-| `src/rules` (cont.) | `species.gd`: the species table, their waters and climate, which fish a school is |
-| `src/world` (cont.) | `schools.gd`: where the fish are; `flora.gd`: what grows on a tile |
-| `src/ui` | `hud.gd`: the hold, the prompt, notes, the reel and the catch card, in the game's pixel font |
+| `src/game` | the game: `game.gd` (camera, pixel viewport, zoom, dev hooks), `boat.gd` (sailing physics and contacts, ported), `oars.gd`, `fishing.gd` (cast, bite, strike, reel; ported), `docking.gd`, and `state.gd` (the autoload `State`: purse, hold, sales) |
+| `src/rules` (cont.) | `species.gd`: the species table, their waters and climate, which fish a school is; `market.gd`: port prices and selling |
+| `src/world` (cont.) | `schools.gd`: where the fish are; `flora.gd`: what grows on a tile; `ports.gd`: where each harbour stands, its name and prices (the game's, checked) |
+| `src/ui` | `hud.gd` (purse and hold, prompt, notes, reel, catch card), `port_panel.gd` (a docked port: Sell all, Set sail), `ui_theme.gd` (the one theme, in the game's pixel font) |
 | `data` | exported from the TypeScript by `bun scripts/godot-export.ts`: boats, oars, trees and fish (models and tables); each species' waters as a bitmap of its zone rule |
 | `scenes` | `game.tscn` (the main scene: sail the rowboat off Alderhaven, WASD or arrows), `sea_chart.tscn` (a terrain chart) |
 | `tests` | headless tests (`test_*.gd`), the runner, and `fixtures/` recorded from the TypeScript |
@@ -38,9 +38,9 @@ The port of the browser game in `../src`, one slice at a time. Web first: GDScri
 ## Running it
 
 ```sh
-Godot --path godot                                  # WASD or arrows to row, Space to cast, strike and reel, wheel to zoom
+Godot --path godot                                  # WASD/arrows row, Space casts, strikes and reels, E docks, wheel zooms
 Godot --path godot -- --snap=out.png --sail=6       # sail ahead for 6 s, save a screenshot and quit
-Godot --headless --path godot -- --autofish         # play the fishing until a fish is landed (exits 1 if none is)
+Godot --headless --path godot -- --autofish --autosell   # catch a fish, dock at Alderhaven and sell it (exits 1 if not)
 ```
 
 ## The web build

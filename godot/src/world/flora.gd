@@ -18,8 +18,8 @@ static func tile_trees(t: Vector2i, heights: PackedFloat32Array) -> Dictionary[S
 		for gx in range(floori(x0 / float(_CELL)), floori((x0 + Terrain.TILE - 1) / float(_CELL)) + 1):
 			var px := gx * _CELL + floori(Seed.hash01(gx, gy, _SALT) * _CELL)
 			var py := gy * _CELL + floori(Seed.hash01(gx, gy, _SALT + 1) * _CELL)
-			if px < x0 or px >= x0 + Terrain.TILE or py < y0 or py >= y0 + Terrain.TILE:
-				continue
+			if px < x0 or px >= x0 + Terrain.TILE or py < y0 or py >= y0 + Terrain.TILE or Ports.on_grounds(px, py):
+				continue                                   # (nothing grows on a harbour's grounds)
 			var kind := _kind(_height(heights, px - x0, py - y0), gx, gy, py)
 			if kind.is_empty():
 				continue
