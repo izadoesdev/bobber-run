@@ -70,8 +70,14 @@ static func pick(h: float, x: float, y: float, r: Seed.Mulberry) -> int:
 	return -1
 
 
-## Whether species `n` bites now: by day it's every fish that isn't a night, dusk or weather fish (the clock and the
-## weather come later).
-static func biting(n: int) -> bool:
+## Whether species `n` bites at this time of day (activeAt in the game): day fish by day, night fish by night,
+## twilight fish at dusk and dawn. Weather fish wait for the weather.
+static func biting(n: int, night: bool, twilight: bool) -> bool:
 	var s := all[n]
-	return s.time in ["any", "day"] and s.weather == "any"
+	var time_ok: bool
+	match s.time:
+		"night": time_ok = night
+		"day": time_ok = not night
+		"twilight": time_ok = twilight
+		_: time_ok = true
+	return time_ok and s.weather == "any"

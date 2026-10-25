@@ -20,7 +20,6 @@ var zoom := 1.0
 
 @onready var _view: SubViewportContainer = $View
 @onready var _camera: Camera3D = $View/Viewport/Camera
-@onready var _sun: DirectionalLight3D = $View/Viewport/Sun
 @onready var _world: Node3D = $View/Viewport/World
 @onready var _tiles: WorldTiles = $View/Viewport/World/WorldTiles
 @onready var _baker: TileBaker = $View/Viewport/World/WorldTiles/TileBaker
@@ -30,7 +29,6 @@ var zoom := 1.0
 func _ready() -> void:
 	_world.scale = Vector3(1.0, sqrt(2.0), sqrt(2.0))
 	_camera.rotation = Vector3(-_TILT, 0.0, 0.0)
-	_sun.look_at(_sun.global_position - Vector3(-0.62, 0.77, -0.15).normalized())   # from the north-west, high up
 	get_viewport().size_changed.connect(_fit)
 	_fit()
 	var start := _start_spot()
@@ -79,7 +77,8 @@ func _start_spot() -> Vector2:
 # How the port is checked without someone at the keyboard: `-- --autofish` plays the fishing until a fish is landed
 # (and exits 1 if none is, so CI can run it headless), and `--autosell` then docks at Alderhaven and sells it
 # (`--snap-docked=out.png` saves the port panel first); `-- --snap=out.png [--sail=seconds] [--zoom=z] [--at=x,y]`
-# waits for the sea round the boat to bake, holds the throttle that long, saves a screenshot and quits.
+# waits for the sea round the boat to bake, holds the throttle that long, saves a screenshot and quits. `--clock=0.75`
+# sets the time of day first (a fraction of the first day; 0.75 is the middle of the night).
 func _dev_hooks() -> void:
 	var args := {}
 	for arg in OS.get_cmdline_user_args():
@@ -87,6 +86,8 @@ func _dev_hooks() -> void:
 		args[kv[0]] = kv[1] if kv.size() > 1 else ""
 	if not args.has("snap") and not args.has("autofish"):
 		return
+	if args.has("clock"):
+		State.clock = float(args.clock) * State.DAYLEN
 	if args.has("zoom"):
 		zoom = float(args.zoom)
 		_fit()
@@ -121,7 +122,7 @@ func _autofish() -> bool:
 	var fishing: Fishing = $View/Viewport/World/Fishing
 	# moor beside the nearest school that's biting, on open water
 	var at := Vector2(_boat.x, _boat.y)
-	var near := Schools.near(at, 900).filter(func(q: Schools.School) -> bool: return Species.biting(q.sp) and q.stock > 0)
+	var near := Schools.near(at, 900).filter(func(q: Schools.School) -> bool: return Species.biting(q.sp, State.is_night(), State.is_twilight()) and q.stock > 0)
 	near.sort_custom(func(p: Schools.School, q: Schools.School) -> bool: return at.distance_to(Vector2(p.x, p.y)) < at.distance_to(Vector2(q.x, q.y)))
 	if not near.is_empty():
 		var s: Schools.School = near[0]

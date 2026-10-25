@@ -1,4 +1,5 @@
-## A port, docked: its name, your purse, the fish in the hold at this port's prices, Sell all, and Set sail.
+## A port, docked: its name, your purse, the fish in the hold at this port's prices, Sell all, a night at the inn
+## (rest until dusk for the night fish, or sleep until morning), and Set sail.
 ## The game's port has more tabs (the outfitter, shipyard, harbour projects, contracts); they come later.
 class_name PortPanel
 extends PanelContainer
@@ -9,6 +10,7 @@ var _title: Label
 var _coins: Label
 var _fish: Label
 var _sell: Button
+var _rest: Button
 
 
 func _ready() -> void:
@@ -31,6 +33,9 @@ func _ready() -> void:
 	_sell = Button.new()
 	_sell.pressed.connect(_sell_all)
 	row.add_child(_sell)
+	_rest = Button.new()
+	_rest.pressed.connect(State.rest)
+	row.add_child(_rest)
 	var leave := Button.new()
 	leave.text = "Set sail  [E]"
 	leave.pressed.connect(docking.set_sail)
@@ -55,6 +60,8 @@ func _refresh() -> void:
 	var total := Market.sale_value(p)
 	_sell.text = "Sell all  $%d" % total
 	_sell.disabled = State.hold.is_empty()
+	_rest.text = "Rest until dusk" if State.is_daytime() else "Sleep until morning"
+	_rest.tooltip_text = "Night fish only bite after dark" if State.is_daytime() else "Day fish return at dawn"
 	_sell.grab_focus()
 
 

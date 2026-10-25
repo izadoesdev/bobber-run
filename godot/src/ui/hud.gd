@@ -1,4 +1,5 @@
-## The heads-up display over the sea, at the screen's own resolution so text stays crisp: the purse and the hold, what
+## The heads-up display over the sea, at the screen's own resolution so text stays crisp: the purse and the hold, the
+## day and the time of it, what
 ## you can do now (the prompt), short notes that fade, the reel's tension and the catch's progress while a fish is on,
 ## the card for a fish landed, and the port panel while docked. In the interface's one theme (UiTheme).
 class_name Hud
@@ -11,6 +12,7 @@ const _NOTE_S := 2.6
 @export var boat: Boat
 
 var _hold: Label
+var _day: Label
 var _prompt: Label
 var _note: Label
 var _note_t := 0.0
@@ -29,6 +31,7 @@ func _ready() -> void:
 	root.theme = UiTheme.get_theme()
 	add_child(root)
 	_hold = _chip(root, Control.PRESET_TOP_LEFT, Vector2(12, 12))
+	_day = _chip(root, Control.PRESET_TOP_RIGHT, Vector2(-12, 12))
 	_prompt = _chip(root, Control.PRESET_CENTER_BOTTOM, Vector2(0, -24))
 	_note = _chip(root, Control.PRESET_CENTER_TOP, Vector2(0, 16))
 	_reel = PanelContainer.new()
@@ -53,6 +56,8 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_hold.text = "$%d    Hold %d / %d" % [State.coins, State.hold.size(), int(boat.stats().hold)]
+	var c := State.day_fraction()
+	_day.text = "Day %d%s" % [State.day_number(), "   Night" if State.is_night() else "   Dusk" if c > 0.55 else ""]
 	_prompt.text = _prompt_text()
 	_prompt.get_parent().visible = not _prompt.text.is_empty()
 	_note_t -= delta

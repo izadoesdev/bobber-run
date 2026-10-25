@@ -53,3 +53,22 @@ common/physics_interpolation=true
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+
+[shader_globals]
+
+night={
+"type": "float",
+"value": 0.0
+}
+day_light={
+"type": "vec3",
+"value": Vector3(1, 1, 1)
+}
+sun_dir={
+"type": "vec3",
+"value": Vector3(-0.62, -0.15, 0.77)
+}
+lamp={
+"type": "vec4",
+"value": Vector4(0, 0, 1, 0)
+}

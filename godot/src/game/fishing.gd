@@ -252,7 +252,7 @@ func _nearest_school() -> Schools.School:
 	var bd := reach
 	for s in Schools.near(Vector2(boat.x, boat.y), reach):
 		var d := Vector2(s.x - boat.x, s.y - boat.y).length()
-		if d < bd and s.stock > 0 and Species.biting(s.sp):
+		if d < bd and s.stock > 0 and Species.biting(s.sp, State.is_night(), State.is_twilight()):
 			bd = d
 			best = s
 	return best

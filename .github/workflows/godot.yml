@@ -33,3 +33,5 @@ jobs:
       - run: ./godot-bin --headless --path godot --script res://tests/run_tests.gd
       - name: The game plays end to end (cast, strike, reel, land a fish, dock at Alderhaven and sell it)
         run: ./godot-bin --headless --path godot -- --autofish --autosell
+      - name: And at night, when the night fish bite
+        run: ./godot-bin --headless --path godot -- --clock=0.75 --autofish

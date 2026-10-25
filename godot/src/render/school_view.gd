@@ -1,7 +1,9 @@
 ## The schools near the boat, swimming: each fish steers (src/game/schools.ts, ported) by turning its heading at a
 ## fish's pace and swimming forward along it, drawn to its school, clear of its neighbours, wheeling in a bait ball,
 ## and feeling ahead for the shallows the length of its body. Each school is one MultiMesh of its species' fish, with
-## its own material fading them into the water by how deep that species swims.
+## its own material fading them into the water by how deep that species swims. A school shows while its fish bite (night
+## fish only after dark) and fades in and out as that changes; at night only glowing fish and those in the lantern's
+## light show clearly, the rest as dim shapes close by.
 class_name SchoolView
 extends Node3D
 
@@ -16,10 +18,14 @@ const _SWIRL := { bait = 1.5, giant = 0.7, hunter = 0.35 }
 ## a fish's centre wanders this far from home, and it may stray this much further before turning firmly back
 const _WANDER := 2.0
 const _SCATTER := 6.0
+## at night, schools this much past the lantern's reach still show, dimly, fading out over the next 30
+const _DIM := 110.0
 
 @export var tiles: WorldTiles
 @export var boat: Boat
 var _views: Dictionary[String, MultiMeshInstance3D] = {}
+## school id -> how much of it shows, easing toward what should
+var _shown: Dictionary[String, float] = {}
 var _t := 0.0
 
 
@@ -38,19 +44,30 @@ func _process(delta: float) -> void:
 	_t += delta
 	var steps := clampi(ceili(delta / _STEP - 1e-6), 1, 4)
 	var seen: Dictionary[String, bool] = {}
+	var night := State.is_night()
+	var ease := 1.0 - exp(-1.6 * minf(delta, 0.1))
 	for s in Schools.near(Vector2(boat.x, boat.y), _NEAR):
-		if not Species.biting(s.sp):
+		var d := Vector2(s.x - boat.x, s.y - boat.y).length()
+		var lit: bool = not night or Species.all[s.sp].look.glow or d < DayNight.LAMP_R + 14.0
+		var want := (1.0 if lit else clampf((_DIM - d) / 30.0, 0.0, 1.0)) if Species.biting(s.sp, State.is_night(), State.is_twilight()) else 0.0
+		var shown: float = want if not _shown.has(s.id) else lerpf(_shown[s.id], want, ease)   # (a school met out of sight is simply there)
+		if shown < 0.02 and want == 0.0:
+			_shown.erase(s.id)
 			continue
+		_shown[s.id] = shown
 		seen[s.id] = true
 		if s.fish.is_empty():
 			s.fish = _spawn(s)
 		for k in steps:
 			_swim(s, delta / steps)
-		_draw(s)
+		_draw(s, shown)
 	for id in _views.keys():
 		if not seen.has(id):
 			_views[id].queue_free()
 			_views.erase(id)
+	for id in _shown.keys():
+		if not seen.has(id):
+			_shown.erase(id)
 
 
 func _spawn(s: Schools.School) -> Array:
@@ -161,7 +178,7 @@ func _rhythm(style: String, role: String, cruise: float, ph: float) -> float:
 	return cruise * (0.8 + 0.3 * sin(_t * 0.4 + ph))
 
 
-func _draw(s: Schools.School) -> void:
+func _draw(s: Schools.School, shown: float) -> void:
 	var sp: Dictionary = Species.all[s.sp]
 	var look: Dictionary = sp.look
 	var view: MultiMeshInstance3D = _views.get(s.id)
@@ -175,10 +192,12 @@ func _draw(s: Schools.School) -> void:
 		var m := ShaderMaterial.new()
 		m.shader = _SHADER
 		m.set_shader_parameter("fade", clampf((0.9 - float(look.z)) * 0.32 * float(look.fade), 0.0, 0.88))   # how deep it swims
+		m.set_shader_parameter("glow", 1.0 if look.glow else 0.0)
 		view.material_override = m
 		view.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(view)
 		_views[s.id] = view
+	view.material_override.set_shader_parameter("shown", shown)
 	var mm := view.multimesh
 	# fished-out schools thin to a straggler
 	mm.visible_instance_count = maxi(1, roundi((int(look.count) + 2) * float(s.stock) / s.max_stock)) if s.stock > 0 else 1

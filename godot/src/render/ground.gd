@@ -24,6 +24,7 @@ func _add(t: Vector2i, heights: PackedFloat32Array) -> void:
 	material.set_shader_parameter("heights", ImageTexture.create_from_image(image))
 	material.set_shader_parameter("tile_n", float(Terrain.TILE_N))
 	material.set_shader_parameter("step", float(Terrain.STEP))
+	material.set_shader_parameter("origin", Vector2(t * Terrain.TILE))
 	var quad := MeshInstance3D.new()
 	quad.mesh = _plane
 	quad.material_override = material

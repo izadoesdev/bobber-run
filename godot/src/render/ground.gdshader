@@ -2,28 +2,22 @@
 // meets the shore and a slow shimmer; land in bands (sand, meadow, forest, rock, snow) lit by its slope against the
 // sun. Pixel art: colours snap to bands, with a 4 x 4 ordered dither where one band gives way to the next, and the
 // viewport's own pixels do the rest. Heights come from the tile's baked samples (tile_n a side, one of border each way).
+// Lit by the time of day and, after dark, the boat's lantern.
 shader_type spatial;
 render_mode unshaded, cull_disabled;
+
+#include "res://src/render/pixel.gdshaderinc"
 
 uniform sampler2D heights : filter_linear, repeat_disable;
 uniform float tile_n = 66.0;
 // world units between samples
 uniform float step = 2.0;
-// the sun, pointing toward it, in (east, south, up)
-uniform vec3 sun = vec3(-0.62, -0.15, 0.77);
-
-varying vec2 world;
+// the tile's corner in world (x, y)
+uniform vec2 origin;
 
 float height_at(vec2 uv) {
 	// UV runs 0..1 across the tile's interior; sample k sits at (k + 0.5) / tile_n
 	return texture(heights, (uv * (tile_n - 2.0) + 1.5) / tile_n).r;
-}
-
-// 0..1 threshold of a 4 x 4 Bayer matrix at this screen pixel
-float bayer(vec2 p) {
-	ivec2 q = ivec2(mod(p, 4.0));
-	int m[16] = int[](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
-	return (float(m[q.y * 4 + q.x]) + 0.5) / 16.0;
 }
 
 // across a band edge `e` wide at `at`, which side this pixel takes (dithered)
@@ -31,11 +25,8 @@ float band(float h, float at, float e, float dither) {
 	return step(dither, clamp((h - at) / e + 0.5, 0.0, 1.0));
 }
 
-void vertex() {
-	world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;           // continuous across tiles, for the water's movement
-}
-
 void fragment() {
+	vec2 world = origin + UV * (tile_n - 2.0) * step;
 	float h = height_at(UV);
 	float d = 1.0 / (tile_n - 2.0);
 	vec2 g = vec2(height_at(UV + vec2(d, 0)) - height_at(UV - vec2(d, 0)), height_at(UV + vec2(0, d)) - height_at(UV - vec2(0, d))) / (2.0 * step);
@@ -57,8 +48,11 @@ void fragment() {
 		col = mix(col, vec3(0.53, 0.53, 0.51), band(h, 0.67, 0.07, t));                // rock
 		col = mix(col, vec3(0.94, 0.95, 0.97), band(h, 0.94, 0.05, t));                // snow
 		vec3 n = normalize(vec3(-g.x * 60.0, -g.y * 60.0, 1.0));                      // relief, exaggerated so hills read
-		float lit = dot(n, normalize(sun));
+		float lit = dot(n, normalize(sun_dir));
 		col *= 0.82 + 0.14 * band(lit, 0.62, 0.12, t) + 0.12 * band(lit, 0.82, 0.08, t);   // three tones of light
 	}
+	vec3 lp = lamplight(world, t);
+	col *= day_light + lp * 0.6;
+	col = mix(col, col * vec3(1.0, 0.86, 0.62), clamp(lp.r * 0.7, 0.0, 1.0)) + lp * 0.3;   // the lamp outshines the night
 	ALBEDO = col;
 }
