@@ -22,6 +22,11 @@ static func _static_init() -> void:
 		_zones.append(Marshalls.base64_to_raw(s.zone))
 
 
+## Whether there's a species `id`.
+static func has(id: String) -> bool:
+	return _index.has(id)
+
+
 ## The index of species `id`.
 static func index_of(id: String) -> int:
 	return _index[id]

@@ -24,6 +24,7 @@ var zoom := 1.0
 @onready var _tiles: WorldTiles = $View/Viewport/World/WorldTiles
 @onready var _baker: TileBaker = $View/Viewport/World/WorldTiles/TileBaker
 @onready var _boat: Boat = $View/Viewport/World/Boat
+@onready var _autosave: Autosave = $Autosave
 
 
 func _ready() -> void:
@@ -33,9 +34,18 @@ func _ready() -> void:
 	_fit()
 	var start := _start_spot()
 	_boat.place_at(start.x, start.y, start.angle_to_point(Vector2(IslandRules.HOME.x, IslandRules.HOME.y)) + PI / 2)
+	var args := {}
+	for arg in OS.get_cmdline_user_args():
+		var kv := arg.trim_prefix("--").split("=", true, 1)
+		args[kv[0]] = kv[1] if kv.size() > 1 else ""
+	var dev_run := args.has("snap") or args.has("autofish")
+	_autosave.path = args.get("save", "") if dev_run else SaveGame.PATH   # (a dev run keeps no voyage unless told where)
+	if _autosave.restore():
+		start = Vector2(_boat.x, _boat.y)
 	_baker.budget_ms = 40.0                            # a quick start: the sea round the boat first
 	_tiles.follow(start)
-	_dev_hooks()
+	if dev_run:
+		_dev_hooks(args)
 
 
 func _process(_delta: float) -> void:
@@ -78,14 +88,9 @@ func _start_spot() -> Vector2:
 # (and exits 1 if none is, so CI can run it headless), and `--autosell` then docks at Alderhaven and sells it
 # (`--snap-docked=out.png` saves the port panel first); `-- --snap=out.png [--sail=seconds] [--zoom=z] [--at=x,y]`
 # waits for the sea round the boat to bake, holds the throttle that long, saves a screenshot and quits. `--clock=0.75`
-# sets the time of day first (a fraction of the first day; 0.75 is the middle of the night).
-func _dev_hooks() -> void:
-	var args := {}
-	for arg in OS.get_cmdline_user_args():
-		var kv := arg.trim_prefix("--").split("=")
-		args[kv[0]] = kv[1] if kv.size() > 1 else ""
-	if not args.has("snap") and not args.has("autofish"):
-		return
+# sets the time of day first (a fraction of the first day; 0.75 is the middle of the night). These runs leave the
+# player's voyage alone: `--save=path` keeps one at `path` instead (picked up at the start, saved before quitting).
+func _dev_hooks(args: Dictionary) -> void:
 	if args.has("clock"):
 		State.clock = float(args.clock) * State.DAYLEN
 	if args.has("zoom"):
@@ -101,6 +106,7 @@ func _dev_hooks() -> void:
 		if ok and args.has("autosell"):
 			ok = await _autosell()
 		if not args.has("snap"):
+			_autosave.save()
 			get_tree().quit(0 if ok else 1)
 			return
 	var sail := float(args.get("sail", "0"))
@@ -112,7 +118,9 @@ func _dev_hooks() -> void:
 		Input.action_release("steer_right")
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(args.snap)
-	print("snap: boat at %.0f, %.0f, %.1f units/s" % [_boat.x, _boat.y, _boat.speed()])
+	print("snap: boat at %.0f, %.0f, %.1f units/s; day %d, purse $%d, %d in the hold" % [_boat.x, _boat.y, _boat.speed(),
+		State.day_number(), State.coins, State.hold.size()])
+	_autosave.save()
 	get_tree().quit()
 
 
