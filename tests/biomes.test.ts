@@ -30,7 +30,7 @@ describe('species catalogue', () => {
     for (let t = 0; t < 3600; t += 60) { tickHotspots(t); for (const s of schoolsNear(280, 280, 450)) if (s.stock > 0) ids.add(SPECIES[s.sp].id); }
     for (const id of ['anchovy', 'mackerel', 'perch', 'flounder']) expect(ids.has(id)).toBe(true);
     for (const id of [...Object.keys(HABITAT), ...ICE]) expect(ids.has(id)).toBe(false);
-  });
+  }, 20_000);   // an hour of the hotspot clock steps every world cell the tests before it built
   test('biome fish only swim where their biome is strong', () => {
     // a school settles a few steps from where it was picked, so one right on a border may end up just outside it
     let seen = 0, inside = 0;

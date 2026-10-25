@@ -486,12 +486,13 @@ export interface Hotspot {
 }
 interface HotSlot {
   k: number; period: number; phase: number; duty: number; fixed: boolean; n: number; up: boolean; spot: Hotspot;
-  /** where the cluster surfaced, each school's home then, and the way it drifts (unit vector) and how far it can */
-  bx: number; by: number; homes: Point[]; dx: number; dy: number; travel: number;
+  /** where the cluster surfaced, each school's home then, the way it drifts (unit vector), how far it has been found
+   *  free to, and whether further on is still to be looked at */
+  bx: number; by: number; homes: Point[]; dx: number; dy: number; travel: number; open: boolean;
 }
 const HC = 420, HSLOTS = 3, SURF_S = 10, HOME_R = 300, RARE_SPOT = 0.1, CLUSTER = 4;
 /** A surfaced cluster drifts this fast (world units a second), following its fish, up to DRIFT_MAX from where it rose. */
-const DRIFT = 0.6, DRIFT_MAX = 240;
+const DRIFT = 0.6, DRIFT_MAX = 240, DRIFT_STEP = 30;
 // round Alderhaven the sea stays calm: past the one cluster that is always up, only one slot in a cell surfaces, rarely
 const CALM_R = 1150, CALM_DUTY = 0.12;
 const BAIT_FISH = new Set([SP.anchovy, SP.sardine, SP.herring]);
@@ -545,22 +546,27 @@ function placeSpot(i: number, j: number, sl: HotSlot): void {
   }
   Object.assign(spot, { x: best?.x ?? x0 + span / 2, y: best?.y ?? y0 + span / 2, r: reach, bait, predator });
   if (!used.length) spot.rare = false;
-  // the way it will drift while up: of four headings, the one with the most open water before any shallows
-  Object.assign(sl, { bx: spot.x, by: spot.y, homes: spot.schools.map(q => ({ x: q.x, y: q.y })), dx: 0, dy: 0, travel: 0 });
+  // the way it will drift while up: the first of four headings with open water for its first step (each step after
+  // that is checked as the cluster comes to it, in stepSlot)
+  Object.assign(sl, { bx: spot.x, by: spot.y, homes: spot.schools.map(q => ({ x: q.x, y: q.y })), dx: 0, dy: 0, travel: 0, open: false });
   if (sl.fixed || !used.length) return;
-  for (let t = 0, a0 = r() * Math.PI * 2; t < 4; t++) {
-    const a = a0 + t * Math.PI / 2, c = Math.cos(a), sn = Math.sin(a);
-    // every school's home moved e along the heading: open water round it, still the first school's kind of water (its
-    // species set the spot), and biome fish still in their biome
-    const fits = (e: number) => spot.schools.every((q, m) => {
-      if (q.stock <= 0) return true;
-      const x = q.x + c * e, y = q.y + sn * e, hab = HABITAT[SPECIES[q.sp].id];
-      return !landPull(x, y, schoolReach(q.sp), 12) && (m > 0 || livesAt(q.sp, x, y, heightAt(x, y))) && (!hab || biomeMix(x, y)[hab] >= 0.4);
-    });
-    let d = 0;
-    while (d < DRIFT_MAX && fits(d + 30)) d += 30;
-    if (d > sl.travel) Object.assign(sl, { dx: c, dy: sn, travel: d });
+  for (let t = 0, a0 = r() * Math.PI * 2; t < 4 && !sl.open; t++) {
+    const a = a0 + t * Math.PI / 2;
+    Object.assign(sl, { dx: Math.cos(a), dy: Math.sin(a) });
+    if (driftFits(sl, DRIFT_STEP)) Object.assign(sl, { travel: DRIFT_STEP, open: true });
   }
+}
+/**
+ * Whether every school of a cluster could have its home moved `e` along its drift heading: open water round it,
+ * still the first school's kind of water (its species set the spot), and biome fish still in their biome.
+ */
+function driftFits(sl: HotSlot, e: number): boolean {
+  return sl.spot.schools.every((q, m) => {
+    const h = sl.homes[m];
+    if (!h || q.stock <= 0) return true;
+    const x = h.x + sl.dx * e, y = h.y + sl.dy * e, hab = HABITAT[SPECIES[q.sp].id];
+    return !landPull(x, y, schoolReach(q.sp), 12) && (m > 0 || livesAt(q.sp, x, y, heightAt(x, y))) && (!hab || biomeMix(x, y)[hab] >= 0.4);
+  });
 }
 function hotCell(i: number, j: number): HotSlot[] {
   const k = key(i, j);
@@ -573,7 +579,7 @@ function hotCell(i: number, j: number): HotSlot[] {
     const spot: Hotspot = { id: `h:${i},${j},${q}`, x: 0, y: 0, r: 0, surf: 0, bait: false, predator: false, rare: false, schools: [] };
     const duty = !calm ? 0.55 : q === 0 ? CALM_DUTY : 0;
     const phase = calm ? hash01(i, j, 63) : q / HSLOTS + hash01(i, j * 5 + q, 62) * 0.2;   // calm cells out of step, so they don't all surface at the start
-    c.push({ k: q, period, phase, duty, fixed: home && q === 0, n: -1, up: false, spot, bx: 0, by: 0, homes: [], dx: 0, dy: 0, travel: 0 });
+    c.push({ k: q, period, phase, duty, fixed: home && q === 0, n: -1, up: false, spot, bx: 0, by: 0, homes: [], dx: 0, dy: 0, travel: 0, open: false });
   }
   hotCells.set(k, c);
   for (const sl of c) stepSlot(i, j, sl);
@@ -588,8 +594,10 @@ function stepSlot(i: number, j: number, sl: HotSlot): void {
   sl.up = up;
   const into = f * sl.period, left = (sl.duty - f) * sl.period;
   sl.spot.surf = sl.fixed ? 1 : up ? Math.min(1, into / SURF_S, left / SURF_S) : 0;
-  if (up && sl.travel > 0) {                      // drifting with its fish
-    const d = Math.min(sl.travel, into * DRIFT), ox = sl.dx * d, oy = sl.dy * d;
+  if (up && sl.travel > 0) {                      // drifting with its fish, a step further each time it gets there and the way is open
+    const want = Math.min(DRIFT_MAX, into * DRIFT);
+    while (sl.open && want > sl.travel) { if (driftFits(sl, sl.travel + DRIFT_STEP)) sl.travel += DRIFT_STEP; else sl.open = false; }
+    const d = Math.min(sl.travel, want), ox = sl.dx * d, oy = sl.dy * d;
     sl.spot.x = sl.bx + ox; sl.spot.y = sl.by + oy;
     sl.spot.schools.forEach((q, m) => { const h = sl.homes[m]; if (h) { q.x = h.x + ox; q.y = h.y + oy; } });
   }
