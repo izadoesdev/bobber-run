@@ -6,7 +6,7 @@ config_version=5
 
 config/name="Bobber Run"
 config/features=PackedStringArray("4.7", "GL Compatibility")
-run/main_scene="res://scenes/island_chart.tscn"
+run/main_scene="res://scenes/sea_chart.tscn"
 
 [rendering]
 

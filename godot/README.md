@@ -11,6 +11,11 @@ The port of the browser game in `../src`, one slice at a time. Web first: GDScri
   rather than transliterated.
 - **Data is exported, not copied.** Tables like species, boats and upgrades will be generated from the TypeScript as
   JSON, so the two can't drift apart.
+- **One implementation of anything the game must agree on.** Terrain heights are computed once, on the CPU (native
+  `FastNoiseLite` layers), and baked into tiles that the drawing, collisions and chart all read; there is no second GPU
+  version to drift from it.
+- **No threads assumed.** The web build is single-threaded (a `WorkerThreadPool` task would run inline and stall the
+  frame), so background work runs within a per-frame budget on every platform (`TileBaker`).
 - Statically typed GDScript; one concern per file.
 
 ## Layout
@@ -19,7 +24,8 @@ The port of the browser game in `../src`, one slice at a time. Web first: GDScri
 | --- | --- |
 | `src/core` | deterministic building blocks (`seed.gd`: the lattice hash and PRNG) |
 | `src/rules` | game rules shared with the server (`island_rules.gd`) |
-| `src/dev`, `scenes` | scenes to run while the port grows (`island_chart.tscn`: every buyable island, from the rules) |
+| `src/world` | the world: each cell's islands (`islands.gd`), the one terrain height function and its tiles (`terrain.gd`), and the baker that builds tiles within a frame budget (`tile_baker.gd`) |
+| `src/dev`, `scenes` | scenes to run while the port grows (`sea_chart.tscn`: the terrain round home, baked as you pan) |
 | `tests` | headless tests (`test_*.gd`), the runner, and `fixtures/` recorded from the TypeScript |
 
 ## Running it
@@ -28,6 +34,16 @@ The port of the browser game in `../src`, one slice at a time. Web first: GDScri
 Godot --path godot                                  # the main scene; drag to pan, wheel to zoom
 Godot --path godot -- --snap=out.png                # save the first frame and quit
 ```
+
+## The web build
+
+```sh
+Godot --headless --path godot --export-release Web ../dist-godot/index.html   # needs the 4.7.2 web export templates
+cd dist-godot && python3 -m http.server 8765                                    # then open http://localhost:8765
+```
+
+It's the single-threaded variant, so it needs no special headers. A 64 x 64 sample tile of island terrain bakes in
+about 9 ms on an M4 desktop and 10 ms in Chrome there.
 
 ## Running the tests
 

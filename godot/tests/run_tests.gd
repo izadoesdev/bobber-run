@@ -9,7 +9,11 @@ func _init() -> void:
 	for file in DirAccess.get_files_at("res://tests"):
 		if not (file.begins_with("test_") and file.ends_with(".gd")) or file == "test_case.gd":
 			continue
-		var script: GDScript = load("res://tests/" + file)
+		var script := load("res://tests/" + file) as GDScript
+		if script == null or not script.can_instantiate():   # a test file that doesn't load is a failure, not a pass
+			failed += 1
+			printerr("FAIL %s: does not load" % file)
+			continue
 		for method in script.get_script_method_list():
 			if not String(method.name).begins_with("test_"):
 				continue
