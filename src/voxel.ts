@@ -57,20 +57,33 @@ export class Vox {
       if (m) fn(u, v, z, m);
     }
   }
-  /** Computes normals (pointing away from the solid mass nearby, biased up on exposed tops) and the radius. */
+  /**
+   * Computes normals (pointing away from the solid mass within 2 voxels, biased up on exposed tops) and the radius.
+   * The sums over each voxel's 5 x 5 x 5 neighbourhood are taken as box sums along one axis at a time on a grid padded
+   * by 2 (the same integers as summing all 125 neighbours, a few dozen operations instead of 125 lookups).
+   */
   finalize(): this {
-    this.n = new Float32Array(this.d.length * 3);
+    const { nu, nv, nz, d } = this, X = nu + 4, Y = nv + 4, N = X * Y * (nz + 4), XY = X * Y;
+    const O = new Int32Array(N);
+    for (let z = 0; z < nz; z++) for (let v = 0; v < nv; v++) for (let u = 0; u < nu; u++) if (d[(z * nv + v) * nu + u]) O[((z + 2) * Y + v + 2) * X + u + 2] = 1;
+    // the sum of five along stride s (entries within 2 of the array's ends stay 0; only the interior is read)
+    const box = (a: Int32Array, s: number): Int32Array => {
+      const o = new Int32Array(N);
+      for (let i = 2 * s; i < N - 2 * s; i++) o[i] = a[i - 2 * s] + a[i - s] + a[i] + a[i + s] + a[i + 2 * s];
+      return o;
+    };
+    const Bz = box(O, XY), Au = box(Bz, X), Av = box(Bz, 1), Az = box(box(O, 1), X);   // boxed across the two other axes
+    const w = (a: Int32Array, i: number, s: number): number => 2 * a[i - 2 * s] + a[i - s] - a[i + s] - 2 * a[i + 2 * s];
+    this.n = new Float32Array(d.length * 3);
     let rad = 0;
-    this.each((u, v, z) => {
-      let nu = 0, nv = 0, nz = 0;
-      for (let dz = -2; dz <= 2; dz++) for (let du = -2; du <= 2; du++) for (let dv = -2; dv <= 2; dv++) {
-        if (this.get(u + du, v + dv, z + dz)) { nu -= du; nv -= dv; nz -= dz; }
-      }
-      if (!this.get(u, v, z + 1)) nz += 6;
-      const l = Math.hypot(nu, nv, nz) || 1, k = this.idx(u, v, z) * 3;
-      this.n[k] = nu / l; this.n[k + 1] = nv / l; this.n[k + 2] = nz / l;
-      rad = Math.max(rad, Math.hypot(u, v));
-    });
+    for (let z = 0; z < nz; z++) for (let v = 0; v < nv; v++) for (let u = 0; u < nu; u++) {
+      const k = (z * nv + v) * nu + u;
+      if (!d[k]) continue;
+      const i = ((z + 2) * Y + v + 2) * X + u + 2, gu = w(Au, i, 1), gv = w(Av, i, X), gz = w(Az, i, XY) + (O[i + XY] ? 0 : 6);
+      const l = Math.hypot(gu, gv, gz) || 1;
+      this.n[k * 3] = gu / l; this.n[k * 3 + 1] = gv / l; this.n[k * 3 + 2] = gz / l;
+      rad = Math.max(rad, Math.hypot(u + this.u0, v + this.v0));
+    }
     this.rad = rad;
     return this;
   }

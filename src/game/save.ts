@@ -4,7 +4,7 @@ import { hAt, homePort, cellPois, nearestWater, WORLD } from '../world';
 import { SP, retiredRefund } from '../econ';
 import { toast } from './feedback';
 import { netSaved, reportStats } from '../net';
-import type { GameState, Port } from '../types';
+import type { GameState, Point, Port } from '../types';
 import { G, freshStats, freshUpgrades } from './state';
 import { seedExplored } from './explore';
 import { fleetWhileAway } from './port/fleet';
@@ -39,6 +39,13 @@ export function saveGame(): void {
 }
 export function hasSave(): boolean {
   try { return !!(localStorage.getItem(KEY) || localStorage.getItem(OLD)); } catch { return false; }
+}
+/** Where the saved boat lies, so its sea can be built before Continue is pressed; null without a save. */
+export function savedSpot(): Point | null {
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY) || 'null') as Partial<SaveData> | null;
+    return d && Number.isFinite(d.x) && Number.isFinite(d.y) && (d.world ?? 1) === WORLD ? { x: d.x!, y: d.y! } : null;
+  } catch { return null; }
 }
 /** A few facts about the save on this device, for the "erase it?" question; null when there is none or it can't be read. */
 export function savedVoyage(): { day: number; caught: number; species: number } | null {

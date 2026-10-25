@@ -4,6 +4,7 @@
 import { W, H, clamp, lerp, frac, smooth01 } from '../config';
 import { ONLINE, type Sailor } from '../online';
 import { SET, type Quality, type PixelStyle } from '../prefs';
+import { wantTiles } from '../tilepool';
 import { TS, TN, getTile, hasTile, hAt, poisNear, schoolsNear, cratesNear, claimableNear, homesteadSite, hotspotsNear, regionSites, type HeightTile, type Hotspot, type RegionSite } from '../world';
 import { hash01 } from '../noise';
 import { SPECIES, BOATS, activeAt } from '../econ';
@@ -1386,13 +1387,22 @@ function partPoints(): void {
 }
 
 // ---------- prefetch heights (and tree lists) so new terrain never hitches ----------
+/** The height tiles round a view centred on (cx, cy), 1.5 tiles past its edges, nearest first. */
+export function tilesAround(cx: number, cy: number): [number, number][] {
+  const mx = W / 2 + TS * 1.5, my = H / 2 + TS * 1.5, L: [number, number, number][] = [];
+  eachTile(cx - mx, cy - my, cx + mx, cy + my, (tx, ty) => { L.push([tx, ty, ((tx + 0.5) * TS - cx) ** 2 + ((ty + 0.5) * TS - cy) ** 2]); });
+  return L.sort((a, b) => a[2] - b[2]).map(([tx, ty]) => [tx, ty]);
+}
+/** Missing tiles go to the tile workers (or are built here, within the budget, without them); trees are planted here. */
 export function prefetch(budgetMs = 4): void {
-  const t0 = performance.now(), cx = G.cam.x + W / 2, cy = G.cam.y + H / 2, mx = W / 2 + TS * 1.5, my = H / 2 + TS * 1.5;
-  eachTile(cx - mx, cy - my, cx + mx, cy + my, (tx, ty) => {
-    if (performance.now() - t0 > budgetMs) return false;
-    if (!hasTile(tx, ty)) getTile(tx, ty);
-    else { const t = getTile(tx, ty); if (t.land && !t.trees) tileTrees(t); }
-  });
+  const t0 = performance.now(), near = tilesAround(G.cam.x + W / 2, G.cam.y + H / 2), missing = near.filter(([tx, ty]) => !hasTile(tx, ty));
+  const workers = missing.length > 0 && wantTiles(missing);
+  for (const [tx, ty] of near) {
+    if (performance.now() - t0 > budgetMs) return;
+    if (!hasTile(tx, ty)) { if (!workers) getTile(tx, ty); continue; }
+    const t = getTile(tx, ty);
+    if (t.land && !t.trees) tileTrees(t);
+  }
 }
 
 // ---------- frame ----------

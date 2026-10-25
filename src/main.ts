@@ -7,8 +7,9 @@ import { guide } from './game/guide';
 import * as MODELS from './models';
 import * as NETAPI from './net';
 import { SPECIES } from './econ';
-import { TUNE, G, physicsStep, update, updateCamera, refreshSolids, newGame, saveGame, toast } from './game';
-import { initRender, render, R, prefetch, boatRenderState } from './gl/renderer';
+import { TUNE, G, physicsStep, update, updateCamera, refreshSolids, newGame, saveGame, savedSpot, toast } from './game';
+import { initRender, render, R, prefetch, boatRenderState, tilesAround } from './gl/renderer';
+import { warmTiles } from './tilepool';
 import { initUI, drawUI } from './ui/index';
 import { SET, applySettings } from './settings';
 import { updateStory, speech } from './story';
@@ -146,4 +147,8 @@ window.BR = {
   WX, setWeather, LIFE, LAIR, BOSS, MODELS, GAME, TUNE, G, guide, tick, sim: (dt: number) => { noRender = true; tick(dt); noRender = false; },
   homePort, schoolsNear, poisNear, hAt, SPECIES, R, worldCaches, speech, CONTENT: { packJournal, packCatch, biomeAt }, ZONES: zoneStats,
 };
-requestAnimationFrame(frame);
+// the first frame needs the sea round the harbour: the tile workers build it in parallel while the page settles,
+// rather than the first frame building it all on the main thread (two seconds on a phone); a saved boat's sea next,
+// for Continue
+const home = tilesAround(G.cam.x + W / 2, G.cam.y + H / 2), spot = savedSpot();
+void warmTiles([...home, ...(spot ? tilesAround(spot.x, spot.y) : [])], home.length, 4000).then(() => requestAnimationFrame(frame));

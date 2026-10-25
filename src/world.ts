@@ -150,6 +150,16 @@ function shoreAt(S: number[], a: number): number {
   return k;
 }
 const LIFT = 0.14;                             // relief starts this far above the sea, so beaches stay low and sandy
+// the islands of the 3 x 3 cells round cell (ci, cj), in the order heightAt reads them (row by row): neighbouring
+// points almost always share a cell, so the last list is kept rather than looking up nine cells per point
+let nearCi = NaN, nearCj = NaN, nearList: Island[] = [];
+function islandsNear(ci: number, cj: number): Island[] {
+  if (ci === nearCi && cj === nearCj) return nearList;
+  const L: Island[] = [];
+  for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) for (const is of cellIslands(ci + di, cj + dj)) L.push(is);
+  nearCi = ci; nearCj = cj;
+  return nearList = L;
+}
 
 /** Terrain height: < 0 is water (deeper = more negative), > 0 is land. */
 export function heightAt(x: number, y: number): number {
@@ -158,19 +168,18 @@ export function heightAt(x: number, y: number): number {
   const ci = Math.floor(wx / CELL), cj = Math.floor(wy / CELL);
   let h = -0.5 + 0.1 * nC(x * 0.0016, y * 0.0016);
   let shape: number | null = null, best = -9, top: Island | null = null, topD = 0;
-  for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
-    for (const is of cellIslands(ci + di, cj + dj)) {
-      const T = is.islet ? null : coastTable(is);
-      const dx = wx - is.x, dy = wy - is.y, d2 = (dx * dx + dy * dy) / (is.R * is.R);
-      if (d2 > (T ? is.reach2 : 2.3)) continue;                       // headlands reach further than a round coast
-      // coves and headlands scale the distance by heading; an island counts within 2.3 of its shaped radius
-      const k = T && d2 > 0.16 ? 1 + (coastAt(T, dx, dy) - 1) * smooth01((d2 - 0.16) / 0.5) : 1;
-      if (d2 * k * k > 2.3) continue;
-      if (shape === null) shape = fbm(nA, x * 0.009, y * 0.009, 3);
-      const d = Math.sqrt(d2) * (1 + 0.3 * shape) * k;
-      const base = 1 - d * d, e = base > 0 ? is.peak * Math.pow(base, 1.4) : is.peak * base;
-      if (e > best) { best = e; top = is; topD = d; }
-    }
+  const near = islandsNear(ci, cj);
+  for (let q = 0; q < near.length; q++) {
+    const is = near[q], T = is.islet ? null : coastTable(is);
+    const dx = wx - is.x, dy = wy - is.y, d2 = (dx * dx + dy * dy) / (is.R * is.R);
+    if (d2 > (T ? is.reach2 : 2.3)) continue;                       // headlands reach further than a round coast
+    // coves and headlands scale the distance by heading; an island counts within 2.3 of its shaped radius
+    const k = T && d2 > 0.16 ? 1 + (coastAt(T, dx, dy) - 1) * smooth01((d2 - 0.16) / 0.5) : 1;
+    if (d2 * k * k > 2.3) continue;
+    if (shape === null) shape = fbm(nA, x * 0.009, y * 0.009, 3);
+    const d = Math.sqrt(d2) * (1 + 0.3 * shape) * k;
+    const base = 1 - d * d, e = base > 0 ? is.peak * Math.pow(base, 1.4) : is.peak * base;
+    if (e > best) { best = e; top = is; topD = d; }
   }
   if (best > -9) {
     let e = best;
@@ -203,9 +212,8 @@ export interface HeightTile {
   trees?: number[];
 }
 const tiles = new Map<number, HeightTile>();
-export function getTile(tx: number, ty: number): HeightTile {
-  const k = key(tx, ty), cached = tiles.get(k);
-  if (cached) return cached;
+/** What tile (tx, ty) is made of: its heights and whether it has land (built here, or by a tile worker: tilepool.ts). */
+export function tileHeights(tx: number, ty: number): { h: Float32Array; land: boolean } {
   const h = new Float32Array(TN * TN), x0 = tx * TS - 1, y0 = ty * TS - 1;
   let land = false;
   for (let j = 0; j < TN; j++) for (let i = 0; i < TN; i++) {
@@ -213,11 +221,21 @@ export function getTile(tx: number, ty: number): HeightTile {
     h[j * TN + i] = v;
     if (v > -0.04) land = true;
   }
-  const t: HeightTile = { tx, ty, h, land };
+  return { h, land };
+}
+export function getTile(tx: number, ty: number): HeightTile {
+  const k = key(tx, ty), cached = tiles.get(k);
+  if (cached) return cached;
+  const t: HeightTile = { tx, ty, ...tileHeights(tx, ty) };
   tiles.set(k, t);
   return t;
 }
 export const hasTile = (tx: number, ty: number): boolean => tiles.has(key(tx, ty));
+/** A tile a worker built: kept, unless it was needed sooner and built here meanwhile. */
+export function adoptTile(tx: number, ty: number, h: Float32Array, land: boolean): void {
+  const k = key(tx, ty);
+  if (!tiles.has(k)) tiles.set(k, { tx, ty, h, land });
+}
 /** height at the integer cell containing (x, y), from the tile cache */
 export function hAt(x: number, y: number): number {
   x = Math.floor(x); y = Math.floor(y);
