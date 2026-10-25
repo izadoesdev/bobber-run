@@ -1,0 +1,189 @@
+[
+ {
+  "id": "row",
+  "name": "Rowboat",
+  "speed": 1,
+  "accel": 1,
+  "turn": 1,
+  "L": 13.5,
+  "B": 5.8,
+  "prop": "OARS",
+  "hp": 100
+ },
+ {
+  "id": "canoe",
+  "name": "Canoe",
+  "speed": 1.2,
+  "accel": 1.25,
+  "turn": 1.35,
+  "L": 12,
+  "B": 3.2,
+  "prop": "OARS",
+  "hp": 70
+ },
+ {
+  "id": "skiff",
+  "name": "Sail Skiff",
+  "speed": 1.45,
+  "accel": 0.9,
+  "turn": 0.95,
+  "L": 16.5,
+  "B": 6.4,
+  "prop": "SAIL",
+  "hp": 140
+ },
+ {
+  "id": "jetski",
+  "name": "Jet Ski",
+  "speed": 2.35,
+  "accel": 2.4,
+  "turn": 1.7,
+  "L": 8,
+  "B": 3,
+  "prop": "ENGINE",
+  "hp": 70
+ },
+ {
+  "id": "launch",
+  "name": "Motor Launch",
+  "speed": 1.95,
+  "accel": 1.5,
+  "turn": 1.05,
+  "L": 17.5,
+  "B": 7,
+  "prop": "ENGINE",
+  "hp": 210
+ },
+ {
+  "id": "trawler",
+  "name": "Trawler",
+  "speed": 2.15,
+  "accel": 0.8,
+  "turn": 0.75,
+  "L": 23,
+  "B": 9,
+  "prop": "ENGINE",
+  "hp": 360
+ },
+ {
+  "id": "speedboat",
+  "name": "Speedboat",
+  "speed": 2.75,
+  "accel": 2,
+  "turn": 1.15,
+  "L": 15,
+  "B": 5.5,
+  "prop": "ENGINE",
+  "hp": 240
+ },
+ {
+  "id": "catamaran",
+  "name": "Catamaran",
+  "speed": 2.55,
+  "accel": 1.1,
+  "turn": 0.9,
+  "L": 20,
+  "B": 9,
+  "prop": "SAIL",
+  "hp": 320
+ },
+ {
+  "id": "schooner",
+  "name": "Schooner",
+  "speed": 2.4,
+  "accel": 0.85,
+  "turn": 0.62,
+  "L": 32,
+  "B": 10,
+  "prop": "SAIL",
+  "hp": 520
+ },
+ {
+  "id": "cruiser",
+  "name": "Day Cruiser",
+  "speed": 2.45,
+  "accel": 1.4,
+  "turn": 0.9,
+  "L": 22,
+  "B": 7.5,
+  "prop": "ENGINE",
+  "hp": 420
+ },
+ {
+  "id": "drifter",
+  "name": "Steam Drifter",
+  "speed": 2.3,
+  "accel": 0.7,
+  "turn": 0.62,
+  "L": 36,
+  "B": 11,
+  "prop": "ENGINE",
+  "hp": 700
+ },
+ {
+  "id": "research",
+  "name": "Research Vessel",
+  "speed": 2.2,
+  "accel": 0.9,
+  "turn": 0.75,
+  "L": 28,
+  "B": 9,
+  "prop": "ENGINE",
+  "hp": 560
+ },
+ {
+  "id": "flagship",
+  "name": "Flagship",
+  "speed": 2.6,
+  "accel": 0.75,
+  "turn": 0.62,
+  "L": 46,
+  "B": 14,
+  "prop": "ENGINE",
+  "hp": 1000
+ },
+ {
+  "id": "icebreaker",
+  "name": "Icebreaker",
+  "speed": 2,
+  "accel": 0.6,
+  "turn": 0.55,
+  "L": 34,
+  "B": 11.5,
+  "prop": "ENGINE",
+  "hp": 1500
+ },
+ {
+  "id": "yacht",
+  "name": "Sailing Yacht",
+  "speed": 2.85,
+  "accel": 0.95,
+  "turn": 0.7,
+  "L": 30,
+  "B": 8,
+  "prop": "SAIL",
+  "hp": 700
+ },
+ {
+  "id": "motoryacht",
+  "name": "Motor Yacht",
+  "speed": 2.7,
+  "accel": 1,
+  "turn": 0.65,
+  "L": 38,
+  "B": 11,
+  "prop": "ENGINE",
+  "hp": 1000
+ },
+ {
+  "id": "superyacht",
+  "name": "Superyacht",
+  "speed": 2.85,
+  "accel": 0.9,
+  "turn": 0.6,
+  "L": 52,
+  "B": 13,
+  "prop": "ENGINE",
+  "hp": 1800
+ }
+]

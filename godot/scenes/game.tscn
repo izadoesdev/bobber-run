@@ -1,0 +1,65 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://src/game/game.gd" id="1"]
+[ext_resource type="Script" path="res://src/world/world_tiles.gd" id="2"]
+[ext_resource type="Script" path="res://src/world/tile_baker.gd" id="3"]
+[ext_resource type="Script" path="res://src/render/ground.gd" id="4"]
+[ext_resource type="Script" path="res://src/game/boat.gd" id="5"]
+
+[sub_resource type="Environment" id="env"]
+background_mode = 1
+background_color = Color(0.18, 0.43, 0.56, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.82, 0.86, 0.92, 1)
+ambient_light_energy = 0.55
+
+[sub_resource type="World3D" id="w3d"]
+
+[node name="Game" type="Node"]
+script = ExtResource("1")
+
+[node name="View" type="SubViewportContainer" parent="."]
+texture_filter = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+stretch = true
+stretch_shrink = 3
+
+[node name="Viewport" type="SubViewport" parent="View"]
+handle_input_locally = false
+canvas_item_default_texture_filter = 0
+size = Vector2i(384, 216)
+render_target_update_mode = 4
+
+[node name="Environment" type="WorldEnvironment" parent="View/Viewport"]
+environment = SubResource("env")
+
+[node name="Sun" type="DirectionalLight3D" parent="View/Viewport"]
+light_energy = 0.9
+
+[node name="Camera" type="Camera3D" parent="View/Viewport"]
+projection = 1
+size = 200.0
+near = 1.0
+far = 1200.0
+
+[node name="World" type="Node3D" parent="View/Viewport"]
+
+[node name="WorldTiles" type="Node" parent="View/Viewport/World"]
+script = ExtResource("2")
+
+[node name="TileBaker" type="Node" parent="View/Viewport/World/WorldTiles"]
+script = ExtResource("3")
+
+[node name="Ground" type="Node3D" parent="View/Viewport/World" node_paths=PackedStringArray("tiles")]
+script = ExtResource("4")
+tiles = NodePath("../WorldTiles")
+
+[node name="Boat" type="Node3D" parent="View/Viewport/World" node_paths=PackedStringArray("tiles")]
+script = ExtResource("5")
+tiles = NodePath("../WorldTiles")
+
+[node name="Model" type="MeshInstance3D" parent="View/Viewport/World/Boat"]

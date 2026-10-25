@@ -25,14 +25,18 @@ The port of the browser game in `../src`, one slice at a time. Web first: GDScri
 | `src/core` | deterministic building blocks (`seed.gd`: the lattice hash and PRNG) |
 | `src/rules` | game rules shared with the server (`island_rules.gd`) |
 | `src/world` | the world: each cell's islands (`islands.gd`), the one terrain height function and its tiles (`terrain.gd`), and the baker that builds tiles within a frame budget (`tile_baker.gd`) |
-| `src/dev`, `scenes` | scenes to run while the port grows (`sea_chart.tscn`: the terrain round home, baked as you pan) |
+| `src/world` (cont.) | `world_tiles.gd`: the baked tiles round the boat, and smooth height reads from them for sailing and collisions |
+| `src/render` | drawing: the ground shader (water bands, surf, land bands and relief, dithered pixel art), voxel models to meshes |
+| `src/game` | the game: `game.gd` (camera, pixel viewport, start), `boat.gd` (sailing physics, ported) |
+| `data` | exported from the TypeScript by `bun scripts/godot-export.ts`: boat stats and voxel models |
+| `scenes` | `game.tscn` (the main scene: sail the rowboat off Alderhaven, WASD or arrows), `sea_chart.tscn` (a terrain chart) |
 | `tests` | headless tests (`test_*.gd`), the runner, and `fixtures/` recorded from the TypeScript |
 
 ## Running it
 
 ```sh
-Godot --path godot                                  # the main scene; drag to pan, wheel to zoom
-Godot --path godot -- --snap=out.png                # save the first frame and quit
+Godot --path godot                                  # sail the rowboat: WASD or the arrow keys
+Godot --path godot -- --snap=out.png --sail=6       # sail ahead for 6 s, save a screenshot and quit
 ```
 
 ## The web build
