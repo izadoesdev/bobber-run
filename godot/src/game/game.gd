@@ -77,7 +77,8 @@ func _start_spot() -> Vector2:
 
 
 # How the port is checked without someone at the keyboard: `-- --autofish` plays the fishing until a fish is landed
-# (and exits 1 if none is, so CI can run it headless), and `--autosell` then docks at Alderhaven and sells it; `-- --snap=out.png [--sail=seconds] [--zoom=z] [--at=x,y]`
+# (and exits 1 if none is, so CI can run it headless), and `--autosell` then docks at Alderhaven and sells it
+# (`--snap-docked=out.png` saves the port panel first); `-- --snap=out.png [--sail=seconds] [--zoom=z] [--at=x,y]`
 # waits for the sea round the boat to bake, holds the throttle that long, saves a screenshot and quits.
 func _dev_hooks() -> void:
 	var args := {}
@@ -166,9 +167,10 @@ func _autosell() -> bool:
 	if State.docked == null:
 		print("autosell: couldn't dock at ", home.name)
 		return false
-	if OS.get_cmdline_user_args().has("--snap-docked"):
-		await RenderingServer.frame_post_draw
-		get_viewport().get_texture().get_image().save_png("/tmp/godot-docked.png")
+	for arg in OS.get_cmdline_user_args():            # --snap-docked=out.png: the port panel, before selling
+		if arg.begins_with("--snap-docked="):
+			await RenderingServer.frame_post_draw
+			get_viewport().get_texture().get_image().save_png(arg.trim_prefix("--snap-docked="))
 	await _tap("ui_accept")
 	var ok := State.coins > before and State.hold.is_empty()
 	print("autosell: docked at %s, sold %d fish for $%d (purse $%d)" % [home.name, fish, State.coins - before, State.coins])
