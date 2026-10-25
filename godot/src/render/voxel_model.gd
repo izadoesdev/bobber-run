@@ -12,9 +12,18 @@ static var _material: StandardMaterial3D
 
 ## The mesh of boat `id`, built once.
 static func boat_mesh(id: String) -> ArrayMesh:
-	if not _meshes.has(id):
-		_meshes[id] = build(JSON.parse_string(FileAccess.get_file_as_string("res://data/boats/%s.json" % id)))
-	return _meshes[id]
+	return _load("boats/" + id)
+
+
+## The mesh of a tree, rock or bush of kind `kind` (TREE_KINDS in the game), built once.
+static func tree_mesh(kind: String) -> ArrayMesh:
+	return _load("trees/" + kind)
+
+
+static func _load(path: String) -> ArrayMesh:
+	if not _meshes.has(path):
+		_meshes[path] = build(JSON.parse_string(FileAccess.get_file_as_string("res://data/%s.json" % path)))
+	return _meshes[path]
 
 
 ## The shared material: vertex colours, toon diffuse, no specular.

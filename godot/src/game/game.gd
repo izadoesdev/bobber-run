@@ -11,6 +11,12 @@ const _VIEW_HEIGHT := 200.0
 const _TILT := deg_to_rad(45.0)
 ## how far the boat starts off Alderhaven's centre, in its radii
 const _START_OFF := 1.45
+## how far the wheel zooms: views from this many times closer to this many times further out
+const _ZOOM_IN := 0.5
+const _ZOOM_OUT := 3.0
+
+## the view's height over _VIEW_HEIGHT: 1 is the game's default, more shows more sea
+var zoom := 1.0
 
 @onready var _view: SubViewportContainer = $View
 @onready var _camera: Camera3D = $View/Viewport/Camera
@@ -44,11 +50,20 @@ func _process(_delta: float) -> void:
 	_camera.position = target + _camera.global_basis.z * 400.0
 
 
-# The pixel scale: a whole number of screen pixels per world unit, so the view is about _VIEW_HEIGHT units tall.
+func _unhandled_input(event: InputEvent) -> void:
+	var b := event as InputEventMouseButton
+	if b and b.pressed and (b.button_index == MOUSE_BUTTON_WHEEL_UP or b.button_index == MOUSE_BUTTON_WHEEL_DOWN):
+		zoom = clampf(zoom * (1.0 / 1.15 if b.button_index == MOUSE_BUTTON_WHEEL_UP else 1.15), _ZOOM_IN, _ZOOM_OUT)
+		_fit()
+
+
+# The pixel scale: a whole number of screen pixels per world unit, so the view is about _VIEW_HEIGHT * zoom units
+# tall (zoomed far out, a pixel can cover more than a world unit: the camera shows more than the viewport's pixels).
 func _fit() -> void:
 	var px := get_viewport().get_visible_rect().size.y
-	_view.stretch_shrink = maxi(1, roundi(px / _VIEW_HEIGHT))
-	_camera.size = px / _view.stretch_shrink
+	_view.stretch_shrink = maxi(1, roundi(px / (_VIEW_HEIGHT * zoom)))
+	_camera.size = maxf(px / _view.stretch_shrink, _VIEW_HEIGHT * zoom)
+	_tiles.keep_radius = ceili(_VIEW_HEIGHT * zoom * 1.6 / Terrain.TILE / 2.0) + 1
 
 
 # Open water just off Alderhaven, to the south.
@@ -61,7 +76,7 @@ func _start_spot() -> Vector2:
 	return home + Vector2(0, IslandRules.HOME.R * 2.0)
 
 
-# `-- --snap=out.png [--sail=seconds]`: once the sea round the boat is baked, hold the throttle for that long, save a
+# `-- --snap=out.png [--sail=seconds] [--zoom=z]`: once the sea round the boat is baked, hold the throttle for that long, save a
 # screenshot and quit (how the port is checked without someone at the keyboard).
 func _dev_snapshot() -> void:
 	var args := {}
@@ -70,7 +85,10 @@ func _dev_snapshot() -> void:
 		args[kv[0]] = kv[1] if kv.size() > 1 else ""
 	if not args.has("snap"):
 		return
-	while not _tiles.ready_around(Vector2(_boat.x, _boat.y), 2):
+	if args.has("zoom"):
+		zoom = float(args.zoom)
+		_fit()
+	while not _tiles.ready_around(Vector2(_boat.x, _boat.y), _tiles.keep_radius):
 		await get_tree().process_frame
 	var sail := float(args.get("sail", "0"))
 	if sail > 0.0:
