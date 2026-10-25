@@ -24,7 +24,14 @@ export type Landmark = 'wreck' | 'light';
 export type FightStyle = 'steady' | 'darter' | 'generic' | 'jumper' | 'erratic' | 'boss';
 export type FishShape =
   | 'slim' | 'perch' | 'long' | 'flat' | 'tuna' | 'bill' | 'round' | 'squid'
-  | 'glow' | 'levi' | 'crab' | 'eel' | 'puffer' | 'angel' | 'carp';
+  | 'glow' | 'levi' | 'crab' | 'eel' | 'puffer' | 'angel' | 'carp' | 'shark' | 'ray';
+/**
+ * How a species lives in the water, which sets how its school looks and moves: bait balls of many small fish, loose
+ * shoals, small hunting packs, bottom dwellers lying still, crabs on the seabed, slow drifters, and lone giants.
+ */
+export type FishRole = 'bait' | 'shoal' | 'hunter' | 'bottom' | 'crawler' | 'drifter' | 'giant';
+/** markings on a fish's back, in a colour: cross bars, a few wide bands, spots, or a stripe down each side */
+export type FishMark = 'bars' | 'bands' | 'spots' | 'stripe';
 
 export interface Species {
   id: string;
@@ -44,6 +51,9 @@ export interface Species {
   /** palette: top, mid, belly, fin */
   c: [string, string, string, string];
   fight: FightStyle;
+  role: FishRole;
+  /** markings and their colour */
+  mark?: [FishMark, string];
   /** where to find it, as shown in the logbook */
   where: string;
   /** whether a school of it can spawn at height h, distance d from home */
@@ -217,6 +227,8 @@ export interface FishLine {
   stage?: number;
   /** nibbles still to come before the bite, as seconds before it; and the game time of the last one */
   teases?: number[];
+  /** a predator's attack on its bait ball has hurried this bite along */
+  rush?: boolean;
   teaseT?: number;
   /** a short note shown while waiting: bait preference or the conditions this fish needs */
   hint?: string | null;
@@ -502,6 +514,8 @@ interface Surroundings {
   nearPort: Port | null;
   nearWreck: Wreck | null;
   nearSchool: School | null;
+  /** the school picked with Tab among several in casting range (its id), else the nearest is the target */
+  aim: string | null;
   nearTreasure: TreasureMap | null;
 }
 

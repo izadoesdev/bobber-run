@@ -1,5 +1,5 @@
 // Fish species: the catalogue, where and when each one bites, and how hard it fights.
-import type { Env, FightStyle, FishShape, Landmark, Region, Species, TimeOfDay, WeatherNeed } from './types';
+import type { Env, FightStyle, FishMark, FishRole, FishShape, Landmark, Region, Species, TimeOfDay, WeatherNeed } from './types';
 import { FISH_T } from './fishart';
 import { biomeMix, coldness, warmth, type BiomeId, type BiomeMix } from './biome';
 
@@ -10,12 +10,33 @@ type Palette = Species['c'];
 // fight difficulty: tougher with the rod level a species needs, and a little with its value
 const difficulty = (rod: number, base: number): number => Math.min(0.95, 0.12 + rod * 0.18 + Math.min(0.2, base / 900));
 
+// how each species lives (see FishRole); anything unlisted swims in a loose shoal
+const ROLE: Record<string, FishRole> = {
+  anchovy: 'bait', sardine: 'bait', herring: 'bait', polarcod: 'bait', lantern: 'bait',
+  barracuda: 'hunter', mahi: 'hunter', tuna: 'hunter', snook: 'hunter', tarpon: 'hunter', goldmahi: 'hunter', cindereel: 'hunter', bass: 'hunter',
+  flounder: 'bottom', halibut: 'bottom', monkfish: 'bottom', grouper: 'bottom', wolffish: 'bottom', cod: 'bottom', lingcod: 'bottom', ghalibut: 'bottom',
+  blackgrouper: 'bottom', goliath: 'bottom', seabassgiant: 'bottom', lumpsucker: 'bottom', moray: 'bottom', octopus: 'bottom',
+  crab: 'crawler', ventcrab: 'crawler', mudcrab: 'crawler', snowcrab: 'crawler',
+  squid: 'drifter', puffer: 'drifter', lionfish: 'drifter', crystal: 'drifter', ghost: 'drifter', stormeel: 'drifter', opah: 'drifter', beacon: 'drifter',
+  marlin: 'giant', swordfish: 'giant', sailfish: 'giant', manta: 'giant', sunfish: 'giant', reefshark: 'giant', oarfish: 'giant', gsquid: 'giant', oldone: 'giant',
+};
+// markings that tell look-alikes apart from above
+const MARK: Record<string, [FishMark, string]> = {
+  mackerel: ['bars', '#14212a'], perch: ['bars', '#2e4a2a'], barracuda: ['bars', '#33454f'], wolffish: ['bars', '#1b2a33'], marlin: ['bars', '#5b7fae'], sailfish: ['bars', '#5b7fae'],
+  clown: ['bands', '#efe9dc'], angel: ['bands', '#1b2a33'], lionfish: ['bands', '#efe9dc'], rockfish: ['bands', '#3a2a14'],
+  rtrout: ['spots', '#26392c'], salmon: ['spots', '#26394a'], char: ['spots', '#e6a08a'], puffer: ['spots', '#5e4a20'], grouper: ['spots', '#3a2a1a'],
+  lingcod: ['spots', '#2f3a2a'], mahi: ['spots', '#3f97a3'], moray: ['spots', '#2a3a10'], kelpbass: ['spots', '#2a3a1a'], ghost: ['spots', '#f0cf6a'],
+  parrot: ['spots', '#d8665a'], cindereel: ['spots', '#f08a3a'], halibut: ['spots', '#33281c'], flounder: ['spots', '#5e4a30'],
+  snook: ['stripe', '#1b2a33'], mullet: ['stripe', '#3d4c56'], tang: ['stripe', '#14213a'], mangsnap: ['stripe', '#7e2c25'],
+  duskfin: ['stripe', '#f0cf6a'], anchovy: ['stripe', '#e6efec'], sardine: ['spots', '#26394a'], embersnap: ['stripe', '#f2a07a'],
+};
+
 // region: 'any' | 'temperate' (fades out in the far north/south) | 'cold' (north) | 'warm' (south)
 // time: 'any' | 'day' | 'night' | 'twilight'   weather: 'any' | 'rain' (rain or storm) | 'storm'
 // special: wreck/light schools only spawn at those landmarks
 const S = (id: string, name: string, base: number, kg: [number, number], rod: number, w: number, time: TimeOfDay, shape: FishShape,
   c: Palette, fight: FightStyle, where: string, zone: Zone, extra: Extra = {}): Species =>
-  ({ id, name, base, kg, rod, w, time, shape, c, fight, where, zone, region: 'any', weather: 'any', special: null, deck: 0, diff: difficulty(rod, base), ...extra });
+  ({ id, name, base, kg, rod, w, time, shape, c, fight, role: ROLE[id] ?? 'shoal', mark: MARK[id], where, zone, region: 'any', weather: 'any', special: null, deck: 0, diff: difficulty(rod, base), ...extra });
 const shallow = (t: number): Zone => h => h > t;
 const deep = (t: number, minDist = 0): Zone => (h, d) => h < t && d > minDist;
 export const SPECIES: Species[] = [
@@ -38,7 +59,7 @@ export const SPECIES: Species[] = [
   S('marlin', 'Marlin', 110, [50, 400], 4, 1, 'day', 'bill', ['#14213a', '#2b4566', '#b3bbc0', '#3f5f8a'], 'jumper', 'Open ocean, very far from home; only under sail on a big deck (Schooner)', deep(-0.42, 3200), { deck: 1 }),
   S('swordfish', 'Swordfish', 140, [60, 350], 4, 1, 'night', 'bill', ['#26394a', '#5c6670', '#b3bbc0', '#33454f'], 'jumper', 'Open ocean very far from home, at night, from a big deck with a Storm Keel (Steam Drifter)', deep(-0.42, 3000), { deck: 1 }),
   // ---- temperate home waters ----
-  S('perch', 'Perch', 7, [0.2, 1.2], 0, 4, 'day', 'perch', ['#4f7044', '#86a65c', '#e6d6a6', '#c0493a'], 'steady', 'Shallows near home', (h, d) => h > -0.26 && d < 1600, { region: 'temperate' }),
+  S('perch', 'Perch', 7, [0.2, 1.2], 0, 6, 'day', 'perch', ['#4f7044', '#86a65c', '#e6d6a6', '#c0493a'], 'steady', 'Shallows near home', (h, d) => h > -0.26 && d < 1600, { region: 'temperate' }),
   S('bass', 'Sea Bass', 17, [0.8, 4], 1, 3, 'any', 'perch', ['#33454f', '#8a949c', '#d3d8da', '#5c6670'], 'generic', 'Deeper water away from home', deep(-0.1, 650), { region: 'temperate' }),
   S('halibut', 'Halibut', 38, [2, 25], 2, 2, 'day', 'flat', ['#4a3a2a', '#8f7a5a', '#efe9dc', '#5e4a36'], 'steady', 'Deep water far from home', deep(-0.32, 1500), { region: 'temperate' }),
   S('salmon', 'Salmon', 32, [2, 12], 2, 2, 'any', 'long', ['#4f6a7a', '#d8665a', '#f2d0c0', '#8a949c'], 'jumper', 'Shallows far from home', (h, d) => h > -0.26 && d > 1600, { region: 'temperate' }),
@@ -66,7 +87,7 @@ export const SPECIES: Species[] = [
   S('oldone', 'The Old One', 2400, [400, 900], 4, 0, 'night', 'levi', ['#14212a', '#33454f', '#8a949c', '#a23d33'], 'boss', 'At its lair (on your chart), at night', () => false, { legend: true }),
   // ---- sea giants: too heavy for a small boat's deck; the Trawler and bigger ships can land them ----
   // (appended last: the hold stores species by index, so existing saves keep their fish)
-  S('manta', 'Manta Ray', 150, [300, 1300], 3, 0.8, 'day', 'flat', ['#1b2a33', '#33454f', '#e6efec', '#14212a'], 'generic', 'Open ocean by day, from a Trawler or bigger', deep(-0.4, 1800), { deck: 1 }),
+  S('manta', 'Manta Ray', 150, [300, 1300], 3, 0.8, 'day', 'ray', ['#1b2a33', '#33454f', '#e6efec', '#14212a'], 'generic', 'Open ocean by day, from a Trawler or bigger', deep(-0.4, 1800), { deck: 1 }),
   S('goliath', 'Goliath Grouper', 135, [80, 360], 3, 1.5, 'any', 'perch', ['#4a3a2a', '#6e5f40', '#c8b47c', '#33281c'], 'steady', 'Around wrecks, from a Trawler or bigger', () => false, { special: 'wreck', deck: 1 }),
   S('gsquid', 'Giant Squid', 250, [100, 275], 4, 0.6, 'night', 'squid', ['#5e1f1a', '#a23d33', '#f2c8b8', '#7e2c25'], 'erratic', 'Deep ocean far from home at night, from the Flagship', deep(-0.42, 2800), { deck: 2 }),
   S('sunfish', 'Ocean Sunfish', 230, [250, 1000], 4, 0.6, 'day', 'round', ['#5c6670', '#8a949c', '#e6efec', '#b3bbc0'], 'steady', 'Far warm ocean by day, from the Flagship', deep(-0.4, 2400), { region: 'warm', deck: 2 }),
@@ -75,7 +96,7 @@ export const SPECIES: Species[] = [
   S('tang', 'Blue Tang', 24, [0.2, 0.8], 1, 4, 'day', 'angel', ['#1f3f8a', '#3f6fd8', '#e2c46a', '#14213a'], 'darter', 'Coral shallows by day', shallow(-0.26)),
   S('lionfish', 'Lionfish', 42, [0.3, 1.3], 1, 2.5, 'night', 'puffer', ['#7e2c25', '#d8665a', '#efe9dc', '#a23d33'], 'erratic', 'Coral shallows at night', shallow(-0.28)),
   S('octopus', 'Reef Octopus', 52, [1, 8], 2, 3, 'night', 'squid', ['#8a3a52', '#c06a7a', '#f2c8b8', '#5e1f3a'], 'erratic', 'Coral shallows at night', shallow(-0.3)),
-  S('reefshark', 'Reef Shark', 95, [15, 60], 3, 0.4, 'any', 'tuna', ['#4f5a62', '#7f8a92', '#e6efec', '#33454f'], 'jumper', 'Deeper water off the coral shallows, from a Trawler or bigger', deep(-0.15), { deck: 1 }),
+  S('reefshark', 'Reef Shark', 95, [15, 60], 3, 0.4, 'any', 'shark', ['#4f5a62', '#7f8a92', '#e6efec', '#33454f'], 'jumper', 'Deeper water off the coral shallows, from a Trawler or bigger', deep(-0.15), { deck: 1 }),
   S('rockfish', 'Kelp Rockfish', 15, [0.3, 2], 0, 4, 'any', 'perch', ['#5e4a2a', '#8f7a4a', '#d6c38c', '#4a3a20'], 'steady', 'Kelp coasts', shallow(-0.3)),
   S('opaleye', 'Opaleye', 19, [0.4, 2.5], 1, 3, 'day', 'round', ['#2f4f3a', '#4f7a5a', '#b4c8a8', '#26392c'], 'steady', 'Kelp coasts by day', shallow(-0.26)),
   S('kelpbass', 'Kelp Bass', 22, [0.5, 3], 1, 1.8, 'day', 'perch', ['#3a4a2a', '#6e7a3a', '#d6c38c', '#4a5a2a'], 'generic', 'Kelp coasts by day', deep(-0.08)),
@@ -198,27 +219,46 @@ export const fmtKg = (kg: number): string => kg < 10 ? kg.toFixed(1) + ' kg' : M
 /** The bait a species takes most readily: night, glowing and eel-like fish go for glow lures, the rest for shrimp. */
 export const favBait = (s: Species): 'shrimp' | 'glow' =>
   s.time === 'night' || s.time === 'twilight' || s.shape === 'glow' || s.shape === 'squid' || s.shape === 'eel' ? 'glow' : 'shrimp';
-const BOTTOM = new Set(['flounder', 'halibut', 'monkfish', 'crab', 'cod', 'grouper', 'wolffish', 'octopus', 'rockfish', 'lingcod', 'ventcrab', 'blackgrouper', 'mudcrab', 'snowcrab', 'ghalibut']);
 export interface SchoolLook {
-  /** fish shown in a full school, their mesh scale, the room each keeps from its neighbours, and how far they mill from the centre */
-  count: number; size: number; space: number; radius: number;
-  /** swimming depth (negative is under water) and how quickly the colour fades into the water */
+  role: FishRole;
+  /** fish shown in a full school, their mesh scale and body length, the room each keeps from its neighbours, and how far
+   *  they mill from the centre */
+  count: number; size: number; body: number; space: number; radius: number;
+  /** depth of their backs (negative is under water) and how quickly their colour fades into the water */
   z: number; fade: number;
-  /** stays low and dark */
+  /** stays low and dark: bottom dwellers and crabs */
   bottom: boolean;
   /** glowable voxels shine at night */
   glow: boolean;
 }
+/** per role: fish in a full school, room between them (in body lengths), the depth they swim at, and how murky they look */
+const ROLE_LOOK: Record<FishRole, { count: number; space: number; z: number; fade: number }> = {
+  bait: { count: 26, space: 0.45, z: -0.5, fade: 0.3 },
+  shoal: { count: 9, space: 0.75, z: -1, fade: 0.28 },
+  hunter: { count: 4, space: 1.3, z: -1.4, fade: 0.3 },
+  bottom: { count: 2, space: 2.2, z: -4.6, fade: 0.62 },
+  crawler: { count: 4, space: 1.6, z: -5, fade: 0.58 },
+  drifter: { count: 3, space: 1.6, z: -2.2, fade: 0.35 },
+  giant: { count: 1, space: 3, z: -0.6, fade: 0.22 },
+};
+// the water a school mills in: bait packs tight, shoals spread a little, hunters range wide; bottom fish and crabs keep to
+// a patch of seabed a couple of body lengths across, and a giant patrols a wide loop
+function radiusOf(role: FishRole, space: number, count: number, body: number): number {
+  if (role === 'giant') return 22;
+  if (role === 'bottom' || role === 'crawler') return 6 + body * 0.45;
+  return 3 + space * Math.sqrt(count) * (role === 'bait' ? 0.55 : role === 'hunter' ? 0.45 : 0.6);
+}
 const looks: SchoolLook[] = [];
-/** Small fish swim in bigger schools of smaller, shallower silhouettes; big fish come in twos and threes. */
+/** How a school of this species looks in the water: by its role, and its size by its weight (giants grow well past the rest). */
 export function schoolLook(spIdx: number): SchoolLook {
   return looks[spIdx] ??= (() => {
-    const s = SPECIES[spIdx], heft = Math.log10(1 + (s.kg[0] + s.kg[1]) * 5), bottom = BOTTOM.has(s.id);
-    const size = Math.min(0.95, 0.55 + heft * 0.11 + (s.legend ? 0.1 : 0)), count = s.legend ? 2 : Math.max(2, Math.min(7, Math.round(7 - heft * 1.6)));
-    const space = FISH_T[s.shape][0].length * size * 0.6;   // about two thirds of a body length
+    const s = SPECIES[spIdx], R = ROLE_LOOK[s.role], heft = Math.log10(1 + (s.kg[0] + s.kg[1]) * 5);
+    const size = s.role === 'giant' ? Math.min(1.7, 0.6 + heft * 0.25) : Math.min(0.95, 0.55 + heft * 0.11 + (s.legend ? 0.1 : 0));
+    const count = s.legend ? Math.min(2, R.count) : s.role === 'shoal' ? Math.max(5, Math.round(R.count * (1.2 - 0.2 * heft))) : R.count;
+    const body = FISH_T[s.shape][0].length * size, space = body * R.space;
     return {
-      count, size, space, radius: 3 + space * Math.sqrt(count) * 0.9,
-      z: bottom ? -4.2 : s.shape === 'glow' ? -2 : -1.3, fade: bottom ? 0.7 : 0.4, bottom,
+      role: s.role, count, size, body, space, radius: radiusOf(s.role, space, count, body),
+      z: R.z, fade: R.fade, bottom: s.role === 'bottom' || s.role === 'crawler',
       glow: s.shape === 'glow' || s.shape === 'squid' || s.id === 'stormeel' || s.id === 'beacon' || s.id === 'cindereel',
     };
   })();

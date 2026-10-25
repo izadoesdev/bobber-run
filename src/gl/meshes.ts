@@ -5,10 +5,10 @@ import { M, decorate, eqSig, CRATE, type Fit } from '../models';
 import { HARBOURS, LIGHTHOUSES, WRECKS, cottage, L as LK, gable, walls, barrel, crate, basket, lampPost, coil, netRack, skiff } from '../landmarks';
 import { SPECIES } from '../econ';
 import { schoolLook } from '../species';
-import { FISH_T } from '../fishart';
+import { FISH_T, markAt } from '../fishart';
 import { hash01 } from '../noise';
 import { hex, toHex } from '../config';
-import type { BoatId } from '../types';
+import type { BoatId, FishShape } from '../types';
 
 /** Vertex layout: position xyz, normal xyz, colour rgb (pre-multiplied by AO), glowable flag; 10 floats, 40 bytes. */
 const VERT = 10;
@@ -1232,7 +1232,11 @@ export const LEGEND_BUILD: Record<LegendKind, () => Vox> = { sunkenTemple, stone
 export const LEGEND_Z: Record<LegendKind, number> = { sunkenTemple: -4, stoneCircle: 0, wreckGraveyard: -0.6, crystalCave: 0, whaleFall: -0.5, iceboundShip: -0.5 };
 export const legendMesh = family<string>(k => 'legend:' + k, k => LEGEND_BUILD[k as LegendKind] ?? stoneCircle, 0, true);
 
-// ---------- fish: each species' sprite extruded into a two-voxel-thick slab ----------
+// ---------- fish, as seen from above ----------
+// The side sprite (fishart) gives a body's height along its length; each column becomes an oval cross-section, wide for
+// round fish and narrow for flat-sided ones, with the back colour (T) on top, the flank (M) at the sides and the belly
+// (B) beneath. The dorsal fin runs along the back, while the tail and pectoral fins spread flat so they read from
+// above, and the species' markings are painted on its back. Plan-view sprites (flatfish, crabs, rays) are laid flat.
 const matCache = new Map<string, number>();
 // a material ramp around one sprite colour: 70% for shadow, 115% for lit; glowing ramps shine at night
 function matFor(c: string, glow = false): number {
@@ -1246,17 +1250,73 @@ function matFor(c: string, glow = false): number {
   return m;
 }
 const GOLD_PAL = ['#a47f22', '#f0cf6a', '#fff6d6', '#e2b94a'];
+const PLAN: ReadonlySet<FishShape> = new Set<FishShape>(['flat', 'crab', 'ray']);
+/** width over height of the body seen from above */
+const BREADTH: Partial<Record<FishShape, number>> = { perch: 0.62, angel: 0.5, round: 0.6, tuna: 0.9, puffer: 1, squid: 0.9, eel: 0.9, shark: 0.85, levi: 0.7 };
+/** per column the rows its body spans and the oval's half-width and half-height there; where the body starts and ends;
+ *  the height of its centre line and of its back */
+interface FishPlan { body: [number, number][]; first: number; last: number; halfW: number[]; halfZ: number[]; zc: number; top: number }
+const plans = new Map<FishShape, FishPlan>();
+function planOf(shape: FishShape): FishPlan {
+  let p = plans.get(shape);
+  if (p) return p;
+  const rows = FISH_T[shape], h = rows.length, w = rows[0].length, k = BREADTH[shape] ?? 0.82;
+  const body: [number, number][] = [], halfW: number[] = [], halfZ: number[] = [];
+  let first = w, last = -1;
+  for (let i = 0; i < w; i++) {
+    let a = -1, b = -1;
+    for (let j = 0; j < h; j++) if ('TMBESG'.includes(rows[j][i])) { if (a < 0) a = j; b = j; }
+    body.push([a, b]);
+    const hh = a < 0 ? 0 : (b - a + 1) / 2;
+    halfW.push(a < 0 ? 0 : Math.max(0.6, hh * k)); halfZ.push(a < 0 ? 0 : Math.max(0.6, hh * 0.5));
+    if (a >= 0) { first = Math.min(first, i); last = i; }
+  }
+  const zc = Math.ceil(Math.max(...halfZ));
+  p = { body, first, last, halfW, halfZ, zc, top: zc + Math.max(...halfZ) };
+  plans.set(shape, p);
+  return p;
+}
+/** Height of a species' back above its mesh origin, in voxels: the renderer sinks fish by this so their backs sit at the swim depth. */
+export const fishBack = (spIdx: number): number => { const s = SPECIES[spIdx]; return PLAN.has(s.shape) ? 2 : planOf(s.shape).top; };
 // glow spots (G) always shine; glowing species' fins (F) shine too. `gold`: the species' shape in gold
 const fishBuild = (gold: boolean) => (spIdx: number) => () => {
-    const sp = SPECIES[spIdx], rows = FISH_T[sp.shape], h = rows.length, w = rows[0].length, glowFins = schoolLook(spIdx).glow, c = gold ? GOLD_PAL : sp.c;
-    const col: Record<string, string> = { T: c[0], M: c[1], B: c[2], F: c[3], G: c[3], S: c[0], E: '#1b2a33' };   // sprite letters -> colour
-    const V = new Vox(-Math.ceil(w / 2), Math.ceil(w / 2), -1, 1, h + 1);
+  const sp = SPECIES[spIdx], glowFins = schoolLook(spIdx).glow, c = gold ? GOLD_PAL : sp.c, mark = gold ? undefined : sp.mark;
+  const col: Record<string, string> = { T: c[0], M: c[1], B: c[2], F: c[3], G: c[3], S: c[0], E: '#1b2a33' };   // sprite letters -> colour
+  const put = (V: Vox, u: number, v: number, z: number, ch: string, over?: string | null) => V.set(u, v, z, matFor(over ?? col[ch] ?? c[1], ch === 'G' || (glowFins && ch === 'F')));
+  const rows = FISH_T[sp.shape], h = rows.length, w = rows[0].length;
+  if (PLAN.has(sp.shape)) {                              // laid flat: belly below, the sprite on top, fins and legs a single layer
+    const V = new Vox(-Math.ceil(w / 2), Math.ceil(w / 2), -Math.ceil(h / 2), Math.ceil(h / 2), 3);
     for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
       const ch = rows[j][i]; if (ch === '.') continue;
-      const m = matFor(col[ch] || c[1], ch === 'G' || (glowFins && ch === 'F')), u = i - (w >> 1), z = h - 1 - j;
-      V.set(u, 0, z, m); if (ch !== 'F') V.set(u, -1, z, m);
+      const u = i - (w >> 1), v = j - (h >> 1);
+      put(V, u, v, ch === 'F' ? 0 : 1, ch === 'B' ? 'M' : ch, ch === 'F' || ch === 'E' ? null : markAt(mark, i / w, i, Math.abs(v) - h * 0.3, hash01(i * 7 + 3, v * 13 + 5, 11)));   // seen from above: no belly
+      if (ch !== 'F') put(V, u, v, 0, sp.shape === 'ray' ? 'T' : 'B');   // (a ray's white belly would show at its edge)
     }
     return V.finalize();
+  }
+  const p = planOf(sp.shape), W2 = Math.ceil(Math.max(...p.halfW)) + 3, { zc, top } = p;
+  const V = new Vox(-Math.ceil(w / 2), Math.ceil(w / 2), -W2, W2, Math.ceil(top) + 3);
+  const len = Math.max(1, p.last - p.first);
+  for (let i = 0; i < w; i++) {
+    const u = i - (w >> 1), [a, b] = p.body[i], hw = p.halfW[i], hz = p.halfZ[i];
+    if (a >= 0) for (let v = -Math.ceil(hw); v <= Math.ceil(hw); v++) for (let z = 0; z <= Math.ceil(top); z++) {
+      const q = (v / (hw + 0.35)) ** 2 + ((z - zc) / (hz + 0.35)) ** 2;
+      if (q > 1) continue;
+      const f = (zc + hz - z) / (2 * hz), j = Math.round(a + Math.min(1, Math.max(0, f)) * (b - a)), ch = rows[j][i] === 'F' || rows[j][i] === '.' ? 'M' : rows[j][i];
+      const back = z >= zc, t = (i - p.first) / len;
+      if (ch === 'E') { put(V, u, v, z, Math.abs(v) >= Math.ceil(hw) && back ? 'E' : back ? 'T' : 'M'); continue; }   // eyes on the sides of the head
+      put(V, u, v, z, ch, back && ch !== 'G' ? markAt(mark, t, i, Math.abs(v) - hw * 0.6, hash01(i * 7 + 3, v * 13 + 5, z * 17 + 11)) : null);
+    }
+    // fins: those above the body run along the back; those at the tail end spread flat into a fluke
+    for (let j = 0; j < h; j++) if (rows[j][i] === 'F') {
+      if (i < p.first) put(V, u, Math.max(-2, Math.min(2, Math.round((j - (h - 1) / 2) * 0.5))), zc, 'F');
+      else if (a >= 0 && j < a) put(V, u, 0, Math.min(V.nz - 1, Math.round(zc + hz + (a - j))), 'F');
+    }
+  }
+  // pectoral fins on the bigger fish: a little behind the head, swept back (on small ones they read as a cross)
+  const ip = Math.round(p.first + len * 0.68), hw = p.halfW[ip] ?? 1;
+  if (w >= 16) for (const s of [-1, 1]) put(V, ip - (w >> 1), s * Math.round(hw + 1), zc, 'F');
+  return V.finalize();
 };
 const plainFish = family<number>(sp => 'fish:' + sp, fishBuild(false)), goldFish = family<number>(sp => 'goldfish:' + sp, fishBuild(true));
 export const fishMesh = (spIdx: number, gold = false): Mesh => (gold ? goldFish : plainFish)(spIdx);

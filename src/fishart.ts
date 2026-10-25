@@ -1,5 +1,5 @@
 // Per-species body-shape templates (T=top M=mid B=belly F=fin E=eye G=glow S=stripe), extruded into voxel fish.
-import type { FishShape } from './types';
+import type { FishMark, FishShape } from './types';
 
 export const FISH_T: Record<FishShape, string[]> = {
   slim:  ['.....FF......', 'FF..TTTTTTT..', '.FFTMMMMMMMET', 'FF..BBBBBBBB.', '.....F..F....'],
@@ -16,5 +16,22 @@ export const FISH_T: Record<FishShape, string[]> = {
   eel:   ['.....FFFFFFFFFF.....', 'FTTTTTTTTTTTTTTTTTT.', '.MMMMMMMMMMMMMMMMMET', '..BBBBBBBBBBBBBBBB..'],
   puffer:['...F.F.F....', '.F.TTTTT.F..', '..TTMMMMTT..', 'FTMMMMMMMET.', '.TMMMMMMMMTT', 'FTMMMMMMMMT.', '.BBBBBBBBB..', 'F.BBBBBBB.F.', '...F.F.F....'],
   angel: ['....F.....', '...FF.....', '..TTT.....', '.TTMMT....', 'FTMMMMET..', 'FMMSMMMMT.', 'FMMSMMMMT.', '.BBSBBBB..', '..BBB.....', '...FF.....', '....F.....'],
+  shark: ['..........F.......', '.........FF.......', 'F.......FFF.......', 'FF...TTTTTTTTTT...', '.FFTTMMMMMMMMMMTT.', '..FMMMMMMMMMMMMMET', '.FF.BBBBBBBBBBBBB.', 'F.....F.FF........'],
+  // a ray seen from above (rows run across its wings): plan-view shapes are drawn as they are, not as a side view
+  ray:   ['....T.....', '...TTT....', '...TTTT...', '..TTTTTT..', '..TTTTTTT.', '.TTTTTTTT.', '.TTMMMTTTF', 'FTTMMMMTTE', 'FFMMMMMMTT', 'FTTMMMMTTE', '.TTMMMTTTF', '.TTTTTTTT.', '..TTTTTTT.', '..TTTTTT..', '...TTTT...', '...TTT....', '....T.....'],
   carp:  ['.....FFFF......', 'F...TTTTTTTT...', 'FF.TMMMMMMMMTT.', 'FFTMMMMMMMMMMET', 'FF.BBBBBBBBBBB.', 'F....F...F.....'],
 };
+
+/**
+ * The colour a species' markings paint on one body cell, or null. `t` is how far along the body it is (0 at the tail,
+ * 1 at the head), `i` its column, `off` how far it lies from the line a stripe runs along, and `k` a stable 0..1 number
+ * per cell for spots. Shared by the fish in the water (seen from above) and their icons (seen from the side).
+ */
+export function markAt(mark: [FishMark, string] | undefined, t: number, i: number, off: number, k: number): string | null {
+  if (!mark) return null;
+  const [kind, c] = mark;
+  if (kind === 'bars') return i % 3 === 0 && t > 0.15 && t < 0.92 ? c : null;
+  if (kind === 'bands') return [0.22, 0.5, 0.78].some(b => Math.abs(t - b) < 0.07) ? c : null;
+  if (kind === 'spots') return k < 0.2 ? c : null;
+  return Math.abs(off) < 0.5 && t > 0.08 && t < 0.9 ? c : null;
+}

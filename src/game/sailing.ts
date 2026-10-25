@@ -15,7 +15,7 @@ import { boatDef, boatSpeed, cap, catchNeed, dayNum, fishValue, hpMax, isNight, 
 import { addCoins, burst, celebrate, jitter, spawn, toast } from './feedback';
 import { checkGoals } from './goals';
 import { placeAtPort, portById, saveGame } from './save';
-import { SPOOL, endlessStock, hitstop, landNetted, rehomeEscapees, nearestSchool, towStretch, tryCast, updateFishing, updateFrenzy, useChum } from './fishing';
+import { SPOOL, castTargets, endlessStock, hitstop, landNetted, rehomeEscapees, nearestSchool, nextTarget, towStretch, tryCast, updateFishing, updateFrenzy, useChum } from './fishing';
 import { schoolActive, swimSchools, updateSchools } from './schools';
 import { dock, keptBack, updateFleet } from './port';
 import { track } from '../analytics';
@@ -236,9 +236,9 @@ function promptFor(speed: number): string | null {
   if (G.nearTreasure) return speed < 12 ? '[E] Haul up the treasure chest' : 'Slow down over the X to haul up the treasure';
   if (G.nearWreck) return speed < 12 ? `[E] Salvage the ${G.nearWreck.name.replace('Wreck of the ', '')}` : 'Slow down to salvage';
   if (G.nearSchool) {
-    const s = SPECIES[G.nearSchool.sp];
-    const need = catchNeed(G.nearSchool.sp);
-    return speed < 10 ? `[SPACE] Cast for ${s.name}${need ? `, ${need}` : ''}` : 'Stop to fish';
+    const s = SPECIES[G.nearSchool.sp], need = catchNeed(G.nearSchool.sp), list = castTargets();
+    const next = list.length > 1 ? list[(list.indexOf(G.nearSchool) + 1) % list.length] : null;
+    return speed < 10 ? `[SPACE] Cast for ${s.name}${need ? `, ${need}` : ''}${next ? ` · [TAB] ${SPECIES[next.sp].name}` : ''}` : 'Stop to fish';
   }
   return null;
 }
@@ -256,6 +256,7 @@ function handleActions(dt: number, speed: number): void {
   }
   if (hit('u', 'U')) { G.musicOn = !G.musicOn; toast(G.musicOn ? 'Music on' : 'Music off'); }
   if (!f && !G.card && hit(' ') && G.nearSchool && speed < 10) tryCast(G.nearSchool);
+  if (!f && hit('Tab')) nextTarget();
   if (hit('c', 'C')) useChum();
   if (G.pet && hit('p', 'P') && !f) petCat();
   if (G.pet && (G.petCd -= dt) < -90 - Math.random() * 120) { G.petCd = 0; sfx('meow', 0.5); }   // the cat speaks up now and then

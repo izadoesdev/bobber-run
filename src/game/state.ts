@@ -28,7 +28,7 @@ export const G: GameState = {
   // input
   keys: {}, pressed: new Set(), pad: false,
   // surroundings
-  prompt: null, nearPort: null, nearWreck: null, nearSchool: null, nearTreasure: null,
+  prompt: null, nearPort: null, nearWreck: null, nearSchool: null, aim: null, nearTreasure: null,
   // screens
   menu: { tab: 0, sel: 0, port: null }, map: { x: 0, y: 0, zoom: 1 }, talk: null,
   shipSel: 0, logSel: 0, titleSel: 0, pauseSel: 0, newConfirm: -1, setSel: 0, ctlSel: 0, emoteSel: 0,

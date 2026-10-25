@@ -2,7 +2,8 @@
 import { Vox, mat, renderVox } from '../voxel';
 import { M } from '../models';
 import { SPECIES } from '../econ';
-import { FISH_T } from '../fishart';
+import { FISH_T, markAt } from '../fishart';
+import { hash01 } from '../noise';
 import { hex, toHex } from '../config';
 
 type Mat = number;
@@ -424,10 +425,14 @@ export const fishIcon = (spIdx: number): string => memo('fish:' + spIdx, () => {
   // sprite letters -> palette: top, mid, belly, fins (F is a single-layer fin), eye
   const col: Record<string, string> = { T: sp.c[0], M: sp.c[1], B: sp.c[2], F: sp.c[3], G: sp.c[3], S: sp.c[0], E: '#1b2a33' };
   const V = new Vox(-Math.ceil(w / 2), Math.ceil(w / 2), -1, 1, h + 1);
+  // the body's span (for markings), and its middle row, where a stripe runs
+  let first = w, last = 0, top = h, bot = 0;
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) if ('TMB'.includes(rows[j][i])) { first = Math.min(first, i); last = Math.max(last, i); top = Math.min(top, j); bot = Math.max(bot, j); }
   for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
     const ch = rows[j][i];
     if (ch === '.') continue;
-    const m = matFor(col[ch] || sp.c[1]), u = i - (w >> 1), z = h - 1 - j;
+    const mark = ch === 'T' || ch === 'M' ? markAt(sp.mark, (i - first) / Math.max(1, last - first), i, j - (top + bot) / 2, hash01(i * 7 + 3, j * 13 + 5, 11)) : null;
+    const m = matFor(mark ?? col[ch] ?? sp.c[1]), u = i - (w >> 1), z = h - 1 - j;
     V.set(u, 0, z, m);
     if (ch !== 'F') V.set(u, -1, z, m);
   }

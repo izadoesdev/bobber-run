@@ -17,7 +17,7 @@ import { clamp, dirTo, wrapAngle } from '../config';
 import { setWaypoint } from '../waypoint';
 import { addCoins, burst, jitter, spawn, toast } from './feedback';
 import { placeAtPort, saveGame } from './save';
-import { schoolActive, schoolShown, takeFish } from './schools';
+import { attackK, schoolActive, schoolShown, takeFish } from './schools';
 import { isRunningNow } from '../tides';
 import { biomeAt } from '../biome';
 
@@ -69,8 +69,21 @@ export function placeByStarterSchool(anchor?: { x: number; y: number }): void {
  * the prompt can say what it needs. A hotspot mixes rod levels, and a catchable fish beside one you can't land comes first.
  */
 export function nearestSchool(): School | null {
-  const near = schoolsNear(G.boat.x, G.boat.y, 90);
-  return nearest(near, s => schoolActive(s) && !catchNeed(s.sp), castRange()) ?? nearest(near, schoolActive, castRange());
+  const list = castTargets();
+  return list.find(s => s.id === G.aim) ?? list[0] ?? null;
+}
+/** Biting schools within casting range, nearest first, those this rod and boat can land ahead of the rest. */
+export function castTargets(): School[] {
+  const b = G.boat, r = castRange(), dist = (s: School) => Math.hypot(s.x - b.x, s.y - b.y);
+  return schoolsNear(b.x, b.y, 90).filter(s => schoolActive(s) && dist(s) < r).sort((p, q) => (catchNeed(p.sp) ? 1 : 0) - (catchNeed(q.sp) ? 1 : 0) || dist(p) - dist(q));
+}
+/** Tab: aim at the next school in casting range. */
+export function nextTarget(): void {
+  const list = castTargets();
+  if (list.length < 2) return;
+  const i = list.findIndex(s => s.id === (G.aim ?? list[0].id));
+  G.aim = list[(i + 1) % list.length].id;
+  sfx('select', 0.5);
 }
 
 export function cancelFishing(msg?: string): void {
@@ -87,13 +100,14 @@ export function tryCast(s: School): void {
   if (bait) G.bait[bait]--;
   G.fish = {
     st: 'cast', s, t: 0, tx: s.x + jitter(8), ty: s.y + jitter(8), tension: 0, prog: 0, ph: Math.random() * 6, wait: 0, reelT: 0,
-    bait, frenzy: !!G.frenzy && G.frenzy.s === s, perfect: false, hint: escapeeAt(s) ? `The ${sp.name} that broke your line lives here` : castHint(sp, bait),
+    bait, frenzy: !!G.frenzy && G.frenzy.s === s, perfect: false, hint: escapeeAt(s) ? `The ${sp.name} that broke your line lives here` : castHint(sp, bait, s),
   };
   sfx('cast');
 }
 const BAIT_NAME = { shrimp: 'shrimp bait', glow: 'glow lures' } as const;
 /** One short note for the wait: the bait this fish prefers, or the conditions it needs. */
-function castHint(sp: Species, bait: BaitChoice | null): string {
+function castHint(sp: Species, bait: BaitChoice | null, s?: School): string {
+  if (s?.prey) return `${sp.name} strike when they attack the bait ball: watch for the gulls diving`;
   const fav = favBait(sp);
   if (bait !== fav) return `${sp.name} bite faster on ${BAIT_NAME[fav]}`;
   if (sp.weather === 'storm') return `${sp.name} only bite in storms`;
@@ -145,7 +159,8 @@ function castStage(f: FishLine): void {
   const fits = f.bait === favBait(sp), wrong = !!f.bait && !fits;   // the bait it loves comes sooner; the wrong one is picked at
   const baitMul = (f.bait === 'glow' && isNight() ? 0.5 : f.bait ? 0.75 : 1) * (fits ? 0.8 : wrong ? 1.15 : 1);
   f.wait = Math.max(0.4, 1 - 0.15 * G.dry) * (2.5 + Math.random() * 4.5) * (1 - 0.1 * rod) * (f.frenzy ? 0.4 : 1) * baitMul * biteMul() * (1 - 0.12 * G.up.tackle)
-    * (isRunningNow(sp.id) ? 0.75 : 1);           // this week's running fish bite sooner
+    * (isRunningNow(sp.id) ? 0.75 : 1)            // this week's running fish bite sooner
+    * (sp.role === 'bait' ? 0.7 : 1);             // a bait ball is quick to take a hook
   if (f.s.gold) f.wait *= 0.6;                                  // a golden school bites quickly, and never teases
   const teases = [...TEASES[sp.fight](), ...(wrong || !f.bait ? [0.6 + Math.random() * 0.5] : [])].sort((p, q) => q - p);
   f.teases = f.s.gold ? [] : teases.filter(before => before < f.wait - 0.3);
@@ -183,6 +198,8 @@ function waitStage(f: FishLine, dt: number, strike: boolean): void {
   if (Math.random() < dt * 0.8) spawn({ kind: 'ring', x: f.tx, y: f.ty, life: 0.8, r0: 2, grow: 3 });
   const next = f.teases?.[0];
   if (next !== undefined && f.t >= f.wait - next) { tease(f, SPECIES[f.s.sp], f.fake === 0); f.teases!.shift(); f.fake = f.fake ? f.fake - 1 : undefined; }
+  // a predator under a bait ball takes the bait the moment it attacks
+  if (!f.rush && f.s.prey && attackK(f.s) >= 0 && f.wait - f.t > 0.8) { f.rush = true; f.wait = f.t + 0.4 + Math.random() * 0.5; f.teases = []; f.fake = undefined; }
   if (f.t >= f.wait) startBite(f);
 }
 
@@ -317,7 +334,7 @@ function runWithLine(f: FishLine, tow: Tow, dt: number, surge: number, diff: num
   if (!SET.reelAssist) f.tension += Math.max(0, off - 1.2) * 0.4 * dt;                            // abaft the beam the line drags along the hull (easy reel minds it)
 }
 
-export const escapeeAt = (s: School): Escapee | undefined => G.escaped.find(e => e.school === s.id && e.sp === s.sp);
+const escapeeAt = (s: School): Escapee | undefined => G.escaped.find(e => e.school === s.id && e.sp === s.sp);
 /**
  * Hotspots dive and come back as other fish, so a fish that got away follows its kind: when its school is no longer
  * shown with its species, it moves to the nearest shown school of that species (and its ring on the chart with it).

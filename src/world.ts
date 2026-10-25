@@ -2,7 +2,7 @@
 // fish schools and floating crates. Everything is deterministic from the seed.
 import { nA, nB, nC, fbm, hash, hash01, mulberry } from './noise';
 import { pickSpecies, SP, SPECIES } from './econ';
-import { livesAt, schoolLook } from './species';
+import { HABITAT, livesAt, schoolLook } from './species';
 import type { Point, Poi, Port, Wreck, School, Crate } from './types';
 import { createNoise2D } from 'simplex-noise';
 import Alea from 'alea';
@@ -394,7 +394,8 @@ export const homePort = (): Port => cellPois(0, 0).find((p): p is Port => p.type
 // ---------- fish schools + floating crates ----------
 /** One fish of a school as it swims (runtime only). */
 export interface Swimmer {
-  x: number; y: number; vx: number; vy: number;
+  /** position, the velocity it means to swim at (eased toward its heading), and its heading */
+  x: number; y: number; vx: number; vy: number; h: number;
   /** its own rhythm, seconds to its next change of heading, and the turn it leans into */
   ph: number; turn: number; bias: number;
 }
@@ -409,6 +410,8 @@ declare module './types' {
     heat?: number;
     /** its fish, once the boat has come near */
     swim?: Swimmer[];
+    /** in a hotspot: the bait ball this predator hunts, or the predator hunting this bait ball */
+    prey?: School; hunter?: School;
   }
 }
 /** Share of ordinary schools that carry a golden fish. */
@@ -429,10 +432,10 @@ function makeSchool(id: string, x: number, y: number, sp: number, r: Rng, stock?
   return { id, x, y, sp, stock: stock ?? 2 + Math.floor(r() * 3), max: stock ?? 3, respawn: 0, ph: r() * 6.28 };
 }
 // the summed directions from (x, y), out to `reach`, where the water is too shallow for a school; null if none
-function landPull(x: number, y: number, reach: number): Point | null {
+function landPull(x: number, y: number, reach: number, dirs = 24): Point | null {
   let dx = 0, dy = 0, hit = heightAt(x, y) > SWIM_WATER;
-  for (let k = 0; k < 24; k++) {
-    const a = k / 24 * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
+  for (let k = 0; k < dirs; k++) {
+    const a = k / dirs * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
     for (const f of [0.35, 0.7, 1]) if (heightAt(x + c * reach * f, y + s * reach * f) > SWIM_WATER) { dx += c; dy += s; hit = true; }
   }
   return hit ? { x: dx, y: dy } : null;
@@ -481,8 +484,14 @@ export interface Hotspot {
   bait: boolean; predator: boolean; rare: boolean;
   schools: School[];
 }
-interface HotSlot { k: number; period: number; phase: number; duty: number; fixed: boolean; n: number; up: boolean; spot: Hotspot }
+interface HotSlot {
+  k: number; period: number; phase: number; duty: number; fixed: boolean; n: number; up: boolean; spot: Hotspot;
+  /** where the cluster surfaced, each school's home then, and the way it drifts (unit vector) and how far it can */
+  bx: number; by: number; homes: Point[]; dx: number; dy: number; travel: number;
+}
 const HC = 420, HSLOTS = 3, SURF_S = 10, HOME_R = 300, RARE_SPOT = 0.1, CLUSTER = 4;
+/** A surfaced cluster drifts this fast (world units a second), following its fish, up to DRIFT_MAX from where it rose. */
+const DRIFT = 0.6, DRIFT_MAX = 240;
 // round Alderhaven the sea stays calm: past the one cluster that is always up, only one slot in a cell surfaces, rarely
 const CALM_R = 1150, CALM_DUTY = 0.12;
 const BAIT_FISH = new Set([SP.anchovy, SP.sardine, SP.herring]);
@@ -509,7 +518,7 @@ function placeSpot(i: number, j: number, sl: HotSlot): void {
   }
   const used: number[] = [];
   let bait = false, predator = false, reach = 0;
-  for (const s of spot.schools) { s.spooked = DOWN; s.stock = 0; s.gold = false; s.swim = undefined; }
+  for (const s of spot.schools) { s.spooked = DOWN; s.stock = 0; s.gold = false; s.swim = undefined; s.prey = s.hunter = undefined; }
   if (best) {
     for (let m = 0, tries = 0; m < CLUSTER && tries < 12; tries++) {
       // fish of the first school's water; behind a bait ball, a predator from a little deeper
@@ -531,9 +540,27 @@ function placeSpot(i: number, j: number, sl: HotSlot): void {
     const live = spot.schools.filter(s => s.stock > 0 && !SPECIES[s.sp].legend);
     spot.rare = live.length > 0 && r() < RARE_SPOT;
     if (spot.rare) live[Math.floor(r() * live.length)].gold = true;
+    const hunter = predator ? spot.schools.find((s, m) => m > 0 && s.stock > 0 && !BAIT_FISH.has(s.sp)) : undefined;
+    if (hunter) { hunter.prey = spot.schools[0]; spot.schools[0].hunter = hunter; }
   }
   Object.assign(spot, { x: best?.x ?? x0 + span / 2, y: best?.y ?? y0 + span / 2, r: reach, bait, predator });
   if (!used.length) spot.rare = false;
+  // the way it will drift while up: of four headings, the one with the most open water before any shallows
+  Object.assign(sl, { bx: spot.x, by: spot.y, homes: spot.schools.map(q => ({ x: q.x, y: q.y })), dx: 0, dy: 0, travel: 0 });
+  if (sl.fixed || !used.length) return;
+  for (let t = 0, a0 = r() * Math.PI * 2; t < 4; t++) {
+    const a = a0 + t * Math.PI / 2, c = Math.cos(a), sn = Math.sin(a);
+    // every school's home moved e along the heading: open water round it, still the first school's kind of water (its
+    // species set the spot), and biome fish still in their biome
+    const fits = (e: number) => spot.schools.every((q, m) => {
+      if (q.stock <= 0) return true;
+      const x = q.x + c * e, y = q.y + sn * e, hab = HABITAT[SPECIES[q.sp].id];
+      return !landPull(x, y, schoolReach(q.sp), 12) && (m > 0 || livesAt(q.sp, x, y, heightAt(x, y))) && (!hab || biomeMix(x, y)[hab] >= 0.4);
+    });
+    let d = 0;
+    while (d < DRIFT_MAX && fits(d + 30)) d += 30;
+    if (d > sl.travel) Object.assign(sl, { dx: c, dy: sn, travel: d });
+  }
 }
 function hotCell(i: number, j: number): HotSlot[] {
   const k = key(i, j);
@@ -546,7 +573,7 @@ function hotCell(i: number, j: number): HotSlot[] {
     const spot: Hotspot = { id: `h:${i},${j},${q}`, x: 0, y: 0, r: 0, surf: 0, bait: false, predator: false, rare: false, schools: [] };
     const duty = !calm ? 0.55 : q === 0 ? CALM_DUTY : 0;
     const phase = calm ? hash01(i, j, 63) : q / HSLOTS + hash01(i, j * 5 + q, 62) * 0.2;   // calm cells out of step, so they don't all surface at the start
-    c.push({ k: q, period, phase, duty, fixed: home && q === 0, n: -1, up: false, spot });
+    c.push({ k: q, period, phase, duty, fixed: home && q === 0, n: -1, up: false, spot, bx: 0, by: 0, homes: [], dx: 0, dy: 0, travel: 0 });
   }
   hotCells.set(k, c);
   for (const sl of c) stepSlot(i, j, sl);
@@ -561,23 +588,38 @@ function stepSlot(i: number, j: number, sl: HotSlot): void {
   sl.up = up;
   const into = f * sl.period, left = (sl.duty - f) * sl.period;
   sl.spot.surf = sl.fixed ? 1 : up ? Math.min(1, into / SURF_S, left / SURF_S) : 0;
+  if (up && sl.travel > 0) {                      // drifting with its fish
+    const d = Math.min(sl.travel, into * DRIFT), ox = sl.dx * d, oy = sl.dy * d;
+    sl.spot.x = sl.bx + ox; sl.spot.y = sl.by + oy;
+    sl.spot.schools.forEach((q, m) => { const h = sl.homes[m]; if (h) { q.x = h.x + ox; q.y = h.y + oy; } });
+  }
 }
 // One rare fish roams each wide stretch of sea: a lone school of something valuable that lives there, travelling a
 // loop through deep water on the game clock. It counts as a rare hotspot, so its sign shows from afar.
 const RC = 1400, ROAM_SPEED = 4;
+/** A roamer's loop keeps to water at least this deep along every leg, so its fish have room on either side. */
+const ROAM_WATER = -0.22;
 interface Roamer { path: Point[]; len: number; spot: Hotspot }
 const roamCells = new Map<number, Roamer | null>();
 function roamCell(i: number, j: number): Roamer | null {
   const k = key(i, j);
   if (roamCells.has(k)) return roamCells.get(k)!;
   const r = mulberry(hash(i, j, 8111)), path: Point[] = [], cx = (i + 0.5) * RC, cy = (j + 0.5) * RC;
+  // deep water all along a leg of the loop, not just at its ends (a straight line between two deep points can cross an island)
+  const clear = (p: Point, q: Point): boolean => {
+    const n = Math.ceil(Math.hypot(q.x - p.x, q.y - p.y) / 12);
+    for (let k = 1; k < n; k++) if (heightAt(p.x + (q.x - p.x) * k / n, p.y + (q.y - p.y) * k / n) > ROAM_WATER) return false;
+    return true;
+  };
   for (let t = 0; t < 60 && path.length < 5; t++) {
-    const a = path.length / 5 * Math.PI * 2 + (r() - 0.5) * 0.8, d = 250 + r() * 300, x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d;
-    if (heightAt(x, y) < -0.3) path.push({ x, y });
+    const a = path.length / 5 * Math.PI * 2 + (r() - 0.5) * 0.8, d = 250 + r() * 300, x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d, p = { x, y };
+    // each new point joins the last and can close the loop back to the first
+    if (heightAt(x, y) < -0.3 && (!path.length || clear(path[path.length - 1], p)) && (path.length < 2 || clear(p, path[0]))) path.push(p);
   }
   let ro: Roamer | null = null;
   const d = Math.hypot(cx - HOME_ISLAND.x, cy - HOME_ISLAND.y);
-  const rare = path.length >= 3 && d > 700 ? [...SPECIES.keys()].filter(n => { const s = SPECIES[n]; return !s.legend && !s.special && s.base >= 30 && livesAt(n, path[0].x, path[0].y, heightAt(path[0].x, path[0].y)); }) : [];
+  // a roamer is a swimmer that travels: never a crab, a bottom fish or a bait ball
+  const rare = path.length >= 3 && d > 700 ? [...SPECIES.keys()].filter(n => { const s = SPECIES[n]; return !s.legend && !s.special && s.base >= 30 && s.role !== 'crawler' && s.role !== 'bottom' && s.role !== 'bait' && livesAt(n, path[0].x, path[0].y, heightAt(path[0].x, path[0].y)); }) : [];
   if (rare.length) {
     const sp = rare[Math.floor(r() * rare.length)], s = makeSchool(`r:${i},${j}`, path[0].x, path[0].y, sp, r, 2);
     let len = 0;
@@ -806,8 +848,6 @@ function placeSites(): RegionSite[] {
 /** Every region site, placed once. */
 export const regionSites = (): RegionSite[] => placed ??= placeSites();
 export const regionSite = (id: string): RegionSite | undefined => regionSites().find(s => s.id === id);
-/** The region sites within the square of half-size rad. */
-export const regionSitesNear = (x: number, y: number, rad: number): RegionSite[] => regionSites().filter(s => Math.abs(s.x - x) < rad + 60 && Math.abs(s.y - y) < rad + 60);
 /** The nearest point of open water (depth beyond `depth`) to (x, y), searching outward in rings; (x, y) if none. */
 export function nearestWater(x: number, y: number, depth = -0.12): Point {
   if (heightAt(x, y) < depth) return { x, y };

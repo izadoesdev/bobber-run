@@ -11,7 +11,7 @@ import { hash01 } from '../noise';
 import { SPECIES, BOATS, activeAt } from '../econ';
 import { biomeMix, coldness, warmth, themeHold, themeAt, THEMES, THEME_IDS, type Atmos, type Odds, type Theme, type ThemeHold } from '../biome';
 import { schoolLook } from '../species';
-import { DIVE_S, SCATTER_S, schoolDrawR } from '../game/schools';
+import { DIVE_S, SCATTER_S, attackK, schoolDrawR } from '../game/schools';
 import { LAMP_Z, landmarkKind, onGrounds } from '../landmarks';
 import { G, darkness, lightR, schoolActive, isNight, dayFrac, equipment, windAngle, boatDef, env } from '../game';
 import { WX, atmosAt } from '../weather';
@@ -607,7 +607,7 @@ const shipDef = (id: string) => BOATS.find(b => b.id === id) || BOATS[0];
 // Each species shows in its own colours, size and habits. Scattered fish dart off and regroup, fished-out schools
 // thin to a straggler and fill back in, and diving schools sink out of sight. Surface effects found while placing
 // the fish are kept in `schoolFx` (x, y, kind per entry) for the foam and particle passes.
-const FX_RING = 0, FX_GOLD = 1, FX_GLOW = 2, FX_SPRAY = 3;
+const FX_RING = 0, FX_GOLD = 1, FX_GLOW = 2, FX_SPRAY = 3, FX_FIN = 4;
 const schoolFx: number[] = [];
 const shownCount = new WeakMap<School, number>();   // eased number of fish on show, so they come and go smoothly
 // eased presence (0..1): schools rise into view and sink away instead of popping, whether their species comes and goes
@@ -636,13 +636,20 @@ function drawSchool(s: School, night: boolean, lit: boolean, vis: number): void 
   shownCount.set(s, n);
   const cnt = Math.min(fish.length, Math.ceil(n - 0.02)), age = G.t - (s.scatterT ?? -99), dip = age < SCATTER_S ? Math.sin(Math.PI * Math.min(1, age / 2)) : 0;
   const leapCycle = 6 + frac(s.ph) * 3, leap = sp.fight === 'jumper' && !straggler && !dip && !dive ? frac(G.t / leapCycle + s.ph) * leapCycle / 0.8 : 9;
+  const atk = attackK(s), burst = atk >= 0 && s.hunter ? Math.sin(Math.PI * atk) : 0;
+  const back = MS.fishBack(s.sp), role = look.role, finny = role === 'giant' && sp.shape !== 'round' && sp.shape !== 'squid' && sp.shape !== 'eel';
   for (let k = 0; k < cnt; k++) {
-    const f = fish[k], p = clamp(n - k, 0, 1), speed = Math.hypot(f.vx, f.vy);
-    const yaw = Math.atan2(f.vy, f.vx) + Math.sin(G.t * (6 + speed) + k) * 0.08 * Math.min(1, speed / 3);   // tails beat faster at speed
-    const z = look.z - (1 - p) * 5 - dive * 7 - (straggler ? 1.2 : 0) - dip * 1.2;
+    const f = fish[k], p = clamp(n - k, 0, 1), speed = Math.hypot(f.vx, f.vy), head = f.h;
+    // crabs walk sideways; swimmers' tails beat faster at speed
+    const yaw = role === 'crawler' ? head + Math.PI / 2 : head + Math.sin(G.t * (6 + speed) + k) * 0.05 * Math.min(1, speed / 3);
+    // bottom fish and crabs come up off the seabed at night
+    const sz = look.size * (0.7 + 0.3 * p), z = look.z + (night && look.bottom ? 1.8 : 0) - back * sz - (1 - p) * 5 - dive * 7 - (straggler ? 1.2 : 0) - dip * 1.2;
     if (age < 0.45) schoolFx.push(f.x, f.y, FX_RING);          // scattering fish ruffle the surface
     const gold = s.gold && k === 0 && !straggler, shimmer = sp.legend ? 1 + 0.3 * Math.sin(G.t * 2.5 + k * 2) : 1;
-    let tint: number | readonly number[] = (look.bottom ? 0.72 : 1) * (straggler ? 0.75 : 1) * (lit ? 1 : 0.45) * shimmer;
+    // bait fish flash silver as they turn in the ball
+    const flash = role === 'bait' ? Math.pow(Math.max(0, Math.sin(G.t * (2.3 + burst * 9) + k * 2.39 + s.ph)), 24 - burst * 16) * (0.9 + burst * 0.5) : 0;
+    if (burst > 0.3 && k % 7 === 0) schoolFx.push(f.x, f.y, FX_SPRAY);   // bait breaking the surface as it flees
+    let tint: number | readonly number[] = (look.bottom ? 0.72 : 1) * (straggler ? 0.75 : 1) * (lit ? 1 : 0.45) * shimmer * (1 + flash);
     if (gold) { tint = GOLD_TINT; schoolFx.push(f.x, f.y, FX_GOLD); }
     else if (sp.legend) { tint3[0] = shimmer * 0.95; tint3[1] = shimmer; tint3[2] = shimmer * 1.15; tint = tint3; }
     const mesh = gold ? MS.fishMesh(s.sp, true) : m, glow = look.glow ? (night ? 0.4 : 0.15) : 0;
@@ -653,7 +660,12 @@ function drawSchool(s: School, night: boolean, lit: boolean, vis: number): void 
       if (leap < 0.15 || leap > 0.85) schoolFx.push(f.x, f.y, FX_SPRAY);
       continue;
     }
-    inst(mesh, f.x, f.y, yaw, look.size * (0.7 + 0.3 * p), z, 0, Math.PI / 2, true, tint, glow, Math.min(1.2, look.fade + dive * 0.6 + (1 - p) * 0.5));
+    if (finny && !dive && p > 0.5) {                    // a giant's dorsal fin cuts the surface, trailing a little wake
+      const c = Math.cos(head), sn = Math.sin(head), r = look.size * 4;
+      schoolFx.push(f.x, f.y, FX_FIN, f.x - c * r * 1.6 - sn * r * 0.7, f.y - sn * r * 1.6 + c * r * 0.7, FX_FIN, f.x - c * r * 1.6 + sn * r * 0.7, f.y - sn * r * 1.6 - c * r * 0.7, FX_FIN);
+    }
+    const roll = sp.shape === 'ray' ? Math.sin(G.t * 1.4 + k) * 0.22 : 0;   // a manta's slow wingbeat
+    inst(mesh, f.x, f.y, yaw, sz, z, 0, roll, true, tint, glow, Math.min(1.2, look.fade + dive * 0.6 + (1 - p) * 0.5));
   }
 }
 /** The fish on the line: a shadow closing in on the bait, under the bobber as it bites, then fighting where the line runs. */
@@ -672,7 +684,7 @@ function drawHookedFish(f: FishLine, bx: number, by: number): void {
   } else return;
   const gold = !!f.gold && f.st !== 'wait';
   if (gold) tint = GOLD_TINT;
-  inst(MS.fishMesh(f.s.sp, gold), x, y, yaw + Math.sin(G.t * 9) * 0.1, look.size * 1.1, z, 0, Math.PI / 2, true, tint, look.glow && isNight() ? 1 : 0, fade);
+  inst(MS.fishMesh(f.s.sp, gold), x, y, yaw + Math.sin(G.t * 9) * 0.1, look.size * 1.1, z - MS.fishBack(f.s.sp) * look.size * 1.1, 0, 0, true, tint, look.glow && isNight() ? 1 : 0, fade);
 }
 
 // ---------- scene ----------
@@ -787,9 +799,9 @@ const LEGEND_GLOW: Record<string, readonly number[]> = { crystalCave: [0.45, 0.9
 
 // ---------- hotspot signs: how players find fish ----------
 // Quiet signs that say "fish here": a couple of gulls resting by a bait ball, a dark knot of bait that now and then
-// flicks silver, slow rings, the odd swirl where a predator feeds, and a faint shimmer for a golden fish. Diving gulls,
-// boils and spray belong to a real feeding frenzy only. Everything scales with how far the spot has surfaced; from a
-// zoomed-out view a few gulls circle high over the spot so it can still be found.
+// flicks silver, slow rings, and a faint shimmer for a golden fish. When the predator under a bait ball attacks, the
+// water boils and gulls dive in; a feeding frenzy brings a whole flock wheeling overhead. Everything scales with how far
+// the spot has surfaced; from a zoomed-out view a few gulls circle high over the spot so it can still be found.
 const signs: Hotspot[] = [];
 // how far out the view is zoomed, for the signs: 1 up close (>= ~3 screen pixels per world unit) .. 3.5 at the widest;
 // farK runs 0..1 over the same range. Signs grow and the far-only cues fade in with it, so close up they stay subtle.
@@ -801,10 +813,13 @@ const spotSeed = (h: Hotspot): number => frac(h.x * 0.0137 + h.y * 0.0071);
 /** where the bait ball sits: on the bait school, else the spot's centre */
 const ballAt = (h: Hotspot, out: number[]): number[] => { const s = h.schools[0]; out[0] = s ? s.x : h.x; out[1] = s ? s.y : h.y; return out; };
 const ball = [0, 0];
-// a predator feeding: now and then a small swirl somewhere in the spot (one every SWIRL_S or so, lasting a moment)
+// a predator feeding: a boil of white water at the bait ball while it attacks (the school's own beat, see attackK);
+// a spot without a bait ball shows the odd swirl somewhere in it instead (one every SWIRL_S or so, lasting a moment)
 const SWIRL_S = 8, SWIRL_ON = 0.16, boil = [0, 0, 0];
-/** where this spot's current swirl is, and how far through it (out[2] 0..1), or -1 between swirls */
+/** where this spot's current boil or swirl is, and how far through it (out[2] 0..1), or -1 between them */
 function boilAt(h: Hotspot, out: number[]): number[] {
+  const prey = h.bait ? h.schools[0] : undefined;
+  if (prey?.hunter) { out[0] = prey.x; out[1] = prey.y; out[2] = attackK(prey); return out; }
   const c = G.t / (SWIRL_S * (0.8 + spotSeed(h) * 0.5)) + spotSeed(h), n = Math.floor(c), f = c - n;
   out[0] = h.x + (hash01(n, 1, h.x | 0) - 0.5) * Math.max(10, h.r); out[1] = h.y + (hash01(n, 2, h.y | 0) - 0.5) * Math.max(8, h.r * 0.7);
   out[2] = f < SWIRL_ON ? f / SWIRL_ON : -1;
@@ -816,6 +831,10 @@ function drawGulls(h: Hotspot): void {
   for (let k = 0; k < 2; k++) {                          // a couple resting on the water by the bait, bobbing, drifting a little
     const a = seed + k * 2.6 + Math.sin(G.t * 0.07 + k) * 0.6, r = 8 + h.r * 0.25 + k * 5;
     inst(MS.gullMesh(0), h.x + Math.cos(a) * r, h.y + Math.sin(a) * r * 0.6, a + 1.2, 0.95, -0.2 + Math.sin(G.t * 1.6 + k * 2) * 0.12 + (1 - up) * 40);
+  }
+  if (h.bait && h.schools[0]?.hunter && boilAt(h, boil)[2] >= 0) for (let k = 0; k < 3; k++) {   // an attack brings gulls folding into dives at the ball
+    const t = clamp(boil[2] * 1.6 - k * 0.25, 0, 1), a = seed + k * 2.1;
+    if (t > 0 && t < 1) inst(MS.gullMesh(1), boil[0] + Math.cos(a) * (6 - t * 5), boil[1] + Math.sin(a) * (4 - t * 3), a + Math.PI, 0.9, 26 * (1 - t) * up, 0.9 * t);
   }
   for (let k = 0, far = Math.round(farK * 3); k < far; k++) {   // from afar, a few gliding slowly high overhead (never diving)
     const dir = k % 2 ? 1 : -1, a = G.t * (0.22 + k * 0.04) * dir + k * 2.1 + seed, r = (14 + h.r * 0.4) * (1 + farK * 0.4);
@@ -1339,9 +1358,15 @@ function foamPoints(bs: BoatPose): number {
     if (w.tail > 0.25) foam(w.x + Math.cos(w.a) * (MS.WHALE.joint - 5) * s, w.y + Math.sin(w.a) * (MS.WHALE.joint - 5) * s, 10 * s, w.tail * 0.5, 0, w.a + Math.PI / 2, 0.5);
   }
   signFoam();
+  const tgt = G.nearSchool;
+  if (tgt && !G.fish && Math.hypot(G.boat.vx, G.boat.vy) < 10) {   // the school a cast would go to: a slow ring on the water
+    const ph = frac(G.t * 0.45), r = schoolLook(tgt.sp).radius;
+    foam(tgt.x, tgt.y, (r * (0.9 + ph * 0.3)) * 2, (1 - ph) * 0.45, 1, 0, 0.75, 0.5);
+  }
   for (let i = 0; i < schoolFx.length; i += 3) {          // darting and leaping fish ruffle the surface
     const kind = schoolFx[i + 2];
     if (kind === FX_RING) foam(schoolFx[i], schoolFx[i + 1], 5, 0.35, 0);
+    else if (kind === FX_FIN) foam(schoolFx[i], schoolFx[i + 1], 2.5, 0.45, 0);
     else if (kind === FX_SPRAY) foam(schoolFx[i], schoolFx[i + 1], 9, 0.6, 1);
   }
   for (const g of LIFE.giants) {                           // something big just under the surface bulges the water
