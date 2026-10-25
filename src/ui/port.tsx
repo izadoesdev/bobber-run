@@ -188,7 +188,7 @@ function DetailBody({ it }: { it: PortRow }) {
     case 'note':
       return <p>{it.sub}.</p>;
     case 'island':
-      return <><p>{it.sub}.</p><p class="muted">{it.right === 'Yours' ? 'Open it to rename it, change its flag or link, or release it.' : it.right === 'Owned' ? 'Open it to see its flag and link.' : 'Open it to name it, pick a flag and buy it. Islands are bought with real money through Stripe.'}</p></>;
+      return <><p>{it.sub}.</p><p class="muted">{it.right === 'Yours' ? 'Open it to build on it, rename it, change its flag or link, or release it.' : it.right === 'Held' ? 'Open it to see who rules it and what they have built.' : 'Open it to name it, pick a flag and buy it with your coins.'}</p></>;
     default:
       return null;
   }

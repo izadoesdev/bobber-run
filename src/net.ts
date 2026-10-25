@@ -254,20 +254,37 @@ export function watchIslands(keys: string[], cb: (list: IslandRow[]) => void): v
   if (client) watch<IslandRow[]>('islands', api.islands.near, { keys: keys.slice(0, 150) }, cb);
 }
 const islandCall = async (fn: () => Promise<{ ok: boolean; why?: string; price?: number }>): Promise<Result & { price?: number }> => {
-  if (!NET.authed) return { ok: false, why: 'Sign in to claim islands' };
+  if (!NET.authed) return { ok: false, why: 'Sign in to buy islands' };
   try { const r = await fn(); return r.ok ? { ok: true, ...(r.price ? { price: r.price } : {}) } : { ok: false, why: r.why ?? 'Something went wrong' }; }
   catch { return { ok: false, why: 'Could not reach the server' }; }
 };
-/** Admins only: take an island for free (everyone else buys with buyIsland). */
-export const claimIsland = (key: string, name: string) => islandCall(() => client!.action(api.islands.claim, { key, name }));
 /**
- * Start buying an island with real money: the server holds it for 30 minutes and returns a Stripe Checkout URL to open.
- * Stripe sends the player back to /?island=<key>&paid=1 (or paid=0 if they cancel); the island turns up once paid.
+ * Buy an island with coins (admins claim it free). The server pays from the earnings it has counted for you, so
+ * your totals go up first; on success the caller takes the coins from the save.
  */
-/** `adult`: the buyer confirmed they are 18 or older, or a parent or guardian said yes (the server refuses without it). */
-export async function buyIsland(key: string, name: string, adult: boolean): Promise<FunctionReturnType<typeof api.payments.buy>> {
-  if (!NET.authed) return { ok: false, why: 'Sign in to buy islands' };
-  try { return await client!.action(api.payments.buy, { key, name, adult }); } catch { return { ok: false, why: 'Could not reach the server' }; }
+export async function buyIsland(key: string, name: string, caught: number, earned: number): Promise<Result & { price?: number }> {
+  return islandCall(async () => {
+    statsAt = Date.now();
+    await call(api.stats.report, { caught, earned }).catch(() => { });
+    return client!.action(api.islands.buy, { key, name });
+  });
+}
+/** Build on your island, paid like the island (the caller takes the coins from the save on success). */
+export async function buildOnIsland(key: string, building: string, caught: number, earned: number): Promise<Result & { price?: number }> {
+  return islandCall(async () => {
+    statsAt = Date.now();
+    await call(api.stats.report, { caught, earned }).catch(() => { });
+    return client!.mutation(api.islands.build, { key, building });
+  });
+}
+export type KingdomRow = FunctionReturnType<typeof api.islands.mine>[number];
+/** Keep `cb` up to date with your islands, wherever they are (your kingdom). */
+export function watchKingdom(cb: (list: KingdomRow[]) => void): void {
+  if (client) watch<KingdomRow[]>('kingdom', api.islands.mine, {}, cb);
+}
+/** Keep `cb` up to date with the earnings the server has counted for you, and what islands have cost. */
+export function watchLedger(cb: (l: { earned: number; spent: number } | null) => void): void {
+  if (client) watch<{ earned: number; spent: number } | null>('ledger', api.stats.ledger, {}, cb);
 }
 export const renameIsland = (key: string, name: string) => islandCall(() => client!.action(api.islands.rename, { key, name }));
 export const releaseIsland = (key: string) => islandCall(() => client!.mutation(api.islands.release, { key }));

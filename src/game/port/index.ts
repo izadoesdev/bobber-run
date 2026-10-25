@@ -2,7 +2,7 @@
 // can be bought, and if not, why. This file holds the tabs, the inn, the ferry, the islands list, docking and the
 // menu's keys; the market, contracts, shop, fleet office and harbour live beside it.
 import { homePort, claimableNear } from '../../world';
-import { ISLANDS, watchExtra, islandPrice } from '../../islands';
+import { ISLANDS, REALM, realmTitle, watchExtra, islandPrice } from '../../islands';
 import { ISLAND_CELL } from '../../../convex/islandRules';
 import { SPECIES } from '../../econ';
 import { sfx } from '../../audio';
@@ -77,14 +77,14 @@ function islandItems(p: Port, items: Rows): void {
   const row = (c: { key: string; x: number; y: number; i: number; j: number }, d: number) => {
     const r = ISLANDS.get(c.key), where = `${Math.round(d / 10)} m ${dirTo(p.x, p.y, c.x, c.y)}`;
     items.push({
-      kind: 'island', icon: 'anchor', label: r ? r.name : 'Unclaimed island', sub: r ? (r.mine ? `Your island · ${where}` : `Owned by ${r.owner} · ${where}`) : where,
-      right: r ? (r.mine ? 'Yours' : 'Owned') : money(islandPrice(c.i, c.j)), ok: true, action: r ? (r.mine ? 'Manage' : 'View') : NET.profile?.admin ? 'Claim' : 'Buy',
+      kind: 'island', icon: 'anchor', label: r ? r.name : 'Unclaimed island', sub: r ? (r.mine ? `Your island · ${where}` : `Held by ${r.title ? r.title + ' ' : ''}${r.owner} · ${where}`) : where,
+      right: r ? (r.mine ? 'Yours' : 'Held') : money(islandPrice(c.i, c.j) ?? 0), ok: true, action: r ? (r.mine ? 'Manage' : 'View') : NET.profile?.admin ? 'Claim' : 'Buy',
       act: () => openIsland(c.key),
     });
   };
-  const mine = [...ISLANDS.values()].filter(r => r.mine);
+  const mine = REALM.islands;
   if (mine.length) {
-    header(items, 'YOUR ISLANDS');
+    header(items, `YOUR ISLANDS${realmTitle() ? ' · ' + realmTitle()!.toUpperCase() : ''}`);
     for (const r of mine) { const [i, j] = r.key.split(',').map(Number), c = claimableNear((i + 0.5) * ISLAND_CELL, (j + 0.5) * ISLAND_CELL, ISLAND_CELL).find(x => x.key === r.key); if (c) row(c, Math.hypot(c.x - p.x, c.y - p.y)); }
   }
   header(items, 'ISLANDS NEARBY');

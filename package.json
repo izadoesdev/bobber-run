@@ -19,7 +19,6 @@
     "convex": "^1.47.0",
     "preact": "^11.0.1",
     "simplex-noise": "^4.0.3",
-    "stripe": "^23.0.0",
     "valibot": "^1.5.0"
   },
   "devDependencies": {

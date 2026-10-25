@@ -83,6 +83,26 @@ export function sell(p: Port): void {
   toast(`Sold ${n} fish for $${tot}`, 'good'); saveGame();
 }
 
+/** Your own island's market pays a third over a fair price and doesn't tire of a species (islandRules: market). */
+export const REALM_PRICE = 1.3;
+/** What selling at your island would pay, and how many fish (kept-back fish stay aboard, as at any port). */
+export function realmSaleValue(): { tot: number; n: number } {
+  const keep = reserved().all, b = saleBonus(), mul = REALM_PRICE * (1 + b.cook) * (1 + b.crew);
+  let tot = 0, n = 0;
+  for (const f of G.hold) if (!keep.has(f)) { tot += Math.round(fishValue(f) * mul); n++; }
+  return { tot, n };
+}
+export function sellAtRealm(name: string): void {
+  const { tot, n } = realmSaleValue();
+  if (!n) { sfx('deny'); return; }
+  const keep = reserved().all;
+  G.hold = G.hold.filter(f => keep.has(f));
+  addCoins(tot); G.stats.sold++; packSell(tot);
+  track('catch_sold', { fish: n, value_bucket: bucket(tot), port: 'realm', sold_kept: false });
+  sfx('coin'); setTimeout(() => sfx('coin', 0.7), 90);
+  toast(`Sold ${n} fish at ${name}'s market for $${tot}`, 'good'); saveGame();
+}
+
 export function sellItems(p: Port, items: Rows): void {
   const sv = saleValue(p), crew = saleBonus().crew;
   header(items, 'SELL');

@@ -613,8 +613,8 @@ export function chartAt(x: number, y: number, r: number, target: { at: Point; te
   const isle = islandAt(x, y);
   if (isle) {
     const row = ISLANDS.get(isle.key);
-    return row ? { title: row.name, sub: row.mine ? 'Your island' : `Owned by ${row.owner}`, act: 'Click to view it', island: isle.key }
-      : { title: isle.i === 0 && isle.j === 0 ? 'Alderhaven' : 'Unclaimed island', sub: `For sale · ${money(islandPrice(isle.i, isle.j))}`, act: 'Click to view or buy it', island: isle.key };
+    return row ? { title: row.name, sub: row.mine ? 'Your island' : `Held by ${row.title ? row.title + ' ' : ''}${row.owner}`, act: 'Click to view it', island: isle.key }
+      : { title: isle.i === 0 && isle.j === 0 ? 'Alderhaven' : 'Unclaimed island', sub: `For sale · ${money(islandPrice(isle.i, isle.j) ?? 0)}`, act: 'Click to view or buy it', island: isle.key };
   }
   return { title: region.name, sub: `${regionAbout(region)} ${away({ x, y })}`.trim(), act: 'Click to set a waypoint' };
 }

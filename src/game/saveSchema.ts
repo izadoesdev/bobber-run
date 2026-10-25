@@ -51,6 +51,7 @@ export const saveSchema = v.object({
   explored: v.fallback(v.pipe(v.string(), v.maxLength(120_000)), ''), unlocked: listOf(v.string()), waypoint: v.fallback(v.nullable(point), null),
   gearOff: mapOf(v.literal(true)), zones: mapOf(v.literal(true)), docks: mapOf(v.number()), streak: v.pipe(int(), v.transform(n => Math.min(5, Math.max(0, n)))),
   musicOn: bool(true), offers: mapOf(v.array(contract)), active: listOf(contract), pity: int(), clock: v.optional(v.number()),
+  treasury: num(), realmRate: num(),
 });
 export type ParsedSave = v.InferOutput<typeof saveSchema>;
 /** Check a stored save; anything that isn't an object at all loads as an empty one (every field at its default). */

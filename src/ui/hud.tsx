@@ -22,7 +22,6 @@ import { ShareButton, ShareChip } from './share';
 import { clearWaypoint, sailToWaypoint, tickWaypoint, waypointMetres } from '../waypoint';
 import { courseTarget } from '../game/autopilot';
 import { SPOOL } from '../game/fishing';
-import { tickIslands } from '../islands';
 import { Bar, BaitTag, Canvas, Fish, Hint, Icon, Key, WX_ICON, cap1, clockText, keyed, type DrawFn } from './parts';
 
 // stable keys so a toast keeps its element (and its fade) as older ones leave
@@ -336,7 +335,7 @@ function Fishing() {
   );
 }
 export function Hud() {
-  tickIslands(); tickWaypoint();
+  tickWaypoint();
   if (!SET.hud) return <div><Fishing /></div>;
   const quest = currentQuest(), step = guide(), pr = quest && questProgress(quest);
   // a waypoint the player set takes over the on-screen arrow from the guide

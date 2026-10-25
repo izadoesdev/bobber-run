@@ -3,64 +3,79 @@ import { query, mutation, action, internalAction, internalMutation, internalQuer
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { getAuthUserId } from '@convex-dev/auth/server';
-import { requireUser, nameOf, limits } from './lib';
+import { requireUser, nameOf } from './lib';
 import { jevYes } from './jev';
 import { cleanName } from './names';
 import { jevAllowsName, isAdminUser } from './profiles';
-import { isClaimable, priceOfKey, MAX_ISLANDS, ISLAND_NAME_MAX, LOGO_MAX_BYTES } from './islandRules';
+import { isClaimable, priceOfKey, MAX_ISLANDS, ISLAND_NAME_MAX, LOGO_MAX_BYTES, BUILDINGS, isBuilding, cantBuild, islandWorth, titleOf } from './islandRules';
+import { spend } from './stats';
 
-// Claimable islands: an account buys the main island of a world cell (see islandRules.ts; the payment flow is in
-// payments.ts), names it, and can give it a logo and a link. Admins claim for free. Islands go back on the market when
-// their owner hasn't been seen for 60 days.
+// Claimable islands, the end game: an account buys the main island of a world cell with the game's coins (see
+// islandRules.ts for prices and buildings), names it, gives it a logo and a link, and builds on it. Coins live in the
+// player's save, so a purchase is checked against the earnings this server has counted for them (stats.ts), never
+// the save's balance. Admins claim for free. Islands go back on the market when their owner hasn't been seen for
+// 120 days.
 type Result = { ok: true; price?: number } | { ok: false; why: string };
-const IDLE_MS = 60 * 86_400_000, HOLD_MS = 31 * 60_000;
+const IDLE_MS = 120 * 86_400_000;
 
 export const byKey = (ctx: QueryCtx | MutationCtx, key: string) => ctx.db.query('islands').withIndex('by_key', q => q.eq('key', key)).unique();
-/** Owned, or held by someone who is still paying; an expired hold counts as free. */
-export const taken = (isl: Doc<'islands'> | null, now = Date.now()) => !!isl && (isl.status !== 'pending' || (isl.holdUntil ?? 0) > now);
-const owned = (isl: Doc<'islands'> | null): isl is Doc<'islands'> => !!isl && isl.status !== 'pending';
 const LINK_FAILS_HIDE = 3;   // daily checks in a row a link may fail before its sign stops showing it
 const linkShown = (isl: Doc<'islands'>): boolean => !!isl.url && (isl.linkFails ?? 0) < LINK_FAILS_HIDE;
+const islandsOf = (ctx: QueryCtx | MutationCtx, userId: Id<'users'>) => ctx.db.query('islands').withIndex('by_owner', q => q.eq('ownerId', userId)).take(MAX_ISLANDS + 2);
+/** A ruler's title from all their islands and buildings. */
+async function titleFor(ctx: QueryCtx | MutationCtx, userId: Id<'users'>): Promise<string | null> {
+  let worth = 0;
+  for (const isl of await islandsOf(ctx, userId)) worth += islandWorth(isl.price, isl.buildings ?? []);
+  return titleOf(worth);
+}
 
 /** Islands for these cells, as other sailors see them. */
 export const near = query({
   args: { keys: v.array(v.string()) },
   handler: async (ctx, { keys }) => {
-    const me = await getAuthUserId(ctx), out = [];
+    const me = await getAuthUserId(ctx), out = [], titles = new Map<Id<'users'>, string | null>();
     for (const key of keys.slice(0, 150)) {
       const isl = await byKey(ctx, key);
-      if (!owned(isl)) continue;
+      if (!isl) continue;
+      if (!titles.has(isl.ownerId)) titles.set(isl.ownerId, await titleFor(ctx, isl.ownerId));
       // a logo shows to others only once an admin has approved it; its owner sees it straight away, marked as waiting
       const mine = isl.ownerId === me, showLogo = !!isl.logo && (isl.logoOk || mine);
-      out.push({ key, name: isl.name, owner: isl.ownerName, logoUrl: showLogo ? await ctx.storage.getUrl(isl.logo!) : null, logoPending: mine && !!isl.logo && !isl.logoOk, url: linkShown(isl) ? isl.url! : null, mine });
+      out.push({ key, name: isl.name, owner: isl.ownerName, title: titles.get(isl.ownerId) ?? null, buildings: isl.buildings ?? [], logoUrl: showLogo ? await ctx.storage.getUrl(isl.logo!) : null, logoPending: mine && !!isl.logo && !isl.logoOk, url: linkShown(isl) ? isl.url! : null, mine });
     }
     return out;
   },
 });
+/** Your islands wherever they are, with what's built on them: the kingdom the game draws income from. */
+export const mine = query({
+  args: {},
+  handler: async ctx => {
+    const me = await getAuthUserId(ctx);
+    if (!me) return [];
+    return (await islandsOf(ctx, me)).map(i => ({ key: i.key, name: i.name, price: i.price, buildings: i.buildings ?? [] }));
+  },
+});
 
-/**
- * Everything a claim, hold or rename needs checked inside one transaction. `free` (admins) owns it at once; otherwise
- * it is held while the player pays, and the hold's id is returned for the checkout.
- */
-export const applyClaim = internalMutation({
-  args: { userId: v.id('users'), key: v.string(), name: v.string(), mode: v.union(v.literal('free'), v.literal('hold'), v.literal('rename')) },
-  handler: async (ctx, { userId, key, name, mode }): Promise<{ ok: true; price: number; holdId?: Id<'islands'>; previousSession?: string } | { ok: false; why: string }> => {
-    const isl = await byKey(ctx, key), now = Date.now(), price = priceOfKey(key);
-    if (mode === 'rename') {
-      if (!owned(isl) || isl.ownerId !== userId) return { ok: false, why: "That isn't your island" };
-      await ctx.db.patch(isl._id, { name, updatedAt: now });
-      return { ok: true, price: isl.price };
-    }
-    if (taken(isl, now) && !(isl!.status === 'pending' && isl!.ownerId === userId)) return { ok: false, why: isl!.status === 'pending' ? 'Someone is buying this island right now' : `${isl!.ownerName} already owns this island` };
-    const mine = (await ctx.db.query('islands').withIndex('by_owner', q => q.eq('ownerId', userId)).take(MAX_ISLANDS + 2)).filter(i => i.key !== key && taken(i, now));
-    if (mine.length >= MAX_ISLANDS) return { ok: false, why: `You can own ${MAX_ISLANDS} islands. Release one first` };
-    if (mode === 'hold' && !(await limits.limit(ctx, 'hold', { key: userId })).ok) return { ok: false, why: 'Too many purchases started. Try again in an hour' };
-    const previousSession = isl?.status === 'pending' && isl.ownerId === userId ? isl.sessionId : undefined;   // our own earlier checkout
-    if (isl) await ctx.db.delete(isl._id);                                   // an expired hold, or our own earlier attempt
-    const row = { key, ownerId: userId, ownerName: await nameOf(ctx, userId), name, price, claimedAt: now, updatedAt: now, seenAt: now };
-    if (mode === 'free') { await ctx.db.insert('islands', { ...row, status: 'owned' }); return { ok: true, price: 0 }; }
-    const holdId = await ctx.db.insert('islands', { ...row, status: 'pending', holdUntil: now + HOLD_MS });
-    return { ok: true, price, holdId, previousSession };
+/** A purchase, checked inside one transaction: the island is free, you have room for it, and your earnings cover it. */
+export const applyBuy = internalMutation({
+  args: { userId: v.id('users'), key: v.string(), name: v.string(), admin: v.boolean() },
+  handler: async (ctx, { userId, key, name, admin }): Promise<Result> => {
+    const price = priceOfKey(key), now = Date.now();
+    if (price === null) return { ok: false, why: "There's no island to buy here" };
+    const isl = await byKey(ctx, key);
+    if (isl) return { ok: false, why: isl.ownerId === userId ? 'This island is already yours' : `${isl.ownerName} already owns this island` };
+    if ((await islandsOf(ctx, userId)).length >= MAX_ISLANDS) return { ok: false, why: `You can rule ${MAX_ISLANDS} islands. Release one first` };
+    if (!admin) { const why = await spend(ctx, userId, price); if (why) return { ok: false, why }; }
+    await ctx.db.insert('islands', { key, ownerId: userId, ownerName: await nameOf(ctx, userId), name, price, buildings: [], claimedAt: now, updatedAt: now, seenAt: now });
+    return { ok: true, price: admin ? 0 : price };
+  },
+});
+export const applyRename = internalMutation({
+  args: { userId: v.id('users'), key: v.string(), name: v.string() },
+  handler: async (ctx, { userId, key, name }): Promise<Result> => {
+    const isl = await byKey(ctx, key);
+    if (!isl || isl.ownerId !== userId) return { ok: false, why: "That isn't your island" };
+    await ctx.db.patch(isl._id, { name, updatedAt: Date.now() });
+    return { ok: true };
   },
 });
 export const accountOf = internalQuery({
@@ -87,16 +102,28 @@ export async function buyer(ctx: ActionCtx, key: string, name: string) {
   const n = await checkName(name, acct.admin);
   return n.ok ? { ok: true as const, userId, acct, name: n.name } : n;
 }
-
-/** Admins only: take an island for free. */
-export const claim = action({
+/** Buy an island with coins (admins claim it for free). The game takes the coins from the save when this succeeds. */
+export const buy = action({
   args: { key: v.string(), name: v.string() },
   handler: async (ctx, { key, name }): Promise<Result> => {
     const b = await buyer(ctx, key, name);
     if (!b.ok) return b;
-    if (!b.acct.admin) return { ok: false, why: 'Buy islands with Buy' };
-    const r = await ctx.runMutation(internal.islands.applyClaim, { userId: b.userId, key, name: b.name, mode: 'free' });
-    return r.ok ? { ok: true, price: 0 } : r;
+    return ctx.runMutation(internal.islands.applyBuy, { userId: b.userId, key, name: b.name, admin: b.acct.admin });
+  },
+});
+/** Build on your island, paid from your counted earnings like the island itself. */
+export const build = mutation({
+  args: { key: v.string(), building: v.string() },
+  handler: async (ctx, { key, building }): Promise<Result> => {
+    const userId = await requireUser(ctx), isl = await byKey(ctx, key);
+    if (!isl || isl.ownerId !== userId) return { ok: false, why: "That isn't your island" };
+    if (!isBuilding(building)) return { ok: false, why: 'Nothing like that can be built' };
+    const have = isl.buildings ?? [], no = cantBuild(building, have);
+    if (no) return { ok: false, why: no };
+    const cost = BUILDINGS[building].cost;
+    if (!await isAdminUser(ctx, userId)) { const why = await spend(ctx, userId, cost); if (why) return { ok: false, why }; }
+    await ctx.db.patch(isl._id, { buildings: [...have, building], updatedAt: Date.now() });
+    return { ok: true, price: cost };
   },
 });
 
@@ -138,7 +165,7 @@ export const applyUrl = internalMutation({
   args: { userId: v.id('users'), key: v.string(), url: v.optional(v.string()) },
   handler: async (ctx, { userId, key, url }): Promise<Result> => {
     const isl = await byKey(ctx, key);
-    if (!owned(isl) || isl.ownerId !== userId) return { ok: false, why: "That isn't your island" };
+    if (!isl || isl.ownerId !== userId) return { ok: false, why: "That isn't your island" };
     await ctx.db.patch(isl._id, { url, linkFails: undefined, updatedAt: Date.now() });
     return { ok: true };
   },
@@ -148,7 +175,7 @@ export const applyUrl = internalMutation({
 // unsafe (a lapsed domain, a new redirect) is removed ----------
 export const linksToCheck = internalQuery({
   args: {},
-  handler: async ctx => (await ctx.db.query('islands').collect()).filter(i => owned(i) && i.url).map(i => ({ key: i.key, url: i.url! })),
+  handler: async ctx => (await ctx.db.query('islands').collect()).filter(i => i.url).map(i => ({ key: i.key, url: i.url! })),
 });
 export const linkChecked = internalMutation({
   args: { key: v.string(), url: v.string(), result: v.union(v.literal('ok'), v.literal('dead'), v.literal('unsafe')) },
@@ -190,16 +217,15 @@ export const rename = action({
     const acct = await ctx.runQuery(internal.islands.accountOf, { userId });
     const n = await checkName(name, acct.admin);
     if (!n.ok) return n;
-    const r = await ctx.runMutation(internal.islands.applyClaim, { userId, key, name: n.name, mode: 'rename' });
-    return r.ok ? { ok: true } : r;
+    return ctx.runMutation(internal.islands.applyRename, { userId, key, name: n.name });
   },
 });
-/** Give an island back (no refund). */
+/** Give an island back, buildings and all (no refund). */
 export const release = mutation({
   args: { key: v.string() },
   handler: async (ctx, { key }): Promise<Result> => {
     const userId = await requireUser(ctx), isl = await byKey(ctx, key);
-    if (!owned(isl) || isl.ownerId !== userId) return { ok: false, why: "That isn't your island" };
+    if (!isl || isl.ownerId !== userId) return { ok: false, why: "That isn't your island" };
     if (isl.logo) await ctx.storage.delete(isl.logo);
     await ctx.db.delete(isl._id);
     return { ok: true };
@@ -211,7 +237,7 @@ export const uploadUrl = mutation({
   args: { key: v.string() },
   handler: async (ctx, { key }): Promise<{ ok: true; url: string } | { ok: false; why: string }> => {
     const userId = await requireUser(ctx), isl = await byKey(ctx, key);
-    if (!owned(isl) || isl.ownerId !== userId) return { ok: false, why: "That isn't your island" };
+    if (!isl || isl.ownerId !== userId) return { ok: false, why: "That isn't your island" };
     return { ok: true, url: await ctx.storage.generateUploadUrl() };
   },
 });
@@ -221,7 +247,7 @@ export const setLogo = mutation({
     const userId = await requireUser(ctx), isl = await byKey(ctx, key);
     const meta = await ctx.db.system.get(storageId);
     const bad = !meta || meta.contentType !== 'image/png' || meta.size > LOGO_MAX_BYTES;
-    if (!owned(isl) || isl.ownerId !== userId) return { ok: false, why: "That isn't your island" };
+    if (!isl || isl.ownerId !== userId) return { ok: false, why: "That isn't your island" };
     if (bad) { if (meta) await ctx.storage.delete(storageId); return { ok: false, why: 'Use a PNG under 16 KB' }; }
     if (isl.logo) await ctx.storage.delete(isl.logo);
     await ctx.db.patch(isl._id, { logo: storageId, logoOk: await isAdminUser(ctx, userId), updatedAt: Date.now() });
@@ -276,8 +302,8 @@ export const clear = mutation({
 });
 
 /**
- * For a world reset (the map regenerates, so a cell may hold a different island or none): every claim, hold, logo and
- * report goes. Payment records stay. Command line only: `bunx convex run --prod islands:resetAll '{"confirm":"reset islands"}'`.
+ * For a world reset (the map regenerates, so a cell may hold a different island or none), or the move from bought
+ * islands to coins: every claim, logo and report goes. Command line only: `bunx convex run --prod islands:resetAll '{"confirm":"reset islands"}'`.
  */
 export const resetAll = internalMutation({
   args: { confirm: v.literal('reset islands') },
@@ -290,9 +316,9 @@ export const resetAll = internalMutation({
 });
 /** Called when a sailor joins: their islands count as visited. */
 export async function touchIslands(ctx: MutationCtx, userId: Id<'users'>): Promise<void> {
-  for (const isl of await ctx.db.query('islands').withIndex('by_owner', q => q.eq('ownerId', userId)).take(MAX_ISLANDS + 2)) if (owned(isl)) await ctx.db.patch(isl._id, { seenAt: Date.now() });
+  for (const isl of await islandsOf(ctx, userId)) await ctx.db.patch(isl._id, { seenAt: Date.now() });
 }
-/** Daily: islands whose owner hasn't been seen for 60 days go back on the market, and old unpaid holds go away. */
+/** Daily: islands whose owner hasn't been seen for 120 days go back on the market. */
 export const sweepIdle = internalMutation({
   args: {},
   handler: async ctx => {

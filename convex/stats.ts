@@ -1,5 +1,6 @@
 import { v } from 'convex/values';
-import { mutation, internalMutation, httpAction, type MutationCtx } from './_generated/server';
+import { query, mutation, internalMutation, httpAction, type MutationCtx } from './_generated/server';
+import { getAuthUserId } from '@convex-dev/auth/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
 import { requireUser, trusted, isFromRelay } from './lib';
@@ -7,8 +8,9 @@ import { GUEST_TRUST_MS, MAX_KG } from './limits';
 
 // Per-player totals for the leaderboards. Species logged and the heaviest fish come from records.submit (the server
 // already checks those); fish caught and coins earned come from the client's save, so they only ever go up and
-// can't climb faster than a fast player could manage.
-const CAUGHT_PER_MIN = 40, EARNED_PER_MIN = 4000, SLACK_CAUGHT = 60, SLACK_EARNED = 8000;
+// can't climb faster than a fast player could manage (a ruler's islands add to what they earn, so earnings may climb
+// faster than fishing alone). Earnings, less what's been spent on islands (`spent`), are what islands are paid from.
+const CAUGHT_PER_MIN = 40, EARNED_PER_MIN = 12_000, SLACK_CAUGHT = 60, SLACK_EARNED = 20_000;
 
 export async function statsOf(ctx: MutationCtx, userId: Id<'users'>): Promise<Doc<'stats'>> {
   const s = await ctx.db.query('stats').withIndex('by_user', q => q.eq('userId', userId)).unique();
@@ -19,6 +21,24 @@ export async function statsOf(ctx: MutationCtx, userId: Id<'users'>): Promise<Do
   return made;
 }
 
+/** Pay `amount` from the earnings counted for this player, or say why not (null when paid). */
+export async function spend(ctx: MutationCtx, userId: Id<'users'>, amount: number): Promise<string | null> {
+  const s = await statsOf(ctx, userId), left = s.earned - (s.spent ?? 0);
+  if (left < amount) return `The harbour office has counted $${Math.max(0, left).toLocaleString('en-US')} of your earnings to spend. Sail on and try again`;
+  await ctx.db.patch(s._id, { spent: (s.spent ?? 0) + amount });
+  return null;
+}
+/** What the harbour office has counted: your earnings, and what you've spent on islands. */
+export const ledger = query({
+  args: {},
+  handler: async ctx => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
+    const s = await ctx.db.query('stats').withIndex('by_user', q => q.eq('userId', userId)).unique();
+    return { earned: s?.earned ?? 0, spent: s?.spent ?? 0 };
+  },
+});
+
 export const report = mutation({
   args: { caught: v.number(), earned: v.number(), cheated: v.optional(v.boolean()) },
   handler: async (ctx, { caught, earned, cheated }) => {
@@ -28,6 +48,22 @@ export const report = mutation({
     const nextCaught = Math.min(Math.max(s.caught, Math.floor(caught)), s.caught + SLACK_CAUGHT + mins * CAUGHT_PER_MIN);
     const nextEarned = Math.min(Math.max(s.earned, Math.floor(earned)), s.earned + SLACK_EARNED + mins * EARNED_PER_MIN);
     if (nextCaught !== s.caught || nextEarned !== s.earned) await ctx.db.patch(s._id, { caught: Math.floor(nextCaught), earned: Math.floor(nextEarned), at: now });
+  },
+});
+
+/**
+ * Command line only (support, testing): count `earned` more earnings for the account with this email, e.g. when a
+ * player's save outran what the server counted. `bunx convex run stats:credit '{"email":"…","earned":500000}'`
+ * (add --prod for production).
+ */
+export const credit = internalMutation({
+  args: { email: v.string(), earned: v.number() },
+  handler: async (ctx, { email, earned }) => {
+    const acct = await ctx.db.query('authAccounts').withIndex('providerAndAccountId', q => q.eq('provider', 'password').eq('providerAccountId', email.toLowerCase())).unique();
+    if (!acct) throw new Error('No account with that email');
+    const s = await statsOf(ctx, acct.userId), next = s.earned + Math.floor(earned);
+    await ctx.db.patch(s._id, { earned: next, at: Date.now() });
+    return { earned: next, spent: s.spent ?? 0 };
   },
 });
 

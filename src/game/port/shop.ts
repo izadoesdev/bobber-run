@@ -45,17 +45,18 @@ function buyPaint(pt: Paint): void {
   sfx('levelup'); toast(`Bought ${pt.name.toLowerCase()} paint`, 'good'); celebrate(); markBought(pt.id); saveGame();
 }
 function buyBoat(bd: BoatDef): void {
-  if (G.owned.includes(bd.id)) {
-    if (G.boatId === bd.id) { deny(); return; }
-    switchBoat(bd);
-    track('boat_switched', { boat: bd.id });
-    toast(`Now sailing the ${bd.name}`); sfx('select'); markBought(bd.id); saveGame();
-    return;
-  }
+  if (G.owned.includes(bd.id)) { boardOwned(bd); return; }
   if (!spend(bd.cost)) return;
   G.owned.push(bd.id); switchBoat(bd);
   track('boat_bought', { boat: bd.id, cost: bd.cost });
   sfx('fanfare'); toast(`You bought the ${bd.name}!`, 'good'); celebrate(); markBought(bd.id); saveGame();
+}
+/** Take another of your boats (at a port's shipyard or your own island's). */
+export function boardOwned(bd: BoatDef): void {
+  if (!G.owned.includes(bd.id) || G.boatId === bd.id) { deny(); return; }
+  switchBoat(bd);
+  track('boat_switched', { boat: bd.id });
+  toast(`Now sailing the ${bd.name}`); sfx('select'); markBought(bd.id); saveGame();
 }
 /** Change boats, keeping the same share of hull (switching is not a free repair) and dropping fish that no longer fit. */
 function switchBoat(bd: BoatDef): void {

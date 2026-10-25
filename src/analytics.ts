@@ -48,8 +48,10 @@ type Events = {
   sailor_card_opened: Record<string, never>;
   sailor_followed: Record<string, never>;
   island_opened: { owned: boolean; mine: boolean };
-  island_checkout_started: { price_bucket: string };
-  island_checkout_returned: { paid: boolean };
+  island_bought: { price_bucket: string };
+  island_built: { building: string };
+  realm_title: { title: string };
+  realm_collected: { earned_bucket: string };
   sign_in_opened: { from: 'title' | 'play' };
   fish_released: { count_bucket: '1-2' | '3-7' | '8+'; how: 'one' | 'small' };
   helper_toggled: { helper: 'deckhand' | 'net' | 'pots'; on: boolean };

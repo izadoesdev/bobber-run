@@ -1428,14 +1428,110 @@ function bunting(V: Vox, a: Vec3, b: Vec3, c: string): void {
     if (i % 3 === 1) { const m = cols[Math.floor(i / 3) % 4]; V.set(u, v, z - 1, m); V.set(u, v, z - 2, m); }
   }
 }
-/** Pole, cottage and bunting for an island of colour c (the flag is separate, so it can sway). */
-export const homesteadMesh = family<string>(c => 'homestead:' + c, c => () => {
-  const V = new Vox(-28, 2, -9, 8, POLE + 5);
-  cottage(V, -17, -7, M.white, toneOf(c), toneOf(toHex(hex(c).map(v => v * 0.8))));
+/** How grand an owned island's seat is: the cottage it comes with, then the hall, keep and castle its owner builds. */
+export type Seat = 'cottage' | 'hall' | 'keep' | 'castle';
+/** How far west of the flagpole (u) and how wide (v) each seat's ground runs: trees keep off it. */
+export const SEAT_YARD: Record<Seat, { u0: number; v0: number; v1: number }> = {
+  cottage: { u0: -34, v0: -14, v1: 18 }, hall: { u0: -36, v0: -14, v1: 18 }, keep: { u0: -34, v0: -16, v1: 18 }, castle: { u0: -52, v0: -24, v1: 22 },
+};
+// crenellations along the top of a wall run
+function crenels(V: Vox, u0: number, u1: number, v0: number, v1: number, z: number, m: number): void {
+  for (let u = u0; u <= u1; u++) for (let v = v0; v <= v1; v++) if ((u === u0 || u === u1 || v === v0 || v === v1) && (u + v) % 2 === 0) V.set(u, v, z, m);
+}
+// a round-ish tower of radius r at (cu, cv), z0..z1, crenellated, with a cone roof in the island's colour
+function tower(V: Vox, cu: number, cv: number, r: number, z0: number, z1: number, roof: number): void {
+  for (let u = cu - r; u <= cu + r; u++) for (let v = cv - r; v <= cv + r; v++) if (Math.hypot(u - cu, v - cv) <= r + 0.3) V.box(u, u, v, v, z0, z1, M.stone);
+  for (let z = z0 + 3; z < z1; z += 4) V.set(cu, cv + r, z, LK.lit);                                   // arrow slits, lit at night
+  for (let k = 0; k <= r + 1; k++) for (let u = cu - r + k; u <= cu + r - k; u++) for (let v = cv - r + k; v <= cv + r - k; v++) V.set(u, v, z1 + 1 + k, roof);
+}
+/** An owned island's seat west of the flagpole (u < 0), in the island's colour c. */
+function seat(V: Vox, kind: Seat, c: string): void {
+  const roof = toneOf(c), roofD = toneOf(toHex(hex(c).map(v => v * 0.8)));
+  if (kind === 'cottage') { cottage(V, -17, -7, M.white, roof, roofD); return; }
+  if (kind === 'hall') {                                                     // a long timbered hall with a chimney
+    walls(V, -27, -10, -8, -1, 1, 6, M.white);
+    for (let u = -25; u <= -12; u += 4) V.box(u, u, -1, -1, 3, 4, LK.lit);
+    V.box(-19, -18, -1, -1, 1, 3, M.door);
+    gable(V, -28, -9, -9, 0, 7, roof, roofD);
+    V.box(-13, -12, -6, -5, 7, 13, M.stone); V.set(-13, -6, 14, LK.smoke);
+    return;
+  }
+  if (kind === 'keep') {                                                     // a square stone keep, banded in the island's colour
+    V.box(-22, -10, -9, 2, 1, 15, M.stone);
+    V.box(-22, -10, -9, 2, 11, 11, roof);
+    for (let z = 4; z <= 13; z += 4) for (const u of [-19, -13]) V.set(u, 2, z, LK.lit);
+    V.box(-17, -15, 2, 2, 1, 3, M.door);
+    crenels(V, -22, -10, -9, 2, 16, M.stone);
+    V.box(-16, -16, -4, -4, 16, 22, M.post); V.box(-15, -12, -4, -4, 19, 21, roof);   // its own banner on the roof
+    return;
+  }
+  // a castle: a curtain wall with four towers round a keep, a gate on the south side facing the flag
+  const wall = (u0: number, u1: number, v0: number, v1: number) => { V.box(u0, u1, v0, v1, 1, 7, M.stone); crenels(V, u0, u1, v0, v1, 8, M.stone); };
+  wall(-48, -8, -20, -18); wall(-48, -8, 16, 18); wall(-48, -46, -20, 18); wall(-10, -8, -20, 18);
+  V.box(-30, -26, 16, 18, 1, 5, 0); V.box(-30, -26, 18, 18, 1, 5, M.door);  // the gate
+  for (const [u, v] of [[-47, -19], [-9, -19], [-47, 17], [-9, 17]]) tower(V, u, v, 3, 1, 12, roof);
+  V.box(-36, -20, -12, 6, 1, 20, M.stone);
+  for (let z = 5; z <= 18; z += 5) for (const u of [-32, -24]) V.set(u, 6, z, LK.lit);
+  crenels(V, -36, -20, -12, 6, 21, M.stone);
+  tower(V, -28, -3, 4, 20, 27, roof);
+}
+/** Pole, seat and bunting for an island of colour c (the flag is separate, so it can sway). Key: 'colour|seat'. */
+export const homesteadMesh = family<string>(k => 'homestead:' + k, k => () => {
+  const [c, kind] = k.split('|') as [string, Seat], big = kind === 'castle';
+  const V = new Vox(big ? -50 : -28, 2, big ? -22 : -10, big ? 20 : 8, POLE + 5);
+  seat(V, kind, c);
   V.box(-1, 1, -1, 1, 0, 1, M.stone); V.box(0, 0, 0, 0, 2, POLE + 1, M.post);
   V.set(0, 0, POLE + 2, M.gilt); V.set(0, 0, POLE + 3, M.lamp);
-  V.box(-27, -27, 6, 6, 0, 7, M.post);
-  bunting(V, [0, 1, 30], [-9, -2, 9], c); bunting(V, [-18, -1, 8], [-27, 6, 7], c);
+  if (!big) { V.box(-27, -27, 6, 6, 0, 7, M.post); bunting(V, [-18, -1, 8], [-27, 6, 7], c); }
+  bunting(V, [0, 1, 30], [-9, -2, 9], c);
+  return V.finalize();
+}, 0, true);
+
+// ---------- what an owner builds on their island (drawn at world.realmPlots; built facing +u, turned to face the sea) ----------
+export type RealmBuilding = 'dock' | 'fishery' | 'market' | 'garden' | 'shipyard';
+export const realmMesh = family<string>(k => 'realm:' + k, k => () => {
+  const [kind, c] = k.split('|') as [RealmBuilding, string];
+  if (kind === 'dock') {                                                     // a pier running out to sea, with a lamp at its end
+    const V = new Vox(-4, 26, -4, 4, 9);
+    V.box(-4, 26, -2, 2, 1, 1, M.plank); for (let u = -4; u <= 26; u += 2) V.box(u, u, -2, 2, 1, 1, u % 4 ? M.plank : M.plank2);
+    for (let u = 0; u <= 26; u += 6) for (const v of [-3, 3]) V.box(u, u, v, v, -4, 2, M.post);
+    V.box(26, 26, -3, -3, 2, 3, M.post); lampPost(V, 26, 3, 2, 4); coil(V, 18, -1, 2); barrel(V, 2, -2, 2);
+    return V.finalize();
+  }
+  if (kind === 'fishery') {                                                  // a smokehouse, net racks and a skiff drawn up
+    const V = new Vox(-14, 14, -10, 10, 14);
+    walls(V, -12, -4, -8, -2, 1, 5, LK.wall2); gable(V, -13, -3, -9, -1, 6, LK.thatch, LK.thatchD);
+    V.box(-6, -5, -6, -5, 6, 11, M.stone); V.set(-6, -6, 12, LK.smoke); V.set(-5, -5, 13, LK.smoke);
+    netRack(V, 0, -8, -2, 1); netRack(V, 4, -8, -2, 1);
+    skiff(V, 2, 5, M.redp); barrel(V, -11, 2, 1); barrel(V, -8, 3, 1); crate(V, -4, 3, 1);
+    return V.finalize();
+  }
+  if (kind === 'market') {                                                   // three stalls under striped awnings
+    const V = new Vox(-14, 14, -8, 8, 9), awn = toneOf(c);
+    for (const [u, a] of [[-12, awn], [-3, LK.awnW], [6, awn]] as const) {
+      for (const [du, dv] of [[0, -4], [6, -4], [0, 3], [6, 3]]) V.box(u + du, u + du, dv, dv, 1, 5, M.post);
+      for (let du = -1; du <= 7; du++) for (let dv = -5; dv <= 4; dv++) V.set(u + du, dv, 6 + (dv < 0 ? 0 : 0), (du + 99) % 2 ? a : LK.awnW);
+      V.box(u + 1, u + 5, -2, 1, 1, 2, M.plank2); basket(V, u + 1, -1, 3); crate(V, u + 4, -1, 3);
+    }
+    lampPost(V, -14, 7, 1, 5); lampPost(V, 14, 7, 1, 5);
+    return V.finalize();
+  }
+  if (kind === 'garden') {                                                   // fenced beds of crops and a few fruit trees
+    const V = new Vox(-14, 14, -10, 10, 10);
+    for (let u = -14; u <= 14; u++) for (const v of [-10, 10]) if (u % 2 === 0) V.box(u, u, v, v, 1, 2, M.post);
+    for (let v = -10; v <= 10; v++) for (const u of [-14, 14]) if (v % 2 === 0) V.box(u, u, v, v, 1, 2, M.post);
+    for (let v = -7; v <= 7; v += 3) for (let u = -11; u <= 0; u++) V.set(u, v, 1, (u + v) % 3 ? LK.moss : LK.hay);
+    for (const [u, v] of [[5, -5], [10, 0], [5, 5]]) { V.box(u, u, v, v, 1, 4, M.post); for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) if (Math.abs(a) + Math.abs(b) < 4) V.box(u + a, u + a, v + b, v + b, 5, 6, (a + b) % 3 ? LK.moss : LK.flower); }
+    return V.finalize();
+  }
+  // shipyard: a slipway into the sea with a hull taking shape on it, and a gantry over it
+  const V = new Vox(-16, 18, -9, 9, 16);
+  V.box(-16, 18, -3, 3, 0, 0, M.plank2); for (let u = -16; u <= 18; u += 3) V.box(u, u, -4, 4, 0, 0, M.post);
+  for (let u = -10; u <= 8; u += 2) { const w = u < -6 || u > 4 ? 2 : 3; V.box(u, u, -w, -w, 1, 5, M.plank); V.box(u, u, w, w, 1, 5, M.plank); V.box(u, u, -w + 1, w - 1, 1, 1, M.plank); }
+  V.box(-10, 8, 0, 0, 1, 1, M.post);
+  for (const u of [-13, 11]) for (const v of [-7, 7]) V.box(u, u, v, v, 1, 13, M.post);
+  V.box(-13, 11, -7, -7, 13, 13, M.post); V.box(-13, 11, 7, 7, 13, 13, M.post); V.box(-1, -1, -7, 7, 13, 13, M.post);
+  V.box(-1, -1, 0, 0, 8, 12, M.rope); crate(V, -15, -8, 1); crate(V, -15, 6, 1, 3);
   return V.finalize();
 }, 0, true);
 const flagCache = new Map<string, Mesh>();

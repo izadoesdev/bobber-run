@@ -8,6 +8,7 @@ import { createNoise2D } from 'simplex-noise';
 import Alea from 'alea';
 import { biomeAt, biomeMix, coldness, setBiomeAnchor, type BiomeId } from './biome';
 import { smooth01 } from './config';
+import { drawMainIsland, ISLAND_CELL, HOME_ISLAND } from '../convex/islandRules';
 
 /**
  * The world layout. Bump it whenever islands, ports or wrecks move, and re-record tests/fixtures/landmarks.json (it
@@ -15,13 +16,9 @@ import { smooth01 } from './config';
  * and starts at Alderhaven (game/save.ts). 1: the first world; 2: bigger islands, coves and mountains.
  */
 export const WORLD = 3;
-export const CELL = 560;                       // one archipelago cell
-// how big main islands are and how many islets survive: tuned for open channels between islands (about a fifth of the
-// sea near home is land). Scaling here keeps every island's centre, since the draws below don't change.
-const ISLAND_SCALE = 0.75, ISLET_KEEP = 0.5;
-// islands bought before World 3 keep the size they were bought at (Alderhaven, 0,0, never changed)
-const KEPT_SIZE = new Set(['0,-1', '2,-2']);
-const HOME_ISLAND: Point = { x: 280, y: 280 };
+export const CELL = ISLAND_CELL;               // one archipelago cell
+// how many islets survive: tuned with the main islands' size (islandRules.ts) for open channels between islands
+const ISLET_KEEP = 0.5;
 const key = (i: number, j: number) => (i + 50000) * 100000 + (j + 50000);
 
 // ---------- islands ----------
@@ -45,13 +42,8 @@ function cellIslands(i: number, j: number): Island[] {
   const k = key(i, j), cached = cells.get(k);
   if (cached) return cached;
   const r = mulberry(hash(i, j, 7)), L: Island[] = [];
-  const ox = i * CELL, oy = j * CELL;
-  let main: Island | null = null;
-  if (i === 0 && j === 0) main = island(HOME_ISLAND.x, HOME_ISLAND.y, 145, 0.8, false, i, j);
-  else if (r() < 0.72) {
-    const x = ox + CELL * (0.3 + 0.4 * r()), y = oy + CELL * (0.3 + 0.4 * r()), R = (75 + Math.pow(r(), 1.25) * 230) * (KEPT_SIZE.has(`${i},${j}`) ? 1 : ISLAND_SCALE), peak = 0.6 + 0.4 * r();
-    main = island(x, y, R, peak, false, i, j);
-  }
+  const ox = i * CELL, oy = j * CELL, m = drawMainIsland(i, j, r);    // the main island first (the server draws it too)
+  const main: Island | null = m && island(m.x, m.y, m.R, m.peak, false, i, j);
   if (main) L.push(main);
   const n = Math.floor(r() * 3.6);
   for (let q = 0; q < n; q++) {
@@ -710,6 +702,51 @@ function siteIn(c: Claimable, lo: number, hi: number): Point | null {
     best = { x, y }; score = s;
   }
   return best;
+}
+// ---------- a kingdom's ground: where an owned island's buildings stand ----------
+/**
+ * Where an island's buildings go, round its homestead: shore spots facing open water (the dock first, then the
+ * shipyard; `a` points out to sea) and level dry plots inland (market, gardens, lighthouse), clear of the homestead,
+ * each other and the island's landmarks. Fixed for the world, found once per island.
+ */
+export interface RealmPlots { seat: Point; shore: { x: number; y: number; a: number }[]; land: Point[] }
+const realmPlotCache = new Map<string, RealmPlots | null>();
+export function realmPlots(c: Claimable): RealmPlots | null {
+  if (realmPlotCache.has(c.key)) return realmPlotCache.get(c.key)!;
+  const seat = homesteadSite(c);
+  let plots: RealmPlots | null = null;
+  if (seat) {
+    const pois = poisNear(c.x, c.y, c.R * 1.6 + 80), clear = (x: number, y: number, r: number) => !pois.some(p => p.type !== 'wreck' && Math.hypot(p.x - x, p.y - y) < r);
+    // the shore: along rays from the homestead, the last dry ground before water that stays water a little further out
+    const shore: { x: number; y: number; a: number; d: number }[] = [];
+    for (let k = 0; k < 32; k++) {
+      const a = k / 32 * Math.PI * 2, cx = Math.cos(a), cy = Math.sin(a);
+      for (let d = 12; d < 170; d += 3) {
+        const x = seat.x + cx * d, y = seat.y + cy * d;
+        if (heightAt(x, y) > -0.02) continue;
+        const lx = x - cx * 5, ly = y - cy * 5;
+        // a berth: the water off it stays deep enough to float a hull all along the pier and past its end
+        let deep = true;
+        for (let k = 8; k <= 40 && deep; k += 4) deep = heightAt(lx + cx * k, ly + cy * k) < -0.1;
+        if (deep && heightAt(lx, ly) > 0.02 && clear(lx, ly, 45)) shore.push({ x: lx, y: ly, a, d });
+        break;
+      }
+    }
+    shore.sort((p, q) => p.d - q.d);
+    const picked: { x: number; y: number; a: number }[] = [];
+    for (const p of shore) if (picked.length < 2 && picked.every(q => Math.hypot(p.x - q.x, p.y - q.y) > 34)) picked.push({ x: p.x, y: p.y, a: p.a });
+    // level dry plots on a ring round the homestead, nearest first
+    const land: Point[] = [], ok = (x: number, y: number) => { const v = heightAt(x, y); return v > 0.08 && v < 0.5; };
+    for (let r = 46; r <= 120 && land.length < 3; r += 10) for (let k = 0; k < 24 && land.length < 3; k++) {
+      const a = k / 24 * Math.PI * 2 + r * 0.1, x = seat.x + Math.cos(a) * r, y = seat.y + Math.sin(a) * r;
+      if (!ok(x, y) || !ok(x + 9, y) || !ok(x - 9, y) || !ok(x, y + 7) || !ok(x, y - 7) || !clear(x, y, 50)) continue;
+      if ([seat, ...land, ...picked].some(q => Math.hypot(q.x - x, q.y - y) < 34)) continue;
+      land.push({ x, y });
+    }
+    plots = { seat, shore: picked, land };
+  }
+  realmPlotCache.set(c.key, plots);
+  return plots;
 }
 // ---------- region sites: a village in each region, and legend spots ----------
 // Places the region stories happen: a small village on an island of each region near home, where its characters live,

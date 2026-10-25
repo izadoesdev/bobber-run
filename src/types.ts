@@ -414,6 +414,8 @@ interface Progress {
   docks: Record<string, number>;
   /** contracts delivered in a row (0-5): each adds 5% to contract pay; abandoning one only drops a step */
   streak: number;
+  /** your islands' income waiting to be collected (at any of them), and what they bring in a minute, last known */
+  treasury: number; realmRate: number;
   musicOn: boolean;
   /** port id -> contracts on offer there */
   offers: Record<string, Contract[]>;

@@ -5,7 +5,7 @@ import { W, H, clamp, lerp, frac, smooth01 } from '../config';
 import { ONLINE, type Sailor } from '../online';
 import { SET, type Quality, type PixelStyle } from '../prefs';
 import { wantTiles } from '../tilepool';
-import { TS, TN, getTile, hasTile, hAt, poisNear, schoolsNear, cratesNear, claimableNear, homesteadSite, hotspotsNear, regionSites, type HeightTile, type Hotspot, type RegionSite } from '../world';
+import { TS, TN, getTile, hasTile, hAt, poisNear, schoolsNear, cratesNear, claimableNear, realmPlots, heightAt, hotspotsNear, regionSites, type HeightTile, type Hotspot, type RegionSite } from '../world';
 import { hash01 } from '../noise';
 import { SPECIES, BOATS, activeAt } from '../econ';
 import { biomeMix, coldness, warmth, themeHold, themeAt, THEMES, THEME_IDS, type Atmos, type Odds, type Theme, type ThemeHold } from '../biome';
@@ -687,20 +687,37 @@ function oarsFor(poseL: number, prop: number, poseR: number, coat: number): Retu
   return g;
 }
 // ---------- owned islands ----------
-// Each owned island in reach gets its homestead (see homesteadSite): the owner's flag on a tall pole, a cottage, bunting,
-// and a lamp on the pole by night. Gathered once a frame for the scene and the lights.
-interface Owned { key: string; x: number; y: number }
+// Each owned island in reach gets its homestead (see homesteadSite): the owner's flag on a tall pole, their seat (a
+// cottage, or the hall, keep or castle they built), bunting, a lamp on the pole by night, and whatever else they built
+// on the island's plots (world.realmPlots). Gathered once a frame for the scene and the lights.
+interface Owned { key: string; x: number; y: number; seat: MS.Seat; built: { kind: MS.RealmBuilding | 'lighthouse'; x: number; y: number; a: number; r: number }[] }
 const owned: Owned[] = [];
+const seatOf = (b: readonly string[]): MS.Seat => b.includes('castle') ? 'castle' : b.includes('keep') ? 'keep' : b.includes('hall') ? 'hall' : 'cottage';
 function gatherOwned(cx: number, cy: number, reach: number): void {
   owned.length = 0;
   if (!ISLANDS.size) return;
   for (const c of claimableNear(cx, cy, reach)) {
-    const at = ISLANDS.has(c.key) ? homesteadSite(c) : null;
-    if (at) owned.push({ key: c.key, x: at.x, y: at.y });
+    const row = ISLANDS.get(c.key), plots = row ? realmPlots(c) : null;
+    if (!row || !plots) continue;
+    const has = (b: string) => row.buildings.includes(b), built: Owned['built'] = [], [dock, slip] = plots.shore, [mkt, gdn, lt] = plots.land;
+    if (dock && has('dock')) built.push({ kind: 'dock', x: dock.x, y: dock.y, a: dock.a, r: 10 });
+    if (dock && has('fishery')) {                       // ashore beside the dock
+      const x = dock.x - Math.cos(dock.a) * 16 - Math.sin(dock.a) * 22, y = dock.y - Math.sin(dock.a) * 16 + Math.cos(dock.a) * 22;
+      if (heightAt(x, y) > 0.03) built.push({ kind: 'fishery', x, y, a: dock.a, r: 16 });
+    }
+    if (slip && has('shipyard')) built.push({ kind: 'shipyard', x: slip.x, y: slip.y, a: slip.a, r: 18 });
+    if (mkt && has('market')) built.push({ kind: 'market', x: mkt.x, y: mkt.y, a: 0, r: 16 });
+    if (gdn && has('garden')) built.push({ kind: 'garden', x: gdn.x, y: gdn.y, a: 0, r: 16 });
+    if (lt && has('lighthouse')) built.push({ kind: 'lighthouse', x: lt.x, y: lt.y, a: 0, r: 10 });
+    owned.push({ key: c.key, x: plots.seat.x, y: plots.seat.y, seat: seatOf(row.buildings), built });
   }
 }
-// the homestead's ground (cottage west of the pole, the flag east of it): trees there are left out while it is owned
-const inYard = (x: number, y: number): boolean => owned.some(o => x > o.x - 34 && x < o.x + 38 && y > o.y - 14 && y < o.y + 18);
+// the homestead's ground (the seat west of the pole, the flag east of it) and the ground of what's built: trees there
+// are left out while it is owned
+const inYard = (x: number, y: number): boolean => owned.some(o => {
+  const Y = MS.SEAT_YARD[o.seat];
+  return (x > o.x + Y.u0 && x < o.x + 38 && y > o.y + Y.v0 && y < o.y + Y.v1) || o.built.some(b => Math.abs(x - b.x) < b.r + 6 && Math.abs(y - b.y) < b.r + 6);
+});
 // logos as 32x32 RGBA, read once per URL (Convex storage sends CORS headers, so the canvas stays readable)
 const logos = new Map<string, Uint8ClampedArray | null>();
 function logoPixels(url: string): Uint8ClampedArray | null {
@@ -723,7 +740,11 @@ function drawOwned(): void {
     const row = ISLANDS.get(o.key), c = islandColour(o.key);
     if (!row) continue;
     const logo = row.logoUrl ? logoPixels(row.logoUrl) : null;
-    inst(MS.homesteadMesh(c), o.x, o.y);
+    inst(MS.homesteadMesh(`${c}|${o.seat}`), o.x, o.y);
+    for (const bd of o.built) {
+      if (bd.kind === 'lighthouse') inst(MS.lighthouseMesh(0), bd.x, bd.y);
+      else inst(MS.realmMesh(`${bd.kind}|${c}`), bd.x, bd.y, bd.kind === 'market' || bd.kind === 'garden' ? 0 : bd.a);
+    }
     // the flag swings a little about its pole, more in a wind, but keeps facing the camera
     const sway = Math.sin(G.t * 1.7 + o.x * 0.1) * (0.04 + WX.wind * 0.08) + Math.sin(G.t * 4.1 + o.y) * 0.015;
     inst(MS.flagMesh(`${o.key}|${row.mine}|${logo ? row.logoUrl : ''}`, c, logo, row.mine), o.x, o.y, sway);
@@ -1201,7 +1222,13 @@ function lightsFor(bs: BoatPose, pois: Poi[], dk: number): Lights {
     }
   }
   // the pole's lamp shines down on the flag's face (it hangs east of the pole, facing the camera), and the cottage's windows glow
-  for (const o of owned) { addLight(o.x + 17, o.y + 8, 42, 0.7 * dk, LIGHTHOUSE_LAMP, MS.POLE - 8); addLight(o.x - 13, o.y + 1, 22, 0.4 * dk, PORT_LAMP, 4); }
+  for (const o of owned) {
+    addLight(o.x + 17, o.y + 8, 42, 0.7 * dk, LIGHTHOUSE_LAMP, MS.POLE - 8); addLight(o.x - 13, o.y + 1, 22, 0.4 * dk, PORT_LAMP, 4);
+    for (const b of o.built) {                                // an owner's lighthouse sweeps the sea like any other; the dock's lamp
+      if (b.kind === 'lighthouse') { addLight(b.x, b.y, 54, 0.8 * dk, LIGHTHOUSE_LAMP, LAMP_Z[0] ?? 31); addBeam(b.x, b.y, G.t * 0.5 + b.x * 0.01, 150, LAMP_Z[0] ?? 31); }
+      else if (b.kind === 'dock') addLight(b.x + Math.cos(b.a) * 26, b.y + Math.sin(b.a) * 26, 30, 0.6 * dk, AMBER, 6);
+    }
+  }
   if (G.frenzy) addLight(G.frenzy.s.x, G.frenzy.s.y, 20, 0.25, FRENZY_GLOW);
   for (const p of sites) {                                  // village windows, and each legend's own glow
     const s = p.site;

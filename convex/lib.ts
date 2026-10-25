@@ -1,7 +1,7 @@
 import { getAuthUserId } from '@convex-dev/auth/server';
-import { RateLimiter, DAY, HOUR } from '@convex-dev/rate-limiter';
+import { RateLimiter, DAY } from '@convex-dev/rate-limiter';
 import { components } from './_generated/api';
-import { GUESTS_PER_WINDOW, GUEST_WINDOW_MS, FUND_DAILY_ALL, HOLDS_PER_HOUR } from './limits';
+import { GUESTS_PER_WINDOW, GUEST_WINDOW_MS, FUND_DAILY_ALL } from './limits';
 import type { QueryCtx, MutationCtx } from './_generated/server';
 import type { Id } from './_generated/dataModel';
 
@@ -27,11 +27,9 @@ export async function trusted(ctx: QueryCtx | MutationCtx, userId: Id<'users'>, 
   return !!u && (!u.isAnonymous || Date.now() - u._creationTime >= trustMs);
 }
 /**
- * Rate limits (the Convex rate-limiter component). guests: new guest accounts across everyone; hold: island purchases
- * a player can start; fund: coins the whole coast can give per UTC day (matching each sailor's own daily cap).
+ * Rate limits (the Convex rate-limiter component). guests: new guest accounts across everyone; fund: coins the whole coast can give per UTC day (matching each sailor's own daily cap).
  */
 export const limits = new RateLimiter(components.rateLimiter, {
   guests: { kind: 'token bucket', rate: GUESTS_PER_WINDOW, period: GUEST_WINDOW_MS },
-  hold: { kind: 'token bucket', rate: HOLDS_PER_HOUR, period: HOUR },
   fund: { kind: 'fixed window', rate: FUND_DAILY_ALL, period: DAY, start: 0 },
 });

@@ -1,6 +1,7 @@
 // The per-frame update while sailing: timers and particles, sound, discovery, nets, flotsam, prompts and
 // the actions the player can take at sea; plus the camera and the ship (hold) screen.
 import { W, H, smooth01 } from '../config';
+import { realmDockAt, landAtRealm } from '../islands';
 import { hAt, homePort, poisNear, schoolsNear, cratesNear, tickHotspots } from '../world';
 import { WX, updateWeather } from '../weather';
 import { SPECIES, SP, SUPPLIES } from '../econ';
@@ -228,6 +229,8 @@ function promptFor(speed: number): string | null {
     return null;
   }
   if (G.nearPort) return speed < 14 ? `[E] Dock at ${G.nearPort.name}` : 'Slow down to dock';
+  const isle = realmDockAt(G.boat.x, G.boat.y);
+  if (isle) return speed < 14 ? `[E] Land at ${isle.name}` : 'Slow down to land';
   if (G.nearTreasure) return speed < 12 ? '[E] Haul up the treasure chest' : 'Slow down over the X to haul up the treasure';
   if (G.nearWreck) return speed < 12 ? `[E] Salvage the ${G.nearWreck.name.replace('Wreck of the ', '')}` : 'Slow down to salvage';
   if (G.nearSchool) {
@@ -243,7 +246,9 @@ function handleActions(dt: number, speed: number): void {
   const f = G.fish;
 
   if (hit('e', 'E', 'Enter')) {
+    const isle = realmDockAt(G.boat.x, G.boat.y);
     if (G.nearPort && speed < 14) dock(G.nearPort);
+    else if (isle && speed < 14) { sfx('select'); landAtRealm(isle.key); }
     else if (G.nearTreasure && speed < 12) haul(G.nearTreasure);
     else if (G.nearWreck && speed < 12) salvage(G.nearWreck);
   }
