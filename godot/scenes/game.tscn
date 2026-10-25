@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://src/game/game.gd" id="1"]
 [ext_resource type="Script" path="res://src/world/world_tiles.gd" id="2"]
@@ -8,6 +8,9 @@
 [ext_resource type="Script" path="res://src/game/oars.gd" id="6"]
 [ext_resource type="Script" path="res://src/render/wake.gd" id="7"]
 [ext_resource type="Script" path="res://src/render/flora_view.gd" id="8"]
+[ext_resource type="Script" path="res://src/render/school_view.gd" id="9"]
+[ext_resource type="Script" path="res://src/game/fishing.gd" id="10"]
+[ext_resource type="Script" path="res://src/ui/hud.gd" id="11"]
 
 [sub_resource type="Environment" id="env"]
 background_mode = 1
@@ -65,6 +68,15 @@ tiles = NodePath("../WorldTiles")
 script = ExtResource("8")
 tiles = NodePath("../WorldTiles")
 
+[node name="Schools" type="Node3D" parent="View/Viewport/World" node_paths=PackedStringArray("tiles", "boat")]
+script = ExtResource("9")
+tiles = NodePath("../WorldTiles")
+boat = NodePath("../Boat")
+
+[node name="Fishing" type="Node3D" parent="View/Viewport/World" node_paths=PackedStringArray("boat")]
+script = ExtResource("10")
+boat = NodePath("../Boat")
+
 [node name="Boat" type="Node3D" parent="View/Viewport/World" node_paths=PackedStringArray("tiles")]
 script = ExtResource("5")
 tiles = NodePath("../WorldTiles")
@@ -79,3 +91,8 @@ boat = NodePath("..")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 0.5, 0)
 script = ExtResource("7")
 boat = NodePath("..")
+
+[node name="Hud" type="CanvasLayer" parent="." node_paths=PackedStringArray("fishing", "boat")]
+script = ExtResource("11")
+fishing = NodePath("../View/Viewport/World/Fishing")
+boat = NodePath("../View/Viewport/World/Boat")

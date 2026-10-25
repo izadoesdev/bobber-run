@@ -1,15 +1,17 @@
 // Exports the game's data for the Godot port (godot/data), so the port reads the TypeScript's own tables and models
 // instead of keeping copies that could drift: each boat's stats and its voxel model (as the shipyard shows it, with
-// no gear fitted), the rowboat's oars, and the trees, rocks and bushes that grow on the islands. Re-run after changing them: bun scripts/godot-export.ts
+// no gear fitted), the rowboat's oars, the trees, rocks and bushes that grow on the islands, and the fish species. Re-run after changing them: bun scripts/godot-export.ts
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { BOATS } from '../src/econ';
 import { decorate, PLAIN, OAR, M } from '../src/models';
 import { RGB, EMISSIVE, type Vox } from '../src/voxel';
-import { TREE_BUILD, TREE_KINDS } from '../src/gl/meshes';
+import { TREE_BUILD, TREE_KINDS, fishVox } from '../src/gl/meshes';
+import { SPECIES, HABITAT, schoolLook } from '../src/species';
 
 const out = new URL('../godot/data/', import.meta.url);
 mkdirSync(new URL('boats/', out), { recursive: true });
 mkdirSync(new URL('trees/', out), { recursive: true });
+mkdirSync(new URL('fish/', out), { recursive: true });
 const hex = (c: readonly number[]): string => '#' + c.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');   // (RGB holds 0..255)
 
 // a voxel model: its box (u along the boat, bow +u; v across, starboard +v; z up), one byte per voxel (0 empty, else
@@ -28,10 +30,22 @@ function model(V: Vox) {
 
 for (const b of BOATS) writeFileSync(new URL(`boats/${b.id}.json`, out), JSON.stringify(model(decorate(b.id, PLAIN))) + '\n');
 // the stats the sailing needs, as the game has them
-writeFileSync(new URL('boats.json', out), JSON.stringify(BOATS.map(({ id, name, speed, accel, turn, L, B, prop, hp }) => ({ id, name, speed, accel, turn, L, B, prop, hp })), null, 1) + '\n');
+writeFileSync(new URL('boats.json', out), JSON.stringify(BOATS.map(({ id, name, speed, accel, turn, L, B, prop, hp, hold }) => ({ id, name, speed, accel, turn, L, B, prop, hp, hold })), null, 1) + '\n');
 // trees, rocks and bushes, each kind's model
 for (const k of TREE_KINDS) writeFileSync(new URL(`trees/${k}.json`, out), JSON.stringify(model(TREE_BUILD[k]())) + '\n');
+// fish: each species' table entry, how its school looks, its fish model, and where it lives. Its waters are a function
+// of the sea's depth h and the distance d from home (Species.zone), sampled on a grid into a bitmap, exact to the grid:
+// bit (i, j) is zone(ZONE.h0 + i * ZONE.dh, j * ZONE.dd)
+const ZONE = { h0: -0.8, dh: 0.01, nh: 91, dd: 100, nd: 81 };
+const species = SPECIES.map((s, n) => {
+  const bits = new Uint8Array(Math.ceil(ZONE.nh * ZONE.nd / 8));
+  for (let j = 0; j < ZONE.nd; j++) for (let i = 0; i < ZONE.nh; i++) if (s.zone(ZONE.h0 + i * ZONE.dh, j * ZONE.dd)) bits[(j * ZONE.nh + i) >> 3] |= 1 << ((j * ZONE.nh + i) & 7);
+  writeFileSync(new URL(`fish/${s.id}.json`, out), JSON.stringify(model(fishVox(n))) + '\n');
+  const { zone: _, diff, ...rest } = s;
+  return { ...rest, diff, habitat: HABITAT[s.id] ?? null, look: schoolLook(n), zone: Buffer.from(bits).toString('base64') };   // habitat: the biome it lives in only
+});
+writeFileSync(new URL('species.json', out), JSON.stringify({ zoneGrid: ZONE, species }) + '\n');
 // the rowboat's oars: oarlock, reach and stroke (OAR), and the colours of shaft, blade, tip, the rower's coat and hands
 const mid = (m: number): string => hex(RGB[m][1]), lit = (m: number): string => hex(RGB[m][2]);
 writeFileSync(new URL('oars.json', out), JSON.stringify({ ...OAR, shaft: mid(M.oar), blade: lit(M.blade), tip: mid(M.tip), coat: mid(M.coat), skin: lit(M.skin) }, null, 1) + '\n');
-console.log(`wrote ${BOATS.length} boat models, their stats, the oars and ${TREE_KINDS.length} tree models to godot/data`);
+console.log(`wrote ${BOATS.length} boats, the oars, ${TREE_KINDS.length} trees and ${SPECIES.length} species to godot/data`);

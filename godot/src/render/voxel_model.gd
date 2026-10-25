@@ -15,6 +15,11 @@ static func boat_mesh(id: String) -> ArrayMesh:
 	return _load("boats/" + id)
 
 
+## The mesh of a fish of species `id`, built once.
+static func fish_mesh(id: String) -> ArrayMesh:
+	return _load("fish/" + id)
+
+
 ## The mesh of a tree, rock or bush of kind `kind` (TREE_KINDS in the game), built once.
 static func tree_mesh(kind: String) -> ArrayMesh:
 	return _load("trees/" + kind)

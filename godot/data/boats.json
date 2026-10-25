@@ -8,7 +8,8 @@
   "L": 13.5,
   "B": 5.8,
   "prop": "OARS",
-  "hp": 100
+  "hp": 100,
+  "hold": 4
  },
  {
   "id": "canoe",
@@ -19,7 +20,8 @@
   "L": 12,
   "B": 3.2,
   "prop": "OARS",
-  "hp": 70
+  "hp": 70,
+  "hold": 3
  },
  {
   "id": "skiff",
@@ -30,7 +32,8 @@
   "L": 16.5,
   "B": 6.4,
   "prop": "SAIL",
-  "hp": 140
+  "hp": 140,
+  "hold": 7
  },
  {
   "id": "jetski",
@@ -41,7 +44,8 @@
   "L": 8,
   "B": 3,
   "prop": "ENGINE",
-  "hp": 70
+  "hp": 70,
+  "hold": 2
  },
  {
   "id": "launch",
@@ -52,7 +56,8 @@
   "L": 17.5,
   "B": 7,
   "prop": "ENGINE",
-  "hp": 210
+  "hp": 210,
+  "hold": 10
  },
  {
   "id": "trawler",
@@ -63,7 +68,8 @@
   "L": 23,
   "B": 9,
   "prop": "ENGINE",
-  "hp": 360
+  "hp": 360,
+  "hold": 18
  },
  {
   "id": "speedboat",
@@ -74,7 +80,8 @@
   "L": 15,
   "B": 5.5,
   "prop": "ENGINE",
-  "hp": 240
+  "hp": 240,
+  "hold": 9
  },
  {
   "id": "catamaran",
@@ -85,7 +92,8 @@
   "L": 20,
   "B": 9,
   "prop": "SAIL",
-  "hp": 320
+  "hp": 320,
+  "hold": 16
  },
  {
   "id": "schooner",
@@ -96,7 +104,8 @@
   "L": 32,
   "B": 10,
   "prop": "SAIL",
-  "hp": 520
+  "hp": 520,
+  "hold": 26
  },
  {
   "id": "cruiser",
@@ -107,7 +116,8 @@
   "L": 22,
   "B": 7.5,
   "prop": "ENGINE",
-  "hp": 420
+  "hp": 420,
+  "hold": 14
  },
  {
   "id": "drifter",
@@ -118,7 +128,8 @@
   "L": 36,
   "B": 11,
   "prop": "ENGINE",
-  "hp": 700
+  "hp": 700,
+  "hold": 34
  },
  {
   "id": "research",
@@ -129,7 +140,8 @@
   "L": 28,
   "B": 9,
   "prop": "ENGINE",
-  "hp": 560
+  "hp": 560,
+  "hold": 22
  },
  {
   "id": "flagship",
@@ -140,7 +152,8 @@
   "L": 46,
   "B": 14,
   "prop": "ENGINE",
-  "hp": 1000
+  "hp": 1000,
+  "hold": 50
  },
  {
   "id": "icebreaker",
@@ -151,7 +164,8 @@
   "L": 34,
   "B": 11.5,
   "prop": "ENGINE",
-  "hp": 1500
+  "hp": 1500,
+  "hold": 36
  },
  {
   "id": "yacht",
@@ -162,7 +176,8 @@
   "L": 30,
   "B": 8,
   "prop": "SAIL",
-  "hp": 700
+  "hp": 700,
+  "hold": 24
  },
  {
   "id": "motoryacht",
@@ -173,7 +188,8 @@
   "L": 38,
   "B": 11,
   "prop": "ENGINE",
-  "hp": 1000
+  "hp": 1000,
+  "hold": 34
  },
  {
   "id": "superyacht",
@@ -184,6 +200,7 @@
   "L": 52,
   "B": 13,
   "prop": "ENGINE",
-  "hp": 1800
+  "hp": 1800,
+  "hold": 50
  }
 ]

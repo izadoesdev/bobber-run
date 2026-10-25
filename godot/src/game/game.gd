@@ -37,7 +37,7 @@ func _ready() -> void:
 	_boat.place_at(start.x, start.y, start.angle_to_point(Vector2(IslandRules.HOME.x, IslandRules.HOME.y)) + PI / 2)
 	_baker.budget_ms = 40.0                            # a quick start: the sea round the boat first
 	_tiles.follow(start)
-	_dev_snapshot()
+	_dev_hooks()
 
 
 func _process(_delta: float) -> void:
@@ -76,20 +76,29 @@ func _start_spot() -> Vector2:
 	return home + Vector2(0, IslandRules.HOME.R * 2.0)
 
 
-# `-- --snap=out.png [--sail=seconds] [--zoom=z]`: once the sea round the boat is baked, hold the throttle for that long, save a
-# screenshot and quit (how the port is checked without someone at the keyboard).
-func _dev_snapshot() -> void:
+# How the port is checked without someone at the keyboard: `-- --autofish` plays the fishing until a fish is landed
+# (and exits 1 if none is, so CI can run it headless); `-- --snap=out.png [--sail=seconds] [--zoom=z] [--at=x,y]`
+# waits for the sea round the boat to bake, holds the throttle that long, saves a screenshot and quits.
+func _dev_hooks() -> void:
 	var args := {}
 	for arg in OS.get_cmdline_user_args():
 		var kv := arg.trim_prefix("--").split("=")
 		args[kv[0]] = kv[1] if kv.size() > 1 else ""
-	if not args.has("snap"):
+	if not args.has("snap") and not args.has("autofish"):
 		return
 	if args.has("zoom"):
 		zoom = float(args.zoom)
 		_fit()
+	if args.has("at"):
+		var p: PackedStringArray = args.at.split(",")
+		_boat.place_at(float(p[0]), float(p[1]), 0.0)
 	while not _tiles.ready_around(Vector2(_boat.x, _boat.y), _tiles.keep_radius):
 		await get_tree().process_frame
+	if args.has("autofish"):
+		var landed := await _autofish()
+		if not args.has("snap"):
+			get_tree().quit(0 if landed else 1)
+			return
 	var sail := float(args.get("sail", "0"))
 	if sail > 0.0:
 		Input.action_press("sail_forward")
@@ -101,3 +110,41 @@ func _dev_snapshot() -> void:
 	get_viewport().get_texture().get_image().save_png(args.snap)
 	print("snap: boat at %.0f, %.0f, %.1f units/s" % [_boat.x, _boat.y, _boat.speed()])
 	get_tree().quit()
+
+
+# Play the fishing as a player would, until a fish is landed or a minute passes: cast at the school in range, strike
+# at the bite, then reel, letting go whenever the line gets tight or the fish surges. Whether a fish was landed.
+func _autofish() -> bool:
+	var fishing: Fishing = $View/Viewport/World/Fishing
+	# moor beside the nearest school that's biting, on open water
+	var at := Vector2(_boat.x, _boat.y)
+	var near := Schools.near(at, 900).filter(func(q: Schools.School) -> bool: return Species.biting(q.sp) and q.stock > 0)
+	near.sort_custom(func(p: Schools.School, q: Schools.School) -> bool: return at.distance_to(Vector2(p.x, p.y)) < at.distance_to(Vector2(q.x, q.y)))
+	if not near.is_empty():
+		var s: Schools.School = near[0]
+		for k in 16:
+			var p := Vector2(s.x, s.y) + Vector2.from_angle(k * TAU / 16.0) * 34.0
+			if Terrain.height_at(p.x, p.y) < -0.12:
+				_boat.place_at(p.x, p.y, 0.0)
+				break
+		while not _tiles.ready_around(Vector2(_boat.x, _boat.y), 1):
+			await get_tree().process_frame
+	var landed := []
+	fishing.caught.connect(func(f: Dictionary) -> void: landed.append(f))
+	fishing.said.connect(func(text: String) -> void: print("fishing: ", text))
+	var until := Time.get_ticks_msec() + 60_000
+	while landed.is_empty() and Time.get_ticks_msec() < until:
+		var press := false
+		match fishing.stage:
+			Fishing.Stage.NONE: press = fishing.target != null
+			Fishing.Stage.BITE: press = true
+			Fishing.Stage.REEL: press = fishing.tension < 0.6 and fishing.surge < 0.9
+		if press: Input.action_press("cast")
+		else: Input.action_release("cast")
+		await get_tree().process_frame
+		if fishing.stage != Fishing.Stage.REEL:
+			Input.action_release("cast")
+			await get_tree().process_frame
+	Input.action_release("cast")
+	print("autofish: ", "landed %s, %.2f kg, $%d" % [landed[0].name, landed[0].kg, landed[0].value] if landed else "nothing landed in a minute")
+	return not landed.is_empty()

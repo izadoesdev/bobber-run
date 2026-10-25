@@ -53,6 +53,11 @@ func speed() -> float:
 	return Vector2(vx, vy).length()
 
 
+## The boat's stats from the game's table (speed, accel, turn, L, B, prop, hp, hold).
+func stats() -> Dictionary:
+	return _stats
+
+
 func _physics_process(dt: float) -> void:
 	var thrust := Input.get_action_strength("sail_forward")
 	var reverse := Input.get_action_strength("sail_back")
