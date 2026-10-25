@@ -3,7 +3,7 @@
 // no gear fitted). Re-run after changing them: bun scripts/godot-export.ts
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { BOATS } from '../src/econ';
-import { decorate, PLAIN } from '../src/models';
+import { decorate, PLAIN, OAR, M } from '../src/models';
 import { RGB, EMISSIVE } from '../src/voxel';
 
 const out = new URL('../godot/data/', import.meta.url);
@@ -27,4 +27,7 @@ function model(V: ReturnType<typeof decorate>) {
 for (const b of BOATS) writeFileSync(new URL(`boats/${b.id}.json`, out), JSON.stringify(model(decorate(b.id, PLAIN))) + '\n');
 // the stats the sailing needs, as the game has them
 writeFileSync(new URL('boats.json', out), JSON.stringify(BOATS.map(({ id, name, speed, accel, turn, L, B, prop, hp }) => ({ id, name, speed, accel, turn, L, B, prop, hp })), null, 1) + '\n');
-console.log(`wrote ${BOATS.length} boat models and their stats to godot/data`);
+// the rowboat's oars: oarlock, reach and stroke (OAR), and the colours of shaft, blade, tip, the rower's coat and hands
+const mid = (m: number): string => hex(RGB[m][1]), lit = (m: number): string => hex(RGB[m][2]);
+writeFileSync(new URL('oars.json', out), JSON.stringify({ ...OAR, shaft: mid(M.oar), blade: lit(M.blade), tip: mid(M.tip), coat: mid(M.coat), skin: lit(M.skin) }, null, 1) + '\n');
+console.log(`wrote ${BOATS.length} boat models, their stats and the oars to godot/data`);

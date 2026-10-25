@@ -1,0 +1,12 @@
+{
+ "lockU": 4,
+ "lockV": 6,
+ "lockZ": 7,
+ "reach": 19,
+ "sweep": 8,
+ "shaft": "#b4874a",
+ "blade": "#efe9dc",
+ "tip": "#c0493a",
+ "coat": "#d9ae3e",
+ "skin": "#ecbd94"
+}
