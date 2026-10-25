@@ -3,12 +3,12 @@
 // nearer home costs more); buildings on your islands bring in income, which waits in a treasury until you sail to
 // one of them, and a ruler's title grows with what they hold.
 import { G } from './game';
-import { claimableNear, realmPlots, CELL } from './world';
+import { claimableNear, claimableAt, realmPlots } from './world';
 import { reveal } from './game/explore';
 import { NET, watchIslands, watchKingdom, watchLedger, type IslandRow, type KingdomRow } from './net';
 import { toast, addCoins } from './game/feedback';
 import { track } from './analytics';
-import { mainIsland, islandIncome, islandWorth, titleOf } from '../convex/islandRules';
+import { islandIncome, islandWorth, titleOf } from '../convex/islandRules';
 
 export { islandPrice } from '../convex/islandRules';
 /** An island's own colour, from its key: its pennant until the owner's logo is approved, the same on the chart and in the world. */
@@ -62,11 +62,10 @@ export const REALM = { islands: [] as KingdomRow[], ledger: null as { earned: nu
 export const ledgerLeft = (): number | null => REALM.ledger && Math.max(0, REALM.ledger.earned - REALM.ledger.spent);
 /** The treasury holds this many minutes of income at most: collect it at any of your islands. */
 export const TREASURY_MIN = 180;
-const cellOf = (key: string): [number, number] => key.split(',').map(Number) as [number, number];
 /** Coins a minute your islands bring in. */
-export const realmRate = (rows: readonly KingdomRow[] = REALM.islands): number => rows.reduce((a, r) => a + islandIncome(...cellOf(r.key), r.buildings), 0);
+export const realmRate = (rows: readonly KingdomRow[] = REALM.islands): number => rows.reduce((a, r) => { const c = claimableAt(r.key); return a + (c ? islandIncome(c.i, c.j, r.buildings) : 0); }, 0);
 /** Your islands' worth (prices and buildings), and the title it earns you. */
-export const realmWorth = (): number => REALM.islands.reduce((a, r) => a + islandWorth(r.price, r.buildings), 0);
+const realmWorth = (): number => REALM.islands.reduce((a, r) => a + islandWorth(r.price, r.buildings), 0);
 export const realmTitle = (): string | null => titleOf(realmWorth());
 let titleSeen: string | null | undefined;
 function onKingdom(rows: KingdomRow[]): void {
@@ -86,7 +85,7 @@ export function landAtRealm(key: string): void {
 export function realmDockAt(x: number, y: number): KingdomRow | null {
   for (const r of REALM.islands) {
     if (!r.buildings.includes('dock')) continue;
-    const [i, j] = cellOf(r.key), c = claimableNear((i + 0.5) * CELL, (j + 0.5) * CELL, CELL).find(q => q.key === r.key), d = c && realmPlots(c)?.shore[0];
+    const c = claimableAt(r.key), d = c && realmPlots(c)?.shore[0];
     if (d && Math.hypot(x - (d.x + Math.cos(d.a) * 30), y - (d.y + Math.sin(d.a) * 30)) < 26) return r;   // off the pier's end
   }
   return null;
@@ -97,7 +96,7 @@ function chartRealm(): void {
   for (const r of REALM.islands) {
     if (!r.buildings.includes('lighthouse') || charted.has(r.key)) continue;
     charted.add(r.key);
-    const m = mainIsland(...cellOf(r.key));
+    const m = claimableAt(r.key);
     if (m) reveal(m.x, m.y, 1100);
   }
 }
@@ -110,7 +109,7 @@ function tickRealm(): void {
   G.treasury = Math.min(G.realmRate * TREASURY_MIN, G.treasury + G.realmRate * dt / 60);
   if (G.treasury < 1 || G.mode !== 'play') return;
   for (const r of REALM.islands) {
-    const m = mainIsland(...cellOf(r.key));
+    const m = claimableAt(r.key);
     if (!m || Math.hypot(G.boat.x - m.x, G.boat.y - m.y) > m.R + 160) continue;
     const n = Math.floor(G.treasury);
     G.treasury -= n;

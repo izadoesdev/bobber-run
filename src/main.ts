@@ -10,7 +10,7 @@ import { SPECIES } from './econ';
 import { TUNE, G, physicsStep, update, updateCamera, refreshSolids, newGame, saveGame, savedSpot, toast } from './game';
 import { initRender, render, R, prefetch, boatRenderState, tilesAround } from './gl/renderer';
 import { warmTiles } from './tilepool';
-import { tickIslands, REALM, ISLANDS, realmDockAt } from './islands';
+import { tickIslands, REALM, ISLANDS } from './islands';
 import { openIsland } from './ui/island';
 import { initUI, drawUI } from './ui/index';
 import { SET, applySettings } from './settings';
@@ -149,7 +149,7 @@ window.BR = {
   NET, NETAPI, ONLINE, render, SET, apply: () => { applySettings(); fit(); }, AUDIO: { renderOffline, renderMusicOffline, SFX_NAMES },
   WX, setWeather, LIFE, LAIR, BOSS, MODELS, GAME, TUNE, G, guide, tick, sim: (dt: number) => { noRender = true; tick(dt); noRender = false; },
   homePort, schoolsNear, poisNear, hAt, SPECIES, R, worldCaches, speech, CONTENT: { packJournal, packCatch, biomeAt }, ZONES: zoneStats,
-  REALM, ISLANDS, realmDockAt, openIsland,
+  REALM, ISLANDS, openIsland,
 };
 // the first frame needs the sea round the harbour: the tile workers build it in parallel while the page settles,
 // rather than the first frame building it all on the main thread (two seconds on a phone); a saved boat's sea next,

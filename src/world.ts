@@ -682,6 +682,11 @@ export function claimableNear(x: number, y: number, rad: number): Claimable[] {
   }
   return out;
 }
+/** The claimable island with this key ("i,j"), or null when its cell has none. */
+export function claimableAt(key: string): Claimable | null {
+  const [i, j] = key.split(',').map(Number), m = cellIslands(i, j)[0];
+  return m && !m.islet ? { key, i, j, x: m.x, y: m.y, R: m.R } : null;
+}
 // An owned island's homestead (flag pole, cottage, bunting) stands on meadow toward its south shore, so its hills don't
 // hide it from the camera, and well clear of a harbour or lighthouse; on an island with no meadow, on any dry ground.
 // The pole is at the returned point, the cottage to its west (homesteadMesh in gl/meshes.ts); null only for an island

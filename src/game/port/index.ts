@@ -1,9 +1,8 @@
 // Ports: one row of tabs, each a single list grouped under section headers. Every row says what it costs, whether it
 // can be bought, and if not, why. This file holds the tabs, the inn, the ferry, the islands list, docking and the
 // menu's keys; the market, contracts, shop, fleet office and harbour live beside it.
-import { homePort, claimableNear } from '../../world';
+import { homePort, claimableNear, claimableAt } from '../../world';
 import { ISLANDS, REALM, realmTitle, watchExtra, islandPrice } from '../../islands';
-import { ISLAND_CELL } from '../../../convex/islandRules';
 import { SPECIES } from '../../econ';
 import { sfx } from '../../audio';
 import { NET } from '../../net';
@@ -85,7 +84,7 @@ function islandItems(p: Port, items: Rows): void {
   const mine = REALM.islands;
   if (mine.length) {
     header(items, `YOUR ISLANDS${realmTitle() ? ' · ' + realmTitle()!.toUpperCase() : ''}`);
-    for (const r of mine) { const [i, j] = r.key.split(',').map(Number), c = claimableNear((i + 0.5) * ISLAND_CELL, (j + 0.5) * ISLAND_CELL, ISLAND_CELL).find(x => x.key === r.key); if (c) row(c, Math.hypot(c.x - p.x, c.y - p.y)); }
+    for (const r of mine) { const c = claimableAt(r.key); if (c) row(c, Math.hypot(c.x - p.x, c.y - p.y)); }
   }
   header(items, 'ISLANDS NEARBY');
   for (const { c, d } of near) if (!ISLANDS.get(c.key)?.mine) row(c, d);

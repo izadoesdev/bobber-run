@@ -6,7 +6,7 @@ export const ISLAND_CELL = 560, MAX_ISLANDS = 6, ISLAND_NAME_MAX = 24, LOGO_MAX_
 
 // ---------- where each cell's main island is (the world generator's first draws, so the server knows them too) ----------
 // how big main islands are: tuned for open channels between islands (about a fifth of the sea near home is land)
-export const ISLAND_SCALE = 0.75;
+const ISLAND_SCALE = 0.75;
 // islands bought before World 3 keep the size they were bought at (Alderhaven, 0,0, never changed)
 const KEPT_SIZE = new Set(['0,-1', '2,-2']);
 export const HOME_ISLAND = { x: 280, y: 280, R: 145, peak: 0.8 };
@@ -47,7 +47,7 @@ export const priceOfKey = (key: string): number | null => { const [i, j] = key.s
 
 // ---------- buildings: what makes islands a kingdom ----------
 export type BuildingId = 'dock' | 'hall' | 'keep' | 'castle' | 'fishery' | 'market' | 'garden' | 'lighthouse' | 'shipyard';
-export interface Building {
+interface Building {
   name: string; cost: number;
   /** built first */
   needs?: BuildingId;

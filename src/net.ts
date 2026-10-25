@@ -258,25 +258,17 @@ const islandCall = async (fn: () => Promise<{ ok: boolean; why?: string; price?:
   try { const r = await fn(); return r.ok ? { ok: true, ...(r.price ? { price: r.price } : {}) } : { ok: false, why: r.why ?? 'Something went wrong' }; }
   catch { return { ok: false, why: 'Could not reach the server' }; }
 };
-/**
- * Buy an island with coins (admins claim it free). The server pays from the earnings it has counted for you, so
- * your totals go up first; on success the caller takes the coins from the save.
- */
-export async function buyIsland(key: string, name: string, caught: number, earned: number): Promise<Result & { price?: number }> {
-  return islandCall(async () => {
-    statsAt = Date.now();
-    await call(api.stats.report, { caught, earned }).catch(() => { });
-    return client!.action(api.islands.buy, { key, name });
-  });
+/** Report your totals now (not the once-a-minute report), so the server has counted your latest earnings before a purchase. */
+async function countEarnings(caught: number, earned: number): Promise<void> {
+  statsAt = Date.now();
+  await call(api.stats.report, { caught, earned }).catch(() => { });
 }
+/** Buy an island with coins (admins claim it free); on success the caller takes the coins from the save. */
+export const buyIsland = (key: string, name: string, caught: number, earned: number) =>
+  islandCall(async () => { await countEarnings(caught, earned); return client!.action(api.islands.buy, { key, name }); });
 /** Build on your island, paid like the island (the caller takes the coins from the save on success). */
-export async function buildOnIsland(key: string, building: string, caught: number, earned: number): Promise<Result & { price?: number }> {
-  return islandCall(async () => {
-    statsAt = Date.now();
-    await call(api.stats.report, { caught, earned }).catch(() => { });
-    return client!.mutation(api.islands.build, { key, building });
-  });
-}
+export const buildOnIsland = (key: string, building: string, caught: number, earned: number) =>
+  islandCall(async () => { await countEarnings(caught, earned); return client!.mutation(api.islands.build, { key, building }); });
 export type KingdomRow = FunctionReturnType<typeof api.islands.mine>[number];
 /** Keep `cb` up to date with your islands, wherever they are (your kingdom). */
 export function watchKingdom(cb: (list: KingdomRow[]) => void): void {

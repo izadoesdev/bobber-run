@@ -5,7 +5,7 @@
 import { W, H, money } from '../config';
 import { G, saveGame } from '../game';
 import { addCoins } from '../game/feedback';
-import { claimableNear, heightAt, homesteadSite, realmPlots } from '../world';
+import { claimableNear, claimableAt, heightAt, homesteadSite, realmPlots } from '../world';
 import { sfx } from '../audio';
 import { NET, buyIsland, buildOnIsland, renameIsland, releaseIsland, uploadIslandLogo, reportIsland, setIslandUrl } from '../net';
 import { ISLANDS, REALM, focusIsland, islandLanding, islandPrice, ledgerLeft, realmTitle, realmDockAt, TREASURY_MIN } from '../islands';
@@ -116,7 +116,7 @@ export function IslandDialog() {
     void run(() => releaseIsland(key), 'Released');
   };
   // the island's middle is land: head for the open water off its shore nearest the boat
-  const landing = () => { const c = claimableNear((i + 0.5) * 560, (j + 0.5) * 560, 560).find(x => x.key === key); return c && islandLanding(c, G.boat.x, G.boat.y, (x, y) => heightAt(x, y) < -0.1); };
+  const landing = () => { const c = claimableAt(key); return c && islandLanding(c, G.boat.x, G.boat.y, (x, y) => heightAt(x, y) < -0.1); };
   const waypoint = () => { const p = landing(); if (p) { setWaypoint(p.x, p.y); closeIsland(); } };
   const sail = () => { const p = landing(); if (!p) return; setWaypoint(p.x, p.y); sailToWaypoint(); closeIsland(); G.mode = 'play'; };
   const named = f.name.trim().length >= 2, mine = own, why = !row ? (full && !admin ? `You rule ${MAX_ISLANDS} islands already` : short(price)) : null;
@@ -135,7 +135,7 @@ export function IslandDialog() {
         {(!row || row.mine) && <IslandForm f={f} onPick={pick} />}
         {!row && !admin && <p class="muted small">Islands are the end game: the bigger and the nearer Alderhaven, the dearer. Rule up to {MAX_ISLANDS}; build on them for an income and a title. Your name, flag and link show to every sailor.{left !== null && ` Earnings counted for you: ${money(left)}.`}</p>}
         {own && <AtIsland name={own.name} have={own.buildings} landed={realmDockAt(G.boat.x, G.boat.y)?.key === key} />}
-        {row && <Buildings have={mine?.buildings ?? row.buildings} income={islandIncome(i, j, mine?.buildings ?? row.buildings)} build={mine ? build : null} short={short} busy={f.busy} berth={berth(i, j, key)} />}
+        {row && <Buildings have={mine?.buildings ?? row.buildings} income={islandIncome(i, j, mine?.buildings ?? row.buildings)} build={mine ? build : null} short={short} busy={f.busy} berth={berth(key)} />}
         {!row && NET.profile?.guest && <p class="why left">Sign in to buy islands, so yours stay yours on any device.</p>}
         {f.msg && <p class={f.msg.bad ? 'why left' : 'good'}>{f.msg.s}</p>}
         <footer class="foot">
@@ -171,7 +171,7 @@ function IslandForm({ f, onPick }: { f: Form; onPick: (e: Event) => void }) {
 }
 
 /** Does the island have deep water off its shore for a dock (world.realmPlots)? */
-const berth = (i: number, j: number, key: string): boolean => { const c = claimableNear((i + 0.5) * 560, (j + 0.5) * 560, 560).find(x => x.key === key); return !!c && !!realmPlots(c)?.shore.length; };
+const berth = (key: string): boolean => { const c = claimableAt(key); return !!c && !!realmPlots(c)?.shore.length; };
 /** An island's buildings: what's built, and on your own island what you can build next, with its cost and income. */
 function Buildings({ have, income, build, short, busy, berth }: { have: readonly string[]; income: number; build: ((b: BuildingId) => void) | null; short: (cost: number) => string | null; busy: boolean; berth: boolean }) {
   const ids = build ? BUILDING_IDS : BUILDING_IDS.filter(b => have.includes(b));
