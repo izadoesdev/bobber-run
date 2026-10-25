@@ -1,13 +1,14 @@
-# The Godot port's parity with the TypeScript rules: the recorded fixtures are current, and the port matches them.
+# The Godot port's parity with the TypeScript: the recorded fixtures and exported data are current, and the port
+# matches them.
 # Separate from CI (which deploys wait on), and only when the port or the rules it mirrors change.
 name: Godot
 
 on:
   push:
     branches: [main]
-    paths: [godot/**, scripts/godot-fixtures.ts, src/noise.ts, convex/islandRules.ts, .github/workflows/godot.yml]
+    paths: [godot/**, scripts/godot-*.ts, src/noise.ts, src/models.ts, src/voxel.ts, src/econ.ts, convex/islandRules.ts, .github/workflows/godot.yml]
   pull_request:
-    paths: [godot/**, scripts/godot-fixtures.ts, src/noise.ts, convex/islandRules.ts, .github/workflows/godot.yml]
+    paths: [godot/**, scripts/godot-*.ts, src/noise.ts, src/models.ts, src/voxel.ts, src/econ.ts, convex/islandRules.ts, .github/workflows/godot.yml]
 
 concurrency:
   group: godot-${{ github.ref }}
@@ -22,8 +23,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      - name: Fixtures are current with the TypeScript
-        run: bun scripts/godot-fixtures.ts && git diff --exit-code godot/tests/fixtures
+      - name: Fixtures and exported data are current with the TypeScript
+        run: bun scripts/godot-fixtures.ts && bun scripts/godot-export.ts && git diff --exit-code godot/tests/fixtures godot/data
       - name: Install Godot
         run: |
           curl -sSfL -o godot.zip "https://github.com/godotengine/godot/releases/download/$GODOT/Godot_v${GODOT}_linux.x86_64.zip"
