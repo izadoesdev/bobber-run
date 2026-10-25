@@ -15,7 +15,7 @@ import { smooth01 } from './config';
  * and starts at Alderhaven (game/save.ts). 1: the first world; 2: bigger islands, coves and mountains.
  */
 export const WORLD = 3;
-const CELL = 560;                              // one archipelago cell
+export const CELL = 560;                       // one archipelago cell
 // how big main islands are and how many islets survive: tuned for open channels between islands (about a fifth of the
 // sea near home is land). Scaling here keeps every island's centre, since the draws below don't change.
 const ISLAND_SCALE = 0.75, ISLET_KEEP = 0.5;
@@ -383,12 +383,16 @@ export function cellPois(i: number, j: number): Poi[] {
   return L;
 }
 /** points of interest within a square of half-size rad around (x, y); fills and returns `out` if given */
-export function poisNear(x: number, y: number, rad: number, out: Poi[] = []): Poi[] {
+/** The landmarks within rad of (x, y); `skipCell` leaves out whole cells (never generating them), e.g. closed waters. */
+export function poisNear(x: number, y: number, rad: number, out: Poi[] = [], skipCell?: (i: number, j: number) => boolean): Poi[] {
   out.length = 0;
   const i0 = Math.floor((x - rad) / CELL) - 1, i1 = Math.floor((x + rad) / CELL) + 1;
   const j0 = Math.floor((y - rad) / CELL) - 1, j1 = Math.floor((y + rad) / CELL) + 1;
-  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) for (const p of cellPois(i, j)) {
-    if (Math.abs(p.x - x) < rad && Math.abs(p.y - y) < rad) out.push(p);
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    if (skipCell?.(i, j)) continue;
+    for (const p of cellPois(i, j)) {
+      if (Math.abs(p.x - x) < rad && Math.abs(p.y - y) < rad) out.push(p);
+    }
   }
   return out;
 }

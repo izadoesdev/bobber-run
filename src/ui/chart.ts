@@ -2,7 +2,7 @@
 import { G, sonarLvl, logged, canLand } from '../game';
 import { schoolShown, schoolMood } from '../game/schools';
 import { SPECIES, PAINTS } from '../econ';
-import { poisNear, schoolsNear, claimableNear, heightAt, homesteadSite, LAIR } from '../world';
+import { poisNear, schoolsNear, claimableNear, heightAt, homesteadSite, LAIR, CELL } from '../world';
 import { livesAt } from '../species';
 import { drawTerrain, terrainSettled } from './chartgl';
 import { seen as isSeen, revealPlace } from '../game/explore';
@@ -119,8 +119,9 @@ export function drawChart(ctx: Ctx, w: number, h: number, cx: number, cy: number
 
   const son = sonarLvl();                  // 1 shows schools, 2 colours them by species, 3 stars legends
   const showUncharted = (opt.sextant ?? 0) >= 2;
-  // what's in sea you haven't seen stays off the chart, except what a sextant marks
-  const pois = poisNear(cx, cy, Math.max(w, h) * wpp * 0.6).filter(p => showUncharted || G.found.has(p.id) || isSeen(p.x, p.y));
+  // what's in sea you haven't seen stays off the chart, except what a sextant marks; nothing shows in closed waters
+  // but what you'd already charted there, and their cells aren't even generated
+  const pois = poisNear(cx, cy, Math.max(w, h) * wpp * 0.6, [], cellClosed).filter(p => G.found.has(p.id) || (!lockedAt(p.x, p.y) && (showUncharted || isSeen(p.x, p.y))));
   for (const p of pois) if (G.found.has(p.id) && !isSeen(p.x, p.y)) revealPlace(p);   // charted before the fog came in
   if (son >= 1) drawSchools(ctx, cx, cy, Math.min(260, Math.max(w, h) * wpp * 0.6), S, u, son, seen);
   drawPois(ctx, pois, S, u, showUncharted, seen);
@@ -137,6 +138,11 @@ export function drawChart(ctx: Ctx, w: number, h: number, cx: number, cy: number
   if (opt.labels) drawn.add('you');
 }
 
+/** Is world cell (i, j) closed water all over (its corners and centre)? The chart skips such cells altogether. */
+function cellClosed(i: number, j: number): boolean {
+  const x0 = i * CELL, y0 = j * CELL, x1 = x0 + CELL, y1 = y0 + CELL;
+  return lockedAt(x0, y0) && lockedAt(x1, y0) && lockedAt(x0, y1) && lockedAt(x1, y1) && lockedAt(x0 + CELL / 2, y0 + CELL / 2);
+}
 /** The objective: a gold ring and pennant on the spot, or a gold arrow on the rim (circle or box) pointing at it. */
 function drawTarget(ctx: Ctx, w: number, h: number, [x, y]: [number, number], u: number, round: boolean): void {
   const cx = w / 2, cy = h / 2, dx = x - cx, dy = y - cy, pad = 7 * u;
@@ -318,7 +324,7 @@ function drawGrid(ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp:
 
 function drawSchools(ctx: Ctx, cx: number, cy: number, rad: number, S: Project, u: number, son: number, seen: Seen): void {
   for (const s of schoolsNear(cx, cy, rad)) {
-    if (!isSeen(s.x, s.y)) continue;
+    if (!isSeen(s.x, s.y) || lockedAt(s.x, s.y)) continue;
     // scattered and fished-out schools stay on the sonar, faded, so they don't blink out of sight
     if (!schoolShown(s) || s.boss) continue;
     const [x, y] = S(s.x, s.y), colour = son >= 2 ? SPECIES[s.sp].c[1] : '#b4d0d8';
@@ -439,7 +445,7 @@ function drawIslandNames(ctx: Ctx, cx: number, cy: number, rad: number, S: Proje
   ctx.textAlign = 'center';
   for (const c of near) {
     const row = ISLANDS.get(c.key), [x, y] = S(c.x, c.y);
-    if (!row?.mine && !isSeen(c.x, c.y)) continue;      // only your own island shows through unseen sea
+    if (!row?.mine && (!isSeen(c.x, c.y) || lockedAt(c.x, c.y))) continue;   // only your own island shows through unseen or closed sea
     if (!row) {                                          // for sale: a faint dashed ring on the full chart
       if (unclaimed) { seen('island', x, y); ctx.setLineDash([3 * u, 3 * u]); ctx.lineWidth = 1.2 * u; ctx.strokeStyle = 'rgba(58,42,28,0.45)'; ctx.beginPath(); ctx.arc(x, y, 5 * u, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
       continue;
