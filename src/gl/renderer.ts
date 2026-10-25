@@ -2,6 +2,7 @@
 // life are lit voxel meshes; shadows go along the sun into a world-aligned buffer, wakes into a foam buffer the water
 // reads; then HDR post (bloom, tilt-shift, grading, vignette, grain, rain).
 import { W, H, clamp, lerp, frac, smooth01 } from '../config';
+import { SAILOR_FX } from '../game/sailing';
 import { ONLINE, type Sailor } from '../online';
 import { SET, type Quality, type PixelStyle } from '../prefs';
 import { wantTiles } from '../tilepool';
@@ -1031,8 +1032,17 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
   for (let i = 0; i < fleet.length; i++) {
     const sh = fleet[i];
     if (!isBoatId(sh.id) || !near(sh, cx, cy, mx + 30, my + 30)) continue;
-    const ph = i * 1.7 + (sh.x + sh.y) * 0.002, sw = 1 + WX.wind * 1.6;
-    inst(MS.boatMesh(sh.id, eqFor(sh.paint, sh.name)), sh.x, sh.y, sh.a, 1, Math.sin(G.t * 1.4 + ph) * (0.2 + WX.wind * 0.4) - 0.4, Math.sin(G.t * 1.0 + ph) * 0.02 * sw, Math.sin(G.t * 1.2 + ph + 1) * 0.03 * sw);
+    // bobbing and slapping through the chop like yours, heeled into turns, rowing if it's a rowboat (game/sailing.ts)
+    const ph = i * 1.7 + (sh.x + sh.y) * 0.002, sw = 1 + WX.wind * 1.6, fx = SAILOR_FX.get(sh.uid), chop = Math.min(1, Math.hypot(sh.vx, sh.vy) / 50);
+    const bz = Math.sin(G.t * 1.6 + ph) * (0.2 + WX.wind * 0.45) + Math.sin(G.t * 6.1 + ph) * chop * 0.2 - 0.4;
+    const pitch = Math.sin(G.t * 1.1 + ph) * 0.025 * sw + Math.sin(G.t * 4.7 + ph) * chop * 0.012, roll = Math.sin(G.t * 1.3 + ph + 1) * 0.035 * sw + (fx?.heel ?? 0);
+    const eq = eqFor(sh.paint, sh.name);
+    inst(MS.boatMesh(sh.id, eq), sh.x, sh.y, sh.a, 1, bz, pitch, roll);
+    if (fx && hasOars(sh.id)) {
+      b3x = sh.x; b3y = sh.y; b3c = Math.cos(sh.a); b3s = Math.sin(sh.a); b3z = bz;
+      const moving = Math.hypot(sh.vx, sh.vy) > 3, pose = moving ? strokePose(fx.phase) : SHIPPED, g = oarsFor(pose, eq.prop, pose, lookCoat(eq.look));
+      for (const l of g.lines) MS.dynBox(W3(l.a, W3a), W3(l.b, W3b), l.wide ? 0.95 : 0.6, l.col);
+    }
   }
   for (const p of LIFE.pods) for (const m of p.m) {          // each dolphin leaps in turn, then runs just under
     const ph = frac(p.t * 0.9 + m.ph);
@@ -1288,10 +1298,11 @@ function washAt(u: number, v: number, size: number, alpha: number, ang: number, 
 function hullWash(x: number, y: number, a: number, L: number, B: number, sp: number, seed: number, amt = 1, vee = false): void {
   const c = Math.cos(a), s = Math.sin(a), t = G.t + seed;
   wx = x; wy = y; wc = c; ws = s;
-  const idle = clamp(1 - sp / 10, 0, 1) * amt;
-  if (idle > 0.01) for (let i = 0; i < 3; i++) {
-    const ph = frac(t * 0.28 + i / 3);
-    foam(x, y, L * (1.3 + ph * 1.2), idle * 0.9 * Math.sin(Math.PI * Math.sqrt(ph)) * (1 - ph * 0.5), 1, a, Math.min(1, B / L * (1.5 + ph * 1.2)), 0.45);
+  // lying still: a faint ring or two spreading from the hull (it follows the boat, so nothing is left on the water)
+  const idle = clamp(1 - sp / 5, 0, 1) * amt;
+  if (idle > 0.01) for (let i = 0; i < 2; i++) {
+    const ph = frac(t * 0.22 + i / 2);
+    foam(x, y, L * (1.2 + ph * 1.1), idle * 0.45 * Math.sin(Math.PI * Math.sqrt(ph)) * (1 - ph * 0.6), 1, a, Math.min(1, B / L * (1.5 + ph * 1.2)), 0.45);
   }
   const k = clamp(sp / 40, 0, 1) * amt;
   if (sp < 2 || k < 0.01) return;
@@ -1302,8 +1313,7 @@ function hullWash(x: number, y: number, a: number, L: number, B: number, sp: num
     if (vee) for (let i = 1; i <= 5; i++) washAt(-hl - i * L * 0.42, sg * (hb + i * L * 0.2) + Math.sin(t * 2 + i) * 0.6, 3.2 + i * 0.5, 0.9 * k * (1 - i / 6), a + sg * 0.6, 0.45);
   }
   washAt(hl + 0.5, 0, B * 1.1 * fl, 0.9 * k, a + Math.PI / 2, 0.55);                                      // cap of foam at the stem
-  washAt(-hl - hb * 0.6, 0, B * 1.6 * (1 + Math.sin(t * 7) * 0.1), 1.0 * k, a, 0.75);                    // stern churn
-  for (let i = 1; i <= 3; i++) washAt(-hl - hb - i * L * 0.4, Math.sin(t * 3 + i * 1.7) * hb * 0.3, B * (1.4 + i * 0.3), 0.85 * k / i, a, 0.6);
+  washAt(-hl - hb * 0.6, 0, B * 1.4 * (1 + Math.sin(t * 7) * 0.1), 0.9 * k, a, 0.75);                    // stern churn (the trail behind is real wake)
 }
 function foamPoints(bs: BoatPose): number {
   fN = 0;
@@ -1319,7 +1329,7 @@ function foamPoints(bs: BoatPose): number {
     const sh = fleet[i];
     if (!near(sh, cx, cy, mx, my)) continue;
     const d = shipDef(sh.id);
-    hullWash(sh.x, sh.y, sh.a, d.L, d.B, Math.hypot(sh.vx, sh.vy), i * 2.3, 1, true);
+    hullWash(sh.x, sh.y, sh.a, d.L, d.B, Math.hypot(sh.vx, sh.vy), i * 2.3);   // the trail behind is real wake (game/sailing.ts)
   }
   for (const w of LIFE.whales) {                          // a surfacing whale pushes up a slick of ripples and foam
     const s = w.size * WHALE_K;

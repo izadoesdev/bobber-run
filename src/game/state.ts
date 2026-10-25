@@ -20,7 +20,7 @@ export const G: GameState = {
   coinsShown: 0, sat: {}, dry: 0, fish: null, frenzy: null, nextFrenzy: 50, throttle: 0,
   lairTold: false, sunkT: 0, sunkMsg: '',
   // timers
-  crashCd: 0, spookCd: 0, petCd: 0, petT: 0, wakeAcc: 0, idleRing: 0, smokeT: 0, bilgeT: 0, saveT: 0, netT: 0, potT: 0,
+  crashCd: 0, spookCd: 0, petCd: 0, petT: 0, wakeAcc: 0, smokeT: 0, bilgeT: 0, saveT: 0, netT: 0, potT: 0,
   // feedback
   toasts: [], captions: [], floaters: [], parts: [], card: null, hookT: -1e9, catchAnim: null, bought: null, confirm: null, myEmote: null,
   // camera

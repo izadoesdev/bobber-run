@@ -3,6 +3,8 @@
 export interface Sailor {
   uid: string; id: string; name: string; paint: string;
   x: number; y: number; a: number; vx: number; vy: number;
+  /** turn rate (radians a second): the boat heels into turns */
+  w: number;
   online: true; emote: number | null; emoteAt: number;
 }
 /** A chat line as everyone sees it (already filtered by the relay). `id` is the sailor's uid, or 'me'. */

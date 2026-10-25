@@ -4,10 +4,11 @@ import { W, H, smooth01 } from '../config';
 import { realmDockAt, landAtRealm } from '../islands';
 import { hAt, homePort, poisNear, schoolsNear, cratesNear, tickHotspots } from '../world';
 import { WX, updateWeather } from '../weather';
-import { SPECIES, SP, SUPPLIES } from '../econ';
+import { SPECIES, SP, SUPPLIES, BOATS } from '../econ';
+import { ONLINE } from '../online';
 import { sfx, soundscape, music } from '../audio';
 import { SET } from '../prefs';
-import { FUNNEL } from '../models';
+import { FUNNEL, hasOars } from '../models';
 import type { BaitChoice, Crate, Fish, Helper, Poi, School, TreasureMap, WeatherState, Wreck } from '../types';
 import { G, hit, nearest } from './state';
 import { boatDef, boatSpeed, cap, catchNeed, dayNum, fishValue, hpMax, isNight, logged, netLvl, potsLvl, sailEfficiency, toWorld, windAngle } from './rules';
@@ -144,6 +145,7 @@ export function update(dt: number): void {
   tickSound(dt);
   swimSchools(dt);
   if (G.mode !== 'title') updateFleet(dt);
+  sailorEffects(dt);
   if (G.mode !== 'play') { G.prompt = null; return; }
   G.clock += dt;
   tickHotspots(G.clock);                         // fish hotspots surface, dive and move with the clock
@@ -287,10 +289,43 @@ function boatEffects(dt: number, speed: number): void {
       size: 2.2 + Math.random(), dark: bd.id === 'drifter' ? 0.55 : 0.15, life: 2.6 + Math.random() * 1.2,
     });
   }
-  if ((G.idleRing -= dt) <= 0) {
-    G.idleRing = 1.8 + Math.random();
-    if (speed < 4) spawn({ kind: 'ring', x: b.x, y: b.y, life: 1.6, r0: bd.L - 1, grow: 5 });
+}
+
+// ---------- other sailors' boats ----------
+// What makes their boats look sailed rather than slid: the same wake as yours (bow waves peeling off, churn behind),
+// funnel smoke, a lean into turns and, in a rowboat, the oars' stroke, all from their
+// smoothed motion (net.ts). Per sailor, read by the renderer.
+export interface SailorFx { acc: number; smoke: number; heel: number; phase: number }
+export const SAILOR_FX = new Map<string, SailorFx>();
+function sailorEffects(dt: number): void {
+  const cx = G.cam.x + W / 2, cy = G.cam.y + H / 2;
+  for (const sh of ONLINE.sailors) {
+    let f = SAILOR_FX.get(sh.uid);
+    if (!f) SAILOR_FX.set(sh.uid, f = { acc: 0, smoke: 0, heel: 0, phase: Math.random() });
+    const bd = BOATS.find(b => b.id === sh.id) ?? BOATS[0], engine = bd.prop === 'ENGINE', c = Math.cos(sh.a), sn = Math.sin(sh.a);
+    const speed = Math.hypot(sh.vx, sh.vy), fwd = sh.vx * c + sh.vy * sn;
+    f.heel += (Math.max(-0.1, Math.min(0.1, sh.w * fwd * 0.004)) - f.heel) * (1 - Math.exp(-3 * dt));
+    if (hasOars(bd.id)) f.phase += dt * 0.75 * Math.min(1, speed / 18);   // a stroke a little over a second at a row
+    if (Math.abs(sh.x - cx) > W || Math.abs(sh.y - cy) > H) continue;     // no wake to draw off screen
+    const at = (u: number, v: number): [number, number] => [sh.x + u * c - v * sn, sh.y + u * sn + v * c];
+    f.acc += speed * dt * (engine ? 1.1 : 0.6);
+    while (f.acc >= 1) {
+      f.acc -= 1;
+      for (const side of [-1, 1]) {
+        const [x, y] = at(bd.L * 0.75, side * bd.B * 0.8);
+        spawn({ kind: 'dot', x, y, vx: -sn * side * 7 - c * 3, vy: c * side * 7 - sn * 3, life: 1.6 + Math.random() * 0.6 });
+      }
+      const [x, y] = at(-bd.L - 1, jitter(bd.B * 0.7));
+      spawn({ kind: 'dot', x, y, vx: 0, vy: 0, life: engine ? 2.2 : 1.4, foam: engine });
+    }
+    const fn = FUNNEL[bd.id];
+    if (fn && (f.smoke -= dt) <= 0) {
+      f.smoke = speed > 20 ? 0.09 : 0.28;
+      const [x, y] = at(fn[0], fn[1]);
+      spawn({ kind: 'smoke', x, y, z: fn[2] + 1, vx: sh.vx * 0.3 + jitter(3), vy: sh.vy * 0.3 + jitter(3), vz: 9 + Math.random() * 5, size: 2.2 + Math.random(), dark: bd.id === 'drifter' ? 0.55 : 0.15, life: 2.6 + Math.random() * 1.2 });
+    }
   }
+  if (SAILOR_FX.size > ONLINE.sailors.length) for (const id of SAILOR_FX.keys()) if (!ONLINE.sailors.some(sh => sh.uid === id)) SAILOR_FX.delete(id);
 }
 
 export function updateCamera(dt: number, bx: number, by: number): void {

@@ -451,7 +451,7 @@ interface Voyage {
 /** Countdowns and accumulators for periodic effects. */
 interface Timers {
   crashCd: number; spookCd: number; petCd: number; petT: number;
-  wakeAcc: number; idleRing: number; smokeT: number; bilgeT: number;
+  wakeAcc: number; smokeT: number; bilgeT: number;
   saveT: number; netT: number; potT: number;
 }
 

@@ -9,7 +9,7 @@ import { ONLINE, type Sailor } from './online';
 import type { ToastKind } from './types';
 import { track } from './analytics';
 import { celebrate } from './game/feedback';
-import { relayKeep, relayLive, relayBoats, relaySend, relayEmote, relayRenamed, type RelayBoat } from './relay';
+import { relayKeep, relayLive, relayBoats, relaySend, relayEmote, relayRenamed, relayClock, type RelayBoat } from './relay';
 
 import { FORCED_OFFLINE } from './offline';
 export { FORCED_OFFLINE };
@@ -313,7 +313,7 @@ const cellsAround = (sea: number, x: number, y: number) => {
   return out;
 };
 type Raw = RelayBoat;   // the relay and the Convex fallback (sea.near) send boats in the same shape
-let lastSent: { x: number; y: number; a: number } | null = null, sendT = 0, inFlight = false, raw: Raw[] = [];
+let lastSent: { x: number; y: number; a: number } | null = null, sendT = 0, sentAt = 0, inFlight = false, raw: Raw[] = [];
 /**
  * Other boats are drawn a little in the past, between two real reports, so they move smoothly however unevenly
  * reports arrive. Each report carries the boat's velocity and turn rate, so the path between reports curves the way
@@ -321,26 +321,50 @@ let lastSent: { x: number; y: number; a: number } | null = null, sendT = 0, inFl
  */
 type Snap = { at: number; x: number; y: number; a: number; vx: number; vy: number; w: number };
 const snaps = new Map<string, Snap[]>();
-/**
- * The server clock minus ours, from the freshest report seen (a report can't have been written in our future). It
- * eases down slowly, so one odd report or a jump of our clock doesn't leave it high, and starts over when the source
- * (relay or Convex, two different clocks) changes.
- */
-let clockAhead = -Infinity, clockFrom: boolean | null = null;
-const CLOCK_EASE = 0.05;   // seconds per second
-// Convex reports about twice a second, the relay about ten times; draw far enough behind to always have the next one
-const SEND_MOVING_S = 0.5, SEND_STILL_S = 10, RELAY_SEND_S = 0.1, RELAY_STILL_S = 1, COAST_MS = 1500, SNAP_DIST = 200;
-const behindMs = () => relayLive() ? 220 : 600;
+// ---------- timing ----------
+// Each report goes on the server's clock at the moment its sender took it: the sender's own stamp (ts) plus that
+// sender's clock offset, the least (server heard - sender took) seen from it lately, i.e. its least delayed delivery,
+// so network jitter doesn't bunch reports up or spread them out. Boats are drawn on a playback clock that runs a little
+// behind the server's (ours less the least (we heard - server sent) seen lately): far enough behind that the next
+// report has nearly always arrived, judged from how late reports have been arriving, and it speeds up or slows down by
+// a few percent to keep there, so the timeline never jumps. Without the relay, Convex's stamps stand in for both.
+const SEND_MOVING_S = 0.5, SEND_STILL_S = 10, RELAY_SEND_MS = 100, RELAY_STILL_S = 1, COAST_MS = 1500, SNAP_DIST = 200;
+const WINDOW_MS = 5000;
+/** The least of the values seen in the last WINDOW_MS (a sliding minimum). */
+class LeastLately {
+  private v: [number, number][] = [];
+  add(at: number, x: number): void { while (this.v.length && this.v[this.v.length - 1][1] >= x) this.v.pop(); this.v.push([at, x]); while (this.v[0][0] < at - WINDOW_MS) this.v.shift(); }
+  get(): number | null { return this.v.length ? this.v[0][1] : null; }
+}
+const serverLag = new LeastLately();                       // our clock minus the server's, least seen lately
+const senderOff = new Map<string, LeastLately>();          // per boat: server clock minus its sender's, least seen lately
+let ageMax: [number, number][] = [];                       // how old each newest report was on arrival (server ms), lately
+let playT = -Infinity, lastHeard = 0, clockFrom: boolean | null = null;
+/** Server time a report was taken at. */
+function stamp(r: Raw, now: number): number {
+  if (r.ts === undefined) return r.at;
+  let o = senderOff.get(r.id);
+  if (!o) senderOff.set(r.id, o = new LeastLately());
+  o.add(now, r.at - r.ts);
+  return r.ts + o.get()!;
+}
+/** How far behind the server clock boats are drawn: the oldest a newest report has lately been on arrival, plus room. */
+function behindMs(now: number): number {
+  ageMax = ageMax.filter(([t]) => t > now - WINDOW_MS);
+  const worst = ageMax.reduce((m, [, a]) => Math.max(m, a), 0);
+  return Math.min(700, Math.max(relayLive() ? 120 : 400, worst + 40));
+}
 const turn = (from: number, to: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 /** Where a boat was at server time t: a cubic curve through the reports either side, matching their velocities. */
-function sample(list: Snap[], t: number): { x: number; y: number; a: number; vx: number; vy: number } {
+function sample(list: Snap[], t: number): { x: number; y: number; a: number; vx: number; vy: number; w: number } {
   const last = list[list.length - 1];
   if (t >= last.at) {
     const e = Math.min(t - last.at, COAST_MS) / 1000;
-    return { x: last.x + last.vx * e, y: last.y + last.vy * e, a: last.a + last.w * e, vx: e < COAST_MS / 1000 ? last.vx : 0, vy: e < COAST_MS / 1000 ? last.vy : 0 };
+    const going = e < COAST_MS / 1000;
+    return { x: last.x + last.vx * e, y: last.y + last.vy * e, a: last.a + last.w * e, vx: going ? last.vx : 0, vy: going ? last.vy : 0, w: going ? last.w : 0 };
   }
   const first = list[0];
-  if (list.length < 2 || t <= first.at) return { x: first.x, y: first.y, a: first.a, vx: 0, vy: 0 };
+  if (list.length < 2 || t <= first.at) return { x: first.x, y: first.y, a: first.a, vx: 0, vy: 0, w: 0 };
   let i = list.length - 2;
   while (i > 0 && list[i].at > t) i--;
   const p = list[i], q = list[i + 1];
@@ -348,7 +372,7 @@ function sample(list: Snap[], t: number): { x: number; y: number; a: number; vx:
   const h = [2 * u3 - 3 * u2 + 1, u3 - 2 * u2 + u, -2 * u3 + 3 * u2, u3 - u2];          // Hermite basis
   const d = [(6 * u2 - 6 * u) / span, 3 * u2 - 4 * u + 1, (6 * u - 6 * u2) / span, 3 * u2 - 2 * u];   // its derivative
   const at = (k: 'x' | 'y', vk: 'vx' | 'vy', b: number[]) => b[0] * p[k] + b[1] * span * p[vk] + b[2] * q[k] + b[3] * span * q[vk];
-  return { x: at('x', 'vx', h), y: at('y', 'vy', h), a: p.a + turn(p.a, q.a) * u, vx: at('x', 'vx', d) / span, vy: at('y', 'vy', d) / span };
+  return { x: at('x', 'vx', h), y: at('y', 'vy', h), a: p.a + turn(p.a, q.a) * u, vx: at('x', 'vx', d) / span, vy: at('y', 'vy', d) / span, w: p.w + (q.w - p.w) * u };
 }
 export function netTick(dt: number) {
   relayKeep(NET.authed ? authToken : null, NET.authed ? NET.profile?.userId ?? null : null);
@@ -358,38 +382,43 @@ export function netTick(dt: number) {
   }
   if (cloudAhead && G.mode === 'title') { cloudAhead = false; void syncSave(); }
   const b = G.boat, state = { x: b.x, y: b.y, a: b.a, vx: b.vx, vy: b.vy, w: b.w, boat: G.boatId, paint: G.paint };
-  if (clockFrom !== relayLive()) { clockFrom = relayLive(); clockAhead = -Infinity; snaps.clear(); }
-  clockAhead -= CLOCK_EASE * dt * 1000;
+  if (clockFrom !== relayLive()) { clockFrom = relayLive(); snaps.clear(); senderOff.clear(); ageMax = []; playT = -Infinity; }
   sendT += dt;
-  const moved = !lastSent || Math.hypot(b.x - lastSent.x, b.y - lastSent.y) > 0.5 || Math.abs(b.a - lastSent.a) > 0.03;
-  if (relayLive()) {                                           // realtime: ten reports a second while moving, one when still
+  const now = Date.now(), moved = !lastSent || Math.hypot(b.x - lastSent.x, b.y - lastSent.y) > 0.5 || Math.abs(b.a - lastSent.a) > 0.03;
+  if (relayLive()) {                                           // realtime: every 100 ms of real time while moving, once a second still
     unwatch('sailors');
     raw = relayBoats();
-    if (G.mode === 'play' && ((moved && sendT > RELAY_SEND_S) || sendT > RELAY_STILL_S)) { sendT = 0; lastSent = state; relaySend(state); }
+    if (relayClock.heard !== lastHeard) { lastHeard = relayClock.heard; serverLag.add(now, relayClock.heard - relayClock.sent); }
+    if (G.mode === 'play' && ((moved && now - sentAt >= RELAY_SEND_MS - 4) || sendT > RELAY_STILL_S)) { sendT = 0; sentAt = now; lastSent = state; relaySend(state); }
   } else {                                                     // Convex: twice a second while moving, every 10 s when still
     watch<Raw[]>('sailors', api.sea.near, { cells: cellsAround(NET.profile.sea, b.x, b.y) }, list => { raw = list; });
+    for (const r of raw) serverLag.add(now, now - r.at);       // no server clock of its own: its stamps bound it
     if (G.mode === 'play' && !inFlight && ((moved && sendT > SEND_MOVING_S) || sendT > SEND_STILL_S)) {
       sendT = 0; inFlight = true; lastSent = state;
       client!.mutation(api.sea.move, state).catch(() => { }).finally(() => { inFlight = false; });
     }
   }
-  const now = Date.now(), prev = new Map(ONLINE.sailors.map(s => [s.uid, s]));
+  const lag = serverLag.get() ?? 0, serverNow = now - lag, prev = new Map(ONLINE.sailors.map(s => [s.uid, s]));
+  let newest = -Infinity;
   for (const r of raw) {
-    clockAhead = Math.max(clockAhead, r.at - now);
-    const list = snaps.get(r.id) ?? [];
-    if (!list.length || r.at > list[list.length - 1].at) list.push({ at: r.at, x: r.x, y: r.y, a: r.a, vx: r.vx, vy: r.vy, w: r.w });
-    while (list.length > 2 && list[1].at < now + clockAhead - behindMs() - 2000) list.shift();
+    const at = stamp(r, now), list = snaps.get(r.id) ?? [];
+    if (!list.length || at > list[list.length - 1].at) { list.push({ at, x: r.x, y: r.y, a: r.a, vx: r.vx, vy: r.vy, w: r.w }); newest = Math.max(newest, at); }
+    while (list.length > 2 && list[1].at < playT - 2000) list.shift();
     snaps.set(r.id, list);
   }
-  const t = now + clockAhead - behindMs(), k = 1 - Math.exp(-20 * dt);
-  const live = raw.filter(r => now + clockAhead - r.at < QUIET_MS).sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y)).slice(0, MAX_SHOWN);
+  if (newest > -Infinity) ageMax.push([now, serverNow - newest]);
+  // the playback clock: a few percent fast or slow to stay `behind` the server; a big gap (a stall, a new source) is a jump
+  const want = serverNow - behindMs(now), off = want - playT;
+  playT = Math.abs(off) > 1000 ? want : playT + dt * 1000 * (1 + Math.max(-0.05, Math.min(0.05, off / 1000)));
+  const k = 1 - Math.exp(-30 * dt);
+  const live = raw.filter(r => serverNow - r.at < QUIET_MS).sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y)).slice(0, MAX_SHOWN);
   ONLINE.sailors = live.map(r => {
-    const at = sample(snaps.get(r.id)!, t);
-    const s: Sailor = prev.get(r.id) ?? { uid: r.id, id: r.boat, name: r.name, paint: r.paint, x: at.x, y: at.y, a: at.a, vx: 0, vy: 0, online: true, emote: null, emoteAt: 0 };
+    const at = sample(snaps.get(r.id)!, playT);
+    const s: Sailor = prev.get(r.id) ?? { uid: r.id, id: r.boat, name: r.name, paint: r.paint, x: at.x, y: at.y, a: at.a, vx: 0, vy: 0, w: 0, online: true, emote: null, emoteAt: 0 };
     // follow the sampled path closely; a big gap (a ferry trip, a respawn) is a real jump, so take it at once
     if (Math.hypot(at.x - s.x, at.y - s.y) > SNAP_DIST) { s.x = at.x; s.y = at.y; s.a = at.a; }
     else { s.x += (at.x - s.x) * k; s.y += (at.y - s.y) * k; s.a += turn(s.a, at.a) * k; }
-    s.vx = at.vx; s.vy = at.vy;
+    s.vx = at.vx; s.vy = at.vy; s.w = at.w;
     Object.assign(s, { id: r.boat, paint: r.paint, name: r.name, emote: r.emote, emoteAt: r.emoteAt });   // id = boat model, as the renderer expects
     return s;
   });

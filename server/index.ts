@@ -21,7 +21,9 @@ const STALE_MS = 25_000;      // a boat that hasn't reported for this long is dr
 const MSGS_PER_S = 30, MAX_PER_USER = 3, MAX_MSG = 4096;   // a sign-in token is about 1-2 KB
 const CHAT_MAX = 120, CHAT_GAP_MS = 1200, CHAT_BURST = 6, CHAT_WINDOW_MS = 15_000;   // chat: a line every 1.2 s, 6 per 15 s
 
-type Boat = { x: number; y: number; a: number; vx: number; vy: number; w: number; boat: string; paint: string; at: number };
+// at: when the relay heard it (its clock); ts: when the sender took it (the sender's clock, ms), so others can space
+// reports by when they were taken rather than by how the network delivered them
+type Boat = { x: number; y: number; a: number; vx: number; vy: number; w: number; boat: string; paint: string; at: number; ts?: number };
 interface Peer { id: string; userId: string; name: string; sea: number; admin: boolean; token: string; boat: Boat | null; emote: number | null; emoteAt: number; tokens: number; refill: number; chats: number[]; renamedAt: number }
 type Sock = ServerWebSocket<Peer | null>;
 const seas = new Map<number, Set<Sock>>();
@@ -89,7 +91,7 @@ async function onMessage(ws: Sock, text: string): Promise<void> {
   if (!allowed(p)) return;
   if (m.t === 's') {
     if (!num(m.x, 1e6) || !num(m.y, 1e6) || !num(m.a, 1e4) || !num(m.vx, 400) || !num(m.vy, 400) || !num(m.w, 20) || !str(m.boat) || !str(m.paint)) return;
-    p.boat = { x: m.x as number, y: m.y as number, a: m.a as number, vx: m.vx as number, vy: m.vy as number, w: m.w as number, boat: m.boat as string, paint: m.paint as string, at: Date.now() };
+    p.boat = { x: m.x as number, y: m.y as number, a: m.a as number, vx: m.vx as number, vy: m.vy as number, w: m.w as number, boat: m.boat as string, paint: m.paint as string, at: Date.now(), ...(num(m.ts, 1e13) ? { ts: m.ts as number } : {}) };
   } else if (m.t === 'emote') {
     if (!(Number.isInteger(m.i) && (m.i as number) >= 0 && (m.i as number) < 16) || Date.now() - p.emoteAt < 1500) return;
     p.emote = m.i as number; p.emoteAt = Date.now();
