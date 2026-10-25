@@ -27,7 +27,7 @@ export function gable(V: Vox, u0: number, u1: number, v0: number, v1: number, z:
   }
 }
 /** The same with its ridge along v. */
-export function gableV(V: Vox, u0: number, u1: number, v0: number, v1: number, z: number, a: number, b: number, ridge = a): void {
+function gableV(V: Vox, u0: number, u1: number, v0: number, v1: number, z: number, a: number, b: number, ridge = a): void {
   for (let k = 0; u0 + k <= u1 - k; k++) {
     const lo = u0 + k, hi = u1 - k, m = k % 2 ? b : a;
     V.box(lo, hi, v0, v1, z + k, z + k, lo >= hi - 1 ? ridge : m);

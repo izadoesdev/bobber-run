@@ -5,7 +5,7 @@ import { runningSpecies, weekOf, weekBounds } from '../convex/rotation';
 export const RUNNING_PRICE = 1.25;
 let week = -1, running = new Set<string>();
 /** This week's running species ids (recomputed when the week turns). */
-export function runningNow(): Set<string> {
+function runningNow(): Set<string> {
   const w = weekOf(Date.now());
   if (w !== week) { week = w; running = new Set(runningSpecies(w)); }
   return running;

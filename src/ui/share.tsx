@@ -13,7 +13,7 @@ import { Fish } from './parts';
 
 type Why = 'legend' | 'variant' | 'stars' | 'first' | 'record';
 /** Why a catch is worth sharing (the best reason), or null if it's an everyday fish. */
-export function shareWhy(c: CatchCard): Why | null {
+function shareWhy(c: CatchCard): Why | null {
   const sp = SPECIES[c.fish.sp];
   return sp.legend ? 'legend' : c.fish.variant ? 'variant' : (c.stars ?? 0) >= 2 ? 'stars' : c.first ? 'first' : c.record ? 'record' : null;
 }

@@ -38,7 +38,7 @@ export interface Look {
 function hashStr(s: string): number { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return h >>> 0; }
 
 /** The look for someone, from their name and role: the role sets age and dress, the seed the rest. */
-export function lookFor(name: string, role: string, seed = name + '|' + role): Look {
+function lookFor(name: string, role: string, seed = name + '|' + role): Look {
   const r = Alea(hashStr(seed)), pick = <T,>(a: readonly T[]): T => a[Math.floor(r() * a.length)], chance = (p: number) => r() < p;
   const t = (name + ' ' + role).toLowerCase(), has = (re: RegExp) => re.test(t);
   const young = has(/\b(kid|boy|girl|nephew|niece|grandson|granddaughter|apprentice|young|lamp boy)\b/) || has(/great-grand/);
@@ -214,7 +214,7 @@ function frontURL(V: Vox): string {
 
 const urls = new Map<string, string>();
 /** The three frames of a portrait, as data URLs (made once). */
-export function faceFrames(L: Look, key: string): [string, string, string] {
+function faceFrames(L: Look, key: string): [string, string, string] {
   return [0, 1, 2].map(f => { const k = key + '#' + f; let u = urls.get(k); if (!u) urls.set(k, u = frontURL(bust(L, f as 0 | 1 | 2))); return u; }) as [string, string, string];
 }
 

@@ -294,8 +294,6 @@ export async function uploadIslandLogo(key: string, png: Blob): Promise<Result> 
     return client!.mutation(api.islands.setLogo, { key, storageId });
   });
 }
-/** Test hook: ask the server who we are right now (no tokens exposed). */
-export const whoami = () => client?.query(api.profiles.me, {}) ?? null;
 
 // ---------- other sailors near you ----------
 const CELL = 400, MAX_SHOWN = 12, QUIET_MS = 25_000;

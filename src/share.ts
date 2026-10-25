@@ -16,7 +16,7 @@ export interface SharedCatch { species: number; name: string; variant: string; k
 
 /** A visit link, /?sail=<captain name>: sail to that sailor (it's read and tidied away with the share keys). */
 const visitName = (): string | null => { if (typeof location === 'undefined') return null; const n = cleanName(new URLSearchParams(location.search).get('sail') ?? ''); return n.ok ? n.name : null; };
-export const VISIT: string | null = visitName();
+const VISIT: string | null = visitName();
 function read(): SharedCatch | null {
   if (typeof location === 'undefined') return null;
   const q = new URLSearchParams(location.search), id = q.get('catch');

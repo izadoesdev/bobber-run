@@ -145,20 +145,6 @@ export function regionBorders(x0: number, y0: number, x1: number, y1: number, st
 /** The named region at (x, y): for chart names, the entry banner, and everything that varies by region. */
 export function regionAt(x: number, y: number): Region { const p = locate(x, y); return region(p.band, p.k); }
 
-/**
- * The volcanic weight of the biome field before regions (the slow noise blobs), kept only so world.ts can keep its
- * volcano relief, and with it heightAt, exactly as it was. Nothing else should read it.
- */
-export function legacyVolcanic(x: number, y: number): number {
-  const d = Math.hypot(x - HOME.x, y - HOME.y), away = smooth01((d - 650) / 550), F = 1 / 1500;
-  if (away <= 0) return 0;
-  const wm = warmth(y), cd = coldness(y), lead = (m: number, ...o: number[]): number => smooth01(m) * smooth01((m - Math.max(...o)) * 1.5 + 0.5);
-  const a = nBio(x * F, y * F), b = nBio(x * F + 57.3, y * F - 19.1), c = nBio(x * F * 1.1 - 91.4, y * F * 1.1 + 33.8), e = nBio(x * F * 1.3 + 140.2, y * F * 1.3 - 77.7);
-  const south = smooth01((y - 700) / 600) * (1 - smooth01((y - 3200) / 800));
-  const mr = (a - 0.28 + 0.3 * wm - 2 * cd) / 0.18, mk = (b - 0.28 + 0.2 * cd - 0.3 * wm) / 0.18 - cd, mv = (c - 0.36) / 0.18 - 2 * cd, mm = (e - 0.2) / 0.18 * south - 2 * (1 - south);
-  const reef = lead(mr, mk, mv, mm), kelp = lead(mk, mr, mv, mm), volcanic = lead(mv, mr, mk, mm), mangrove = lead(mm, mr, mk, mv);
-  return volcanic * away / Math.max(1, reef + kelp + volcanic + mangrove);
-}
 
 // Each island belongs to one region: around an island the field is read at its centre, so no island is half coral
 // and half ash. world.ts registers how to find that island (it imports this file, so this one can't import it).
@@ -194,10 +180,6 @@ export function biomeAt(x: number, y: number): BiomeId {
   return Math.hypot(x - HOME.x, y - HOME.y) < 1100 ? 'home' : 'open';
 }
 
-export const BIOME_NAME: Record<BiomeId, string> = {
-  home: 'Alderhaven waters', reef: 'Coral shallows', kelp: 'Kelp coast', volcanic: 'Ember isles', mangrove: 'Mangrove channels',
-  warm: 'Southern seas', cold: 'Ice floes', open: 'Open coast',
-};
 
 // ---------- island themes ----------
 // Every main island gets one theme, mostly its region's (see islandTheme), and a whole island (and the islets that
@@ -357,7 +339,7 @@ const NEXT_TO: [ThemeId, ThemeId][] = [
 ];
 const steps = new Map<string, ThemeId>();
 /** The theme one step from `a` toward `b` along NEXT_TO (b itself when they may touch, a when nothing links them). */
-export function stepToward(a: ThemeId, b: ThemeId): ThemeId {
+function stepToward(a: ThemeId, b: ThemeId): ThemeId {
   if (a === b) return a;
   const key = a + '>' + b, known = steps.get(key);
   if (known) return known;
@@ -394,7 +376,7 @@ export function islandTheme(cx: number, cy: number): ThemeId {
   return t;
 }
 /** A small per-island shade (0..1) that nudges its colours, so two islands of one theme still differ. */
-export const islandJitter = (cx: number, cy: number): number => hash01(Math.round(cx), Math.round(cy), 917);
+const islandJitter = (cx: number, cy: number): number => hash01(Math.round(cx), Math.round(cy), 917);
 
 /** A main island near a point: its centre and radius. */
 export interface IslandRef { x: number; y: number; R: number }

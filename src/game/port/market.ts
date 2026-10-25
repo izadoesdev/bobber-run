@@ -84,7 +84,7 @@ export function sell(p: Port): void {
 }
 
 /** Your own island's market pays a third over a fair price and doesn't tire of a species (islandRules: market). */
-export const REALM_PRICE = 1.3;
+const REALM_PRICE = 1.3;
 /** What selling at your island would pay, and how many fish (kept-back fish stay aboard, as at any port). */
 export function realmSaleValue(): { tot: number; n: number } {
   const keep = reserved().all, b = saleBonus(), mul = REALM_PRICE * (1 + b.cook) * (1 + b.crew) * (1 + b.lux);
