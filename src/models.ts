@@ -39,6 +39,9 @@ const seamOf = (r: readonly [string, string, string]): number => mat([shade(r[0]
 /** the rowboat's clinker seams: a shade darker than its paint, whatever the paint */
 const SEAM = seamOf(['#a9a291', '#d3cbb9', '#efe9dc']), PAINT_SEAM: Record<string, number> = Object.fromEntries(PAINTS.flatMap(p => p.ramp ? [[p.id, seamOf(p.ramp)]] : []));
 
+/** hair and eyes for the people aboard */
+const HAIR = mat(['#3a2414', '#5a3a20', '#7a5230']), EYE = mat(['#141a1e', '#1f2629', '#2c3438']);
+
 // ---------- rowboat ----------
 const HL = 14, HB = 6.2, HZ = 5;
 const hullLen = (z: number) => HL * (0.78 + 0.22 * Math.min(z, HZ) / HZ);
@@ -74,8 +77,12 @@ const BOAT = new Vox(-17, 17, -10, 10, 15);
     if (Math.abs(v) <= hullHW(u, 4) - 0.6 && !B.get(u, v, 4)) B.set(u, v, 4, M.seat);
   // the rower faces the bow (the way you travel) and pushes the oars from locks just in front of him
   for (const v of [-6, 6]) { B.set(4, v, 6, M.gun); B.set(4, v, 7, M.gun); }
-  B.box(0, 2, -2, 2, 5, 8, M.coat); for (const v of [-3, 3]) B.box(1, 1, v, v, 6, 8, M.coat);
-  B.box(0, 2, -1, 1, 9, 10, M.skin); B.box(0, 2, -1, 1, 11, 11, M.hat); B.set(1, 0, 12, M.hat); B.set(3, 0, 10, M.skin);
+  B.box(0, 2, -2, 2, 5, 8, M.coat); for (const v of [-3, 3]) { B.box(1, 1, v, v, 6, 8, M.coat); B.set(2, v, 6, M.skin); }   // sleeves, hands on the oars
+  B.box(0, 2, -2, 2, 8, 8, M.stripe);                                                                                       // a collar
+  B.box(0, 2, -1, 1, 9, 10, M.skin); B.box(0, 0, -1, 1, 9, 10, HAIR);
+  B.set(2, -1, 10, EYE); B.set(2, 1, 10, EYE); B.set(3, 0, 10, M.skin); B.box(2, 3, -1, 1, 9, 9, HAIR); B.set(3, 0, 9, M.skin);   // eyes, nose, beard
+  for (let u = -1; u <= 3; u++) for (let v = -2; v <= 2; v++) if (Math.abs(v) < 2 || (u >= 0 && u <= 2)) B.set(u, v, 11, M.hat);   // brim
+  B.box(0, 2, -1, 1, 12, 12, M.hat); B.set(1, 0, 13, M.hat); B.set(2, 0, 11, M.stripe);
   for (const v of [-2, -1, 1, 2]) { B.box(3, 5, v, v, 5, 5, M.pants); B.set(6, v, 3, M.boot); B.set(6, v, 4, M.pants); B.set(6, v, 5, M.pants); }
   B.finalize();
 })();
@@ -144,19 +151,36 @@ function buildHull(V: Vox, { HL, HB, HZ, paint, stripe = M.paint, gun = M.gun, d
     const zt = top(u); if (z > zt) continue;
     const h = hw(u, z); if (h < 0 || Math.abs(v) > h + 0.3 || u < tail) continue;
     const in1 = Math.abs(v) <= h - 1.1 && Math.abs(u) <= len(z) - 1.6 && u >= tail + 1.1, in2 = Math.abs(v) <= h - 2.1 && Math.abs(u) <= len(z) - 2.6 && u >= tail + 2.1;
-    if (in2 && z > deckZ) { if (u > deckFrom && z === zt) V.set(u, v, z, M.plank); continue; }
+    if (in2 && z > deckZ) { if (u > deckFrom && z === zt) V.set(u, v, z, (v + 99) % 3 ? M.plank : M.plank2); continue; }
     let m: number;
     if (z === zt) m = in1 ? gun : stripe;
-    else if (in2 && z === deckZ) m = floorMat;
+    else if (in2 && z === deckZ) m = (v + 99) % 3 === 0 && floorMat !== M.steel ? M.plank2 : floorMat;   // planks with dark seams
     else if (in1 && z >= 1) m = M.lining;
     else m = z <= 1 ? M.bottom : z === zt - 1 ? stripe : paint;
     V.set(u, v, z, m);
   }
   return { hw, top };
 }
+/** A red and white life ring on a wall facing +v or -v at (u, z). */
+function lifeRing(V: Vox, u: number, v: number, z: number): void {
+  for (let du = -1; du <= 1; du++) for (let dz = -1; dz <= 1; dz++) if (du || dz) V.set(u + du, v, z + dz, (du + dz + 4) % 2 ? M.white : M.redp);
+}
 // boats other than the rowboat are built the first time they're shown, not when the game loads
 function lazyVox(build: () => Vox): () => Vox { let v: Vox | null = null; return () => v ??= build(); }
-function sailor(V: Vox, u: number, z: number, coat: number = M.coat): void { V.box(u, u + 1, -1, 1, z, z + 3, coat); V.box(u, u + 1, -1, 1, z + 4, z + 5, M.skin); V.box(u, u + 1, -1, 1, z + 6, z + 6, M.hat); }
+/**
+ * A sailor standing on deck at layer z, facing the bow (+u): boots, trousers, a belted coat with sleeves and hands, a
+ * face with eyes, hair at the back and a red knitted cap with a white bobble, which is what you see of them from above
+ * and reads on any deck; nine voxels tall.
+ */
+function sailor(V: Vox, u: number, z: number, coat: number = M.coat): void {
+  for (const v of [-1, 1]) { V.set(u, v, z, M.boot); V.set(u + 1, v, z, M.boot); V.box(u, u + 1, v, v, z + 1, z + 2, M.pants); }
+  V.box(u, u + 1, -1, 1, z + 3, z + 4, coat); V.box(u, u + 1, -1, 1, z + 3, z + 3, M.ropeD);          // coat over a belt
+  for (const v of [-2, 2]) { V.box(u, u, v, v, z + 3, z + 4, coat); V.set(u + 1, v, z + 3, M.skin); }   // sleeves and hands
+  V.box(u, u + 1, -1, 1, z + 5, z + 6, M.skin);
+  V.box(u, u, -1, 1, z + 5, z + 6, HAIR);                                                              // the back of the head
+  V.set(u + 1, -1, z + 6, EYE); V.set(u + 1, 1, z + 6, EYE);
+  V.box(u, u + 1, -1, 1, z + 7, z + 7, M.redp); V.set(u, 0, z + 8, M.white);                          // the cap and its bobble
+}
 
 const SKIFF = lazyVox(() => {
   const V = new Vox(-20, 20, -12, 12, 31), { hw } = buildHull(V, { HL: 16.5, HB: 6.4, HZ: 5, paint: M.skiff, stripe: M.paint });
@@ -172,7 +196,7 @@ const SKIFF = lazyVox(() => {
 
 const LAUNCH = lazyVox(() => {
   const V = new Vox(-21, 21, -12, 12, 16); buildHull(V, { HL: 17.5, HB: 7, HZ: 6, paint: M.navy, stripe: M.redp, gun: M.gun, deckFrom: 6 });
-  V.box(-1, 5, -4, 4, 6, 9, M.white);
+  V.box(-1, 5, -4, 4, 6, 9, M.white); lifeRing(V, 1, 5, 7);
   V.box(5, 5, -3, 3, 8, 9, M.window); for (const v of [-4, 4]) V.box(0, 4, v, v, 8, 8, M.window);
   V.box(-2, 6, -5, 5, 10, 10, M.stripe);
   V.box(-11, -10, -4, 4, 4, 4, M.seat);
@@ -183,7 +207,7 @@ const LAUNCH = lazyVox(() => {
 
 const TRAWLER = lazyVox(() => {
   const V = new Vox(-27, 27, -13, 13, 30), { hw } = buildHull(V, { HL: 23, HB: 9, HZ: 8, paint: M.trawl, stripe: M.white, gun: M.redp, deckZ: 5, floorMat: M.plank });
-  V.box(-14, -5, -5, 5, 6, 13, M.white);
+  V.box(-14, -5, -5, 5, 6, 13, M.white); lifeRing(V, -11, 6, 9);
   V.box(-5, -5, -4, 4, 11, 12, M.window); for (const v of [-5, 5]) V.box(-13, -7, v, v, 11, 11, M.window);
   V.box(-15, -4, -6, 6, 14, 14, M.roof);
   V.box(-11, -11, 3, 3, 15, 19, M.iron); V.set(-11, 3, 20, M.iron);
@@ -351,6 +375,7 @@ function house(V: Vox, u0: number, u1: number, hv: number, z0: number, z1: numbe
   for (let u = u0; u <= u1; u++) for (const v of [-hv, hv]) V.set(u, v, zw, Y.tint);
   for (let v = -hv + 1; v < hv; v++) V.set(u1, v, zw, Y.tint);
   V.box(u0 - 1, u1 + 1, -hv - 1, hv + 1, z1 + 1, z1 + 1, roof);
+  if (z1 - z0 >= 3 && u1 - u0 >= 6) lifeRing(V, u0 + 2, hv + 1, z0 + 1);
 }
 /** Two hulls side by side, `off` either side of the centreline. */
 function twinHulls(V: Vox, spec: HullSpec, off: number): void {
