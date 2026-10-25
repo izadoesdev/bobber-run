@@ -1,16 +1,33 @@
 // Routes over water for the waypoint (dots on the sea, the line on the chart) and click-to-sail round islands: A* on
 // a coarse grid of the terrain, kept off the coast, pulled tight and rounded (planRoute). It samples heightAt directly,
 // so a long route never builds the height tiles for the sea it crosses.
-import { heightAt, poisNear } from '../world';
+import { TS, hAt, hasTile, heightAt, poisNear } from '../world';
 import { seaPropsNear } from '../seaprops';
 import { lockedAt } from './open';
 import type { Point } from '../types';
 
 const WATER = -0.07;                              // a little deeper than the beach, so routes keep off it
+const OFF = 1 << 15;
+const pack = (i: number, j: number): number => (i + OFF) * 65536 + (j + OFF);
 const DIAG = Math.SQRT2;
 
-/** Open water at (x, y), deep enough to keep off the beach. */
-const isWater = (x: number, y: number): boolean => heightAt(x, y) < WATER;
+/**
+ * Open water at (x, y), deep enough to keep off the beach. Remembered on a 4-unit grid across plans (a replan, or the
+ * autopilot's plan after the waypoint's, asks about the same coast again), and read from the height tiles where they're
+ * built: the terrain noise is most of what planning costs.
+ */
+const waterCache = new Map<number, boolean>();
+function isWater(x: number, y: number): boolean {
+  const k = pack(Math.round(x / 4), Math.round(y / 4));
+  let w = waterCache.get(k);
+  if (w === undefined) {
+    if (waterCache.size > 400_000) waterCache.clear();
+    const qx = Math.round(x / 4) * 4, qy = Math.round(y / 4) * 4;
+    w = (hasTile(Math.floor(qx / TS), Math.floor(qy / TS)) ? hAt(qx, qy) : heightAt(qx, qy)) < WATER;
+    waterCache.set(k, w);
+  }
+  return w;
+}
 /** Whether a boat can sail straight from a to b (checked every few units), with `pad` of water either side of its line. */
 export function clearLine(a: Point, b: Point, pad = 0): boolean {
   const d = Math.hypot(b.x - a.x, b.y - a.y), n = Math.ceil(d / 6), sx = d ? -(b.y - a.y) / d * pad : 0, sy = d ? (b.x - a.x) / d * pad : 0;
@@ -48,8 +65,6 @@ class Heap {
   }
 }
 
-const OFF = 1 << 15;
-const pack = (i: number, j: number): number => (i + OFF) * 65536 + (j + OFF);
 
 // ---------- planRoute: the route a ship can actually sail ----------
 // The same A*, but it keeps to the middle of a channel (a step costs more the nearer land is), leaves a hull's width
@@ -63,6 +78,8 @@ export interface Plan { pts: Point[]; corners: Point[]; end: Point; length: numb
 const SOLID_REACH = 320;                          // solids are only gathered round the start, where the sea is already built (replanning picks up the rest)
 const NEAR = 3;                                   // cells of clearance that still cost extra
 const SPACING = 12;
+/** How far round a waypoint on land or by a tight shore to look for open water to end at. */
+const GOAL_SEARCH = 220;
 
 /** Plan a route for a hull that needs `pad` of water either side. Null only when there's no water route at all. */
 export function planRoute(from: Point, to: Point, pad: number): Plan | null {
@@ -86,7 +103,6 @@ export function planRoute(from: Point, to: Point, pad: number): Plan | null {
   const d = Math.hypot(to.x - from.x, to.y - from.y), S = d < 2400 ? 16 : d < 6000 ? 32 : 64;
   const cells = (pad ? search(from, to, S, Math.max(1, Math.ceil(pad / S)), blocked) : null) ?? search(from, to, S, 0, blocked);
   if (!cells) return null;
-  const end = cells[cells.length - 1];
   // pulled tight: the furthest cell still in clear sight, with a margin off the coast where there's room for one
   const margin = Math.min(10, S * 0.6), corners: Point[] = [];
   let at: Point = from, i = 0;
@@ -96,6 +112,17 @@ export function planRoute(from: Point, to: Point, pad: number): Plan | null {
     while (j + 1 < cells.length && clear(at, cells[j + 1], pad + margin)) j++;
     corners.push(cells[j]); at = cells[j]; i = j + 1;
   }
+  // the last stretch: from the grid's goal cell on toward the point asked for, as far as the hull still has room
+  const last = corners[corners.length - 1] ?? from, gap = Math.hypot(to.x - last.x, to.y - last.y);
+  if (gap > 2) {
+    let reach: Point | null = null;
+    for (let t = Math.min(gap, GOAL_SEARCH + S); t > 2; t -= 4) {
+      const q = { x: last.x + (to.x - last.x) * t / gap, y: last.y + (to.y - last.y) * t / gap };
+      if (!blocked(q.x, q.y, pad * 0.6) && clear(last, q, pad * 0.6)) { reach = q; break; }
+    }
+    if (reach) corners.push(reach);
+  }
+  const end = corners[corners.length - 1] ?? from;
   // rounded: three passes of corner cutting, each kept only if every new piece is still clear for the hull
   let line = [from, ...corners];
   for (let pass = 0; pass < 3 && line.length > 2; pass++) {
@@ -139,13 +166,35 @@ function search(from: Point, to: Point, S: number, need: number, blocked: (x: nu
   };
   const si = Math.round(from.x / S), sj = Math.round(from.y / S);
   let gi = Math.round(to.x / S), gj = Math.round(to.y / S);
-  for (let t = 0; t < 600 && clearance(gi, gj) <= need && !(need === 0 && ok1(gi, gj)); t++) {   // a goal on land or too tight: back toward the start
-    const dx = si - gi, dy = sj - gj, dd = Math.hypot(dx, dy);
-    if (dd < 1) return null;
-    gi += Math.round(dx / dd); gj += Math.round(dy / dd);
+  // a goal on land or with too little room: the nearest cell round it that has room (not one walked back toward the
+  // start, which could end the route a long way short of a waypoint by the shore)
+  const roomy = (i: number, j: number): boolean => need === 0 ? ok1(i, j) : clearance(i, j) > need;
+  if (!roomy(gi, gj)) {
+    let best: [number, number] | null = null, bd = Infinity;
+    for (let r = 1; r <= Math.ceil(GOAL_SEARCH / S) && !best; r++) for (let t = -r; t <= r; t++)   // ring by ring outward
+      for (const [i, j] of [[gi + t, gj - r], [gi + t, gj + r], [gi - r, gj + t], [gi + r, gj + t]]) {
+        const d = Math.hypot(i - gi, j - gj);
+        if (d < bd && roomy(i, j)) { bd = d; best = [i, j]; }
+      }
+    if (!best) return null;
+    [gi, gj] = best;
   }
+  const steps = new Map<number, boolean>();
+  const stepClear = (i: number, j: number, di: number, dj: number): boolean => {
+    const k = pack(i, j) * 9 + (di + 1) * 3 + (dj + 1);
+    let c = steps.get(k);
+    if (c === undefined) {
+      const n = Math.ceil(S * Math.hypot(di, dj) / 6);
+      c = true;
+      for (let q = 1; q < n && c; q++) c = !blocked((i + di * q / n) * S, (j + dj * q / n) * S, 0);
+      steps.set(k, c);
+    }
+    return c;
+  };
   const goal = pack(gi, gj), start = pack(si, sj);
-  const h = (i: number, j: number): number => { const dx = Math.abs(i - gi), dy = Math.abs(j - gj); return (dx + dy + (DIAG - 2) * Math.min(dx, dy)) * 1.02; };
+  // the octile distance, weighted: it explores far less open sea for a path a few percent longer, which the pull-tight
+  // pass below straightens out anyway
+  const h = (i: number, j: number): number => { const dx = Math.abs(i - gi), dy = Math.abs(j - gj); return (dx + dy + (DIAG - 2) * Math.min(dx, dy)) * 1.6; };
   const g = new Map<number, number>(), came = new Map<number, number>(), open = new Heap();
   g.set(start, 0); open.push(start, h(si, sj));
   let found = false, expanded = 0;
@@ -158,6 +207,7 @@ function search(from: Point, to: Point, S: number, need: number, blocked: (x: nu
       const ni = ci + di, nj = cj + dj, nk = pack(ni, nj), c = clearance(ni, nj);
       if (c === 0 || (c <= need && nk !== goal)) continue;
       if (di && dj && (!ok1(ci + di, cj) || !ok1(ci, cj + dj))) continue;          // no cutting a corner of land
+      if (S > 16 && !stepClear(ci, cj, di, dj)) continue;                          // a coarse step mustn't jump a strip of land
       const near = Math.max(0, 1 - (c - 1) / NEAR), ng = cg + (di && dj ? DIAG : 1) * (1 + 2.5 * near * near);   // dearer near land
       if (ng < (g.get(nk) ?? Infinity)) { g.set(nk, ng); came.set(nk, cur); open.push(nk, ng + h(ni, nj)); }
     }

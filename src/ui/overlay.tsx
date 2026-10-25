@@ -131,11 +131,11 @@ function RegionTitle() {
   return <div class={'region-title' + (age > 3.6 ? ' out' : '')} aria-live="polite">{r.name}<small>{regionAbout(r)}</small></div>;
 }
 
-// the way to the waypoint (or to where the boat is sailing itself) as a trail of dots on the sea, rippling toward
-// the end, with a buoy there; the route already goes round islands, so the dots never cross land
+// the line the boat is sailing itself (or, before it sets off, the way to the waypoint) as a trail of dots on the sea,
+// rippling toward the end, with a buoy at the waypoint; the route already goes round islands, so the dots never cross land
 const DOT_GAP = 13, MAX_DOTS = 80;
 function RouteDots() {
-  const path = G.waypoint ? waypointRoute() : coursePath();
+  const sailing = coursePath(), path = sailing.length ? sailing : waypointRoute();
   if (!path.length || G.mode !== 'play' || G.fish) return null;
   const dots: JSX.Element[] = [], inView = (x: number, y: number) => x > -2 && x < 102 && y > -2 && y < 102;
   // dots sit at fixed distances back from the end, so they stay put on the water as the boat sails along them

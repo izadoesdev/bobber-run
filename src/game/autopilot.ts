@@ -32,8 +32,9 @@ interface Course {
   reelIn: boolean;
   /** which way it last veered round something in the way (-1, 0, 1), so it doesn't dither between sides */
   side: number;
-  /** the least path left so far, and when it last shrank: a course that stops making progress is given up */
-  best: number; bestT: number;
+  /** the least path left so far, the smallest heading error while coming round, and when either last shrank: a course
+   *  that stops making progress is given up */
+  best: number; bestErr: number; bestT: number;
   replanT: number;
 }
 let course: Course | null = null;
@@ -67,21 +68,23 @@ function clearRun(x: number, y: number, a: number, len: number): number {
 // ---------- setting a course ----------
 /**
  * Sail to (x, y). A click plans a water route round anything in the way (a point on land, behind a solid or in
- * closed water ends at the nearest open water toward it); a held finger or a followed sailor (`quiet`) steers
- * straight. Returns false (and changes nothing) when there is nowhere to go, or the boat is already there.
+ * closed water ends at the nearest open water round it), or follows one given (`via`); a held finger or a followed
+ * sailor (`quiet`) steers straight. Returns false (and changes nothing) when there is nowhere to go, or the boat is
+ * already there.
  */
-export function setCourse(x: number, y: number, quiet = false): boolean {
+export function setCourse(x: number, y: number, quiet = false, via?: Point[]): boolean {
   const f = G.fish;
   if (G.mode !== 'play' || (f && f.st !== 'cast' && f.st !== 'wait' && !f.tow)) return false;   // never yank a hooked fish (unless it's towing you)
   const b = G.boat, prev = course;
-  const pts = quiet ? straightTo(x, y) : planRoute(b, { x, y }, roomFor())?.pts ?? [];
+  // `via`: a route already planned to (x, y) (the waypoint's), so the boat sails the dots it shows
+  const pts = quiet ? straightTo(x, y) : via?.length ? via : planRoute(b, { x, y }, roomFor())?.pts ?? [];
   const last = pts[pts.length - 1];
   if (!last || Math.hypot(last.x - b.x, last.y - b.y) < arriveR()) {
     if (!quiet) sfx('deny');
     if (course) dropCourse();
     return false;
   }
-  course = { pts, i: 0, quiet, reelIn: !!f, side: prev?.side ?? 0, best: Infinity, bestT: G.t, replanT: G.t };
+  course = { pts, i: 0, quiet, reelIn: !!f, side: prev?.side ?? 0, best: Infinity, bestErr: Infinity, bestT: G.t, replanT: G.t };
   if (!quiet) sfx('move', 0.5);
   return true;
 }
@@ -103,6 +106,9 @@ function replan(c: Course): boolean {
   c.replanT = G.t;
   const plan = planRoute(G.boat, end(c), roomFor());
   if (!plan?.pts.length) return false;
+  // a much longer way round (often the other side of an island) only if the boat is well off its path; a nearby
+  // snag on the way it's sailing is better veered round than turned back from
+  if (plan.length > pathLeft(c) * 1.4 + 60 && track(c) < roomFor() + 30) return true;
   c.pts = plan.pts; c.i = 0;
   return true;
 }
@@ -171,13 +177,22 @@ export function steerCourse(): void {
   if (track(c) > roomFor() + 30 && !replan(c)) { dropCourse(); toast('No clear way there'); return; }
   const left = pathLeft(c);
   if (left < c.best - 2) { c.best = left; c.bestT = G.t; }
-  else if (G.t - c.bestT > 6 + 0.2 * bd.L) { dropCourse(); toast('No clear way there'); return; }   // a long hull takes longer to come round
+  else if (G.t - c.bestT > 6 + 0.2 * bd.L) {                        // a long hull takes longer to come round
+    dropCourse();
+    if (dEnd > bd.L + 30) toast('No clear way there');                // stuck just short of a spot by the shore: as close as it gets
+    return;
+  }
 
-  // pure pursuit: steer at a point along the path, further ahead the faster and longer the ship
-  const look = 12 + 1.2 * bd.L + 0.8 * speed, aim = pursuit(c, look);
-  const want = Math.atan2(aim.y - b.y, aim.x - b.x), reach = Math.min(Math.hypot(aim.x - b.x, aim.y - b.y), look);
+  // pure pursuit: steer at a point along the path, further ahead the faster and longer the ship; round a headland the
+  // straight line to that point cuts the corner the path goes round, so look nearer until the line is clear
+  let look = 12 + 1.2 * bd.L + 0.8 * speed, aim = pursuit(c, look);
+  let want = Math.atan2(aim.y - b.y, aim.x - b.x), reach = Math.min(Math.hypot(aim.x - b.x, aim.y - b.y), look);
+  while (look > 10 + 0.6 * bd.L && clearRun(b.x, b.y, want, reach) < reach) {
+    look *= 0.7; aim = pursuit(c, look);
+    want = Math.atan2(aim.y - b.y, aim.x - b.x); reach = Math.min(Math.hypot(aim.x - b.x, aim.y - b.y), look);
+  }
   let heading = want, ahead = clearRun(b.x, b.y, want, reach);
-  if (ahead < reach) {                                                 // something in the way: plan again, and veer meanwhile
+  if (ahead < reach) {                                                 // something in the way even close up: plan again, and veer meanwhile
     replan(c);
     let bestRun = ahead;
     search: for (const v of VEERS) {
@@ -197,14 +212,19 @@ export function steerCourse(): void {
   const bendV = Math.max(6, 0.7 * 1.25 * bd.turn / Math.max(1e-3, curveAhead(c, bd.L + 2.5 * Math.max(10, speed))));
   const shore = clearRun(b.x, b.y, b.a, bd.L + 30 + speed * 2) - bd.L;   // clear water ahead of the bow
   const err = wrapAngle(heading - b.a), turnFirst = Math.abs(err) > 1.1;
+  if (Math.abs(err) < c.bestErr - 0.15) { c.bestErr = Math.abs(err); c.bestT = G.t; }   // coming round toward the path counts as progress
+  if (!turnFirst) c.bestErr = Infinity;
   let vMax = Math.min(bendV, stopFrom(left - 2), stopFrom(shore - 3));
-  if (turnFirst) vMax = Math.min(vMax, 5);
   if (ahead < reach && ahead < 6 + bd.L) vMax = 0;                    // boxed in: stop
+  // coming round a long way: oars spin the boat where it is, but a rudder needs water flowing past it, so a ship creeps
+  // ahead while it turns, or backs off astern if there's no room in front of its bow
+  const rowing = bd.prop === 'OARS', astern = turnFirst && !rowing && shore < bd.L * 0.5 + 8;
+  if (turnFirst) vMax = rowing || astern ? 0 : Math.min(Math.max(vMax, 4), 7);
   const vf = b.vx * Math.cos(b.a) + b.vy * Math.sin(b.a);
 
   const lead = wrapAngle(err - b.w * 0.4 * Math.sqrt(bd.L / 13.5)), dead = 0.05;   // ease off early (more for a heavy helm) so it doesn't overshoot
   press('ArrowRight', lead > dead);
   press('ArrowLeft', lead < -dead);
-  press('ArrowUp', !turnFirst && vf < vMax - 0.5);
-  press('ArrowDown', vf > vMax + 2 && vf > 1);
+  press('ArrowUp', !astern && vf < vMax - 0.5);
+  press('ArrowDown', astern ? vf > -5 : vf > vMax + 2 && vf > 1);
 }

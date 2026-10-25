@@ -63,3 +63,40 @@ test('a long trip plans on a coarser grid instead of giving up', () => {
   expect(Math.hypot(plan!.end.x - b!.x, plan!.end.y - b!.y)).toBeLessThan(100);
   expect(plan!.pts.every(p => water(p.x, p.y))).toBe(true);
 });
+
+test('a waypoint by the shore is reached, not stopped short of', () => {
+  // points in the water just off a coast, planned to from open water a few hundred units out
+  let s = 3, n = 0, near = 0;
+  const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  for (let t = 0; t < 4000 && n < 25; t++) {
+    const g = { x: 280 + (r() - 0.5) * 4000, y: 280 + (r() - 0.5) * 4000 };
+    if (!water(g.x, g.y) || shore(g.x, g.y) > 14) continue;
+    const ang = r() * 6.28, a = { x: g.x + Math.cos(ang) * 400, y: g.y + Math.sin(ang) * 400 };
+    if (heightAt(a.x, a.y) > -0.2) continue;
+    const plan = planRoute(a, g, 12);
+    if (!plan) continue;
+    n++;
+    if (Math.hypot(plan.end.x - g.x, plan.end.y - g.y) < 30) near++;
+  }
+  expect(n).toBeGreaterThan(15);
+  expect(near / n).toBeGreaterThan(0.9);
+});
+
+test('a long route never crosses land between its dots', () => {
+  let s = 19, n = 0;
+  const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  for (let t = 0; t < 4000 && n < 12; t++) {
+    const a = { x: (r() - 0.5) * 9000, y: (r() - 0.5) * 9000 }, ang = r() * 6.28, b = { x: a.x + Math.cos(ang) * 7000, y: a.y + Math.sin(ang) * 7000 };
+    if (heightAt(a.x, a.y) > -0.15 || heightAt(b.x, b.y) > -0.15 || clearLine(a, b)) continue;
+    const plan = planRoute(a, b, 12);
+    if (!plan) continue;
+    n++;
+    let prev: Point = a;
+    for (const p of plan.pts) {
+      const m = Math.ceil(Math.hypot(p.x - prev.x, p.y - prev.y) / 2);
+      for (let k = 1; k <= m; k++) expect(heightAt(prev.x + (p.x - prev.x) * k / m, prev.y + (p.y - prev.y) * k / m)).toBeLessThan(-0.045);
+      prev = p;
+    }
+  }
+  expect(n).toBeGreaterThan(8);
+}, 60_000);

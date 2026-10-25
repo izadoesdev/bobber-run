@@ -19,7 +19,7 @@ import { drawChart, nearestUncharted, terrainCache } from './chart';
 import { fishIcon } from './icons';
 import { SeaLayer } from './overlay';
 import { ShareButton, ShareChip } from './share';
-import { clearWaypoint, sailToWaypoint, tickWaypoint, waypointMetres } from '../waypoint';
+import { clearWaypoint, sailToWaypoint, waypointMetres } from '../waypoint';
 import { courseTarget } from '../game/autopilot';
 import { SPOOL } from '../game/fishing';
 import { Bar, BaitTag, Canvas, Fish, Hint, Icon, Key, WX_ICON, cap1, clockText, keyed, type DrawFn } from './parts';
@@ -335,7 +335,6 @@ function Fishing() {
   );
 }
 export function Hud() {
-  tickWaypoint();
   if (!SET.hud) return <div><Fishing /></div>;
   const quest = currentQuest(), step = guide(), pr = quest && questProgress(quest);
   // a waypoint the player set takes over the on-screen arrow from the guide

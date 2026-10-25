@@ -20,6 +20,7 @@ import { schoolActive, swimSchools, updateSchools } from './schools';
 import { dock, keptBack, updateFleet } from './port';
 import { track } from '../analytics';
 import { dropCourse, steerCourse } from './autopilot';
+import { tickWaypoint } from '../waypoint';
 import { biomeAt, type BiomeId } from '../biome';
 // what a crab pot brings up, by the waters it's set in
 const POT_CRAB: Partial<Record<BiomeId, number>> = { mangrove: SP.mudcrab, volcanic: SP.ventcrab, cold: SP.snowcrab };
@@ -161,6 +162,7 @@ export function update(dt: number): void {
   G.prompt = promptFor(speed);
   handleActions(dt, speed);
   steerCourse();
+  tickWaypoint();
   boatEffects(dt, speed);
   const pump = [0, 0, 5, 2.5, 1.2][G.up.hull];                  // iron plating and up carry a bilge pump
   if (pump && G.boat.hp < hpMax() && (G.bilgeT += dt) > pump) { G.bilgeT = 0; G.boat.hp++; }   // the pump patches the hull
