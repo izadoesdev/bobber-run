@@ -3,12 +3,16 @@ import type { WeatherState } from './types';
 import { isWorldFrenzy, today } from './today';
 import { biomeMix, coldness, warmth, themeHoldAt, THEMES, type Atmos, type ThemeHold } from './biome';
 
-// stormy days (the same for everyone) lean hard towards rain and storms
+// mostly fair: rain is a passing shower and a storm an event (wet about a tenth of the time, it was a third); stormy
+// days (the same for everyone) still lean towards rain and storms
 const roll = (): WeatherState => {
   const r = Math.random();
-  return today().stormy ? (r < 0.25 ? 'clear' : r < 0.45 ? 'cloudy' : r < 0.7 ? 'rain' : 'storm')
-    : r < 0.45 ? 'clear' : r < 0.65 ? 'cloudy' : r < 0.88 ? 'rain' : 'storm';
+  return today().stormy ? (r < 0.35 ? 'clear' : r < 0.6 ? 'cloudy' : r < 0.82 ? 'rain' : 'storm')
+    : r < 0.62 ? 'clear' : r < 0.82 ? 'cloudy' : r < 0.94 ? 'rain' : 'storm';
 };
+/** Seconds a state lasts: fair weather stays, showers and storms pass. */
+const LASTS: Record<WeatherState, [number, number]> = { clear: [180, 360], cloudy: [120, 240], rain: [60, 150], storm: [50, 100] };
+const lasts = (s: WeatherState): number => LASTS[s][0] + Math.random() * (LASTS[s][1] - LASTS[s][0]);
 
 interface Weather {
   state: WeatherState;
@@ -26,7 +30,7 @@ export const WX: Weather = { state: 'clear', upcoming: roll(), next: 150, rain: 
 
 /** Target [rain, dark, wind] per state. */
 const TARGET: Record<WeatherState, [number, number, number]> = {
-  clear: [0, 0, 0], cloudy: [0, 0.14, 0.2], rain: [0.6, 0.22, 0.45], storm: [1, 0.36, 1],
+  clear: [0, 0, 0], cloudy: [0, 0.1, 0.2], rain: [0.6, 0.16, 0.45], storm: [1, 0.28, 1],
 };
 
 export function updateWeather(dt: number, onChange: (s: WeatherState) => void, onBolt: () => void): void {
@@ -35,7 +39,7 @@ export function updateWeather(dt: number, onChange: (s: WeatherState) => void, o
     const s = WX.upcoming;
     if (s !== WX.state) { WX.state = s; onChange(s); }
     WX.upcoming = roll();
-    WX.next = 90 + Math.random() * 150;
+    WX.next = lasts(WX.state);
   }
   const [rain, dark, wind] = TARGET[WX.state], k = 1 - Math.exp(-dt / 6);
   WX.rain += (rain - WX.rain) * k;
@@ -43,8 +47,8 @@ export function updateWeather(dt: number, onChange: (s: WeatherState) => void, o
   WX.wind += (wind - WX.wind) * k;
   WX.flash = Math.max(0, WX.flash - dt * 3);
   if (WX.state === 'storm' && WX.rain > 0.7 && (WX.boltT -= dt) <= 0) {
-    WX.boltT = 5 + Math.random() * 10;
-    WX.flash = 1;
+    WX.boltT = 10 + Math.random() * 14;
+    WX.flash = 0.6;
     onBolt();
   }
 }

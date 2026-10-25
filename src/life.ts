@@ -548,7 +548,7 @@ export function updateLife(dt: number): void {
   LIFE.t += dt; LIFE.callCd -= dt; dark = darkness();
   const b = G.boat, sp = Math.hypot(b.vx, b.vy);
   // raindrop rings on the water in view
-  for (let n = WX.rain * 40 * dt; n > 0; n--) if (Math.random() < n) {
+  for (let n = WX.rain * 16 * dt; n > 0; n--) if (Math.random() < n) {
     const x = G.cam.x + Math.random() * W, y = G.cam.y + Math.random() * H;
     if (hAt(x, y) < -0.03) spawn({ kind: 'ring', x, y, life: 0.5, r0: 0, grow: 2 });
   }

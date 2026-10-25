@@ -249,10 +249,11 @@ void main(){
     float splash = 0.0;
     if (uRain > 0.01){
       n = normalize(n + vec3(ripples(p), 0.0)*uRain*0.7);
-      // a drop landing: a small ring of one art pixel that widens and fades
-      vec2 g = floor(p/7.0), f = floor(p) - g*7.0; float r = hash(g + 11.0), ph = fract(uT*1.6 + r*7.0);
-      float d = length(f + 0.5 - (floor(vec2(hash(g + 5.3), hash(g + 9.1))*5.0) + 1.5));
-      splash = step(r, 0.18*uRain)*step(abs(d - ph*1.8), 0.45)*(1.0 - ph)*step(ph, 0.7);   // sparse, small, quick
+      // a drop landing: one bright art pixel that opens to its four neighbours and fades
+      // (a fresh spot each time, so the rings never stand in a grid)
+      vec2 g = floor(p/7.0), f = floor(p) - g*7.0; float cyc = uT*1.8 + hash(g + 11.0)*7.0, ph = fract(cyc); vec2 id = g + floor(cyc)*vec2(5.17, 2.83);
+      float d = length(f + 0.5 - (floor(vec2(hash(id + 5.3), hash(id + 9.1))*5.0) + 1.5));
+      splash = step(hash(id + 1.3), 0.14*uRain)*step(abs(d - ph*2.2), 0.45)*(1.0 - ph*1.8)*step(ph, 0.5);   // a plink that opens to a tiny cross and is gone
     }
     vec3 shallowC = mix(mix(vec3(.34,.66,.70), vec3(.24,.80,.78), wm), vec3(.40,.56,.62), cd);
     vec3 midC     = mix(mix(vec3(.17,.43,.55), vec3(.07,.53,.62), wm), vec3(.22,.36,.46), cd);
@@ -458,17 +459,24 @@ precision highp float; precision highp int; in vec2 vUV; out vec4 o;
 uniform sampler2D uScene, uBloom, uBlur;
 uniform float uT, uExp, uSat, uVig, uTilt, uGrain, uRain, uDrops, uFlash, uBloomK, uSlant, uGrade, uDusk;
 uniform vec3 uTint; uniform vec2 uRes, uUVS; uniform float uQ, uInk; uniform vec4 uCam, uFogC, uHazeC;
-${STYLE}${NOISE}// rain: short slanted streaks one art pixel wide, placed in world space (so the sea scrolls under them as you sail)
-// and snapped to the art grid, falling down the view and leaning with the wind; a near layer and a fainter far one
+${STYLE}${NOISE}// rain: thin streaks falling at a slant with the wind, in three layers (near ones longer, faster and brighter). Each
+// drop lives a moment: it falls a short way, fades and comes back somewhere new, so the rain never reads as one sheet
+// sliding past. Placed in world space (the sea scrolls under it as you sail) and snapped to the art grid.
 float rainDrops(vec2 p, float amt){
   float s = 0.0;
-  for (int L = 0; L < 2; L++){
-    float near = L == 0 ? 1.0 : 0.0, sp = mix(95.0, 150.0, near), len = mix(3.0, 5.0, near), cell = mix(7.0, 10.0, near);
-    vec2 q = floor(p - vec2(uSlant*sp*0.35, sp)*uT), c = floor(q/cell), f = q - c*cell;
-    if (hash(c + 17.0*near) > amt*0.6) continue;
-    vec2 o = floor(vec2(hash(c + 3.1), hash(c + 7.7))*(cell - 2.0));
-    float dy = f.y - o.y, dx = f.x - o.x - floor(dy*uSlant*0.4 + 0.5);
-    if (dy >= 0.0 && dy < len && abs(dx) < 0.5) s = max(s, mix(0.28, 0.5, near)*(1.0 - 0.4*dy/len));
+  vec2 dir = normalize(vec2(uSlant*0.45, 1.0));
+  for (int L = 0; L < 3; L++){
+    float near = 1.0 - float(L)*0.5;
+    float cell = mix(11.0, 20.0, near), len = mix(4.0, 11.0, near), sp = mix(110.0, 230.0, near), life = mix(0.45, 0.3, near);
+    vec2 q = floor(p - dir*sp*uT) + 0.5, c = floor(q/cell), f = q - c*cell;   // the falling frame, cut into cells
+    float r = hash(c + 31.0*float(L)), cyc = uT/life + r, k = floor(cyc), ph = fract(cyc);
+    vec2 id = c + k*vec2(7.13, 3.71);                                   // a new drop each life, somewhere new in its cell
+    if (hash(id + 1.7) > amt*mix(0.5, 0.3, near)) continue;
+    vec2 head = vec2(len*dir.x + 1.0, len + 1.0) + floor(vec2(hash(id + 3.1), hash(id + 7.7))*(cell - len - 2.0));
+    vec2 d = f - head; float t = -dot(d, dir), side = abs(d.x*dir.y - d.y*dir.x);
+    if (t < 0.0 || t > len || side > 0.55) continue;
+    float env = smoothstep(0.0, 0.2, ph)*smoothstep(1.0, 0.65, ph);    // fades in and out over its life
+    s = max(s, mix(0.16, 0.38, near)*(1.0 - 0.75*t/len)*env);           // bright at the head, a fading tail
   }
   return s; }
 vec3 aces(vec3 x){ return clamp((x*(2.51*x + 0.03))/(x*(2.43*x + 0.59) + 0.14), 0.0, 1.0); }
@@ -508,9 +516,9 @@ void main(){
   if (uRain > 0.01){
     // wet light: cooler and a little flatter, rather than a grey wash
     float lr = dot(c, vec3(0.299, 0.587, 0.114));
-    c = mix(c, vec3(lr), 0.28*uRain)*mix(vec3(1.0), vec3(0.88, 0.94, 1.02), uRain);
+    c = mix(c, vec3(lr), 0.2*uRain)*mix(vec3(1.0), vec3(0.9, 0.95, 1.02), uRain);
     vec2 wp = uCam.xy + vec2(uv.x, 1.0 - uv.y)*uCam.zw;              // the world point under this pixel
-    c = mix(c, vec3(0.80, 0.87, 0.93), rainDrops(wp, uDrops));
+    c = mix(c, vec3(0.84, 0.9, 0.96), rainDrops(wp, uDrops));
   }
   c *= uExp*uTint;
   float l = dot(c, vec3(0.299, 0.587, 0.114)); c = mix(vec3(l), c, uSat);

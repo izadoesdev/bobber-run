@@ -3,7 +3,7 @@
 // while you hold some, key hints until the first catches. The reel gauge, catch card and toasts sit at the bottom;
 // what sits on the sea itself is in overlay.tsx.
 import type { JSX } from 'preact';
-import { clamp, money, dirTo } from '../config';
+import { clamp, money, dirTo, W, H } from '../config';
 import { G, cap, hpMax, boatDef, isNight, dayNum, dayFrac, windAngle, sailEfficiency, lineMax, fishValue } from '../game';
 import { SPECIES, fmtKg } from '../econ';
 import { VARIANTS, type VariantId } from '../species';
@@ -15,7 +15,7 @@ import { sfx } from '../audio';
 import { currentQuest, questProgress } from '../story';
 import { guide, guideOn, stepLine, tip, whereText, type Step } from '../game/guide';
 import type { CatchCard as CatchCardState, FishLine, Point, Toast } from '../types';
-import { drawChart, nearestUncharted } from './chart';
+import { drawChart, nearestUncharted, terrainCache } from './chart';
 import { fishIcon } from './icons';
 import { SeaLayer } from './overlay';
 import { ShareButton, ShareChip } from './share';
@@ -66,10 +66,8 @@ function Status() {
   );
 }
 
-// the minimap redraws when the boat has moved a minimap pixel or turned a little, and ten times a second for what
-// animates on it (schools, sailors, the frenzy star); every frame it cost as much CPU as the rest of the UI
-// redrawn whenever the boat has moved a tenth of a world unit or the clock a frame's worth (it used to step at 10 Hz, which
-// read as stutter: the whole map jumped a few pixels at a time), and when the waypoint moves
+// the minimap redraws whenever the boat has moved a tenth of a world unit or the clock a frame's worth (it used to step
+// at 10 Hz, which read as stutter: the whole map jumped a few pixels at a time), and when the waypoint moves
 const miniKey = (): string => { const b = G.boat; return `${Math.round(b.x * 10)},${Math.round(b.y * 10)},${Math.round(b.a * 100)},${Math.floor(G.t * 30)},${G.waypoint?.x},${G.waypoint?.y}`; };
 /**
  * The compass, the default dial: north up, your heading, and on the rim a gold chevron toward the next step, the
@@ -90,12 +88,18 @@ function CompassFace({ target, un, onClick }: { target: Point | null; un: Point 
     </svg>
   );
 }
+/**
+ * World units across the minimap: three times the sea in view (it was a fixed 300, less than the view itself), so it
+ * shows what's past the screen's edge at any ship or zoom.
+ */
+const miniSpan = (): number => clamp(Math.max(W, H) * 3, 1000, 4200);
+const miniTerrain = terrainCache();
 /** The dial top right: the compass, or the minimap if the player chose it; both open the chart. */
 function Minimap({ step }: { step: Step }) {
   const un = G.up.sextant > 0 ? nearestUncharted() : null, target = guideOn() ? step.at ?? null : null;
   const draw: DrawFn = (ctx, w, h, dpr) => {
     const b = G.boat;
-    drawChart(ctx, w, h, b.x, b.y, 300 / w, { dpr, budget: 4, target, round: true, waypoint: G.waypoint });
+    drawChart(ctx, w, h, b.x, b.y, miniSpan() / w, { dpr, budget: 4, target, round: true, waypoint: G.waypoint, keep: miniTerrain });
     if (!un) return;
     // the nearest uncharted landmark: a grey square on the rim, like uncharted marks on the chart (arrows mean where you're headed)
     const a = Math.atan2(un.p.y - b.y, un.p.x - b.x), r = w / 2 - 5 * dpr, s = 3 * dpr;

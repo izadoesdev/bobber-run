@@ -268,7 +268,12 @@ function uploadFog(g: GL, vx: number, vy: number): void {
   }
   fogDirty.clear();
 }
-let instData = new Float32Array(10 * 256), builtFor = '';
+let instData = new Float32Array(10 * 256), builtFor = '', complete = false;
+/**
+ * Would drawing the last view again give the same picture? Every tile at its own level, nothing arrived or newly seen
+ * since, no region opened: the minimap then keeps its picture (chart.ts) instead of drawing the terrain every frame.
+ */
+export const terrainSettled = (): boolean => complete && !arrived.length && !fogDirty.size && openKey() === builtFor;
 
 /**
  * Draws the terrain of the view whose top-left is world (wx0, wy0), `wpp` world units per canvas pixel, into `ctx`.
@@ -297,7 +302,7 @@ export function drawTerrain(ctx: CanvasRenderingContext2D, w: number, h: number,
   const C = Math.min(MAXL, L + 2), cside = BASE << C;
   for (let ty = Math.floor(wy0 / cside); ty <= Math.floor((wy0 + h * wpp) / cside); ty++) for (let tx = Math.floor(wx0 / cside); tx <= Math.floor((wx0 + w * wpp) / cside); tx++)
     if (!tiles.has(key(C, tx, ty))) request(g, C, tx, ty, performance.now() - t0 < budget);
-  let n = 0;
+  let n = 0, own = 0;
   if (instData.length < want.length * 10) instData = new Float32Array(want.length * 10 * 2);
   for (const [tx, ty] of want) {
     let t = tiles.get(key(L, tx, ty));
@@ -309,24 +314,30 @@ export function drawTerrain(ctx: CanvasRenderingContext2D, w: number, h: number,
       t = tiles.get(key(l, ax, ay));
     }
     if (!t) continue;
+    if (l === L) own++;
     t.used = frame;
     const x = (tx * side - wx0) / wpp, y = (ty * side - wy0) / wpp, s = side / wpp, o = n * 10;
     instData.set([x, y, x + s, y + s, u0, v0, u0 + span, v0 + span, t.slot, (BASE << l) / (N - 1)], o);
     n++;
   }
+  complete = own === want.length;
   // then a tile's ring round the view, asked for ahead of time, so tiles sailing into view are ready rather than popping
   // in from a coarser level (only while the worker has room after the view's own)
   if (worker) for (let ty = ty0 - 1; ty <= ty1 + 1; ty++) for (let tx = tx0 - 1; tx <= tx1 + 1; tx++)
     if ((tx < tx0 || tx > tx1 || ty < ty0 || ty > ty1) && pending.size < MAX_PENDING - 4 && !tiles.has(key(L, tx, ty))) request(g, L, tx, ty, false);
-  g.viewport(0, glc.height - h, w, h);
+  // drawn at the canvas's GL origin (its bottom-left), so gl_FragCoord is the view's own pixel: the canvas keeps the
+  // largest size any chart asked for, and a smaller view drawn at its top-left put the fog and floes hundreds of units off
+  g.viewport(0, 0, w, h);
   g.disable(g.BLEND);
   g.clearColor(0.31, 0.45, 0.54, 1); g.clear(g.COLOR_BUFFER_BIT);
+  // uploads first: they bind on whatever unit is active, and the fog's, done after the units were set, put the fog
+  // texture in the colour atlas's place (the whole chart went black for a frame each time new sea was seen)
+  uploadFog(g, wx0 + w * wpp / 2, wy0 + h * wpp / 2);
   g.useProgram(prog.p);
   g.activeTexture(g.TEXTURE0); g.bindTexture(g.TEXTURE_2D, hTex); g.uniform1i(prog.u.u_h!, 0);
   g.activeTexture(g.TEXTURE1); g.bindTexture(g.TEXTURE_2D, cTex); g.uniform1i(prog.u.u_c!, 1);
-  uploadFog(g, wx0 + w * wpp / 2, wy0 + h * wpp / 2);
-  g.uniform2f(prog.u.u_fogAt!, fogCx * 1024, fogCy * 1024);
   g.activeTexture(g.TEXTURE2); g.bindTexture(g.TEXTURE_2D, fTex); g.uniform1i(prog.u.u_fog!, 2);
+  g.uniform2f(prog.u.u_fogAt!, fogCx * 1024, fogCy * 1024);
   g.uniform1f(prog.u.u_fogOn!, fogOn ? 1 : 0);
   g.uniform2f(prog.u.u_hsz!, HCOLS * N, (SLOTS / HCOLS) * N);
   g.uniform2f(prog.u.u_csz!, CCOLS * NC * BANDS, (SLOTS / CCOLS) * NC);
@@ -340,6 +351,6 @@ export function drawTerrain(ctx: CanvasRenderingContext2D, w: number, h: number,
   g.bufferData(g.ARRAY_BUFFER, instData.subarray(0, n * 10), g.STREAM_DRAW);
   g.drawArraysInstanced(g.TRIANGLE_STRIP, 0, 4, n);
   g.bindVertexArray(null);
-  ctx.drawImage(glc, 0, 0, w, h, 0, 0, w, h);
+  ctx.drawImage(glc, 0, glc.height - h, w, h, 0, 0, w, h);
   return true;
 }

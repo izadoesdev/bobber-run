@@ -194,3 +194,49 @@ test('sea charted far from home shows on the chart too', async ({ page }) => {
     return d[2] > d[0] + 20;                                           // sea blue, not the fog's parchment
   }, [(cx - box.x) / box.width, (cy - box.y) / box.height]), { timeout: 15_000 }).toBe(true);
 });
+
+test('the minimap keeps its colours and charted sea after the chart was open, frame after frame as new sea is seen', async ({ page }) => {
+  await openChart(page);
+  await page.evaluate(() => { window.BR.SET.minimap = true; });
+  await page.keyboard.press('m');                                  // back to sailing, the shared GPU canvas now chart-sized
+  await expect.poll(() => page.evaluate(() => window.BR.G.mode === 'play' && !!document.querySelector('.mini canvas')), { timeout: 15_000 }).toBe(true);
+  // out to open water well past home's charted sea, seen there (stepped through the game's tick), and its tiles drawn
+  await page.evaluate(() => {
+    const { G, hAt, sim } = window.BR, b = G.boat;
+    let x = b.x + 3000;
+    while (hAt(x, b.y) > -0.3) x += 40;
+    Object.assign(b, { x, px: x, vx: 0, vy: 0 });
+    sim(0.3); sim(0.3);
+  });
+  // round the boat on the minimap: the share of pixels showing the wrong texture (black, or the fog's red) and fog
+  await page.evaluate(() => {
+    (window as unknown as { miniRead: () => { wrong: number; paper: number } }).miniRead = () => {
+      const c = document.querySelector('.mini canvas') as HTMLCanvasElement, d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data, r = (c.width / 2 - 4) * 0.3;
+      let k = 0, wrong = 0, paper = 0;
+      for (let y = 0; y < c.height; y += 6) for (let x = 0; x < c.width; x += 6) {
+        if ((x - c.width / 2) ** 2 + (y - c.height / 2) ** 2 > r * r) continue;
+        const o = (y * c.width + x) * 4, R = d[o], G = d[o + 1], B = d[o + 2]; k++;
+        if (R + G + B < 120 || (R > 140 && G < 70 && B < 70)) wrong++;
+        if (R > 200 && B < 200 && R - B > 25) paper++;
+      }
+      return { wrong: wrong / k, paper: paper / k };
+    };
+  });
+  type Read = { wrong: number; paper: number };
+  await expect.poll(() => page.evaluate(() => (window as unknown as { miniRead: () => Read }).miniRead().paper), { timeout: 20_000 }).toBeLessThan(0.2);
+  // then sail on a little each frame, slower than the boat reveals sea round it, so every reveal uploads new fog
+  // while the sea round the boat stays charted; every frame is read
+  const worst = await page.evaluate(() => new Promise<Read>(done => {
+    const { G } = window.BR, read = (window as unknown as { miniRead: () => Read }).miniRead;
+    let n = 0, wrong = 0, paper = 0;
+    const tick = () => {
+      G.boat.x += 4; G.boat.px = G.boat.x;
+      const f = read();
+      wrong = Math.max(wrong, f.wrong); paper = Math.max(paper, f.paper);
+      if (++n < 90) requestAnimationFrame(tick); else done({ wrong, paper });
+    };
+    requestAnimationFrame(tick);
+  }));
+  expect(worst.wrong, 'no frame shows the wrong texture (black or red)').toBeLessThan(0.2);
+  expect(worst.paper, 'the sea round the boat is charted').toBeLessThan(0.2);   // the fog read from the wrong place showed 0.84
+});

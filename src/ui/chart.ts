@@ -4,7 +4,7 @@ import { schoolShown, schoolMood } from '../game/schools';
 import { SPECIES, PAINTS } from '../econ';
 import { poisNear, schoolsNear, claimableNear, heightAt, homesteadSite, LAIR } from '../world';
 import { livesAt } from '../species';
-import { drawTerrain } from './chartgl';
+import { drawTerrain, terrainSettled } from './chartgl';
 import { seen as isSeen, revealPlace } from '../game/explore';
 import { regionAt, regionBorders, type Region, type RegionBorder } from '../biome';
 import { regionOpen, regionOpenId, opensAfter, regionAbout, lockedAt } from '../game/regions';
@@ -37,6 +37,33 @@ interface ChartOptions {
   avoid?: { x0: number; y0: number; x1: number; y1: number } | null;
   /** mark unclaimed islands too (the full chart) */
   islands?: boolean;
+  /** keep the terrain here between draws (the minimap): see cachedTerrain */
+  keep?: TerrainCache;
+}
+/** A chart's terrain as last drawn, a few pixels larger than the chart each side, and the view it shows. */
+export interface TerrainCache { c: HTMLCanvasElement | null; x: number; y: number; wpp: number; w: number; h: number }
+export const terrainCache = (): TerrainCache => ({ c: null, x: 0, y: 0, wpp: 0, w: 0, h: 0 });
+const KEEP_PAD = 3;
+/**
+ * The terrain from the cache, slid by the fraction of a pixel the view has moved since, while that's under a pixel
+ * and nothing it shows has changed; otherwise drawn again (on the GPU, then copied: as costly as the rest of the
+ * frame's UI, every frame). A boat under sail moves a minimap pixel a few times a second, not sixty.
+ */
+function cachedTerrain(T: TerrainCache, ctx: Ctx, w: number, h: number, wx0: number, wy0: number, wpp: number, u: number, budget: number): boolean {
+  const dx = (wx0 - T.x) / wpp, dy = (wy0 - T.y) / wpp;
+  if (!T.c || T.w !== w || T.h !== h || T.wpp !== wpp || Math.abs(dx) >= 1 || Math.abs(dy) >= 1 || !terrainSettled()) {
+    const P = KEEP_PAD;
+    T.c ??= document.createElement('canvas');
+    if (T.c.width !== w + 2 * P || T.c.height !== h + 2 * P) { T.c.width = w + 2 * P; T.c.height = h + 2 * P; }
+    if (!drawTerrain(T.c.getContext('2d')!, w + 2 * P, h + 2 * P, wx0 - P * wpp, wy0 - P * wpp, wpp, u, budget)) return false;
+    Object.assign(T, { x: wx0, y: wy0, wpp, w, h });
+    ctx.drawImage(T.c, -P, -P);
+    return true;
+  }
+  ctx.imageSmoothingEnabled = true;                 // a fraction of a pixel: blended, so it glides rather than steps
+  ctx.drawImage(T.c, -KEEP_PAD - dx, -KEEP_PAD - dy);
+  ctx.imageSmoothingEnabled = false;
+  return true;
 }
 
 type Ctx = CanvasRenderingContext2D;
@@ -79,7 +106,7 @@ export function drawChart(ctx: Ctx, w: number, h: number, cx: number, cy: number
   if (opt.labels) drawn.clear();
   const seen: Seen = opt.labels ? (k, x, y) => { if (x > 0 && y > 0 && x < w && y < h) drawn.add(k); } : () => {};
   ctx.imageSmoothingEnabled = false;
-  if (!drawTerrain(ctx, w, h, wx0, wy0, wpp, u, budget, !!opt.grid)) { ctx.fillStyle = '#4f7389'; ctx.fillRect(0, 0, w, h); }
+  if (!(opt.keep ? cachedTerrain(opt.keep, ctx, w, h, wx0, wy0, wpp, u, budget) : drawTerrain(ctx, w, h, wx0, wy0, wpp, u, budget, !!opt.grid))) { ctx.fillStyle = '#4f7389'; ctx.fillRect(0, 0, w, h); }
   if (opt.zone != null) {
     // its own slice, not the map's leftovers, and in proportion to real time: a slow machine drawing few frames
     // builds more per frame, so the waters fill in about as fast everywhere
@@ -488,9 +515,11 @@ function sailorMarks(): Mark[] {
 const paintColour = (id?: string): string => PAINTS.find(p => p.id === id)?.ramp?.[2] ?? '#e6efec';
 /** Other players: a dot in their paint (outlined so it reads on land and sea), with their name on the full chart. */
 function drawSailors(ctx: Ctx, w: number, h: number, S: Project, u: number, labels: boolean, seen: Seen): void {
-  font(ctx, 11, u);
+  const marks = sailorMarks();
+  if (!marks.length) return;
+  if (labels) font(ctx, 11, u);                    // setting a font parses it: the minimap, with no names, skips it
   ctx.textAlign = 'center';
-  for (const s of sailorMarks()) {
+  for (const s of marks) {
     const [x, y] = S(s.x, s.y);
     if (x < -10 || y < -10 || x > w + 10 || y > h + 10) continue;
     seen('sailor', x, y);
