@@ -596,6 +596,26 @@ const SUPERYACHT = lazyVox(() => {
   sailor(V, 4, 23, M.navy);
   return V.finalize();
 });
+// the boat.dev sloop: its logo in voxels, traced from the SVG (x 0..498 bow to stern, y 0..462 top down): a tall sail
+// on the forestay, a smaller one aft with a diagonal gap between them, in the brand blue, over a white hull with a
+// teak deck, a cockpit and a swim step under the overhanging stern
+const BD = { blue: mat(['#1a2c78', '#263fa9', '#4a64cc']), seam: mat(['#16266a', '#203693', '#3e56b4']) };
+const BOATDEV = lazyVox(() => {
+  const V = new Vox(-17, 17, -7, 7, 37), H = buildHull(V, { HL: 15, HB: 5.5, HZ: 4, paint: M.white, stripe: BD.blue, gun: M.white, boot: Y.carbon, deckFrom: -40, deckZ: 2, floorMat: Y.teak, deckMat: Y.teak, transom: 0.85, sternPow: 6, entry: 0.8, rake: 0.35 });
+  const U = (x: number) => Math.round(14 - x / 498 * 27), Z = (y: number) => Math.round(6 + (361 - y) * 0.08), P = (x: number, y: number): [number, number] => [U(x), Z(y)];
+  for (let u = -9; u <= -4; u++) for (let v = -2; v <= 2; v++) V.set(u, v, H.top(u), 0);     // the cockpit well
+  sail(V, [P(234, 4), P(44, 338), P(244, 338), P(321, 240)], () => 0, BD.blue, BD.seam);
+  const A = 30;                                                                              // the aft sail set back a little so the gap reads
+  sail(V, [P(453 + A, 132), P(284 + A, 338), P(494 + A, 338)], () => 0, BD.blue, BD.seam);
+  V.box(U(234), U(234), 0, 0, 3, Z(4), Y.chrome); V.line([U(234), 0, Z(4)], [14, 0, 5], Y.chrome);   // mast and forestay
+  V.box(U(453 + A), U(453 + A), 0, 0, 3, Z(132), Y.chrome); V.line([U(284 + A), 0, 7], [U(494 + A), 0, 7], Y.chrome);   // mizzen and its boom
+  V.box(-16, -13, -3, 3, 2, 2, Y.teak);                                                       // the swim step
+  wheel(V, -8, 0, 5);
+  rails(V, H, -2, 12);
+  caulk(V);
+  sailor(V, -7, 2, BD.blue);
+  return V.finalize();
+});
 // smoke outlets in local [u, v, z] (top centre of each funnel)
 export const FUNNEL: Partial<Record<BoatId, Vec3>> = { drifter: [-5, 0, 31], flagship: [-1, 0, 30], icebreaker: [-3, 0, 27] };
 
@@ -611,6 +631,7 @@ export interface BoatModel {
 export const BOAT_MODELS: Record<BoatId, BoatModel> = {
   row: { vox: BOAT, oars: true, rad: BOAT_RAD, outlineZ: HZ + 1, hull: M.paint },
   skiff: { get vox() { return SKIFF(); }, rad: 21, outlineZ: 6, hull: M.skiff },
+  boatdev: { get vox() { return BOATDEV(); }, rad: 21, outlineZ: 5, hull: M.white },
   launch: { get vox() { return LAUNCH(); }, rad: 22, outlineZ: 7, hull: M.navy },
   trawler: { get vox() { return TRAWLER(); }, rad: 28, outlineZ: 9, hull: M.trawl },
   schooner: { get vox() { return SCHOONER(); }, rad: 46, outlineZ: 10, hull: M.schoon },
@@ -647,7 +668,7 @@ function autoMount(L: number, B: number, z: number): Mount {
   };
 }
 const MOUNT: Record<BoatId, Mount> = {
-  canoe: autoMount(12, 3.2, 2), jetski: autoMount(8, 3, 3), speedboat: autoMount(15, 5.5, 2), catamaran: autoMount(20, 5, 5), research: autoMount(28, 9, 6),
+  canoe: autoMount(12, 3.2, 2), boatdev: autoMount(15, 5.5, 4), jetski: autoMount(8, 3, 3), speedboat: autoMount(15, 5.5, 2), catamaran: autoMount(20, 5, 5), research: autoMount(28, 9, 6),
   cruiser: autoMount(22, 7.5, 4), yacht: autoMount(30, 8, 4), icebreaker: autoMount(34, 11.5, 7), motoryacht: autoMount(38, 11, 5), superyacht: autoMount(52, 13, 6),
   row: { crew: [7, 0, 5], cook: [-10, -2, 5], pump: [-6, 3, 2], flag: [-13, 0, 6], lamp: [-12, 0, 6], sonar: [7, -2, 5], rod: [[-8, 4, 6], [-13, 8, 13]], ice: [-8, -2, 2], tackle: [-9, 2, 5], net: [10, 0, 7], ant: [-11, 4, 6], anchor: [12, 3, 6],
     crates: [[5, -3, 2], [3, -3, 2], [-10, 1, 5]], pile: [[3, -1, 2], [4, 1, 2], [5, -1, 2], [6, 1, 2], [3, 1, 2], [5, 1, 2]] },
@@ -667,7 +688,7 @@ const MOUNT: Record<BoatId, Mount> = {
 function cloneVox(V: Vox): Vox { const c = new Vox(V.u0, V.u0 + V.nu - 1, V.v0, V.v0 + V.nv - 1, V.nz); c.d.set(V.d); return c; }
 const PLATE = [0, M.copper, M.ironp, M.steel, M.gilt];   // hull plating material by level (0 = unplated)
 const STRIPE: Record<BoatId, number> = {
-  row: M.stripe, skiff: M.paint, launch: M.redp, trawler: M.redp, schooner: M.schband, drifter: M.dred, flagship: M.fband, canoe: Y.canoe, jetski: M.white,
+  row: M.stripe, skiff: M.paint, launch: M.redp, trawler: M.redp, schooner: M.schband, drifter: M.dred, flagship: M.fband, canoe: Y.canoe, boatdev: BD.blue, jetski: M.white,
   speedboat: M.redp, catamaran: M.navy, research: M.white, cruiser: M.navy, yacht: M.white, icebreaker: M.white, motoryacht: M.navy, superyacht: M.gilt,
 };   // the visible waterline band that plating replaces
 /** What a boat visibly carries: paint, plating and the level of each piece of fitted gear (0 = none). */

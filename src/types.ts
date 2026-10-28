@@ -68,7 +68,7 @@ export interface Species {
 
 /** Gear that catches on its own, and can be switched off. */
 export type Helper = 'deckhand' | 'net' | 'pots';
-export type BoatId = 'row' | 'canoe' | 'skiff' | 'jetski' | 'launch' | 'trawler' | 'speedboat' | 'catamaran' | 'schooner' | 'cruiser' | 'drifter' | 'research'
+export type BoatId = 'row' | 'canoe' | 'skiff' | 'boatdev' | 'jetski' | 'launch' | 'trawler' | 'speedboat' | 'catamaran' | 'schooner' | 'cruiser' | 'drifter' | 'research'
   | 'flagship' | 'icebreaker' | 'yacht' | 'motoryacht' | 'superyacht';
 type Propulsion = 'OARS' | 'SAIL' | 'ENGINE';
 export interface BoatDef {

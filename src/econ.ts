@@ -8,6 +8,7 @@ export const BOATS: BoatDef[] = [
   { id: 'row',     name: 'Rowboat',      cost: 0,    speed: 1.0,  accel: 1.0, turn: 1.0,  hold: 4,  hp: 100, L: 13.5, B: 5.8, prop: 'OARS',   sonar: 0, net: 0, what: 'Quiet oars give you 60% more time for a perfect strike' },
   { id: 'canoe',   name: 'Canoe',        cost: 150,  speed: 1.2,  accel: 1.25, turn: 1.35, hold: 3, hp: 70,  L: 12,   B: 3.2, prop: 'OARS',   sonar: 0, net: 0, what: 'Light and silent: turns on the spot, and a paddle gives you time for a perfect strike' },
   { id: 'skiff',   name: 'Sail Skiff',   cost: 450,  speed: 1.45, accel: 0.9, turn: 0.95, hold: 7,  hp: 140, L: 16.5, B: 6.4, prop: 'SAIL',   sonar: 0, net: 0, what: 'Sails: fastest when the wind blows from the side' },
+  { id: 'boatdev', name: 'boat.dev Sloop', cost: 900, speed: 1.7, accel: 1.15, turn: 1.15, hold: 8, hp: 150, L: 15, B: 5.5, prop: 'SAIL', sonar: 1, net: 0, what: 'The boat from boat.dev: cheap, quick under sail, and sonar built in. The most boat for the coin' },
   { id: 'jetski',  name: 'Jet Ski',      cost: 1400, speed: 2.35, accel: 2.4, turn: 1.7,  hold: 2,  hp: 70,  L: 8,    B: 3,   prop: 'ENGINE', sonar: 0, net: 0, what: 'The quickest way to see the coast, with room for two fish. Fish hate it' },
   { id: 'launch',  name: 'Motor Launch', cost: 1800, speed: 1.95, accel: 1.5, turn: 1.05, hold: 10, hp: 210, L: 17.5, B: 7,   prop: 'ENGINE', sonar: 0, net: 0, what: 'Engine: fast in any direction, but speeding near fish scares them away' },
   { id: 'trawler', name: 'Trawler',      cost: 5000, speed: 2.15, accel: 0.8, turn: 0.75, hold: 18, hp: 360, L: 23,   B: 9,   prop: 'ENGINE', sonar: 1, net: 3, deck: 1, what: 'A sturdy engine boat, big enough to land sea giants', req: 'pier' },
@@ -27,7 +28,7 @@ export const BOATS: BoatDef[] = [
 ];
 /** What a spare boat brings in per minute while you sail another one (the Fleet Office), and how many minutes it can hold. */
 export const FLEET_PER_MIN: Record<BoatId, number> = {
-  row: 8, canoe: 6, skiff: 18, jetski: 12, launch: 35, trawler: 70, speedboat: 50, catamaran: 85, schooner: 110, cruiser: 120, drifter: 160, research: 150,
+  row: 8, canoe: 6, skiff: 18, boatdev: 25, jetski: 12, launch: 35, trawler: 70, speedboat: 50, catamaran: 85, schooner: 110, cruiser: 120, drifter: 160, research: 150,
   flagship: 240, icebreaker: 210, yacht: 220, motoryacht: 300, superyacht: 520,
 };
 export const FLEET_HOLD_MIN = 10;

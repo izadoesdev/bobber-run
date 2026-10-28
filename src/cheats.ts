@@ -17,7 +17,7 @@ interface Cheat { code: string; what: string; run: () => string | void }
 const UNLOCK_SHIPS: ProjectId[] = ['pier', 'market', 'drydock', 'lights'];
 
 export const CHEATS: Cheat[] = [
-  { code: 'moneybags', what: '+$10,000', run: () => { G.coins += 10000; } },   // not counted as earned, so it doesn't trip goals
+  { code: 'moneybags', what: '+$1,000,000', run: () => { G.coins += 1000000; } },   // not counted as earned, so it doesn't trip goals
   { code: 'maxgear', what: 'Every upgrade at its top level', run: () => { for (const k of UPGRADE_KEYS) G.up[k] = UPGRADES[k].costs.length; } },
   { code: 'shipwright', what: 'Own every ship', run: () => {
     for (const p of UNLOCK_SHIPS) if (!G.projects.includes(p)) G.projects.push(p);
