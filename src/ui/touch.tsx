@@ -10,7 +10,11 @@ import { stepZoom } from '../camera';
 import { SET } from '../prefs';
 import { NET } from '../net';
 import { ONLINE } from '../online';
-import { BOATS } from '../econ';
+import { BOATS, SPECIES } from '../econ';
+import { castPoint, castTargets } from '../game/fishing';
+import { encountersNear, openEncounter } from '../game/encounters';
+import { realmDockAt } from '../islands';
+import { toast } from '../game/feedback';
 import { unlockAudio } from '../audio';
 import { Icon, Fish, viewPct } from './parts';
 
@@ -77,6 +81,19 @@ function onSeaDown(e: PointerEvent): void {
   if (e.button !== 0 || steering !== null || G.mode !== 'play' || overHud(e.clientX, e.clientY)) return;
   const at = seaPoint(e.clientX, e.clientY), uid = boatClick && sailorAt(...at);
   if (uid) { boatClick!(uid); return; }
+  if (!G.fish && !G.card) {
+    const origin = { x: at[0], y: at[1] };
+    const target = castTargets().map(stock => ({ stock, at: castPoint(stock, origin) }))
+      .filter(t => Math.hypot(t.at.x - origin.x, t.at.y - origin.y) < 9 + (t.stock.reach ?? 0))
+      .sort((a, b) => Math.hypot(a.at.x - origin.x, a.at.y - origin.y) - Math.hypot(b.at.x - origin.x, b.at.y - origin.y))[0];
+    if (target) {
+      G.aim = target.stock.id; G.nearSchool = target.stock; dropCourse();
+      toast(`${SPECIES[target.stock.sp].name} selected. Cast when you’re ready.`);
+      return;
+    }
+    const encounter = encountersNear().find(e => Math.hypot(e.x - origin.x, e.y - origin.y) < 18);
+    if (encounter) { openEncounter(encounter); return; }
+  }
   if (!setCourse(...at)) return;
   steering = e.pointerId; sx = e.clientX; sy = e.clientY;
   canvas!.setPointerCapture(e.pointerId);
@@ -154,10 +171,12 @@ function mainAction(): { label: string; icon: string; off: boolean } {
   return { label: 'Strike', icon: 'rod', off: f.st !== 'bite' };
 }
 function useAction(): { label: string; icon: string } | null {
-  if (G.fish) return null;
+  if (G.fish || G.card) return null;
   if (G.nearPort) return { label: 'Dock', icon: 'anchor' };
+  if (realmDockAt(G.boat.x, G.boat.y)) return { label: 'Land', icon: 'anchor' };
   if (G.nearTreasure) return { label: 'Haul up', icon: 'map' };
   if (G.nearWreck) return { label: 'Salvage', icon: 'coin' };
+  if (G.nearEncounter) return { label: ['prop', 'habitat', 'plankton'].includes(G.nearEncounter.kind) ? 'Inspect' : 'Visit', icon: 'map' };
   return null;
 }
 const MENU_GLYPH = <svg class="tglyph" viewBox="0 0 10 10"><path d="M1.5 2.5h7M1.5 5h7M1.5 7.5h7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" /></svg>;
@@ -166,8 +185,8 @@ const CLOSE_GLYPH = <svg class="tglyph" viewBox="0 0 10 10"><path d="M2.5 2.5l5 
 function Controls() {
   const m = G.mode, close = (label: string) => <Btn k="Escape" label={label}>{CLOSE_GLYPH}</Btn>;
   if (m === 'play') return <PlayControls />;
-  if (m === 'map') return <div class="tcorner"><Btn k="z" label="Zoom"><span class="tglyph text">{G.map.zoom === 1 ? '+' : '-'}</span></Btn>{close('Close')}</div>;
-  if (m === 'log' || m === 'ship' || m === 'journal' || m === 'emote') return <div class="tcorner">{close('Close')}</div>;
+  if (m === 'map') return <div class="tcorner"><Btn k="z" label="Zoom"><span class="tglyph text">{G.map.zoom === 1 ? '+' : '−'}</span></Btn></div>;
+  if (m === 'log' || m === 'ship' || m === 'emote') return <div class="tcorner">{close('Close')}</div>;
   if (m === 'talk') return <div class="tcorner top">{close('Skip')}</div>;
   return null;
 }
@@ -177,7 +196,7 @@ function PlayControls() {
   return (
     <>
       <div class="tbar">
-        <Btn k="Escape" label="Menu" off={!!G.fish}>{MENU_GLYPH}</Btn>
+        <Btn k="Escape" label="Menu">{MENU_GLYPH}</Btn>
         <Btn k="m" label="Chart"><Icon k="map" /></Btn>
         <Btn k="Tab" label="Ship" badge={G.hold.length || undefined}><Icon k="hold" /></Btn>
         <Btn k="l" label="Log"><Fish sp={0} /></Btn>
@@ -189,6 +208,7 @@ function PlayControls() {
       <div class="tact">
         {NET.authed && ONLINE.sailors.length > 0 && <Btn k="g" label="Greet"><span class="tglyph text">Hi</span></Btn>}
         {G.pet && !G.fish && <Btn k="p" label="Pet"><span class="cat-dot" /></Btn>}
+        {!G.fish && !G.card && castTargets().length > 1 && <Btn k="q" label="Next fish"><Icon k="rod" /></Btn>}
         {use && <Btn k="e" label={use.label} cls="use" off={!offered('E')}><Icon k={use.icon} /></Btn>}
         <Btn k=" " label={main.label} cls={'main' + (G.stats.caught === 0 && !G.fish && !main.off ? ' pulse' : '')} off={main.off}><Icon k={main.icon} /></Btn>
       </div>

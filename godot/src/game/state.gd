@@ -1,6 +1,6 @@
-## The captain's state, as an autoload (Godot's global): coins, the fish in the hold, how many of each species have
-## been sold at each port lately (a market tires of a fish), the port the boat is docked at, if any, and the clock
-## (src/game/rules.ts): a day is DAYLEN seconds of sailing, and time stands still in port.
+## The captain's state, as an autoload (Godot's global): coins, the fish in the hold, the upgrades bought, how many of
+## each species have been sold at each port lately (a market tires of a fish), the port the boat is docked at, if any,
+## and the clock (src/game/rules.ts): a day is DAYLEN seconds of sailing, and time stands still in port.
 extends Node
 
 signal changed
@@ -11,6 +11,8 @@ const DAYLEN := 480.0
 var coins := 50
 ## fish aboard: { sp, name, kg, stars, value }
 var hold: Array[Dictionary] = []
+## upgrade key -> the level bought (Upgrades)
+var up: Dictionary[String, int] = {}
 ## port id -> species index -> fish sold there
 var sold: Dictionary[String, Dictionary] = {}
 ## the port the boat lies at, or null while at sea
@@ -73,3 +75,19 @@ func add_fish(fish: Dictionary) -> void:
 func add_coins(n: int) -> void:
 	coins += n
 	changed.emit()
+
+
+## The level of upgrade `key` bought (0 for none).
+func level(key: String) -> int:
+	return up.get(key, 0)
+
+
+## Buy the next level of upgrade `key`, if there is one and the purse holds its price. Whether it was bought.
+func buy(key: String) -> bool:
+	var price := Upgrades.cost(key, level(key))
+	if price < 0 or price > coins:
+		return false
+	coins -= price
+	up[key] = level(key) + 1
+	changed.emit()
+	return true

@@ -5,7 +5,8 @@ import { masteryAfterCatch } from './mastery';
 import { hAt, heightAt, homePort, schoolsNear } from '../world';
 import { WX, biteMul, trophyBonus } from '../weather';
 import { SPECIES, activeAt, fmtKg } from '../econ';
-import { favBait, rollVariant, VARIANTS, type VariantId } from '../species';
+import { favBait, rollVariant, schoolLook, VARIANTS, type VariantId } from '../species';
+import { wildlifePresent, wildlifeStocks } from './wildlife';
 import { sfx } from '../audio';
 import { SET } from '../prefs';
 import { netCatch } from '../net';
@@ -72,12 +73,31 @@ export function nearestSchool(): School | null {
   const list = castTargets();
   return list.find(s => s.id === G.aim) ?? list[0] ?? null;
 }
-/** Biting schools within casting range, nearest first, those this rod and boat can land ahead of the rest. */
-export function castTargets(): School[] {
-  const b = G.boat, r = castRange(), dist = (s: School) => Math.hypot(s.x - b.x, s.y - b.y);
-  return schoolsNear(b.x, b.y, 90).filter(s => schoolActive(s) && dist(s) < r).sort((p, q) => (catchNeed(p.sp) ? 1 : 0) - (catchNeed(q.sp) ? 1 : 0) || dist(p) - dist(q));
+/** Aim at a visible fish, not the empty centre of a wide school. */
+export function castPoint(s: School, origin: { x: number; y: number } = G.boat): { x: number; y: number } {
+  if (s.wildlife) {
+    const dx = origin.x - s.x, dy = origin.y - s.y, distance = Math.hypot(dx, dy);
+    const reach = Math.min(s.reach ?? 0, distance);
+    return distance ? { x: s.x + dx / distance * reach, y: s.y + dy / distance * reach } : s;
+  }
+  if (!s.swim?.length) return s;
+  const count = Math.max(1, Math.round(schoolLook(s.sp).count * Math.min(1, s.stock / Math.max(1, s.max))));
+  let point: { x: number; y: number } = s, distance = Infinity;
+  for (const fish of s.swim.slice(0, count)) {
+    const d = Math.hypot(fish.x - origin.x, fish.y - origin.y);
+    if (d < distance) { point = fish; distance = d; }
+  }
+  return point;
 }
-/** Tab: aim at the next school in casting range. */
+
+export function castTargets(): School[] {
+  const b = G.boat, r = castRange();
+  const dist = (s: School) => boatDist(castPoint(s));
+  const schools = schoolsNear(b.x, b.y, r + 110).filter(s => s.stock > 0 && schoolShown(s) && (s.submergence ?? 0) < 0.25);
+  return [...schools, ...wildlifeStocks()].filter(s => dist(s) < r)
+    .sort((p, q) => (catchNeed(p.sp) ? 1 : 0) - (catchNeed(q.sp) ? 1 : 0) || dist(p) - dist(q));
+}
+/** Q / R3: aim at the next creature in casting range. */
 export function nextTarget(): void {
   const list = castTargets();
   if (list.length < 2) return;
@@ -92,14 +112,18 @@ export function cancelFishing(msg?: string): void {
 }
 const deny = (msg: string): void => { toast(msg, 'bad'); sfx('deny'); };
 export function tryCast(s: School): void {
+  if (G.mode !== 'play' || G.fish || G.card) return;
+  if (Math.hypot(G.boat.vx, G.boat.vy) >= 10) return deny('Stop to fish');
+  if (!castTargets().includes(s)) return deny('That creature is no longer in casting range');
   const sp = SPECIES[s.sp];
   if (G.hold.length >= cap()) return deny('Your hold is full. Sell your fish at a port');
   const need = catchNeed(s.sp);
   if (need) return deny(`${sp.name} ${need}`);
   const bait = G.baitSel !== 'none' && G.bait[G.baitSel] > 0 ? G.baitSel : null;
   if (bait) G.bait[bait]--;
+  const at = castPoint(s);
   G.fish = {
-    st: 'cast', s, t: 0, tx: s.x + jitter(8), ty: s.y + jitter(8), tension: 0, prog: 0, ph: Math.random() * 6, wait: 0, reelT: 0,
+    st: 'cast', s, t: 0, tx: at.x + jitter(s.wildlife ? 1 : 4), ty: at.y + jitter(s.wildlife ? 1 : 4), tension: 0, prog: 0, ph: Math.random() * 6, wait: 0, reelT: 0,
     bait, frenzy: !!G.frenzy && G.frenzy.s === s, perfect: false, hint: escapeeAt(s) ? `The ${sp.name} that broke your line lives here` : castHint(sp, bait, s),
   };
   sfx('cast');
@@ -129,6 +153,7 @@ const FIGHT: Record<FightStyle, (ph: number) => number> = {
 export function updateFishing(dt: number): void {
   const f = G.fish;
   if (!f) return;
+  if (f.s.wildlife && !wildlifePresent(f.s)) { cancelFishing('The creature swam away, so you reeled in'); return; }
   f.t += dt;
   const b = G.boat;
   if (f.st !== 'reel' && Math.hypot(f.tx - b.x, f.ty - b.y) > 80) { cancelFishing('You sailed too far from your bobber, so you reeled in'); return; }   // a hooked fish keeps the line
@@ -351,6 +376,7 @@ export function rehomeEscapees(): void {
  * half landed) stays with its school, wearing your hook, until you land it. One that gets away again grows a little.
  */
 function remember(f: FishLine): boolean {
+  if (f.s.wildlife) return false;
   const sp = SPECIES[f.s.sp];
   if (f.back) { f.back.lost++; f.back.kg = Math.round(f.back.kg * 105) / 100; saveGame(); return true; }
   const worthy = f.gold || sp.legend || sp.deck >= 1 || (sp.diff >= 0.45 && f.prog >= 0.5);
@@ -569,7 +595,7 @@ function makeMap(): TreasureMap | null {
 }
 
 // ---------- frenzies ----------
-const frenzyOk = (s: School): boolean => !s.boss && !SPECIES[s.sp].legend;
+const frenzyOk = (s: School): boolean => !s.wildlife && !s.boss && !SPECIES[s.sp].legend;
 function startFrenzy(s: School, seconds: number): void {
   s.stock = Math.max(s.stock, 6);
   s.spooked = 0; s.scatterT = undefined; s.heat = 0;

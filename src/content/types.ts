@@ -1,6 +1,3 @@
-// The content format: packs of characters and quest chains, written as plain data (src/content/packs/*.ts) and run
-// by src/content/engine.ts alongside the main story. tests/content.test.ts checks every pack, so a typo in a species
-// id or a character name fails CI rather than a player's quest.
 import type { BiomeId } from '../biome';
 import type { BaitKind, FightStyle, ProjectId } from '../types';
 
@@ -49,5 +46,6 @@ export interface Pack {
   characters: Character[];
   quests: QuestDef[];
 }
-/** Progress through one pack: the quest it's on, the count toward that quest's objective, and whether it began. */
-export interface PackState { i: number; n: number; started: boolean }
+// Missing status preserves legacy running stories.
+export interface PackState { i: number; n: number; started: boolean; status?: 'active' | 'paused' }
+export type PackStatus = 'available' | 'active' | 'paused' | 'done';

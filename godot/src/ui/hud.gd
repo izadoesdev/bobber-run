@@ -47,6 +47,7 @@ func _ready() -> void:
 	_place(root, _card, Control.PRESET_CENTER, Vector2(0, -90))
 	var port := PortPanel.new()
 	port.docking = docking
+	port.boat = boat
 	_place(root, port, Control.PRESET_CENTER_RIGHT, Vector2(-24, 0))   # beside the harbour, not over it
 	port.mouse_filter = Control.MOUSE_FILTER_STOP
 	fishing.said.connect(_say)
@@ -66,8 +67,9 @@ func _process(delta: float) -> void:
 	_card.visible = _card_t > 0.0 and State.docked == null
 	_reel.visible = fishing.stage == Fishing.Stage.REEL
 	if _reel.visible:
-		_tension.value = fishing.tension
-		_tension.modulate = UiTheme.RED if fishing.tension > 0.8 else UiTheme.AMBER if fishing.tension > 0.6 else UiTheme.CREAM
+		var strain := fishing.tension / fishing.line_max()
+		_tension.value = strain
+		_tension.modulate = UiTheme.RED if strain > 0.8 else UiTheme.AMBER if strain > 0.6 else UiTheme.CREAM
 		_progress.value = fishing.progress
 
 
@@ -86,6 +88,9 @@ func _prompt_text() -> String:
 		return ""
 	if fishing.room() <= 0:
 		return "Your hold is full"
+	var need := fishing.catch_need(fishing.target.sp)
+	if not need.is_empty():
+		return "%s %s" % [Species.all[fishing.target.sp].name, need]
 	return "[SPACE] Cast for " + Species.all[fishing.target.sp].name if boat.speed() < 10.0 else "Stop to fish"
 
 

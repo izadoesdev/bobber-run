@@ -2,7 +2,8 @@
 ##
 ## The state is the game's: position (x, y) on the sea (east, south), velocity, heading `a` (radians, 0 east, turning
 ## clockwise as seen from above) and turn rate. Physics runs on the fixed physics tick, and Godot's physics
-## interpolation draws the node smoothly between ticks. Stats come from the game's own table (data/boats.json).
+## interpolation draws the node smoothly between ticks. Stats come from the game's own table (data/boats.json), with
+## the upgrades fitted: a faster drive and a bigger hold (boatStats in src/game/rules.ts).
 class_name Boat
 extends Node3D
 
@@ -26,6 +27,7 @@ var _helm := 0.0
 var _thr := 0.0
 var _heel := 0.0
 var _heel_v := 0.0
+var _base: Dictionary
 var _stats: Dictionary
 var _hull: PackedVector2Array = []
 @onready var _model: MeshInstance3D = $Model
@@ -34,7 +36,9 @@ var _hull: PackedVector2Array = []
 func _ready() -> void:
 	for s: Dictionary in JSON.parse_string(FileAccess.get_file_as_string("res://data/boats.json")):
 		if s.id == boat_id:
-			_stats = s
+			_base = s
+	fit_upgrades()
+	State.changed.connect(fit_upgrades)
 	_model.mesh = VoxelModel.boat_mesh(boat_id)
 	# the hull outline: 18 points on an ellipse, a little blunter at the stern
 	for k in 18:
@@ -51,11 +55,17 @@ func place_at(px: float, py: float, heading: float) -> void:
 	reset_physics_interpolation()
 
 
+func fit_upgrades() -> void:
+	_stats = _base.duplicate()
+	_stats.speed = _base.speed * (1.0 + Upgrades.step.prop * State.level("prop"))
+	_stats.hold = _base.hold + Upgrades.step.hold * State.level("hold")
+
+
 func speed() -> float:
 	return Vector2(vx, vy).length()
 
 
-## The boat's stats from the game's table (speed, accel, turn, L, B, prop, hp, hold).
+## The boat's stats, upgrades fitted (speed, accel, turn, L, B, prop, hp, hold, deck).
 func stats() -> Dictionary:
 	return _stats
 

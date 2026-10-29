@@ -17,6 +17,8 @@ static func get_theme() -> Theme:
 	var font: FontFile = _FONT.duplicate()
 	font.antialiasing = TextServer.FONT_ANTIALIASING_NONE
 	font.subpixel_positioning = TextServer.SUBPIXEL_POSITIONING_DISABLED
+	var ts := TextServerManager.get_primary_interface()
+	font.opentype_feature_overrides = { ts.name_to_tag("liga"): 0 }   # the web font's "fi" ligature is a broken glyph
 	_theme = Theme.new()
 	_theme.default_font = font
 	_theme.default_font_size = 18

@@ -1,10 +1,9 @@
-// Full-screen documents and panels: the sea chart, the logbook, the ship and hold, and the story journal.
 import { clamp, dirTo, money } from '../config';
 import { G, logged, cap, boatDef, equipment, fishValue, speedMul, deckLvl, deckBoat, ownedLvl, smallFry, releaseSmallFry, toggleHelper, SMALL_FRY, buyFishChart, fishChartPrice, chartable } from '../game';
 import { track } from '../analytics';
 import { isRunningNow } from '../tides';
 import { SPECIES, UPGRADES, PAINTS, SUPPLIES, fmtKg } from '../econ';
-import { homePort, heightAt, regionSite } from '../world';
+import { homePort, heightAt } from '../world';
 import { regionAt } from '../biome';
 import { opensAfter, regionAbout, regionInfo } from '../game/regions';
 import { livesAt, VARIANTS, type VariantId } from '../species';
@@ -13,14 +12,16 @@ import { openIsland } from './island';
 import { NET } from '../net';
 import { QUESTS, CHAPTERS, PEOPLE, currentQuest, questProgress, story } from '../story';
 import { guide, guideOn, stepLine } from '../game/guide';
+import { openChart, closeChart } from '../game/chart';
 import { chartPerks } from '../game/rules';
 import { GRADES, grade } from '../game/mastery';
-import { packJournal } from '../content/engine';
+import { Stories } from './stories';
 import { Face } from './faces';
 import { ADMIN, teleport } from './admin';
 import type { UpgradeKey } from '../types';
 import { drawChart, compassRose, zoneKnown, chartAt, drawn, type Legend } from './chart';
-import { Canvas, Cell, Fish, Hint, HullStat, Icon, Key, Pips, Stat, boatPreview, type DrawFn } from './parts';
+import { Canvas, Cell, Fish, Hint, HullStat, Icon, Key, Pips, Stat, forTouch, type DrawFn } from './parts';
+import { BoatPortrait } from './boats';
 import type { ComponentChildren } from 'preact';
 
 // ---------- chart ----------
@@ -67,7 +68,7 @@ export function Chart() {
   };
   const hp = homePort(), flip = tip && tip.x > tip.w * 0.62;
   return (
-    <div class="screen paper doc">
+    <div class="screen paper doc chart-screen">
       <header class="head">
         <h1>Sea chart</h1>
         <div class="legend">{LEGEND.filter(([k]) => drawn.has(k)).map(([k, el]) => <span key={k}>{el}</span>)}</div>
@@ -108,7 +109,7 @@ export function Chart() {
       </div>
       <footer class="foot">
         <span>{on ? <><span class="gold">Next:</span> {stepLine(step)}</> : `${hp.name} is ${Math.round(Math.hypot(G.boat.x - hp.x, G.boat.y - hp.y) / 10)} m away`}</span>
-        <span class="hints-inline"><span class="hint muted">Drag to look around</span><Hint k="z">Zoom</Hint><Hint k="c">Recentre</Hint><Hint k="m" pad="Y">Close</Hint></span>
+        <span class="hints-inline"><span class="hint muted">Drag to look around</span><Hint k="z">Zoom</Hint><Hint k="c">Recentre</Hint><button data-track="chart-close" class="btn small-btn" onClick={closeChart}>{m.back === 'journal' ? 'Back to journal' : m.back === 'log' ? 'Back to logbook' : 'Close chart'}<Key k="m" pad="Y" /></button></span>
       </footer>
     </div>
   );
@@ -140,7 +141,7 @@ function ZoneChip({ sp }: { sp: number }) {
 let homeKey = '', homeAt: { x: number; y: number } | null = null;   // the search below is too slow to repeat every frame
 function nearestHome(sp: number): { x: number; y: number } | null {
   const b = G.boat, spots = G.log[SPECIES[sp].id]?.at ?? [];
-  const key = `${sp}:${Math.round(b.x / 100)},${Math.round(b.y / 100)}:${spots.length}:${zoneKnown(sp)}`;
+  const key = `${sp}:${Math.round(b.x / 100)},${Math.round(b.y / 100)}:${spots.join(';')}:${zoneKnown(sp)}`;
   if (key === homeKey) return homeAt;
   homeKey = key;
   return homeAt = findHome(sp, spots);
@@ -157,10 +158,8 @@ function findHome(sp: number, spots: [number, number][]): { x: number; y: number
 }
 /** Open the sea chart on a species: its waters (if known), your catch spots, centred on the nearest of them. */
 function showOnChart(sp: number): void {
-  const m = G.map, p = nearestHome(sp);
-  m.zoneSp = sp; m.zoom = 2;
-  if (p) { m.x = p.x - G.boat.x; m.y = p.y - G.boat.y; }
-  G.mode = 'map';
+  openChart(nearestHome(sp) ?? G.boat, 'log');
+  G.map.zoneSp = sp; G.map.zoom = 2;
   track('fish_chart_opened', { species: SPECIES[sp].id, how: 'logbook' });
 }
 function FishChartRow({ sp }: { sp: number }) {
@@ -223,22 +222,6 @@ export function Logbook() {
 }
 
 // ---------- ship + hold ----------
-/** The story packs you've opened: each one's name, its current quest with progress and hint, or that it's done. */
-function Stories() {
-  const packs = packJournal();
-  if (!packs.length) return null;
-  return (
-    <div>
-      <div class="list-head caps">Stories</div>
-      {packs.map(({ pack, quest, have, want }) => (
-        <Item k="map" face={pack.characters.find(c => c.id === quest?.by) ?? pack.characters[0]} name={pack.name} sub={quest ? `${quest.title}: ${quest.goal}${quest.hint ? `. ${quest.hint}` : ''}` : 'Done'}>
-          {quest && 'site' in quest.obj && !have && <SailToSite id={quest.obj.site} r={quest.obj.r ?? 90} />}
-          {quest ? <span class="num">{have}/{want}</span> : <Icon k="star" size="s" />}
-        </Item>
-      ))}
-    </div>
-  );
-}
 /**
  * The region under the pointer (else the one you're in): its name and what it's like, whether it's open, how much of it
  * you've seen and charted, and its fish, the ones you've logged in colour and the rest as silhouettes.
@@ -254,26 +237,6 @@ function RegionCard({ at }: { at: { x: number; y: number } }) {
       <div class="rc-fish">{info.fish.slice(0, 12).map(f => <span title={f.logged ? SPECIES[f.sp].name : 'Not logged yet'}><Fish sp={f.sp} size="s" cls={f.logged ? '' : 'sil'} /></span>)}{info.fish.length > 12 && <span class="muted">+{info.fish.length - 12}</span>}</div>
     </div>
   );
-}
-/**
- * A story's place to sail to: a waypoint on open water beside it (villages and some legends stand on land), and off
- * you go. Villages face the sea along their angle; otherwise the nearest water on rings around the spot, inside the
- * distance that counts as arriving.
- */
-function SailToSite({ id, r: reach }: { id: string; r: number }) {
-  const site = regionSite(id), shut = site && opensAfter(regionAt(site.x, site.y));
-  if (shut) return <span class="muted small" title="Rough water turns boats back until then">{shut}</span>;   // in a region that isn't open yet
-  const go = () => {
-    const s = regionSite(id);
-    if (!s) return;
-    let at = { x: s.x, y: s.y };
-    found: for (let r = 0; r < reach - 5; r += 10) for (let k = 0; k < 24; k++) {
-      const a = s.a + k / 24 * Math.PI * 2, x = s.x + Math.cos(a) * r, y = s.y + Math.sin(a) * r;
-      if (heightAt(x, y) < -0.06) { at = { x, y }; break found; }
-    }
-    setWaypoint(at.x, at.y); sailToWaypoint(); G.mode = 'play';
-  };
-  return <button data-track="story-sail" class="btn small-btn" onClick={go}>Sail there</button>;
 }
 /** What charting the coast has earned so far, and what the next lighthouse or landmark adds. */
 function ChartedPerks() {
@@ -324,7 +287,7 @@ export function Ship() {
       </header>
       <div class="body">
         <div class="col side">
-          <Canvas cls="preview" draw={boatPreview(bd.id, equipment(), 8)} />
+          <BoatPortrait id={bd.id} fit={equipment()} />
           <Stat label="Speed" k={speedMul() / 3.1}>{Math.round(speedMul() * 100)}%</Stat>
           <HullStat />
           <Stat label="Hold" k={G.hold.length / cp} tone="gold">{G.hold.length}/{cp}</Stat>
@@ -377,42 +340,52 @@ export function Ship() {
   );
 }
 
-// ---------- journal: the story so far ----------
+// ---------- journal ----------
+function JournalNextStep() {
+  const step = guide();
+  const show = () => {
+    const target = guide().at;
+    if (G.mode === 'journal' && target) openChart(target, 'journal');
+  };
+  return <section class="journal-next" aria-label="Next step">
+    <div class="caps small">Next step</div><p>{stepLine(step)}</p>
+    {step.at && <button data-track="journal-show-on-chart" class="btn small-btn" onClick={show}>Show on chart</button>}
+  </section>;
+}
+
 export function Journal() {
   const st = story(), cur = currentQuest(), pr = cur && questProgress(cur);
   return (
     <div class="screen paper doc">
-      <header class="head"><h1>Journal</h1><span class="muted">{Math.min(st.i, QUESTS.length)} of {QUESTS.length} quests</span><ChartedPerks /></header>
+      <header class="head"><h1>Journal</h1><span class="muted">Main story · {Math.min(st.i, QUESTS.length)} of {QUESTS.length} quests</span><ChartedPerks /></header>
       <div class="body">
         <div class="col journal-list">
-          {CHAPTERS.map((c, ci) => {
-            const qs = QUESTS.map((q, i) => [q, i] as const).filter(([q]) => q.ch === ci);
-            if (qs[0][1] > st.i) return null;                      // chapters not reached yet stay hidden
-            return (
-              <div>
-                <div class="list-head caps">Chapter {ci + 1}: {c}</div>
-                {qs.filter(([, i]) => i <= st.i).map(([q, i]) => (
-                  <Item cls={i === st.i ? ' sel' : ''} k={q.by} face={PEOPLE[q.by]} name={q.title} sub={i < st.i ? 'Done' : q.goal}>
-                    {i === st.i && pr ? <span class="num">{pr.have}/{pr.want}</span> : <Icon k="star" size="s" />}
-                  </Item>
-                ))}
-              </div>
-            );
-          })}
-          {!cur && <><p class="gold">The story is complete. Nell is home.</p><p><span class="caps">Next step</span> {stepLine()}</p></>}
+          {cur && <div>
+            <div class="list-head caps">Chapter {cur.ch + 1}: {CHAPTERS[cur.ch]}</div>
+            <Item cls=" sel" k={cur.by} face={PEOPLE[cur.by]} name={cur.title} sub={cur.goal}>
+              {pr && <span class="num">{pr.have}/{pr.want}</span>}
+            </Item>
+          </div>}
+          {!cur && <><p class="gold">The story is complete. Nell is home.</p><JournalNextStep /></>}
           <Stories />
+          {st.i > 0 && <details class="story-dialogue main-story-history"><summary>Main story so far</summary>
+            {QUESTS.slice(0, st.i).map(q => <div key={q.id}><h3>{q.title}</h3>
+              {[...q.intro, ...q.outro].map(([by, line], i) => <p key={i}><b>{PEOPLE[by].name}:</b> {forTouch(line)}</p>)}
+            </div>)}
+          </details>}
         </div>
         {cur && (
           <aside class="detail paper">
-            <div class="d-icon"><Face who={cur.by} name={PEOPLE[cur.by].name} role={PEOPLE[cur.by].role} size="l" /></div><h2>{cur.title}</h2>
-            <p class="muted">{PEOPLE[cur.by].name}, {PEOPLE[cur.by].role}</p>{cur.intro.map(([, line]) => <p>{line}</p>)}
+            <h2>{cur.title}</h2>
+            <JournalNextStep />
             <p><span class="caps">Goal</span> {cur.goal}{pr && pr.want > 1 ? ` (${pr.have}/${pr.want})` : ''}</p>
-            <p><span class="caps">Next step</span> {stepLine()}</p>
-            {cur.hint && <p class="muted">{cur.hint}</p>}
+            <div class="row"><Face who={cur.by} name={PEOPLE[cur.by].name} role={PEOPLE[cur.by].role} size="s" /><span class="muted small">{PEOPLE[cur.by].name}, {PEOPLE[cur.by].role}</span></div>
+            {cur.intro.map(([, line]) => <p>{forTouch(line)}</p>)}
+            {cur.hint && <p class="muted">{forTouch(cur.hint)}</p>}
           </aside>
         )}
       </div>
-      <footer class="foot"><span /><Hint k="j" pad="B">Close</Hint></footer>
+      <footer class="foot"><span class="muted small">Stories wait for you. No need to finish them to keep exploring.</span><button data-track="journal-close" class="btn small-btn" onClick={() => { G.mode = G.journalBack; }}>Close journal <Key k="j" /></button></footer>
     </div>
   );
 }

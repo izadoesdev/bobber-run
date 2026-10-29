@@ -8,7 +8,7 @@ export type ToastKind = 'info' | 'good' | 'bad';
 /** Every screen the game can be on. `G.mode` drives input routing and which UI is drawn. */
 export type Mode =
   | 'title' | 'play' | 'port' | 'map' | 'log' | 'ship' | 'pause' | 'settings' | 'controls'
-  | 'sunk' | 'finale' | 'cheat' | 'talk' | 'journal' | 'account' | 'emote' | 'leaders' | 'island';
+  | 'sunk' | 'finale' | 'cheat' | 'talk' | 'journal' | 'account' | 'emote' | 'leaders' | 'island' | 'encounter';
 
 export type WeatherState = 'clear' | 'cloudy' | 'rain' | 'storm';
 /** Conditions a species checks before it bites (see `activeAt` in econ). */
@@ -24,7 +24,7 @@ export type Landmark = 'wreck' | 'light';
 export type FightStyle = 'steady' | 'darter' | 'generic' | 'jumper' | 'erratic' | 'boss';
 export type FishShape =
   | 'slim' | 'perch' | 'long' | 'flat' | 'tuna' | 'bill' | 'round' | 'squid'
-  | 'glow' | 'levi' | 'crab' | 'eel' | 'puffer' | 'angel' | 'carp' | 'shark' | 'ray';
+  | 'glow' | 'levi' | 'crab' | 'eel' | 'puffer' | 'angel' | 'carp' | 'shark' | 'ray' | 'whale' | 'dolphin' | 'jelly';
 /**
  * How a species lives in the water, which sets how its school looks and moves: bait balls of many small fish, loose
  * shoals, small hunting packs, bottom dwellers lying still, crabs on the seabed, slow drifters, and lone giants.
@@ -143,6 +143,10 @@ export interface School extends FishStock {
   sp: number;
   respawn: number;
   ph: number;
+  /** A single creature from the sea-life simulation, rather than a procedural school. */
+  wildlife?: true;
+  /** Half the creature's visible length, for casting near its body rather than only its centre. */
+  reach?: number;
   /** game time until which the school won't bite */
   spooked?: number;
 }
@@ -300,7 +304,7 @@ interface Particle {
 /** What callers pass to `spawn`; `max` is filled in from `life`. */
 export type ParticleSpec = Omit<Particle, 'max'>;
 
-export interface Toast { s: string; kind: ToastKind; t: number }
+export interface Toast { s: string; kind: ToastKind; t: number; scope?: 'sailing' }
 interface Caption { s: string; t: number }
 interface Floater { s: string; t: number; kind: 'good' | 'bad' }
 
@@ -336,9 +340,10 @@ export interface Talk { lines: TalkLine[]; i: number; then?: () => void; back: M
 /** Story progress; `base` snapshots the stats when the current quest began. */
 export interface StoryState { i: number; base: Stats; shown: boolean }
 
-interface PortMenu { tab: number; sel: number; port: Port | null }
+interface PortMenu { tab: number; sel: number; port: Port | null; sale?: { count: number; coins: number } }
 interface MapView {
   x: number; y: number; zoom: number;
+  back?: 'play' | 'log' | 'journal';
   /** the species whose zone and catch spots the chart is showing (index into SPECIES), if any */
   zoneSp?: number | null;
 }
@@ -353,7 +358,7 @@ export interface NetForm {
 // ---------- port menu rows (portItems) ----------
 export interface NeedStatus { have: number; want: number; label: string; pick: Fish[]; sp?: number }
 type PortItemKind =
-  | 'sell' | 'deliver' | 'take' | 'rest' | 'repair' | 'supply' | 'upgrade' | 'boat' | 'paint'
+  | 'sell' | 'sale' | 'deliver' | 'take' | 'rest' | 'repair' | 'supply' | 'upgrade' | 'boat' | 'paint'
   | 'collect' | 'fleet' | 'note' | 'project' | 'fund' | 'ferry' | 'contract' | 'island';
 interface PortHeader { kind: 'header'; label: string }
 export interface PortRow {
@@ -413,6 +418,8 @@ interface Progress {
   fleet: Record<string, FleetBoat>;
   /** wreck id -> day number of the last diving-bell dive */
   dives: Record<string, number>;
+  /** Encounter reward key -> game day last claimed. */
+  visits: Record<string, number>;
   goalsDone: number[];
   maps: TreasureMap[];
   /** fish that broke your line and are still out there */
@@ -514,9 +521,10 @@ interface Surroundings {
   nearPort: Port | null;
   nearWreck: Wreck | null;
   nearSchool: School | null;
-  /** the school picked with Tab among several in casting range (its id), else the nearest is the target */
+  /** the creature picked with Q / R3 among several in casting range (its id), else the nearest is the target */
   aim: string | null;
   nearTreasure: TreasureMap | null;
+  nearEncounter: import('./game/encounters').SeaEncounter | null;
 }
 
 /** Menu cursors and where each screen returns to. */
@@ -533,6 +541,7 @@ interface Screens {
   accountBack: Mode; journalBack: Mode; cheatBack: Mode; leadersBack: Mode;
   /** the island the island card is showing, and where closing it returns */
   islandKey: string | null; islandBack: Mode;
+  encounter: import('./game/encounters').SeaEncounter | null;
   /** which leaderboard tab is showing */
   leaderTab: number;
   /** online players must pick their own captain name before sailing on */

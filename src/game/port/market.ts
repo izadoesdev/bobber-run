@@ -1,7 +1,7 @@
 // The market: prices, selling (keeping fish back for contracts and the harbour), repairs and fish charts.
 import { isRunningNow, RUNNING_PRICE } from '../../tides';
 import { packSell } from '../../content/engine';
-import { SPECIES } from '../../econ';
+import { SPECIES, UPGRADES, UPGRADE_STEP } from '../../econ';
 import { sfx } from '../../audio';
 import { track, bucket } from '../../analytics';
 import { CREW_RANGE, ONLINE, crewBonus } from '../../online';
@@ -80,7 +80,9 @@ export function sell(p: Port): void {
   addCoins(tot); G.stats.sold++; packSell(tot);
   track('catch_sold', { fish: n, value_bucket: bucket(tot), port: p.name, sold_kept: all });
   sfx('coin'); setTimeout(() => sfx('coin', 0.7), 90);
-  toast(`Sold ${n} fish for $${tot}`, 'good'); saveGame();
+  if (G.mode === 'port' && G.menu.port?.id === p.id) G.menu.sale = { count: n, coins: tot };
+  else toast(`Sold ${n} fish for $${tot}`, 'good');
+  saveGame();
 }
 
 /** Your own island's market pays a third over a fair price and doesn't tire of a species (islandRules: market). */
@@ -103,9 +105,19 @@ export function sellAtRealm(name: string): void {
   toast(`Sold ${n} fish at ${name}'s market for $${tot}`, 'good'); saveGame();
 }
 
-export function sellItems(p: Port, items: Rows): void {
+export function sellItems(p: Port, items: Rows, viewHold: () => void): void {
   const sv = saleValue(p), crew = saleBonus().crew;
   header(items, 'SELL');
+  const sale = G.menu.sale;
+  if (!G.hold.length && sale) {
+    const suggestHold = !G.stats.upgrades && !G.up.hold && G.boatId === 'row' && G.owned.length === 1;
+    items.push({
+      kind: 'sale', icon: 'coin', label: 'Catch sold', sub: `${sale.count} fish sold`, right: '+' + money(sale.coins), ok: true,
+      action: suggestHold ? 'View Hold upgrade' : undefined, act: suggestHold ? viewHold : () => {},
+      what: suggestHold ? `A larger Hold: ${cap()} fish to ${cap() + UPGRADE_STEP.hold} fish for ${money(UPGRADES.hold.costs[0])}. More room between trips to port, if that suits your next voyage.` : null,
+    });
+    return;
+  }
   items.push({
     kind: 'sell', icon: 'coin', label: 'Sell your catch',
     sub: sv.n ? `${sv.n} fish${sv.kept ? `, ${sv.kept} kept for contracts` : ''}${sv.harbour ? `, ${sv.harbour} kept for a harbour project` : ''}${crew ? `, crew bonus +${Math.round(crew * 100)}%` : ''}` : 'Your hold is empty',

@@ -30,13 +30,14 @@ Convex Auth also needs `JWT_PRIVATE_KEY`, `JWKS` and `SITE_URL` set on the deplo
 |---|---|
 | Arrows / WASD | Row and steer |
 | Space | Cast, strike, reel |
-| E | Dock, salvage, haul |
+| E | Interact, visit, dock, salvage, haul |
 | B / C | Switch bait / throw chum |
 | Tab | Ship and hold |
+| Q / R3 | Choose the next nearby fish or sea creature (touch: Next fish) |
 | M / L / J | Sea chart / logbook / journal |
 | Mouse wheel / - and + | Zoom the sea view |
 | F | Fullscreen |
-| Esc | Pause |
+| Esc / controller Start | Pause, including during a cast or fight (touch: Menu) |
 | `` ` `` or F2 | Cheat console (dev builds only, or with `VITE_ENABLE_CHEATS=1`) |
 
 Keys can be rebound under Controls. Gamepads work too. Settings > Pixel style switches between Chunky, Crisp and Smooth.
@@ -59,4 +60,4 @@ TypeScript throughout (`bun run typecheck` checks the client and `convex/`).
 
 ## Credits
 
-Code: MIT (see `LICENSE`). Fonts: [Pixelify Sans](https://fonts.google.com/specimen/Pixelify+Sans) and [Jersey 10](https://fonts.google.com/specimen/Jersey+10), SIL Open Font License (see `assets/fonts/`).
+Code: MIT (see `LICENSE`). Fonts are self-hosted under the SIL Open Font License: [Pixelify Sans](https://fonts.google.com/specimen/Pixelify+Sans) and [Jersey 10](https://fonts.google.com/specimen/Jersey+10) (licences in `assets/fonts/`); Nunito Sans and Fraunces (licences in `public/fonts/`). Settings → Font offers Harbour, Pixel, and Plain; saved font choices are retained.

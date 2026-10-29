@@ -1,7 +1,6 @@
-// Feedback the player sees: toasts, sound captions, coin floaters and particles.
 import { setCaptionHook } from '../audio';
 import { SET } from '../prefs';
-import type { ParticleKind, ParticleSpec, ToastKind } from '../types';
+import type { ParticleKind, ParticleSpec, Toast, ToastKind } from '../types';
 import { G } from './state';
 
 export function caption(s: string): void {
@@ -12,12 +11,12 @@ export function caption(s: string): void {
 }
 setCaptionHook((s: string) => { if (SET.captions) caption(s); });
 
-export function toast(s: string, kind: ToastKind = 'info'): void {
-  G.toasts.push({ s, kind, t: 2.8 });
+export function toast(s: string, kind: ToastKind = 'info', scope?: Toast['scope']): void {
+  if (G.toasts.some(t => t.s === s && t.kind === kind && t.scope === scope)) return;
+  G.toasts.push({ s, kind, t: 2.8, ...(scope ? { scope } : {}) });
   if (G.toasts.length > 3) G.toasts.shift();
 }
 
-/** Add a particle; its starting lifetime is remembered for fading. */
 export function spawn(o: ParticleSpec): void {
   G.parts.push(Object.assign(o, { max: o.life }));
 }
@@ -44,5 +43,4 @@ export function addCoins(n: number): void {
 }
 /** Mark a shop row as just bought, so the UI can flash it. */
 export const markBought = (id: string): void => { G.bought = { id, t: G.t }; };
-/** Toast for being short of coins. */
 export const tooPoor = (cost: number): void => toast(`You need $${cost - G.coins} more`, 'bad');

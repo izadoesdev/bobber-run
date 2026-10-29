@@ -5,9 +5,6 @@
 class_name DayNight
 extends Node
 
-## the lantern's reach on the water (the game's light radius, lightR, for a boat without a lantern upgrade)
-const LAMP_R := 21.0
-
 const _SUN_DAY := Vector3(1.0, 0.95, 0.86)
 const _SUN_DUSK := Vector3(1.3, 0.66, 0.32)
 const _SUN_NIGHT := Vector3(0.26, 0.35, 0.52)
@@ -60,9 +57,15 @@ func _process(_delta: float) -> void:
 	RenderingServer.global_shader_parameter_set("night", dk)
 	RenderingServer.global_shader_parameter_set("day_light", light)
 	RenderingServer.global_shader_parameter_set("sun_dir", dir)
-	RenderingServer.global_shader_parameter_set("lamp", Vector4(boat.x, boat.y, LAMP_R * 1.6, burn))
+	RenderingServer.global_shader_parameter_set("lamp", Vector4(boat.x, boat.y, light_r() * 1.6, burn))
 	lantern.light_energy = 2.0 * burn
+	lantern.omni_range = light_r() * 1.6
 	lantern.visible = burn > 0.01
+
+
+## How far the lantern's light reaches on the water (lightR in the game): further with each lantern upgrade.
+static func light_r() -> float:
+	return 21.0 + 19.0 * State.level("lantern")
 
 
 static func _bell(x: float, centre: float, width: float) -> float:

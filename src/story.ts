@@ -122,51 +122,36 @@ export function talkNext(skip = false): void {
   G.mode = t.back;
   t.then?.();
 }
-// The first minute has no words: Maren says nothing until the first catch, and then her welcome (and the next
-// quest) plays as one-line speech while you sail, never stopping the boat. Later quests talk as before.
-let said: { lines: TalkLine[]; at: number } | null = null;
-const LINE_S = 7;
-// lines from the content packs (src/content) are said the same way, after anything the main story is saying
-let asides: { name: string; role?: string; text: string }[] = [], asideAt = 0;
-/** Queue story-pack lines to be said one by one while you sail. */
-export function sayAside(lines: { name: string; role?: string; text: string }[]): void {
-  if (!asides.length) asideAt = G.t;
-  asides.push(...lines);
+let note: { lines: TalkLine[]; at: number; owner: StoryState } | null = null;
+const SPEECH_LINE_SECONDS = 7;
+export function dismissSpeech(): void { note = null; }
+export function speech(): { who: Speaker; name: string; role: string; text: string } | null {
+  if (!note) return null;
+  const i = Math.floor((G.t - note.at) / SPEECH_LINE_SECONDS);
+  if (note.owner !== G.story || i < 0 || i >= note.lines.length) { note = null; return null; }
+  if (G.mode !== 'play' || G.fish || G.card || G.t - voyage.startedAt < 3.6) return null;
+  const [who, text] = note.lines[i];
+  return { who, name: PEOPLE[who].name, role: PEOPLE[who].role, text };
 }
-/** The line being said without pausing, if any: the main story's first, then the packs'. `who` is set for the main cast. */
-export function speech(): { who?: Speaker; name: string; role?: string; text: string } | null {
-  if (said) {
-    const i = Math.floor((G.t - said.at) / LINE_S);
-    if (i >= said.lines.length) said = null;
-    else { if (G.mode !== 'play') return null; const [who, text] = said.lines[i]; return { who, name: PEOPLE[who].name, role: PEOPLE[who].role, text }; }
-  }
-  if (!asides.length || G.mode !== 'play') return null;
-  const i = Math.floor((G.t - asideAt) / LINE_S);
-  if (i >= asides.length) { asides = []; return null; }
-  return asides[i];
-}
-/** When the current voyage started from the water, for the welcome title. */
 export const voyage = { startedAt: -99 };
 
-// called every frame from the main loop while sailing or in port
 export function updateStory(): void {
-  if (G.mode !== 'play' && G.mode !== 'port') return;
+  if ((G.mode !== 'play' && G.mode !== 'port') || G.fish || G.card) return;
   const st = story(), q = currentQuest();
   if (!q) return;
   if (!st.shown) {
     st.shown = true;
-    if (q.id !== 'first-cast') talk(q.intro);
+    if (q.id !== 'first-cast') note = { lines: q.intro, at: G.t, owner: st };
     return;
   }
-  if (G.card) return;                                   // let the catch card have its moment first
   const pr = questProgress(q);
   if (!pr || pr.have < pr.want) return;
-  said = null;
+  note = null;
   give(q.reward);
   st.i++; st.base = snap(); st.shown = true;
   const next = currentQuest(), coins = q.reward.coins;
   toast(`Quest complete: ${q.title}${coins ? `  +$${coins}` : ''}`, 'good'); sfx('fanfare'); saveGame();
   const lines = [...q.outro, ...(next ? next.intro : [])];
-  if (q.id === 'first-cast') said = { lines, at: G.t };
-  else talk(lines, () => { if (q.id === 'homecoming') G.mode = 'finale'; });   // Nell comes home, then the ending
+  if (q.id === 'homecoming') talk(lines, () => { G.mode = 'finale'; });
+  else note = { lines, at: G.t, owner: st };
 }

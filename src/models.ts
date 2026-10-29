@@ -22,6 +22,7 @@ export const M = {
   window: mat(['#2b4566', '#3f5f8a', '#86b0bf']), door: mat(['#3a2818', '#5e4024', '#7a5530']), crate: mat(['#7a5530', '#a67a42', '#c89a5a']),
   band: mat(['#3a2818', '#5e4024', '#7a5530']), lamp: mat(['#f0cf6a', '#fbeaa8', '#fff6d6'], true), grassm: mat(['#4a6a3a', '#6e9050', '#86a65c']),
   skiff: mat(['#24423a', '#3a6656', '#548a72']), navy: mat(['#17233a', '#26405e', '#3a5c80']), trawl: mat(['#22404c', '#30586a', '#467486']),
+  launch: mat(['#213d4a', '#355f70', '#557f8b']), sailSeam: mat(['#aaa38f', '#ccc5b1', '#e6dfcc']),
   sail: mat(['#c2baa8', '#e2dccc', '#f8f4ea']), net: mat(['#2e4a34', '#3f6a46', '#5a8a5a']), orange: mat(['#a8562a', '#d9733a', '#f0955a']),
   copper: mat(['#7a4a24', '#b0703a', '#d8945a']), ironp: mat(['#3d4852', '#5c6670', '#7d8790']), steel: mat(['#7a848c', '#a9b1b7', '#d3d8da']),
   gilt: mat(['#8a6a1e', '#c49a32', '#f0cf6a']), sailred: mat(['#7e2c25', '#b0423a', '#d0594c']), fishm: mat(['#4a5a6a', '#8a9aa8', '#cfd8dc']),
@@ -68,7 +69,7 @@ const BOAT = new Vox(-17, 17, -10, 10, 15);
   }
   // a painted eye either side of the bow, a rope fender on the stem, the name board across the stern
   for (const v of [-1, 1]) for (let u = 12; u <= 14; u++) { const hw = hullHW(u, 4); if (hw > 0) B.set(u, Math.round(v * (hw + 0.3)), 4, u === 13 ? M.white : M.stripe); }
-  for (let u = 15; u <= 17; u++) for (let z = 2; z <= 6; z++) if (B.get(u, 0, z) && !B.get(u + 1, 0, z)) { B.set(u, 0, z, z === 4 || z === 5 ? M.rope : B.get(u, 0, z)); }
+  B.box(14, 14, 0, 0, 5, 7, M.rope);
   for (let v = -3; v <= 3; v++) for (let u = -17; u <= -10; u++) if (B.get(u, v, 4) && !B.get(u - 1, v, 4)) { B.set(u, v, 4, M.plank2); if (Math.abs(v) <= 1) B.set(u, v, 5, M.plank2); break; }
   // a stem post at the bow and a coil of rope on the floor aft of the rower
   for (let u = 17; u > 0; u--) if (B.get(u, 0, ztop(u))) { B.set(u, 0, ztop(u) + 1, M.gun); break; }
@@ -187,38 +188,72 @@ function sailor(V: Vox, u: number, z: number, coat: number = M.coat): void {
 }
 
 const SKIFF = lazyVox(() => {
-  const V = new Vox(-20, 20, -12, 12, 31), { hw } = buildHull(V, { HL: 16.5, HB: 6.4, HZ: 5, paint: M.skiff, stripe: M.paint });
-  for (const [a, b] of [[-3, -2], [7, 8]]) for (let u = a; u <= b; u++) for (let v = -8; v <= 8; v++) if (Math.abs(v) <= hw(u, 4) - 0.6 && !V.get(u, v, 4)) V.set(u, v, 4, M.seat);
-  V.box(4, 4, 0, 0, 1, 29, M.post);                                   // mast
-  V.line([4, 1, 8], [-11, 2, 8], M.oar);                              // boom
-  for (let u = -10; u <= 3; u++) { const topz = Math.round(9 + (u + 10) / 13 * 19), v = Math.round((4 - u) * 0.13); for (let z = 9; z <= topz; z++) { V.set(u, v, z, M.sail); V.set(u, v + 1, z, M.sail); } }
-  for (let u = 6; u <= 14; u++) { const topz = Math.round(6 + (15 - u) * 2); for (let z = 7; z <= Math.min(topz, 26); z++) { V.set(u, 0, z, M.sail); V.set(u, -1, z, M.sail); } }
-  sailor(V, -13, 4);
+  const V = new Vox(-20, 20, -12, 12, 31);
+  const { hw } = buildHull(V, { HL: 16.5, HB: 6.4, HZ: 5, paint: M.skiff, stripe: M.paint, deckFrom: 10 });
+  for (const [a, b] of [[-3, -2], [7, 8]]) for (let u = a; u <= b; u++) for (let v = -8; v <= 8; v++) {
+    if (Math.abs(v) <= hw(u, 4) - 0.6 && !V.get(u, v, 4)) V.set(u, v, 4, M.seat);
+  }
+  const belly = (u: number) => (4 - u) * 0.13;
+  sail(V, [[-11, 10], [3, 10], [3, 28]], belly, M.sail, M.sailSeam);
+  sail(V, [[6, 8], [15, 8], [5, 26]], () => -1, M.sail, M.sailSeam);
+  V.box(4, 4, 0, 0, 1, 29, M.oar);
+  V.line([4, 1, 9], [-12, 2, 9], M.oar);
+  V.line([4, 0, 28], [15, 0, 7], M.ropeD);
+  for (const side of [-1, 1]) V.line([4, 0, 24], [3, side * 5, 6], M.ropeD);
   V.line([-16, 0, 6], [-12, 0, 7], M.oar);
+  V.box(11, 12, -1, 1, 7, 7, M.gun);
+  sailor(V, -13, 4);
   return V.finalize();
 });
 
 const LAUNCH = lazyVox(() => {
-  const V = new Vox(-21, 21, -12, 12, 16); buildHull(V, { HL: 17.5, HB: 7, HZ: 6, paint: M.navy, stripe: M.redp, gun: M.gun, deckFrom: 6 });
-  V.box(-1, 5, -4, 4, 6, 9, M.white); lifeRing(V, 1, 5, 7);
-  V.box(5, 5, -3, 3, 8, 9, M.window); for (const v of [-4, 4]) V.box(0, 4, v, v, 8, 8, M.window);
-  V.box(-2, 6, -5, 5, 10, 10, M.stripe);
-  V.box(-11, -10, -4, 4, 4, 4, M.seat);
+  const V = new Vox(-21, 21, -12, 12, 19);
+  buildHull(V, { HL: 17.5, HB: 7, HZ: 6, paint: M.launch, stripe: M.white, gun: M.gun, deckFrom: 8, deckZ: 3, transom: 0.9, sternPow: 6 });
+  cabin(V, { u0: 0, u1: 8, hv: 4, z0: 7, z1: 10, rake: 2, win: [9, 10], roof: M.white, rim: M.gun });
+  for (const side of [-1, 1]) {
+    V.box(2, 2, side * 4, side * 4, 9, 10, M.white);
+    lifeRing(V, 3, side * 5, 7);
+    for (const u of [-8, -3]) {
+      V.set(u, side * 7, 6, M.rope);
+      V.box(u, u + 1, side * 7, side * 7, 3, 5, M.iron);
+    }
+  }
+  V.box(-12, -11, -4, 4, 4, 4, M.seat);
+  V.box(-10, -10, -2, 2, 4, 5, M.white);
+  V.box(-10, -10, -2, 2, 6, 6, M.gun);
+  V.box(12, 12, -2, 2, 8, 8, M.iron);
+  V.box(-18, -16, -1, 1, 3, 7, M.iron);
+  V.box(-18, -16, -1, 1, 8, 8, M.white);
+  V.box(-17, -17, 0, 0, 0, 2, M.iron);
+  V.box(-15, -15, -1, 1, 5, 5, M.iron);
+  V.box(5, 5, -1, 1, 12, 12, M.window);
   sailor(V, -7, 4, M.orange);
-  V.box(-19, -17, -1, 1, 3, 8, M.iron); V.box(-19, -17, -1, 1, 9, 9, M.redp); V.box(-18, -18, 0, 0, 0, 2, M.iron);
   return V.finalize();
 });
 
 const TRAWLER = lazyVox(() => {
-  const V = new Vox(-27, 27, -13, 13, 30), { hw } = buildHull(V, { HL: 23, HB: 9, HZ: 8, paint: M.trawl, stripe: M.white, gun: M.redp, deckZ: 5, floorMat: M.plank });
+  const V = new Vox(-27, 27, -13, 13, 30), { hw } = buildHull(V, { HL: 23, HB: 9, HZ: 8, paint: M.trawl, stripe: M.white, gun: M.gun, deckZ: 5, floorMat: M.plank, transom: 0.9, sternPow: 6 });
   V.box(-14, -5, -5, 5, 6, 13, M.white); lifeRing(V, -11, 6, 9);
   V.box(-5, -5, -4, 4, 11, 12, M.window); for (const v of [-5, 5]) V.box(-13, -7, v, v, 11, 11, M.window);
   V.box(-15, -4, -6, 6, 14, 14, M.roof);
   V.box(-11, -11, 3, 3, 15, 19, M.iron); V.set(-11, 3, 20, M.iron);
-  V.box(5, 5, 0, 0, 6, 27, M.iron); V.box(5, 5, -5, 5, 24, 24, M.iron);
-  V.line([5, 0, 24], [-22, 0, 12], M.iron); V.line([-22, 0, 12], [-22, 0, 7], M.iron);
-  for (let u = -22; u <= -16; u++) for (let v = -5; v <= 5; v++) if (Math.abs(v) <= hw(u, 6) - 2 && hash01(u, v, 5) < 0.75) { V.set(u, v, 6, M.net); if (hash01(u, v, 6) < 0.5) V.set(u, v, 7, M.net); }
-  V.box(9, 11, 2, 4, 6, 7, M.crate); V.box(13, 14, -3, -2, 6, 6, M.crate);
+  for (const side of [-1, 1]) {
+    V.box(6, 6, side * 6, side * 6, 6, 22, M.orange);
+    V.line([3, side * 6, 6], [6, side * 6, 16], M.orange);
+    V.box(-7, -6, side * 9, side * 9, 4, 7, M.iron);
+  }
+  V.box(6, 6, -6, 6, 22, 23, M.orange);
+  V.line([6, 0, 22], [17, 0, 18], M.iron);
+  V.line([17, 0, 18], [17, 0, 9], M.ropeD);
+  drum(V, 9, 8, 2, -4, 4, M.net);
+  for (const side of [-1, 1]) drum(V, 9, 8, 2.5, side * 5, side * 5, M.iron);
+  for (let u = 13; u <= 19; u++) for (let v = -4; v <= 4; v++) {
+    if (Math.abs(v) > hw(u, 6) - 2 || hash01(u, v, 5) >= 0.75) continue;
+    V.set(u, v, 6, M.net);
+    if (hash01(u, v, 6) < 0.5) V.set(u, v, 7, M.net);
+  }
+  V.box(-19, -17, -3, -1, 6, 7, M.crate);
+  V.box(-19, -17, 1, 3, 6, 7, M.crate);
   for (const [u, z] of [[-10, 9], [-9, 9], [-8, 9], [-10, 10], [-8, 10], [-10, 11], [-9, 11], [-8, 11]]) V.set(u, 6, z, (u + z) % 2 ? M.redp : M.white);
   sailor(V, 0, 6, M.orange);
   return V.finalize();
@@ -632,7 +667,7 @@ export const BOAT_MODELS: Record<BoatId, BoatModel> = {
   row: { vox: BOAT, oars: true, rad: BOAT_RAD, outlineZ: HZ + 1, hull: M.paint },
   skiff: { get vox() { return SKIFF(); }, rad: 21, outlineZ: 6, hull: M.skiff },
   boatdev: { get vox() { return BOATDEV(); }, rad: 21, outlineZ: 5, hull: M.white },
-  launch: { get vox() { return LAUNCH(); }, rad: 22, outlineZ: 7, hull: M.navy },
+  launch: { get vox() { return LAUNCH(); }, rad: 22, outlineZ: 7, hull: M.launch },
   trawler: { get vox() { return TRAWLER(); }, rad: 28, outlineZ: 9, hull: M.trawl },
   schooner: { get vox() { return SCHOONER(); }, rad: 46, outlineZ: 10, hull: M.schoon },
   drifter: { get vox() { return DRIFTER(); }, rad: 42, outlineZ: 11, hull: M.coal },
@@ -674,7 +709,7 @@ const MOUNT: Record<BoatId, Mount> = {
     crates: [[5, -3, 2], [3, -3, 2], [-10, 1, 5]], pile: [[3, -1, 2], [4, 1, 2], [5, -1, 2], [6, 1, 2], [3, 1, 2], [5, 1, 2]] },
   skiff: { crew: [-3, -2, 5], cook: [-9, 2, 2], pump: [-5, 3, 2], flag: [4, 0, 30], lamp: [-14, 3, 6], sonar: [7, 2, 5], rod: [[-8, 4, 5], [-13, 8, 12]], ice: [-6, -3, 2], tackle: [-2, 2, 5], net: [-10, 0, 2], ant: [-14, -3, 6], anchor: [15, 3, 6],
     crates: [[0, -3, 2], [0, 2, 2], [10, -2, 5]], pile: [[1, -1, 2], [2, 1, 2], [3, -1, 2], [1, 1, 2], [2, -2, 2], [3, 2, 2]] },
-  launch: { crew: [9, -2, 8], cook: [-12, 2, 5], pump: [-10, -4, 2], flag: [-15, 2, 7], lamp: [-15, 0, 7], sonar: [2, -2, 11], rod: [[-12, 5, 6], [-17, 9, 13]], ice: [-14, -3, 2], tackle: [-14, 2, 2], net: [-4, 0, 2], ant: [0, 3, 11], anchor: [12, 0, 8],
+  launch: { crew: [9, -2, 8], cook: [-12, 2, 5], pump: [-10, -4, 2], flag: [-15, 2, 7], lamp: [-15, 0, 7], sonar: [2, -2, 12], rod: [[-12, 5, 6], [-17, 9, 13]], ice: [-14, -3, 2], tackle: [-14, 2, 2], net: [-4, 0, 2], ant: [0, 3, 12], anchor: [12, 0, 8],
     crates: [[8, -2, 8], [8, 2, 8], [10, 0, 8]], pile: [[-9, -2, 2], [-8, 1, 2], [-5, -2, 2], [-5, 2, 2], [-9, 2, 2], [-7, -1, 2]] },
   trawler: { crew: [10, -4, 6], cook: [-3, 3, 6], pump: [-15, -6, 6], flag: [5, 0, 28], lamp: [-5, -4, 15], sonar: [-13, -4, 15], rod: [[-14, 7, 9], [-19, 11, 16]], ice: [16, 1, 6], tackle: [7, -5, 6], net: null, ant: [-8, -4, 15], anchor: [21, 4, 10],
     crates: [[-2, 5, 6], [-2, -6, 6], [2, -6, 6]], pile: [[2, 3, 6], [3, -3, 6], [6, 2, 6], [7, -2, 6], [4, 4, 6], [8, 1, 6]] },
@@ -688,7 +723,7 @@ const MOUNT: Record<BoatId, Mount> = {
 function cloneVox(V: Vox): Vox { const c = new Vox(V.u0, V.u0 + V.nu - 1, V.v0, V.v0 + V.nv - 1, V.nz); c.d.set(V.d); return c; }
 const PLATE = [0, M.copper, M.ironp, M.steel, M.gilt];   // hull plating material by level (0 = unplated)
 const STRIPE: Record<BoatId, number> = {
-  row: M.stripe, skiff: M.paint, launch: M.redp, trawler: M.redp, schooner: M.schband, drifter: M.dred, flagship: M.fband, canoe: Y.canoe, boatdev: BD.blue, jetski: M.white,
+  row: M.stripe, skiff: M.paint, launch: M.white, trawler: M.white, schooner: M.schband, drifter: M.dred, flagship: M.fband, canoe: Y.canoe, boatdev: BD.blue, jetski: M.white,
   speedboat: M.redp, catamaran: M.navy, research: M.white, cruiser: M.navy, yacht: M.white, icebreaker: M.white, motoryacht: M.navy, superyacht: M.gilt,
 };   // the visible waterline band that plating replaces
 /** What a boat visibly carries: paint, plating and the level of each piece of fitted gear (0 = none). */
@@ -754,16 +789,22 @@ function lookExtras(eq: Fit, put: Put): void {
 
 // paint jobs swap the hull material; plating swaps the bottom and the waterline band; better sails get red cloth
 function recolour(id: BoatId, eq: Fit, V: Vox): void {
-  const bm = BOAT_MODELS[id], remap = new Map<number, number>();
-  if (eq.paint !== 'classic' && PAINT_MAT[eq.paint]) { remap.set(bm.hull, PAINT_MAT[eq.paint]); if (id === 'row') remap.set(SEAM, PAINT_SEAM[eq.paint]); }
-  const lk = id === 'row' ? lookOf(eq.look) : null;
-  if (lk) { remap.set(M.coat, lk.coat); remap.set(M.hat, lk.hat); remap.set(M.stripe, lk.trim); }
-  if (eq.plate > 0) { remap.set(M.bottom, PLATE[eq.plate]); remap.set(STRIPE[id], PLATE[eq.plate]); }
+  const model = BOAT_MODELS[id], remap = new Map<number, number>();
+  const paint = eq.paint === 'classic' ? 0 : PAINT_MAT[eq.paint];
+  const plate = PLATE[eq.plate] ?? 0;
+  const look = id === 'row' ? lookOf(eq.look) : null;
+  if (look) { remap.set(M.coat, look.coat); remap.set(M.hat, look.hat); remap.set(M.stripe, look.trim); }
   const layer = V.nu * V.nv, sails = id === 'skiff' || id === 'schooner';
   for (let i = 0; i < V.d.length; i++) {
-    const r = remap.get(V.d[i]);
-    if (r) V.d[i] = r;
-    if (sails && V.d[i] === M.sail && eq.prop >= 2) V.d[i] = eq.prop >= 4 ? M.sailred : Math.floor(i / layer) % 4 === 0 ? M.sailred : M.sail;
+    const original = V.d[i], z = Math.floor(i / layer);
+    let material = remap.get(original) ?? original;
+    if (z < model.outlineZ) {
+      if (paint && original === model.hull) material = paint;
+      if (paint && id === 'row' && original === SEAM) material = PAINT_SEAM[eq.paint];
+      if (plate && (original === M.bottom || original === STRIPE[id])) material = plate;
+    }
+    if (sails && original === M.sail && eq.prop >= 2) material = eq.prop >= 4 || z % 4 === 0 ? M.sailred : M.sail;
+    V.d[i] = material;
   }
 }
 function deckGear(V: Vox, m: Mount, eq: Fit): void {
@@ -893,8 +934,14 @@ export function decorate(id: BoatId, eq: Fit): Vox {
   dryDockGear(m, eq, put);
   if (eq.pet) shipsCat(V);
   if (id === 'row') lookExtras(eq, put);
-  if (id === 'launch' && eq.prop >= 3) for (const v of [-3, 3]) {   // twin outboards
-    V.box(-19, -17, v - 1, v, 3, 8, M.iron); V.box(-19, -17, v - 1, v, 9, 9, M.redp);
+  if (id === 'launch' && eq.prop >= 3) {
+    V.box(-18, -16, -1, 1, 0, 8, 0);
+    for (const v of [-3, 3]) {
+      V.box(-18, -16, v - 1, v, 3, 7, M.iron);
+      V.box(-18, -16, v - 1, v, 8, 8, M.white);
+      V.box(-17, -17, v, v, 0, 2, M.iron);
+      V.box(-15, -15, v - 1, v, 5, 5, M.iron);
+    }
   }
   return V.finalize();
 }

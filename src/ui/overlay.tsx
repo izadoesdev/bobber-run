@@ -1,6 +1,3 @@
-// What sits on the sea rather than in the HUD's corners: the route to a waypoint, the objective's pennant or arrow,
-// region and welcome titles, the story's spoken line, the prompt under the boat, school fish, sailors' name tags and
-// chat bubbles, and the owners' signs on claimed islands.
 import type { JSX } from 'preact';
 import { G, schoolActive } from '../game';
 import { SPECIES } from '../econ';
@@ -8,7 +5,7 @@ import { schoolsNear } from '../world';
 import { SET } from '../settings';
 import { EMOTES } from '../net';
 import { ONLINE } from '../online';
-import { speech, voyage } from '../story';
+import { dismissSpeech, speech, voyage } from '../story';
 import { markerTarget, type Step } from '../game/guide';
 import { waypointRoute } from '../waypoint';
 import { coursePath } from '../game/autopilot';
@@ -18,7 +15,6 @@ import { IslandSigns } from './island';
 import { Face } from './faces';
 import { BaitTag, Fish, Icon, Key, edgeFade, forTouch, keyed, pin, viewPct } from './parts';
 
-/** Everything drawn over the sea while sailing. `wp` is the player's waypoint, which takes the arrow from the guide. */
 export function SeaLayer({ step, wp }: { step: Step; wp: Step | null }) {
   return (
     <>
@@ -34,17 +30,17 @@ export function SeaLayer({ step, wp }: { step: Step; wp: Step | null }) {
   );
 }
 
-// a line said while you sail (the first quest's), with who says it; it never pauses the game
 function Speech() {
   const s = speech();
-  if (!s || G.fish || G.card || G.t - voyage.startedAt < 3.6) return null;   // after the welcome title has faded
+  if (!s) return null;
   return (
     <div class="speech chip" role="status" aria-live="polite">
-      <Face who={s.who} name={s.name} role={s.role ?? ''} talking line={s.text} /><span><b class="gold">{s.name}</b> {forTouch(s.text)}</span>
+      <Face who={s.who} name={s.name} role={s.role} talking line={s.text} />
+      <span class="grow"><span class="caps small muted">Story · saved in Journal</span><br /><b class="gold">{s.name}</b> {forTouch(s.text)}</span>
+      <button data-track="speech-dismiss" class="x" aria-label="Dismiss story dialogue" title="Dismiss this note (Esc). Read it later in the Journal." onClick={dismissSpeech}>×</button>
     </div>
   );
 }
-// the game's name over the water for a moment when a first voyage starts there instead of on a title screen
 function Welcome() {
   const age = G.t - voyage.startedAt;
   if (age > 4 || age < 0) return null;
@@ -228,7 +224,7 @@ function FirstHint() {
 // what you can do right here (cast, dock, salvage) as a small label under the boat instead of a panel; the
 // fishing prompts stay at the bottom, where a warning has to be loud
 function BoatPrompt() {
-  if (!G.stats.caught) return <FirstHint />;
+  if (!G.stats.caught && !G.nearEncounter && !G.nearPort && !G.nearWreck && !G.nearTreasure) return <FirstHint />;
   if (!G.prompt || G.fish || G.card || G.mode !== 'play') return null;
   const [x, y] = viewPct(G.boat.x, G.boat.y + 16);
   return <div class="prompt-world" style={pin(x, y)}>{keyed(G.prompt)}{G.nearSchool && <BaitTag />}</div>;

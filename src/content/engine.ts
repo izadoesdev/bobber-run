@@ -1,104 +1,139 @@
-// Runs the content packs (src/content/packs) beside the main story: a pack opens when its unlock is met, its quests
-// run one after another, catches and sales count toward them as they happen, and charting, funding and visiting are
-// checked about once a second. Progress lives in G.packs and the regions you've sailed into in G.regionsSeen, both
-// saved. The UI shows the lines through setPackTalk (until then they appear as toasts).
 import { G } from '../game/state';
 import { addCoins, toast } from '../game/feedback';
 import { isNight } from '../game/rules';
-import { biomeAt, type BiomeId } from '../biome';
+import { saveGame } from '../game/save';
+import { biomeAt } from '../biome';
 import { WX } from '../weather';
 import { regionSite } from '../world';
 import { SPECIES } from '../species';
 import type { Fish } from '../types';
 import { PACKS } from './packs';
-import type { Character, Objective, Pack, PackState, QuestDef } from './types';
+import type { Objective, Pack, PackState, PackStatus, QuestDef } from './types';
 
 export interface PackLine { name: string; role: string; text: string }
-let talk: (lines: PackLine[]) => void = lines => { for (const l of lines) toast(`${l.name}: ${l.text}`); };
-/** The UI's dialogue box for pack lines (it falls back to toasts). */
-export const setPackTalk = (fn: (lines: PackLine[]) => void): void => { talk = fn; };
 
-const stateOf = (p: Pack): PackState => (G.packs[p.id] ??= { i: 0, n: 0, started: false });
-const isOpen = (p: Pack): boolean => {
-  const u = p.unlock;
-  return (u.afterQuest === undefined || (G.story?.i ?? 0) >= u.afterQuest) && (u.region === undefined || G.regionsSeen.includes(u.region));
-};
-/** "id: text" is spoken by that character; a plain line by whoever gave the quest. */
-function lines(p: Pack, q: QuestDef, raw: string[]): PackLine[] {
-  const who = (id: string): Character | undefined => p.characters.find(c => c.id === id);
-  return raw.map(l => { const m = /^([a-z0-9-]+): (.*)$/.exec(l), c = (m && who(m[1])) || who(q.by)!; return { name: c.name, role: c.role, text: m && who(m[1]) ? m[2] : l }; });
+const stateOf = (pack: Pack): PackState => G.packs[pack.id] ?? { i: 0, n: 0, started: false };
+
+export function packStatus(pack: Pack): PackStatus {
+  const state = stateOf(pack);
+  if (state.i >= pack.quests.length) return 'done';
+  return state.status ?? (state.started || state.i > 0 ? 'active' : 'available');
 }
 
-/** How far the current quest of a pack has come: [have, want]. */
-export function progress(q: QuestDef, s: PackState): [number, number] {
-  const o: Objective = q.obj;
-  if ('catch' in o) return [Math.min(s.n, o.catch), o.catch];
-  if ('sell' in o) return [Math.min(s.n, o.sell), o.sell];
-  if ('chart' in o) return [Math.min(o.chart, [...G.found].filter(id => id.startsWith(o.kind + ':')).length), o.chart];
-  if ('fund' in o) return [G.projects.includes(o.fund) ? 1 : 0, 1];
-  const b = G.boat;
-  if ('site' in o) { const s = regionSite(o.site); return [s && Math.hypot(b.x - s.x, b.y - s.y) < (o.r ?? 90) ? 1 : 0, 1]; }
-  return [Math.hypot(b.x - o.visit.x, b.y - o.visit.y) < (o.visit.r ?? 60) ? 1 : 0, 1];
+function isOpen({ unlock }: Pack): boolean {
+  return (unlock.afterQuest === undefined || (G.story?.i ?? 0) >= unlock.afterQuest)
+    && (unlock.region === undefined || G.regionsSeen.includes(unlock.region));
 }
-const current = (p: Pack): { q: QuestDef; s: PackState } | null => { const s = stateOf(p), q = p.quests[s.i]; return q && s.started ? { q, s } : null; };
+
+function activeQuest(pack: Pack): { quest: QuestDef; state: PackState } | null {
+  if (!isOpen(pack) || packStatus(pack) !== 'active') return null;
+  const state = stateOf(pack), quest = pack.quests[state.i];
+  return quest && state.started ? { quest, state } : null;
+}
+
+// A recognized "id: text" prefix overrides the quest's speaker.
+export function packLines(pack: Pack, quest: QuestDef, lines: string[]): PackLine[] {
+  const narrator = pack.characters.find(c => c.id === quest.by)!;
+  return lines.map(line => {
+    const match = /^([a-z0-9-]+): (.*)$/.exec(line);
+    const speaker = match && pack.characters.find(c => c.id === match[1]);
+    const character = speaker || narrator;
+    return { name: character.name, role: character.role, text: match && speaker ? match[2] : line };
+  });
+}
+
+export function progress(quest: QuestDef, state: PackState): [number, number] {
+  const objective = quest.obj;
+  if ('catch' in objective) return [Math.min(state.n, objective.catch), objective.catch];
+  if ('sell' in objective) return [Math.min(state.n, objective.sell), objective.sell];
+  if ('chart' in objective) return [Math.min(objective.chart, [...G.found].filter(id => id.startsWith(objective.kind + ':')).length), objective.chart];
+  if ('fund' in objective) return [G.projects.includes(objective.fund) ? 1 : 0, 1];
+  const boat = G.boat;
+  if ('site' in objective) {
+    const site = regionSite(objective.site);
+    return [site && Math.hypot(boat.x - site.x, boat.y - site.y) < (objective.r ?? 90) ? 1 : 0, 1];
+  }
+  return [Math.hypot(boat.x - objective.visit.x, boat.y - objective.visit.y) < (objective.visit.r ?? 60) ? 1 : 0, 1];
+}
+
+export function setPackStatus(id: string, status: 'active' | 'paused'): boolean {
+  const pack = PACKS.find(pack => pack.id === id);
+  if (!pack || !isOpen(pack)) return false;
+  const previous = packStatus(pack);
+  if (previous === 'done' || (status === 'paused' && previous === 'available')) return false;
+  const state = stateOf(pack);
+  state.status = status;
+  if (status === 'active') state.started = true;
+  G.packs[id] = state;
+  saveGame();
+  return true;
+}
 
 type CatchObjective = Extract<Objective, { catch: number }>;
-function fits(o: CatchObjective, fish: Fish, x: number, y: number): boolean {
-  const sp = SPECIES[fish.sp];
-  return (!o.species || sp?.id === o.species) && (!o.trophy || fish.trophy) && (!o.variant || fish.variant === o.variant)
-    && (!o.region || biomeAt(x, y) === o.region) && (!o.night || isNight())
-    && (!o.weather || WX.state === 'storm' || (o.weather === 'rain' && WX.state === 'rain'))
-    && (!o.fight || sp?.fight === o.fight) && (!o.kg || fish.kg >= o.kg) && (!o.lightRod || G.up.rod <= (sp?.rod ?? 0))
-    && (!o.stars || (fish.stars ?? 0) >= o.stars) && (!o.perfect || !!fish.perfect);
-}
-/**
- * A fish was landed at (x, y): it counts toward every running catch objective it fits. `byRod` is false for nets,
- * pots and the deckhand, which never break an in-a-row run.
- */
-export function packCatch(fish: Fish, x: number, y: number, byRod = true): void {
-  for (const p of PACKS) {
-    const cur = isOpen(p) ? current(p) : null, o = cur?.q.obj;
-    if (!cur || !o || !('catch' in o)) continue;
-    if (fits(o, fish, x, y)) cur.s.n++;
-    else if (o.inARow && byRod) cur.s.n = 0;
-  }
-}
-/** Coins taken at a market: they count toward running sell objectives. */
-export function packSell(coins: number): void {
-  for (const p of PACKS) { const cur = isOpen(p) ? current(p) : null; if (cur && 'sell' in cur.q.obj) cur.s.n += coins; }
+function fits(objective: CatchObjective, fish: Fish, x: number, y: number): boolean {
+  const species = SPECIES[fish.sp];
+  return (!objective.species || species?.id === objective.species)
+    && (!objective.trophy || fish.trophy)
+    && (!objective.variant || fish.variant === objective.variant)
+    && (!objective.region || biomeAt(x, y) === objective.region)
+    && (!objective.night || isNight())
+    && (!objective.weather || WX.state === 'storm' || (objective.weather === 'rain' && WX.state === 'rain'))
+    && (!objective.fight || species?.fight === objective.fight)
+    && (!objective.kg || fish.kg >= objective.kg)
+    && (!objective.lightRod || G.up.rod <= (species?.rod ?? 0))
+    && (!objective.stars || (fish.stars ?? 0) >= objective.stars)
+    && (!objective.perfect || !!fish.perfect);
 }
 
-let acc = 0;
-/** Per frame from the main loop: notes the region you're in, starts and finishes quests (about once a second). */
+// Nets, pots and deckhands don't break rod-catch streaks.
+export function packCatch(fish: Fish, x: number, y: number, byRod = true): void {
+  for (const pack of PACKS) {
+    const active = activeQuest(pack);
+    if (!active || !('catch' in active.quest.obj)) continue;
+    if (fits(active.quest.obj, fish, x, y)) active.state.n++;
+    else if (active.quest.obj.inARow && byRod) active.state.n = 0;
+  }
+}
+
+export function packSell(coins: number): void {
+  for (const pack of PACKS) {
+    const active = activeQuest(pack);
+    if (active && 'sell' in active.quest.obj) active.state.n += coins;
+  }
+}
+
+let elapsed = 0;
 export function tickPacks(dt: number): void {
-  if ((acc += dt) < 1 || G.mode !== 'play' || G.talk) return;
-  acc = 0;
-  const here: BiomeId = biomeAt(G.boat.x, G.boat.y);
-  if (!G.regionsSeen.includes(here)) G.regionsSeen.push(here);
-  for (const p of PACKS) {
-    if (!isOpen(p)) continue;
-    const s = stateOf(p), q = p.quests[s.i];
-    if (!q) continue;                                                     // the pack is finished
-    if (!s.started) {                                                     // one new conversation a second, at most
-      s.started = true; s.n = 0;
-      if (s.i === 0) toast(`A new story: ${p.name}`, 'good');
-      talk(lines(p, q, q.intro));
-      return;
-    }
-    const [have, want] = progress(q, s);
+  if (G.mode !== 'play' || G.talk) return;
+  if ((elapsed += dt) < 1) return;
+  elapsed = 0;
+  const region = biomeAt(G.boat.x, G.boat.y);
+  if (!G.regionsSeen.includes(region)) G.regionsSeen.push(region);
+  if (G.fish || G.card) return;
+  for (const pack of PACKS) {
+    if (!isOpen(pack) || packStatus(pack) !== 'active') continue;
+    const state = stateOf(pack), quest = pack.quests[state.i];
+    if (!quest) continue;
+    // Legacy saves can sit between quests with started=false.
+    if (!state.started) { state.started = true; G.packs[pack.id] = state; }
+    const [have, want] = progress(quest, state);
     if (have < want) continue;
-    if (q.reward.coins) addCoins(q.reward.coins);
-    for (const [k, n] of Object.entries(q.reward.bait ?? {})) G.bait[k as keyof typeof G.bait] = (G.bait[k as keyof typeof G.bait] || 0) + (n ?? 0);
-    toast(`${q.title} done${q.reward.coins ? `  +$${q.reward.coins}` : ''}`, 'good');
-    talk(lines(p, q, q.outro));
-    s.i++; s.n = 0; s.started = false;
+    if (quest.reward.coins) addCoins(quest.reward.coins);
+    for (const [bait, amount] of Object.entries(quest.reward.bait ?? {})) G.bait[bait as keyof typeof G.bait] = (G.bait[bait as keyof typeof G.bait] || 0) + (amount ?? 0);
+    state.i++;
+    state.n = 0;
+    state.started = state.i < pack.quests.length;
+    state.status = 'active';
+    saveGame();
+    toast(`Story complete: ${quest.title}${quest.reward.coins ? `  +$${quest.reward.coins}` : ''}. Journal updated`, 'good');
     return;
   }
 }
-/** Every open pack with its current quest and progress, for the journal. */
-export function packJournal(): { pack: Pack; quest: QuestDef | null; have: number; want: number }[] {
+
+export function packJournal(): { pack: Pack; quest: QuestDef | null; status: PackStatus; have: number; want: number; completed: number }[] {
   return PACKS.filter(isOpen).map(pack => {
-    const s = stateOf(pack), quest = pack.quests[s.i] ?? null, [have, want] = quest && s.started ? progress(quest, s) : [0, 0];
-    return { pack, quest, have, want };
+    const state = stateOf(pack), quest = pack.quests[state.i] ?? null, status = packStatus(pack);
+    const [have, want] = quest ? progress(quest, status === 'available' ? { ...state, n: 0 } : state) : [0, 0];
+    return { pack, quest, status, have, want, completed: Math.min(state.i, pack.quests.length) };
   });
 }

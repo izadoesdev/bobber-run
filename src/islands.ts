@@ -1,15 +1,14 @@
-// Islands on the client: who owns the islands around you (and on the chart), kept live from the server, and your own
-// kingdom. The main island of every world cell can be bought with coins in the end game (islandRules.ts: bigger and
-// nearer home costs more); buildings on your islands bring in income, which waits in a treasury until you sail to
-// one of them, and a ruler's title grows with what they hold.
 import { G } from './game';
 import { claimableNear, claimableAt, realmPlots } from './world';
 import { reveal } from './game/explore';
 import { NET, watchIslands, watchKingdom, watchLedger, type IslandRow, type KingdomRow } from './net';
 import { toast, addCoins } from './game/feedback';
+import { saveGame } from './game/save';
+import { accrueTreasury } from './game/treasury';
 import { track } from './analytics';
 import { islandIncome, islandWorth, titleOf } from '../convex/islandRules';
 
+export { TREASURY_MIN } from './game/treasury';
 export { islandPrice } from '../convex/islandRules';
 /** An island's own colour, from its key: its pennant until the owner's logo is approved, the same on the chart and in the world. */
 export function islandColour(key: string): string {
@@ -39,10 +38,8 @@ let lastKeys = '', extra: string[] = [], focus: string | null = null;
 export function watchExtra(keys: string[]): void { extra = keys.slice(0, 120); }
 /** The island whose card is open: watched wherever it is (null when the card closes). */
 export function focusIsland(key: string | null): void { focus = key; }
-/** Keep the subscriptions on the islands around the boat (and on the chart, and an open card's) and on your kingdom;
- *  cheap every frame, and called every frame whatever the screen (main.ts). */
-export function tickIslands(): void {
-  tickRealm();
+export function tickIslands(dt: number): void {
+  if (G.mode === 'play') G.treasury = accrueTreasury(G.treasury, G.realmRate, dt);
   if (!NET.authed) return;
   if (!REALM.watching) { REALM.watching = true; watchKingdom(onKingdom); watchLedger(l => { REALM.ledger = l; }); }
   const keys = [...new Set([...claimableNear(G.boat.x, G.boat.y, WATCH_R).map(c => c.key), ...extra, ...(focus ? [focus] : [])])].sort();
@@ -60,8 +57,6 @@ export function tickIslands(): void {
 export const REALM = { islands: [] as KingdomRow[], ledger: null as { earned: number; spent: number } | null, watching: false };
 /** Earnings the server will let you spend on islands (it checks them, not the save's coins). */
 export const ledgerLeft = (): number | null => REALM.ledger && Math.max(0, REALM.ledger.earned - REALM.ledger.spent);
-/** The treasury holds this many minutes of income at most: collect it at any of your islands. */
-export const TREASURY_MIN = 180;
 /** Coins a minute your islands bring in. */
 export const realmRate = (rows: readonly KingdomRow[] = REALM.islands): number => rows.reduce((a, r) => { const c = claimableAt(r.key); return a + (c ? islandIncome(c.i, c.j, r.buildings) : 0); }, 0);
 /** Your islands' worth (prices and buildings), and the title it earns you. */
@@ -100,31 +95,26 @@ function chartRealm(): void {
     if (m) reveal(m.x, m.y, 1100);
   }
 }
-let lastT = -1;
-// income builds up in the treasury while you sail, and is paid out when you come within sight of one of your islands
-function tickRealm(): void {
-  const dt = lastT < 0 ? 0 : Math.min(1, Math.max(0, G.t - lastT));
-  lastT = G.t;
-  if (G.realmRate <= 0) return;
-  G.treasury = Math.min(G.realmRate * TREASURY_MIN, G.treasury + G.realmRate * dt / 60);
-  if (G.treasury < 1 || G.mode !== 'play') return;
-  for (const r of REALM.islands) {
-    const m = claimableAt(r.key);
-    if (!m || Math.hypot(G.boat.x - m.x, G.boat.y - m.y) > m.R + 160) continue;
-    const n = Math.floor(G.treasury);
-    G.treasury -= n;
-    addCoins(n);
-    toast(`${r.name}'s treasury: +$${n.toLocaleString('en-US')}`, 'good');
-    track('realm_collected', { earned_bucket: n < 1000 ? 'under 1k' : n < 10000 ? '1k-10k' : n < 100000 ? '10k-100k' : '100k+' });
-    return;
-  }
+export function realmInReach(key: string): boolean {
+  const m = claimableAt(key);
+  return REALM.islands.some(r => r.key === key) && !!m && Math.hypot(G.boat.x - m.x, G.boat.y - m.y) <= m.R + 160;
 }
-/** While the game was closed your islands went on earning, up to what the treasury holds. */
+export function collectRealm(key: string): number {
+  if (G.mode !== 'island' || G.islandKey !== key || !realmInReach(key) || G.fish || G.card) return 0;
+  const n = Math.floor(G.treasury);
+  if (!Number.isFinite(n) || n < 1) return 0;
+  G.treasury -= n;
+  addCoins(n);
+  saveGame();
+  toast(`Treasury collected: +$${n.toLocaleString('en-US')}`, 'good');
+  track('realm_collected', { earned_bucket: n < 1000 ? 'under 1k' : n < 10000 ? '1k-10k' : n < 100000 ? '10k-100k' : '100k+' });
+  return n;
+}
 export function realmWhileAway(savedAt: number | undefined): void {
   const away = savedAt ? (Date.now() - savedAt) / 60_000 : 0;
   if (away < 1 || G.realmRate <= 0) return;
   const before = G.treasury;
-  G.treasury = Math.min(G.realmRate * TREASURY_MIN, G.treasury + G.realmRate * away);
+  G.treasury = accrueTreasury(G.treasury, G.realmRate, away * 60);
   const n = Math.floor(G.treasury - before);
-  if (n > 0) toast(`Your islands brought in $${n.toLocaleString('en-US')} while you were away. Sail to one to collect it`, 'good');
+  if (n > 0) toast(`Your islands brought in $${n.toLocaleString('en-US')} while you were away. Open one of your islands when nearby to collect`, 'good');
 }

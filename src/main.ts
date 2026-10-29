@@ -8,7 +8,7 @@ import * as MODELS from './models';
 import * as NETAPI from './net';
 import { SPECIES } from './econ';
 import { TUNE, G, physicsStep, update, updateCamera, refreshSolids, newGame, saveGame, savedSpot, toast } from './game';
-import { initRender, render, R, prefetch, boatRenderState, tilesAround } from './gl/renderer';
+import { initRender, render, R, prefetch, boatRenderState, tilesAround, graphicsReady } from './gl/renderer';
 import { warmTiles } from './tilepool';
 import { tickIslands, REALM, ISLANDS } from './islands';
 import { openIsland } from './ui/island';
@@ -18,8 +18,11 @@ import { updateStory, speech } from './story';
 import { initNet, netTick, NET } from './net';
 import { ONLINE } from './online';
 import { renderOffline, renderMusicOffline, SFX_NAMES } from './audio';
-import { homePort, schoolsNear, poisNear, hAt, LAIR, BOSS, trimWorld, worldCaches } from './world';
-import { updateLife, LIFE } from './life';
+import { homePort, schoolsNear, poisNear, hAt, LAIR, BOSS, trimWorld, worldCaches, regionSites, nearestWater } from './world';
+import { encountersNear, performEncounterAction, openEncounter, seaPropGathered } from './game/encounters';
+import { seaPropsNear } from './seaprops';
+import { wildlifeStocks } from './game/wildlife';
+import { updateLife, LIFE, summonSeaLife } from './life';
 import { WX, setWeather } from './weather';
 import { initInput, pollPad } from './input';
 import { menuInput } from './menus';
@@ -84,6 +87,13 @@ function panChart(dt: number): void {
   if (k.ArrowDown || k.s) G.map.y += s;
 }
 export function tick(dt: number): void {
+  if (!graphicsReady()) {
+    acc = 0;
+    frozenKey = '';
+    G.keys = {};
+    G.pressed.clear();
+    return;
+  }
   if (shipZoom() !== fittedShip) fit(true);             // a new ship has its own default view
   zoomView(dt);
   pollPad();
@@ -103,7 +113,7 @@ export function tick(dt: number): void {
   forceName();
   applySharedCatch();
   tickVisit();
-  tickIslands();
+  tickIslands(dt);
   tickPacks(dt);
   if (G.mode === 'play') tickExplore(dt);
   updateLife(dt);
@@ -150,6 +160,7 @@ window.BR = {
   WX, setWeather, LIFE, LAIR, BOSS, MODELS, GAME, TUNE, G, guide, tick, sim: (dt: number) => { noRender = true; tick(dt); noRender = false; },
   homePort, schoolsNear, poisNear, hAt, SPECIES, R, worldCaches, speech, CONTENT: { packJournal, packCatch, biomeAt }, ZONES: zoneStats,
   REALM, ISLANDS, openIsland,
+  SEA: { encountersNear, performEncounterAction, openEncounter, seaPropGathered, seaPropsNear, regionSites, nearestWater, wildlifeStocks, summonSeaLife },
 };
 // the first frame needs the sea round the harbour: the tile workers build it in parallel while the page settles,
 // rather than the first frame building it all on the main thread (two seconds on a phone); a saved boat's sea next,

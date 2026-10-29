@@ -16,12 +16,13 @@ import { addCoins, burst, celebrate, jitter, spawn, toast } from './feedback';
 import { checkGoals } from './goals';
 import { placeAtPort, portById, saveGame } from './save';
 import { SPOOL, castTargets, endlessStock, hitstop, landNetted, rehomeEscapees, nearestSchool, nextTarget, towStretch, tryCast, updateFishing, updateFrenzy, useChum } from './fishing';
-import { schoolActive, swimSchools, updateSchools } from './schools';
+import { schoolActive, schoolDrawR, swimSchools, updateSchools } from './schools';
 import { dock, keptBack, updateFleet } from './port';
 import { track } from '../analytics';
 import { dropCourse, steerCourse } from './autopilot';
 import { tickWaypoint } from '../waypoint';
 import { biomeAt, type BiomeId } from '../biome';
+import { nearestEncounter, openEncounter } from './encounters';
 // what a crab pot brings up, by the waters it's set in
 const POT_CRAB: Partial<Record<BiomeId, number>> = { mangrove: SP.mudcrab, volcanic: SP.ventcrab, cold: SP.snowcrab };
 
@@ -31,7 +32,7 @@ function discover(p: Poi): void {
   const bounty = p.type === 'light' ? 15 : p.type === 'port' ? 10 : 0;
   if (bounty) addCoins(bounty);
   if (p.type === 'light') G.stats.lights++;
-  toast(`Added ${p.name} to your chart${bounty ? `  +$${bounty}` : ''}`, 'good'); sfx('discover'); saveGame();
+  toast(`Added ${p.name} to your chart${bounty ? `  +$${bounty}` : ''}`, 'good', 'sailing'); sfx('discover'); saveGame();
 }
 function salvage(p: Wreck): void {
   if (G.salvaged.has(p.id)) {                      // the diving bell: one more dive per wreck per day
@@ -149,7 +150,7 @@ export function update(dt: number): void {
   sailorEffects(dt);
   if (G.mode !== 'play') { G.prompt = null; return; }
   G.clock += dt;
-  tickHotspots(G.clock);                         // fish hotspots surface, dive and move with the clock
+  tickHotspots(G.clock, { x: G.cam.x + W / 2, y: G.cam.y + H / 2, r: schoolDrawR() + 60, hooked: G.fish?.s });                         // fish hotspots surface, dive and move with the clock
   if ((rehomeT -= dt) <= 0) { rehomeT = 5; rehomeEscapees(); }   // a fish that got away follows its kind as hotspots move
   updateWeather(dt, s => { if (WEATHER_NEWS[s]) toast(WEATHER_NEWS[s], s === 'storm' ? 'bad' : 'info'); },
     () => setTimeout(() => sfx('thunder'), 200 + Math.random() * 900));
@@ -198,7 +199,8 @@ function scanSurroundings(): void {
     if (p.type === 'port' && Math.hypot(p.end.x - b.x, p.end.y - b.y) < 30 + bd.L) G.nearPort = p;
     if (p.type === 'wreck' && (!G.salvaged.has(p.id) || (G.up.bell > 0 && G.dives[p.id] !== dayNum())) && d < 30 + bd.L * 0.5) G.nearWreck = p;
   }
-  G.nearSchool = G.fish ? null : nearestSchool();
+  G.nearSchool = G.fish || G.card ? null : nearestSchool();
+  G.nearEncounter = G.fish || G.card ? null : nearestEncounter();
   for (const s of schoolsNear(b.x, b.y, 60, netScratch)) {          // a golden school glints the first time you come near
     if (s.gold && schoolActive(s) && !glinted.has(s.id) && Math.hypot(s.x - b.x, s.y - b.y) < 60) { glinted.add(s.id); sfx('glint'); }
   }
@@ -232,33 +234,36 @@ function promptFor(speed: number): string | null {
     }
     return null;
   }
-  if (G.nearPort) return speed < 14 ? `[E] Dock at ${G.nearPort.name}` : 'Slow down to dock';
+  if (G.card) return null;
   const isle = realmDockAt(G.boat.x, G.boat.y);
-  if (isle) return speed < 14 ? `[E] Land at ${isle.name}` : 'Slow down to land';
-  if (G.nearTreasure) return speed < 12 ? '[E] Haul up the treasure chest' : 'Slow down over the X to haul up the treasure';
-  if (G.nearWreck) return speed < 12 ? `[E] Salvage the ${G.nearWreck.name.replace('Wreck of the ', '')}` : 'Slow down to salvage';
-  if (G.nearSchool) {
-    const s = SPECIES[G.nearSchool.sp], need = catchNeed(G.nearSchool.sp), list = castTargets();
-    const next = list.length > 1 ? list[(list.indexOf(G.nearSchool) + 1) % list.length] : null;
-    return speed < 10 ? `[SPACE] Cast for ${s.name}${need ? `, ${need}` : ''}${next ? ` · [TAB] ${SPECIES[next.sp].name}` : ''}` : 'Stop to fish';
-  }
-  return null;
+  let use: string | null = null;
+  if (G.nearPort) use = speed < 14 ? `[E] Dock at ${G.nearPort.name}` : 'Slow down to dock';
+  else if (isle) use = speed < 14 ? `[E] Land at ${isle.name}` : 'Slow down to land';
+  else if (G.nearTreasure) use = speed < 12 ? '[E] Haul up the treasure chest' : 'Slow down over the X to haul up the treasure';
+  else if (G.nearWreck) use = speed < 12 ? `[E] Salvage the ${G.nearWreck.name.replace('Wreck of the ', '')}` : 'Slow down to salvage';
+  else if (G.nearEncounter) use = speed < 12 ? `[E] ${G.nearEncounter.kind === 'prop' || G.nearEncounter.kind === 'habitat' || G.nearEncounter.kind === 'plankton' ? 'Inspect' : 'Visit'} ${G.nearEncounter.name}` : 'Slow down to interact';
+  if (!G.nearSchool) return use;
+  const species = SPECIES[G.nearSchool.sp], need = catchNeed(G.nearSchool.sp), list = castTargets();
+  const cast = speed < 10 ? `[SPACE] Cast for ${species.name}${need ? `, ${need}` : ''}${list.length > 1 ? ' · [Q] Next creature' : ''}` : 'Stop to fish';
+  return [use, cast].filter(Boolean).join(' · ');
 }
 
 const BAIT_ORDER: BaitChoice[] = ['none', 'shrimp', 'glow'];
 function handleActions(dt: number, speed: number): void {
   const f = G.fish;
+  if (G.card) return;
 
-  if (hit('e', 'E', 'Enter')) {
+  if (!f && hit('e', 'E', 'Enter')) {
     const isle = realmDockAt(G.boat.x, G.boat.y);
     if (G.nearPort && speed < 14) dock(G.nearPort);
     else if (isle && speed < 14) { sfx('select'); landAtRealm(isle.key); }
     else if (G.nearTreasure && speed < 12) haul(G.nearTreasure);
     else if (G.nearWreck && speed < 12) salvage(G.nearWreck);
+    else if (G.nearEncounter && speed < 12) openEncounter(G.nearEncounter);
   }
   if (hit('u', 'U')) { G.musicOn = !G.musicOn; toast(G.musicOn ? 'Music on' : 'Music off'); }
   if (!f && !G.card && hit(' ') && G.nearSchool && speed < 10) tryCast(G.nearSchool);
-  if (!f && hit('Tab')) nextTarget();
+  if (!f && hit('q', 'Q')) { nextTarget(); G.nearSchool = nearestSchool(); G.prompt = promptFor(speed); }
   if (hit('c', 'C')) useChum();
   if (G.pet && hit('p', 'P') && !f) petCat();
   if (G.pet && (G.petCd -= dt) < -90 - Math.random() * 120) { G.petCd = 0; sfx('meow', 0.5); }   // the cat speaks up now and then

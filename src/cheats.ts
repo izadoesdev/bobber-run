@@ -1,7 +1,10 @@
 // Cheat console: press ` while sailing, type a code, press Enter.
 import { G, toast, placeAtPort, saveGame, DAYLEN, schoolActive, cap } from './game';
 import { SPECIES, BOATS, UPGRADES, UPGRADE_KEYS, PROJECTS } from './econ';
-import { homePort, LAIR, schoolsNear } from './world';
+import { homePort, LAIR, schoolsNear, nearestWater } from './world';
+import { summonSeaLife } from './life';
+import { celebrate } from './game/feedback';
+import { regionAt } from './biome';
 import { setWeather } from './weather';
 import { sfx } from './audio';
 import type { ProjectId } from './types';
@@ -16,7 +19,38 @@ function atClock(frac: number): void {
 interface Cheat { code: string; what: string; run: () => string | void }
 const UNLOCK_SHIPS: ProjectId[] = ['pier', 'market', 'drydock', 'lights'];
 
+export const SEA_TOYS = [
+  { code: 'whalewatch', name: 'Call a humpback', what: 'A curious whale surfaces beside you. Catchable with a level 5 rod and a giant deck.' },
+  { code: 'dolphinparade', name: 'Dolphin parade', what: 'Three bow-riding dolphins join your boat. Slow down and cast for one.' },
+  { code: 'jellyparty', name: 'Jellyfish lantern party', what: 'Night falls and a colourful, catchable swarm rises beside you.' },
+  { code: 'kraken', name: 'Release the kraken', what: 'Summon a real giant squid from the deep. Bring serious tackle.' },
+  { code: 'bootycall', name: 'X marks the spot', what: 'A treasure buoy nearby, with an improbable 42 coins inside.' },
+  { code: 'sparkler', name: 'Harbour salute', what: 'A ring of golden sparks around your boat. No strobe or camera shake.' },
+] as const;
+
 export const CHEATS: Cheat[] = [
+  { code: 'whalewatch', what: 'Call a friendly humpback', run: () => summonSeaLife('whale') },
+  { code: 'dolphinparade', what: 'A pod of dolphins joins you', run: () => summonSeaLife('dolphins') },
+  { code: 'jellyparty', what: 'A jellyfish lantern party at night', run: () => { atClock(0.75); return summonSeaLife('jellies'); } },
+  { code: 'kraken', what: 'A giant squid rises beside you', run: () => summonSeaLife('squid') },
+  { code: 'sparkler', what: 'A golden harbour salute', run: () => { celebrate(); return 'A salute to the captain!'; } },
+  { code: 'bootycall', what: 'A nearby treasure worth 42 coins', run: () => {
+    if (G.maps.length >= 3) return 'Find the treasure already on your chart first';
+    const p = nearestWater(G.boat.x + Math.cos(G.boat.a) * 70, G.boat.y + Math.sin(G.boat.a) * 70, -0.12);
+    G.maps.push({ id: `sandbox:${G.t}`, x: p.x, y: p.y, reward: 42 });
+    return 'The answer to life, the universe, and fishing is buried at the new buoy';
+  } },
+  { code: 'goldrush', what: 'Turn a nearby school golden', run: () => {
+    const school = schoolsNear(G.boat.x, G.boat.y, 400).find(schoolActive);
+    if (!school) return 'No school nearby';
+    school.gold = true;
+  } },
+  { code: 'openwaters', what: 'Open every region', run: () => {
+    const regions = new Set(G.unlocked);
+    for (let y = -12000; y <= 12000; y += 700) for (let x = -24000; x <= 24000; x += 700) regions.add(regionAt(x, y).id);
+    G.unlocked = [...regions];
+  } },
+  { code: 'dontpanic', what: 'A small, suspiciously useful towel', run: () => { G.boat.hp = Math.max(G.boat.hp, 42); G.bait.shrimp += 42; return 'DON’T PANIC. You know where your towel is. +42 shrimp bait'; } },
   { code: 'moneybags', what: '+$1,000,000', run: () => { G.coins += 1000000; } },   // not counted as earned, so it doesn't trip goals
   { code: 'maxgear', what: 'Every upgrade at its top level', run: () => { for (const k of UPGRADE_KEYS) G.up[k] = UPGRADES[k].costs.length; } },
   { code: 'shipwright', what: 'Own every ship', run: () => {
@@ -26,8 +60,9 @@ export const CHEATS: Cheat[] = [
   { code: 'harbour', what: 'Finish every Alderhaven project but the last', run: () => { G.projects = PROJECTS.filter(p => p.id !== 'grand').map(p => p.id); } },
   { code: 'grandfinale', what: 'Finish Alderhaven and see the ending', run: () => { G.projects = PROJECTS.map(p => p.id); return 'finale'; } },
   { code: 'fullhold', what: 'Fill the hold with fish', run: () => {
+    const pool = SPECIES.map((s, i) => s.id !== 'oldone' ? i : -1).filter(i => i >= 0);
     for (let i = 0; G.hold.length < cap() && i < 99; i++) {
-      const sp = Math.floor(Math.random() * (SPECIES.length - 1));   // anything but the Old One
+      const sp = pool[Math.floor(Math.random() * pool.length)];
       G.hold.push({ sp, kg: SPECIES[sp].kg[1] * 0.6, value: SPECIES[sp].base, trophy: Math.random() < 0.2, t: G.clock });
     }
   } },

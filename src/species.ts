@@ -19,6 +19,7 @@ const ROLE: Record<string, FishRole> = {
   crab: 'crawler', ventcrab: 'crawler', mudcrab: 'crawler', snowcrab: 'crawler',
   squid: 'drifter', puffer: 'drifter', lionfish: 'drifter', crystal: 'drifter', ghost: 'drifter', stormeel: 'drifter', opah: 'drifter', beacon: 'drifter',
   marlin: 'giant', swordfish: 'giant', sailfish: 'giant', manta: 'giant', sunfish: 'giant', reefshark: 'giant', oarfish: 'giant', gsquid: 'giant', oldone: 'giant',
+  humpback: 'giant', dolphin: 'hunter', sleepershark: 'giant', ribboneel: 'giant', jellyfish: 'drifter',
 };
 // markings that tell look-alikes apart from above
 const MARK: Record<string, [FishMark, string]> = {
@@ -115,6 +116,12 @@ export const SPECIES: Species[] = [
   S('lumpsucker', 'Lumpsucker', 22, [0.5, 5], 1, 2.5, 'day', 'round', ['#3a5a3a', '#6e9a5a', '#c8d8a8', '#2f4a2f'], 'steady', 'Icy northern shallows by day', shallow(-0.3), { region: 'cold' }),
   S('snowcrab', 'Snow Crab', 34, [0.4, 1.6], 1, 3, 'night', 'crab', ['#c0592b', '#e2945a', '#f2e6c8', '#8a3a22'], 'steady', 'Cold northern seabed at night', deep(-0.15), { region: 'cold' }),
   S('ghalibut', 'Greenland Halibut', 46, [2, 20], 2, 2, 'any', 'flat', ['#33281c', '#4a3a2a', '#8f7a5a', '#26394a'], 'steady', 'Deep water among the ice floes', deep(-0.32), { region: 'cold' }),
+  // Append only: saved catches refer to catalogue indexes. These live in life.ts, not generated schools.
+  S('jellyfish', 'Moon Jellyfish', 12, [0.1, 1.5], 0, 0, 'any', 'jelly', ['#549caa', '#97d4d8', '#e6efec', '#d895c1'], 'steady', 'Visible jellyfish swarms; more surface at night', () => false),
+  S('dolphin', 'Bottlenose Dolphin', 90, [100, 300], 2, 0, 'any', 'dolphin', ['#4f6a7a', '#8aa6ad', '#e6efec', '#33454f'], 'jumper', 'Pods riding beside fast boats. Slow down to cast', () => false),
+  S('humpback', 'Humpback Whale', 320, [6000, 30000], 4, 0, 'any', 'whale', ['#26394a', '#4f6a7a', '#e6efec', '#33454f'], 'generic', 'Whales passing through deep water; cast near their body', () => false, { deck: 2 }),
+  S('sleepershark', 'Sleeper Shark', 160, [150, 700], 3, 0, 'any', 'shark', ['#14212a', '#33454f', '#8a949c', '#26394a'], 'generic', 'The large dark shapes passing beneath your boat', () => false, { deck: 1 }),
+  S('ribboneel', 'Ribbon Eel', 75, [10, 90], 2, 0, 'any', 'eel', ['#26394a', '#4f6a7a', '#b3bbc0', '#5b7fae'], 'erratic', 'Long, winding silhouettes beneath kelp and volcanic waters', () => false),
 ];
 /** Fish that only live in one biome, and how strong it must be: they appear where it is, and nowhere else. */
 export const HABITAT: Partial<Record<string, keyof BiomeMix>> = {

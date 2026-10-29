@@ -16,6 +16,7 @@ export function applySettings(): void {
     ui.classList.toggle('hc', SET.contrast);
     ui.classList.toggle('calm', SET.calm);
     ui.classList.toggle('plain', SET.font === 'plain');
+    ui.classList.toggle('pixel', SET.font === 'pixel');
   }
   savePrefs();
 }
@@ -74,7 +75,7 @@ export const ROWS: SettingEntry[] = [
   { label: 'High contrast', ...toggle('contrast'), help: 'Solid panels, brighter text and stronger outlines.' },
   { label: 'Interface size', ...pick('ui', [0.85, 1, 1.15, 1.3, 1.5], ['85%', '100%', '115%', '130%', '150%']) },
   { label: 'Sea zoom', get: () => `${Math.round(SET.zoom * 100)}%`, change: d => { stepZoom(d > 0 ? 1 : -1); }, help: 'How much of the sea you can see. Bigger ships already see further. While sailing you can also use the mouse wheel, or the - and + keys.' },
-  { label: 'Font', ...pick('font', ['pixel', 'plain']), help: 'Plain uses a smooth system font that is easier to read.' },
+  { label: 'Font', ...pick('font', ['harbour', 'pixel', 'plain']), help: 'Harbour pairs smooth text with logbook headings. Pixel is the original style; Plain uses your system font.' },
   { label: 'Chat messages', ...pick('chat', ['show', 'bubbles', 'off'], ['Show', 'Bubbles only', 'Off']), help: 'Show: new messages appear at the bottom left for a few seconds. Bubbles only: just the speech bubbles over boats. Off: no messages, though / still opens chat.' },
   { label: 'Interface while sailing', ...toggle('hud', 'Shown', 'Hidden'), help: 'Press H while sailing to hide the status panel, minimap, quest and hints, for screenshots or calm sailing. Messages and the fishing bars still show.' },
   { label: 'Top-right dial', ...toggle('minimap', 'Minimap', 'Compass'), help: 'A compass pointing to your next step and waypoint, or a small map of the sea around you. Either one opens the chart.' },
@@ -92,7 +93,8 @@ interface Action { id: string; label: string; key: string }
 export const ACTIONS: Action[] = [
   { id: 'up', label: 'Go forward', key: 'ArrowUp' }, { id: 'down', label: 'Go back', key: 'ArrowDown' },
   { id: 'left', label: 'Steer left', key: 'ArrowLeft' }, { id: 'right', label: 'Steer right', key: 'ArrowRight' },
-  { id: 'cast', label: 'Cast, strike and reel', key: ' ' }, { id: 'use', label: 'Dock, salvage, haul up treasure', key: 'e' },
+  { id: 'cast', label: 'Cast, strike and reel', key: ' ' }, { id: 'use', label: 'Interact, dock, salvage, haul up treasure', key: 'e' },
+  { id: 'target', label: 'Next fish or sea creature (gamepad R3)', key: 'q' },
   { id: 'bait', label: 'Switch bait', key: 'b' }, { id: 'chum', label: 'Throw chum', key: 'c' }, { id: 'pet', label: 'Pet the cat', key: 'p' },
   { id: 'ship', label: 'Ship and hold', key: 'Tab' }, { id: 'chart', label: 'Sea chart', key: 'm' }, { id: 'log', label: 'Logbook', key: 'l' },
   { id: 'hud', label: 'Hide or show the interface', key: 'h' },

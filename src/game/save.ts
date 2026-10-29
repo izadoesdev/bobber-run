@@ -1,4 +1,3 @@
-// Saving and loading, new voyages, and putting the boat at a port.
 import { W, H, clamp } from '../config';
 import { hAt, homePort, cellPois, nearestWater, WORLD } from '../world';
 import { SP, retiredRefund, BOAT_PARTS } from '../econ';
@@ -11,12 +10,12 @@ import { fleetWhileAway } from './port/fleet';
 import { realmWhileAway } from '../islands';
 import { parseSave, type ParsedSave } from './saveSchema';
 import { DAYLEN, cap, hpMax } from './rules';
+import { resetLife } from '../life';
+import { voyagePreview, type VoyagePreview } from './savePreview';
 
 const KEY = 'bobber-run-save-v3', OLD = 'bobber-run-save-v2';
 
 
-/** The v3 save: progress plus where the boat is (sets stored as arrays). Its shape is the schema in saveSchema.ts, so
- *  writing a field the loader doesn't know is a type error here. */
 type SaveData = ParsedSave;
 /** The v2 save, migrated on first load. */
 interface OldSave {
@@ -24,19 +23,26 @@ interface OldSave {
   found: string[]; salvaged: string[]; lastPort: string | null; log?: Record<string, number>; x: number; y: number; a: number;
 }
 
-export function saveGame(): void {
+export const SAVE_STATUS = { failed: false };
+
+export function saveGame(): boolean {
   try {
     const b = G.boat;
     const data: SaveData = {
       savedAt: Date.now(), world: WORLD, coins: G.coins, earned: G.earned, up: G.up, hp: b.hp, hold: G.hold, log: G.log, boatId: G.boatId, owned: G.owned,
       bait: G.bait, baitSel: G.baitSel, paint: G.paint, paints: G.paints, found: [...G.found], salvaged: [...G.salvaged], lastPort: G.lastPort, x: b.x, y: b.y, a: b.a,
-      stats: G.stats, story: G.story, gifts: G.gifts, pet: G.pet, projects: G.projects, fleet: G.fleet, dives: G.dives,
+      stats: G.stats, story: G.story, gifts: G.gifts, pet: G.pet, projects: G.projects, fleet: G.fleet, dives: G.dives, visits: G.visits,
       goalsDone: G.goalsDone, cheated: G.cheated, maps: G.maps, escaped: G.escaped, packs: G.packs, regionsSeen: G.regionsSeen, explored: G.explored, unlocked: G.unlocked, waypoint: G.waypoint, gearOff: G.gearOff, zones: G.zones, docks: G.docks, streak: G.streak, treasury: G.treasury, realmRate: G.realmRate, hulls: G.hulls, boatUp: G.boatUp, musicOn: G.musicOn, offers: G.offers, active: G.active, pity: G.pity, clock: G.clock,
     };
     localStorage.setItem(KEY, JSON.stringify(data));
-    netSaved();
-    reportStats(G.stats.caught, G.earned, G.cheated);   // the leaderboard's fish caught and coins earned (sent at most once a minute)
-  } catch { }   // storage full or unavailable: keep playing
+  } catch {
+    SAVE_STATUS.failed = true;
+    return false;
+  }
+  SAVE_STATUS.failed = false;
+  // Online failure must not invalidate a local save.
+  try { netSaved(); reportStats(G.stats.caught, G.earned, G.cheated); } catch { }
+  return true;
 }
 export function hasSave(): boolean {
   try { return !!(localStorage.getItem(KEY) || localStorage.getItem(OLD)); } catch { return false; }
@@ -48,12 +54,15 @@ export function savedSpot(): Point | null {
     return d && Number.isFinite(d.x) && Number.isFinite(d.y) && (d.world ?? 1) === WORLD ? { x: d.x!, y: d.y! } : null;
   } catch { return null; }
 }
-/** A few facts about the save on this device, for the "erase it?" question; null when there is none or it can't be read. */
-export function savedVoyage(): { day: number; caught: number; species: number } | null {
+// The title redraws while idle; only decode the save again when its contents change.
+let previewRaw: string | null = null, preview: VoyagePreview | null = null;
+export function savedVoyage(): VoyagePreview | null {
   try {
-    const d = JSON.parse(localStorage.getItem(KEY) || 'null') as Partial<SaveData> | null;
-    if (!d) return null;
-    return { day: Math.floor((d.clock || 0) / DAYLEN) + 1, caught: d.stats?.caught || 0, species: Object.keys(d.log || {}).length };
+    const raw = localStorage.getItem(KEY);
+    if (raw === previewRaw) return preview;
+    previewRaw = raw;
+    preview = null;
+    return preview = voyagePreview(JSON.parse(raw ?? 'null'), DAYLEN);
   } catch { return null; }
 }
 export function wipeSave(): void {
@@ -98,9 +107,15 @@ export function newGame(): void {
     coins: 15, coinsShown: 15, earned: 0, paint: 'classic', paints: ['classic'], up: freshUpgrades(), bait: { shrimp: 3, glow: 0, chum: 1 }, baitSel: 'shrimp',
     hold: [], log: {}, found: new Set(), salvaged: new Set(), sat: {}, fish: null, parts: [], toasts: [], floaters: [], boatId: 'row', owned: ['row'],
     stats: freshStats(), goalsDone: [], cheated: false, maps: [], escaped: [], packs: {}, regionsSeen: [], explored: '', unlocked: [], waypoint: null, gearOff: {}, zones: {}, docks: {}, streak: 0, treasury: 0, realmRate: 0, hulls: {}, boatUp: {}, offers: {}, active: [], pity: 0,
-    clock: DAYLEN * 0.08, frenzy: null, nextFrenzy: 240, card: null, projects: [], fleet: {}, dives: {}, gifts: {}, pet: null, dry: 0, story: null, talk: null,
+    clock: DAYLEN * 0.08, frenzy: null, nextFrenzy: 240, card: null, projects: [], fleet: {}, dives: {}, visits: {}, gifts: {}, pet: null, dry: 0, story: null, talk: null,
+    lairTold: false, sunkT: 0, sunkMsg: '', throttle: 0, crashCd: 0, spookCd: 0, petCd: 0, petT: 0,
+    wakeAcc: 0, smokeT: 0, bilgeT: 0, saveT: 0, netT: 0, potT: 0,
+    prompt: null, nearPort: null, nearWreck: null, nearSchool: null, aim: null, nearTreasure: null, nearEncounter: null, encounter: null,
+    captions: [], hookT: -1e9, catchAnim: null, bought: null, confirm: null, myEmote: null, shake: 0, shakeX: 0, shakeY: 0,
+    menu: { tab: 0, sel: 0, port: null }, map: { x: 0, y: 0, zoom: 1 },
   };
   Object.assign(G, fresh);
+  resetLife();
   const home = homePort();
   G.lastPort = home.id;
   G.found.add(home.id);
@@ -119,7 +134,7 @@ function forNewWorld(d: Partial<SaveData>): Partial<SaveData> {
   const log = Object.fromEntries(Object.entries(d.log || {}).map(([k, e]) => { const { at: _, ...rest } = e; return [k, rest]; }));
   const fleet = Object.fromEntries(Object.entries(d.fleet || {}).map(([k, f]) => [k, { ...f, port: home.id, portName: home.name }]));
   return {
-    ...d, world: WORLD, found: [home.id], salvaged: [], dives: {}, offers: {}, active: [], maps: [], escaped: [], waypoint: null, lastPort: home.id,
+    ...d, world: WORLD, found: [home.id], salvaged: [], dives: {}, visits: {}, offers: {}, active: [], maps: [], escaped: [], waypoint: null, lastPort: home.id,
     docks: {}, gifts: {}, explored: '', log, fleet, x: undefined, y: undefined,
   };
 }
@@ -132,7 +147,6 @@ function migrateOld(o: OldSave): Partial<SaveData> {
     found: o.found, salvaged: o.salvaged, lastPort: o.lastPort, log, x: o.x, y: o.y, a: o.a,
   };
 }
-// JSON.parse is the boundary here: saves come from older versions and may miss any field
 const readJson = <T,>(key: string): T | null => JSON.parse(localStorage.getItem(key) ?? 'null') as T | null;
 
 export function loadGame(): void {
@@ -151,7 +165,7 @@ export function loadGame(): void {
       coins: s.coins, coinsShown: s.coins, earned: s.earned, up: { ...G.up, ...s.up }, hold: s.hold, log: s.log, boatId: s.boatId, owned: s.owned,
       bait: { ...G.bait, ...s.bait }, baitSel: s.baitSel, paint: s.paint, paints: s.paints, found: new Set(s.found), salvaged: new Set(s.salvaged),
       lastPort: s.lastPort || G.lastPort, stats: { ...G.stats, ...s.stats }, story: s.story, gifts: s.gifts, pet: s.pet, projects: s.projects,
-      fleet: s.fleet, dives: s.dives, goalsDone: s.goalsDone, cheated: s.cheated, maps: s.maps, escaped: s.escaped, packs: s.packs, regionsSeen: s.regionsSeen, explored: s.explored, unlocked: s.unlocked, gearOff: s.gearOff, zones: s.zones,
+      fleet: s.fleet, dives: s.dives, visits: s.visits, goalsDone: s.goalsDone, cheated: s.cheated, maps: s.maps, escaped: s.escaped, packs: s.packs, regionsSeen: s.regionsSeen, explored: s.explored, unlocked: s.unlocked, gearOff: s.gearOff, zones: s.zones,
       docks: s.docks, streak: s.streak, treasury: s.treasury, realmRate: s.realmRate, hulls: s.hulls, boatUp: s.boatUp, waypoint: s.waypoint, musicOn: s.musicOn, offers: s.offers, active: s.active, pity: s.pity, clock: s.clock ?? G.clock,
     };
     Object.assign(G, loaded);

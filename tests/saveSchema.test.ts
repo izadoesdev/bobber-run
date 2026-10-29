@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import { parseSave } from '../src/game/saveSchema';
+import { BOATS, PROJECTS, SPECIES, UPGRADES } from '../src/econ';
 
 // Saves load leniently: wrong types fall back, bad entries drop, good ones survive untouched.
 const good = {
@@ -24,6 +25,34 @@ test('lists and maps keep the good entries and drop the rest', () => {
   expect(s.hold).toHaveLength(1); expect(s.escaped).toHaveLength(1); expect(Object.keys(s.log)).toEqual(['perch']);
   expect(s.owned).toEqual(['row']); expect(s.projects).toEqual(['pier']);
 });
+test('every catalog boat and project survives save validation', () => {
+  const owned = BOATS.map(b => b.id), projects = PROJECTS.map(p => p.id);
+  for (const boatId of owned) expect(parseSave({ boatId, owned, projects })).toMatchObject({ boatId, owned, projects });
+});
+test('removed branded boats cannot survive in ownership, fleet income or per-boat state', () => {
+  const fleetBoat = { port: 'port:0,0', portName: 'Alderhaven', earned: 25 };
+  for (const boatId of ['databuddy', 'context']) {
+    const saved = parseSave({ ...good, boatId, owned: ['row', 'skiff', boatId],
+      fleet: { skiff: fleetBoat, [boatId]: fleetBoat }, hulls: { skiff: 0.8, [boatId]: 1 },
+      boatUp: { skiff: { prop: 2 }, [boatId]: { prop: 3 } } });
+    expect(BOATS.some(b => b.id === boatId)).toBe(false);
+    expect(saved).toMatchObject({ boatId: 'row', owned: ['row', 'skiff'], coins: good.coins,
+      hold: good.hold, log: good.log, fleet: { skiff: fleetBoat }, hulls: { skiff: 0.8 }, boatUp: { skiff: { prop: 2 } } });
+    expect(saved.fleet[boatId]).toBeUndefined();
+    expect(saved.hulls[boatId]).toBeUndefined();
+    expect(saved.boatUp[boatId]).toBeUndefined();
+  }
+});
+test('malformed fish indexes and non-finite fish values are dropped before they can crash a screen', () => {
+  const valid = { sp: 0, kg: 1, value: 10, trophy: false };
+  const hold = [valid, ...[-1, 0.5, SPECIES.length, Infinity].map(sp => ({ ...valid, sp })), { ...valid, kg: NaN }, { ...valid, value: -1 }];
+  expect(parseSave({ hold }).hold).toEqual([valid]);
+});
+test('upgrade levels are bounded by the catalog, including per-boat gear and retired refunds', () => {
+  const s = parseSave({ up: { rod: 99, hold: -4, line: Infinity, bilge: 1, unknown: 3 }, boatUp: { skiff: { prop: 999 } } });
+  expect(s.up).toEqual({ rod: UPGRADES.rod.costs.length, hold: 0, bilge: 1 });
+  expect(s.boatUp.skiff.prop).toBe(UPGRADES.prop.costs.length);
+});
 test('something that is not a save at all loads as a fresh one', () => {
   for (const raw of [null, 42, 'text', []]) expect(parseSave(raw)).toMatchObject({ coins: 0, hold: [], boatId: 'row', paints: ['classic'] });
 });
@@ -31,6 +60,19 @@ test('entries keep fields this schema does not list, so data added later is neve
   const s = parseSave({ hold: [{ sp: 1, kg: 2, value: 3, trophy: true, variant: 'albino', future: 'kept' }], log: { perch: { n: 1, best: 1, vars: ['albino'], later: 7 } } });
   expect(s.hold[0]).toMatchObject({ variant: 'albino', future: 'kept' });
   expect(s.log.perch).toMatchObject({ vars: ['albino'], later: 7 });
+});
+test('optional story choices survive a save, including legacy in-progress stories', () => {
+  const packs = {
+    'ember-isles': { i: 0, n: 2, started: true, status: 'paused' },
+    'stone-circle': { i: 1, n: 0, started: false, status: 'active' },
+    'night-market': { i: 0, n: 1, started: true },
+  };
+  expect(parseSave({ packs }).packs).toEqual(packs);
+  expect(parseSave({ packs: { bad: { i: 0, n: 0, started: false, status: 'surprise' } } }).packs).toEqual({});
+});
+test('treasury balances and income rates must be finite and nonnegative', () => {
+  expect(parseSave({ treasury: -100, realmRate: -1 })).toMatchObject({ treasury: 0, realmRate: 0 });
+  expect(parseSave({ treasury: Infinity, realmRate: NaN })).toMatchObject({ treasury: 0, realmRate: 0 });
 });
 test('the fog of war is kept as written, and one too big for a cloud save starts over (it is reseeded from the chart)', () => {
   expect(parseSave({ explored: 'AAEC', unlocked: ['north', 7] })).toMatchObject({ explored: 'AAEC', unlocked: ['north'] });

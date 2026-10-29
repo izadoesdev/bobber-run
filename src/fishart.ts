@@ -2,6 +2,9 @@
 import type { FishMark, FishShape } from './types';
 
 export const FISH_T: Record<FishShape, string[]> = {
+  whale: ['........FFF...........', 'F....TTTTTTTTTTTT.....', 'FF.TMMMMMMMMMMMMMMTT..', '.FFMMMMMMMMMMMMMMMMMET', 'FF.BBBBBBBBBBBBBBBBBB.', 'F.....FFF.....FFF.....', '......FF.......FF.....'],
+  dolphin: ['........FF.........', '.......FFF.........', 'F....TTTTTTTT......', 'FF.TMMMMMMMMMTT....', '.FFMMMMMMMMMMMMETTT', 'FF.BBBBBBBBBBBBB...', 'F.....FF....FF.....'],
+  jelly: ['.....TTTTT.....', '...TTMMMMMTT...', '..TMMMMMMMMMT..', '.TMMMMMMMMMMMT.', '.BBBBBBBBBBBBB.', '..F.F..F..F.F..', '..F.F..F..F.F..', '.F..F..F..F..F.', '..F..F.F.F..F..', '..F....F....F..'],
   slim:  ['.....FF......', 'FF..TTTTTTT..', '.FFTMMMMMMMET', 'FF..BBBBBBBB.', '.....F..F....'],
   perch: ['....F.F.F....', '...FFFFFFF...', 'F..TTTTTTTT..', 'FFTMTMTMTMMET', 'F.MMMMMMMMMMT', 'F..BBBBBBBB..', '.....F..F....'],
   long:  ['......FFF.......', 'F...TTTTTTTTT...', 'FF.TMMMMMMMMMTT.', 'FFTMMMMMMMMMMMET', 'F..BBBBBBBBBBBB.', '.....F....F.....'],

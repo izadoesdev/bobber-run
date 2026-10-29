@@ -8,8 +8,9 @@ import { CREW_RANGE } from '../online';
 import { WX } from '../weather';
 import type { BoatDef, BoatId, Fish as FishT, NeedStatus, Port as PortT, PortItem, PortRow, Project, UpgradeKey } from '../types';
 import type { Fit } from '../models';
+import { BoatPortrait } from './boats';
 import { drawChart } from './chart';
-import { Canvas, Cell, Fish, Hint, HullStat, Icon, Key, Pips, WX_ICON, boatPreview, boatThumb, cap1, clockText, flashing } from './parts';
+import { Canvas, Cell, Fish, Hint, HullStat, Icon, Key, Pips, WX_ICON, boatThumb, cap1, clockText, flashing } from './parts';
 import { money } from '../config';
 import { today, FEATURED_PRICE } from '../today';
 
@@ -28,7 +29,7 @@ const isRow = (x: PortItem | undefined): x is PortRow => !!x && x.kind !== 'head
 
 function RowVisual({ it }: { it: PortRow }) {
   if (it.fish !== undefined) return <Fish sp={it.fish} />;
-  if ((it.kind === 'boat' || it.kind === 'fleet') && it.boat) return <Icon src={boatThumb(it.boat.id)} />;
+  if ((it.kind === 'boat' || it.kind === 'fleet') && it.boat) return <Icon cls="boat-thumb" src={boatThumb(it.boat.id)} />;
   if (it.kind === 'paint') return <span class="swatch" style={{ background: SWATCH[it.paint ?? ''] }} />;
   return <Icon k={it.icon} />;
 }
@@ -45,6 +46,11 @@ function Row({ it, i }: { it: PortRow; i: number }) {
   );
 }
 
+function SaleReceipt() {
+  const sale = G.menu.sale;
+  return sale && <p class="sale-receipt good" role="status">Sold {sale.count} fish for {money(sale.coins)}</p>;
+}
+
 // the fish in the hold grouped by species, with what this port pays for each
 function SellDetail({ p }: { p: PortT }) {
   const groups: Record<number, FishT[]> = {};
@@ -53,6 +59,7 @@ function SellDetail({ p }: { p: PortT }) {
   const bonus = saleBonus(), mul = (1 + bonus.cook) * (1 + bonus.crew), sailors = sailorsNear(G.boat.x, G.boat.y);
   return (
     <div class="d-body">
+      <SaleReceipt />
       {Object.keys(groups).length
         ? <div class="ledger">{Object.entries(groups).map(([key, fs]) => {
           const sp = +key, m = p.mult[sp], pct = Math.round((m - 1) * 100);
@@ -100,8 +107,9 @@ function ProjectDetail({ pr, st }: { pr: Project; st: NeedStatus }) {
 }
 
 // the picture at the top of the detail card: a boat preview, the ferry route, or a big icon
-const preview = (id: BoatId, eq: Fit) => <Canvas cls="preview" draw={boatPreview(id, eq)} />;
+const preview = (id: BoatId, fit: Fit) => <BoatPortrait id={id} fit={fit} />;
 function DetailVisual({ p, it }: { p: PortT; it: PortRow }) {
+  if (it.kind === 'sale') return null;
   if (it.kind === 'upgrade') return preview(G.boatId, equipment());
   if ((it.kind === 'boat' || it.kind === 'fleet') && it.boat) return preview(it.boat.id, { ...equipment(), paint: G.paint });
   if (it.kind === 'paint') return preview(G.boatId, { ...equipment(), paint: it.paint ?? G.paint });
@@ -135,6 +143,7 @@ function BoatCompare({ b }: { b: BoatDef }) {
   const giants = SPECIES.filter(s => s.deck > 0 && s.deck <= (b.deck ?? 0)).map(s => s.name);   // sea giants this deck can land
   return (
     <>
+      <p>{b.what}.</p>
       <div class="ledger">
         {STAT_ROWS.map(([n, get, fmt, rel]) => (
           <div class="row"><span class="caps grow">{n}</span>
@@ -143,7 +152,7 @@ function BoatCompare({ b }: { b: BoatDef }) {
           </div>
         ))}
       </div>
-      <p>{b.what}.{gear.length > 0 && ` Built in: ${gear.join(', ')}.`}</p>
+      {gear.length > 0 && <p class="small">Built in: {gear.join(', ')}.</p>}
       {giants.length > 0 && <p>Big enough to land sea giants: {giants.join(', ')}.</p>}
     </>
   );
@@ -158,7 +167,7 @@ function UpgradeDetail({ k, lvl, max, next }: { k: UpgradeKey; lvl: number; max:
       </div>
       {next && <p><span class="caps">Next</span> {k === 'rod' ? `Level ${lvl + 2} rod. New fish: ${SPECIES.filter(s => s.rod === lvl + 1 && s.w > 0).map(s => s.name).join(', ')}` : next}.</p>}
       {b > lvl && <p class="warn small">Your {boatDef().name} already has level {b} built in, so levels up to {b} only help on boats without it.</p>}
-      {k === 'prop' && <p class="muted small">100% is a plain rowboat. Speed upgrades carry over to every boat.</p>}
+      {k === 'prop' && <p class="muted small">100% is a plain rowboat. Speed upgrades stay with this boat.</p>}
     </>
   );
 }
@@ -166,6 +175,8 @@ function UpgradeDetail({ k, lvl, max, next }: { k: UpgradeKey; lvl: number; max:
 // the kind-specific middle of the detail card
 function DetailBody({ it }: { it: PortRow }) {
   switch (it.kind) {
+    case 'sale':
+      return <><SaleReceipt />{it.what && <p>{it.what}</p>}</>;
     case 'upgrade':
       return it.pips && it.key ? <UpgradeDetail k={it.key as UpgradeKey} lvl={it.pips[0]} max={it.pips[1]} next={it.what} /> : null;
     case 'boat':
@@ -204,7 +215,7 @@ function Detail({ p, it }: { p: PortT; it: PortRow | null }) {
       {it.kind === 'sell' ? <SellDetail p={p} /> : <div class="d-body"><DetailBody it={it} /></div>}
       <div class="d-foot">
         {it.cost != null && <span class={'price big' + (G.coins < it.cost ? ' short' : '')}>{money(it.cost)}</span>}
-        {it.kind !== 'note' && !finished && (
+        {it.action && !finished && (
           <button data-track={`port-${it.kind}`} class="btn primary" disabled={!it.ok} onClick={() => it.act()}>
             {!it.ok && it.why?.startsWith('Fully') ? 'Maxed' : it.action}{it.ok && <Key k=" " pad="A" />}
           </button>
@@ -261,7 +272,7 @@ function Board({ p }: { p: PortT }) {
 export function Port({ p }: { p: PortT }) {
   const tabs = portTabs(p), items = portItems(p), cur = items[G.menu.sel], it = isRow(cur) ? cur : null;
   return (
-    <div class="screen panel rivets">
+    <div class="screen port panel rivets">
       <header class="head">
         <div><h1>{p.name}</h1><div class="sub">{GREET[hashStr(p.id) % GREET.length]}</div></div>
         <div class="row"><Forecast /><Icon k="coin" size="l" /><span class="coins big">{money(G.coinsShown)}</span></div>

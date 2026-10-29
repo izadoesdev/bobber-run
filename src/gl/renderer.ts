@@ -8,14 +8,17 @@ import { SET, type Quality, type PixelStyle } from '../prefs';
 import { wantTiles } from '../tilepool';
 import { TS, TN, getTile, hasTile, hAt, poisNear, schoolsNear, cratesNear, claimableNear, realmPlots, heightAt, hotspotsNear, regionSites, type HeightTile, type Hotspot, type RegionSite } from '../world';
 import { hash01 } from '../noise';
-import { SPECIES, BOATS, activeAt } from '../econ';
+import { SPECIES, BOATS } from '../econ';
 import { biomeMix, coldness, warmth, themeHold, themeAt, THEMES, THEME_IDS, type Atmos, type Odds, type Theme, type ThemeHold } from '../biome';
 import { schoolLook } from '../species';
-import { DIVE_S, SCATTER_S, attackK, schoolDrawR } from '../game/schools';
+import { SCATTER_S, attackK, schoolDrawR, schoolShown } from '../game/schools';
+import { divePose } from '../game/diving';
 import { LAMP_Z, landmarkKind, onGrounds } from '../landmarks';
-import { G, darkness, lightR, schoolActive, isNight, dayFrac, equipment, windAngle, boatDef, env } from '../game';
+import { G, darkness, lightR, schoolActive, isNight, dayFrac, equipment, windAngle, boatDef } from '../game';
 import { WX, atmosAt } from '../weather';
 import { seaPropsNear, type SeaProp, type SeaPropKind } from '../seaprops';
+import { seaPropGathered } from '../game/encounters';
+import { creatureShown } from '../game/wildlife';
 import { LIFE, type Whale, type Giant } from '../life';
 import { hasOars, oarGeom, BOAT_MODELS, NP, SHIPPED, PLAIN, lookSeed, lookCoat, type Fit } from '../models';
 import { NET } from '../net';
@@ -57,22 +60,30 @@ export function initRender(canvas: HTMLCanvasElement): void {
   }
   gl = ctx;
   setupGL();
-  // The GPU can drop the context (driver reset, too many tabs). Pause drawing, and rebuild everything when it comes
-  // back; if it doesn't, offer a reload.
   canvas.addEventListener('webglcontextlost', e => {
     e.preventDefault(); lost = true; trackFailure('webgl_context_lost');
+    if (!document.getElementById('gl-paused')) {
+      const note = document.createElement('div');
+      note.id = 'gl-paused'; note.setAttribute('role', 'status');
+      note.textContent = 'Graphics paused. Waiting for your browser to recover…';
+      document.body.append(note);
+    }
     setTimeout(() => { if (lost) offerReload(); }, 4000);
   });
   canvas.addEventListener('webglcontextrestored', () => {
-    try { setupGL(); lost = false; } catch (err) { console.error(err); trackFailure('webgl_restore_failed'); offerReload(); }
+    try {
+      setupGL(); lost = false;
+      document.getElementById('gl-reset')?.remove();
+      document.getElementById('gl-paused')?.remove();
+    } catch (err) { lost = true; console.error(err); trackFailure('webgl_restore_failed'); offerReload(); }
   });
 }
 let lost = false;
+export const graphicsReady = (): boolean => !lost;
 function offerReload(): void {
   if (document.getElementById('gl-reset')) return;
   const b = document.createElement('button');
   b.id = 'gl-reset'; b.textContent = 'Graphics were reset. Click to reload.';
-  b.style.cssText = 'position:fixed;inset:0;margin:auto;width:max-content;height:max-content;padding:1em 1.6em;font:16px monospace;color:#efe9dc;background:#1b2a33;border:2px solid #efe9dc;cursor:pointer;z-index:99';
   b.onclick = () => location.reload();
   document.body.append(b);
 }
@@ -604,38 +615,29 @@ const isBoatId = (id: string): id is BoatId => id in BOAT_MODELS;
 const shipDef = (id: string) => BOATS.find(b => b.id === id) || BOATS[0];
 
 // ---------- fish schools ----------
-// Each species shows in its own colours, size and habits. Scattered fish dart off and regroup, fished-out schools
-// thin to a straggler and fill back in, and diving schools sink out of sight. Surface effects found while placing
-// the fish are kept in `schoolFx` (x, y, kind per entry) for the foam and particle passes.
+// Surface effects found while placing the fish are kept in `schoolFx` (x, y, kind) for foam and particles.
 const FX_RING = 0, FX_GOLD = 1, FX_GLOW = 2, FX_SPRAY = 3, FX_FIN = 4;
 const schoolFx: number[] = [];
 const shownCount = new WeakMap<School, number>();   // eased number of fish on show, so they come and go smoothly
-// eased presence (0..1): schools rise into view and sink away instead of popping, whether their species comes and goes
-// with the hour or weather, or they come into sight in the dark. Schools are drawn from beyond the view's edge, so
-// new ones never appear on screen; ones already on screen rise from the deep.
-const shownVis = new WeakMap<School, number>();
+const shownGeneration = new WeakMap<School, number>();
 /** How far from the view's centre things must be gathered so none appear on screen: its half-diagonal plus `pad` for their size. */
 const viewReach = (pad: number): number => Math.hypot(W, H) / 2 + pad;
-let visEase = 0;
 let sceneT = 0, schoolEase = 0;
 const GOLD_TINT = 1.2;
 const tint3 = [1, 1, 1];
-/** How far a school has sunk on a dive (0 swimming .. 1 out of sight); it rises back the same way. */
-function sunk(s: School): number {
-  const end = s.spooked ?? 0;
-  return G.t < end ? smooth01((G.t - (end - DIVE_S)) / 1.6) : 1 - smooth01((G.t - end) / 1.6);
-}
-// Fish come from the school's swim simulation (game/schools); here they get depth, colour, glow and their tricks.
-function drawSchool(s: School, night: boolean, lit: boolean, vis: number): void {
-  const fish = s.swim, dive = Math.max(sunk(s), 1 - smooth01(vis));
+// Depth belongs to the simulation, so dives keep their pace at any rendering frame rate.
+function drawSchool(s: School, night: boolean, lit: boolean): void {
+  if (s.stock <= 0) { shownCount.delete(s); return; }
+  const fish = s.swim, dive = s.submergence ?? (schoolShown(s) ? 0 : 1);
   if (!fish || dive >= 1) { shownCount.delete(s); return; }
+  const pose = divePose(dive, schoolShown(s));
   const sp = SPECIES[s.sp], look = schoolLook(s.sp), m = MS.fishMesh(s.sp);
-  const full = look.count + (G.frenzy?.s === s ? 2 : 0), straggler = s.stock <= 0;
-  const want = straggler ? 1 : Math.max(1, Math.round(full * Math.min(1, s.stock / Math.max(1, s.max))));
+  const full = look.count + (G.frenzy?.s === s ? 2 : 0);
+  const want = Math.max(1, Math.round(full * Math.min(1, s.stock / Math.max(1, s.max))));
   const was = shownCount.get(s) ?? want, n = was + (want - was) * schoolEase;
   shownCount.set(s, n);
   const cnt = Math.min(fish.length, Math.ceil(n - 0.02)), age = G.t - (s.scatterT ?? -99), dip = age < SCATTER_S ? Math.sin(Math.PI * Math.min(1, age / 2)) : 0;
-  const leapCycle = 6 + frac(s.ph) * 3, leap = sp.fight === 'jumper' && !straggler && !dip && !dive ? frac(G.t / leapCycle + s.ph) * leapCycle / 0.8 : 9;
+  const leapCycle = 6 + frac(s.ph) * 3, leap = sp.fight === 'jumper' && !dip && !dive ? frac(G.t / leapCycle + s.ph) * leapCycle / 0.8 : 9;
   const atk = attackK(s), burst = atk >= 0 && s.hunter ? Math.sin(Math.PI * atk) : 0;
   const back = MS.fishBack(s.sp), role = look.role, finny = role === 'giant' && sp.shape !== 'round' && sp.shape !== 'squid' && sp.shape !== 'eel';
   for (let k = 0; k < cnt; k++) {
@@ -643,17 +645,17 @@ function drawSchool(s: School, night: boolean, lit: boolean, vis: number): void 
     // crabs walk sideways; swimmers' tails beat faster at speed
     const yaw = role === 'crawler' ? head + Math.PI / 2 : head + Math.sin(G.t * (6 + speed) + k) * 0.05 * Math.min(1, speed / 3);
     // bottom fish and crabs come up off the seabed at night
-    const sz = look.size * (0.7 + 0.3 * p), z = look.z + (night && look.bottom ? 1.8 : 0) - back * sz - (1 - p) * 5 - dive * 7 - (straggler ? 1.2 : 0) - dip * 1.2;
-    if (age < 0.45) schoolFx.push(f.x, f.y, FX_RING);          // scattering fish ruffle the surface
-    const gold = s.gold && k === 0 && !straggler, shimmer = sp.legend ? 1 + 0.3 * Math.sin(G.t * 2.5 + k * 2) : 1;
+    const sz = look.size * (0.7 + 0.3 * p) * pose.scale, z = look.z + (night && look.bottom ? 1.8 : 0) - back * sz - (1 - p) * 5 + pose.z - dip * 1.2;
+    if (age < 0.45 && dive < 0.1) schoolFx.push(f.x, f.y, FX_RING);          // scattering fish ruffle the surface
+    const gold = s.gold && k === 0, shimmer = sp.legend ? 1 + 0.3 * Math.sin(G.t * 2.5 + k * 2) : 1;
     // bait fish flash silver as they turn in the ball
     const flash = role === 'bait' ? Math.pow(Math.max(0, Math.sin(G.t * (2.3 + burst * 9) + k * 2.39 + s.ph)), 24 - burst * 16) * (0.9 + burst * 0.5) : 0;
-    if (burst > 0.3 && k % 7 === 0) schoolFx.push(f.x, f.y, FX_SPRAY);   // bait breaking the surface as it flees
-    let tint: number | readonly number[] = (look.bottom ? 0.72 : 1) * (straggler ? 0.75 : 1) * (lit ? 1 : 0.45) * shimmer * (1 + flash);
-    if (gold) { tint = GOLD_TINT; schoolFx.push(f.x, f.y, FX_GOLD); }
+    if (burst > 0.3 && k % 7 === 0 && dive < 0.1) schoolFx.push(f.x, f.y, FX_SPRAY);   // bait breaking the surface as it flees
+    let tint: number | readonly number[] = (look.bottom ? 0.72 : 1) * (lit ? 1 : 0.45) * shimmer * (1 + flash);
+    if (gold) { tint = GOLD_TINT; if (dive < 0.1) schoolFx.push(f.x, f.y, FX_GOLD); }
     else if (sp.legend) { tint3[0] = shimmer * 0.95; tint3[1] = shimmer; tint3[2] = shimmer * 1.15; tint = tint3; }
-    const mesh = gold ? MS.fishMesh(s.sp, true) : m, glow = look.glow ? (night ? 0.4 : 0.15) : 0;
-    if (glow && night) schoolFx.push(f.x, f.y, FX_GLOW);
+    const mesh = gold ? MS.fishMesh(s.sp, true) : m, glow = look.glow ? (night ? 0.4 : 0.15) * (1 - dive) : 0;
+    if (glow && night && dive < 0.1) schoolFx.push(f.x, f.y, FX_GLOW);
     if (k === 0 && leap < 1) {                            // a jumper breaks the surface now and then
       const side = Math.cos(yaw) > 0 ? 0 : Math.PI;
       inst(mesh, f.x, f.y, side, look.size, look.z + Math.sin(Math.PI * leap) * (5 + look.size * 6), (0.5 - leap) * (side ? -1.6 : 1.6), 0, true, tint, glow, look.fade);
@@ -665,7 +667,7 @@ function drawSchool(s: School, night: boolean, lit: boolean, vis: number): void 
       schoolFx.push(f.x, f.y, FX_FIN, f.x - c * r * 1.6 - sn * r * 0.7, f.y - sn * r * 1.6 + c * r * 0.7, FX_FIN, f.x - c * r * 1.6 + sn * r * 0.7, f.y - sn * r * 1.6 - c * r * 0.7, FX_FIN);
     }
     const roll = sp.shape === 'ray' ? Math.sin(G.t * 1.4 + k) * 0.22 : 0;   // a manta's slow wingbeat
-    inst(mesh, f.x, f.y, yaw, sz, z, 0, roll, true, tint, glow, Math.min(1.2, look.fade + dive * 0.6 + (1 - p) * 0.5));
+    inst(mesh, f.x, f.y, yaw, sz, z, pose.pitch, roll, true, tint, glow, Math.min(1.2, look.fade + dive * 0.6 + (1 - p) * 0.5));
   }
 }
 /** The fish on the line: a shadow closing in on the bait, under the bobber as it bites, then fighting where the line runs. */
@@ -1001,6 +1003,7 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
   // and in the sea (seaprops.ts): ice and flotsam ride the swell in place, rock and bone stand still
   for (const p of seaPropsNear(cx, cy + 15, Math.max(W, H) / 2 + 45, seaScratch, true)) {
     if (p.x < camX - 30 || p.x > camX + W + 30 || p.y < camY - 12 || p.y > camY + H + 60 || (sites.length && onSite(p.x, p.y))) continue;
+    if (seaPropGathered(p)) continue;
     const ice = ICE_MESH[p.kind], afloat = !!ice || FLOATS.has(p.kind), ph = p.yaw;
     const bob = afloat ? Math.sin(G.t * (ice ? 0.9 : 1.2) + ph * 3) * (ice ? 0.2 : 0.18) : 0, tilt = afloat ? Math.sin(G.t * 0.8 + ph) * (ice ? 0.035 : 0.04) : 0;
     if (ice) inst(MS.iceMesh(ice), p.x, p.y, ph, p.scale, -0.5 + bob, tilt, tilt * 0.8, true, 0.8);   // dimmed a touch: bright ice set off the bloom
@@ -1023,27 +1026,29 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
   const night = isNight(), lr = lightR() + 14;
   schoolFx.length = 0;
   const step = clamp(G.t - sceneT, 0, 0.1); sceneT = G.t;
-  schoolEase = 1 - Math.exp(-2.5 * step); visEase = 1 - Math.exp(-1.6 * step);
+  schoolEase = 1 - Math.exp(-2.5 * step);
   for (const s of schoolsNear(cx, cy, schoolDrawR(), sceneSchools)) {
     if (s.boss) {
-      if (schoolActive(s)) { const a = G.t * 0.35; inst(MS.leviMesh(), s.x + Math.cos(a) * 18, s.y + Math.sin(a) * 12, a + Math.PI / 2, 1, -5.5, 0, 0, true, 1); }
+      const dive = s.submergence ?? (schoolShown(s) ? 0 : 1);
+      if (s.stock > 0 && dive < 1) {
+        const a = G.t * 0.35, pose = divePose(dive, schoolShown(s));
+        inst(MS.leviMesh(), s.x + Math.cos(a) * 18, s.y + Math.sin(a) * 12, a + Math.PI / 2, pose.scale, -5.5 + pose.z, pose.pitch, 0, true, 1);
+      }
       continue;
     }
     const d = Math.hypot(s.x - G.boat.x, s.y - G.boat.y);
     const lit = !night || G.frenzy?.s === s || schoolLook(s.sp).glow || d < lr;
-    const want = activeAt(s.sp, env()) ? (lit ? 1 : clamp((110 - d) / 30, 0, 1)) : 0;   // unlit schools at night fade with distance
-    // a school first met out of sight is simply there; the fade is for changes you can see (dusk, a school waking)
-    const off = s.x < camX - 20 || s.x > camX + W + 20 || s.y < camY - 20 || s.y > camY + H + 20;
-    const was = shownVis.get(s) ?? (off ? want : 0), vis = was + (want - was) * visEase;
-    shownVis.set(s, vis);
-    if (vis > 0.01) drawSchool(s, night, lit, vis);
-    else shownCount.delete(s);
+    if (shownGeneration.get(s) !== (s.generation ?? 0)) {
+      shownGeneration.set(s, s.generation ?? 0);
+      shownCount.delete(s);
+    }
+    drawSchool(s, night, lit);
   }
   // whales, giants, jellies, other players' boats, dolphins
   const mx = W / 2 + 60, my = H / 2 + 60;
-  for (const w of LIFE.whales) if (near(w, cx, cy, mx, my)) drawWhale(w);
-  for (const g of LIFE.giants) if (near(g, cx, cy, mx + g.len, my + g.len)) drawGiant(g);
-  for (const j of LIFE.jellies) if (near(j, cx, cy, mx, my)) {
+  for (const w of LIFE.whales) if (creatureShown(w) && near(w, cx, cy, mx, my)) drawWhale(w);
+  for (const g of LIFE.giants) if (creatureShown(g) && near(g, cx, cy, mx + g.len, my + g.len)) drawGiant(g);
+  for (const j of LIFE.jellies) if (creatureShown(j) && near(j, cx, cy, mx, my)) {
     const pulse = Math.sin(j.ph), sz = 0.55 * j.size;
     inst(MS.jellyMesh(pulse > 0.35), j.x, j.y, j.ph * 0.15, sz * (1 + pulse * 0.06), j.z, 0, 0, true, j.col, j.glow * (0.8 + 0.2 * pulse), 0.6);
   }
@@ -1064,6 +1069,7 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
     }
   }
   for (const p of LIFE.pods) for (const m of p.m) {          // each dolphin leaps in turn, then runs just under
+    if (!creatureShown(m)) continue;
     const ph = frac(p.t * 0.9 + m.ph);
     if (ph < 0.38) { const k = ph / 0.38; inst(MS.dolphinMesh(), m.x, m.y, m.a, 1, Math.sin(Math.PI * k) * 7 - 1.2, (0.5 - k) * 1.4); }
     else inst(MS.dolphinMesh(), m.x, m.y, m.a, 1, -2.6, 0, 0, true);
@@ -1274,9 +1280,9 @@ function lightsFor(bs: BoatPose, pois: Poi[], dk: number): Lights {
   }
   // sea life: glowing giants, jelly swarms (one light per cluster) and the lamps of passing boats
   const cx = G.cam.x + W / 2, cy = G.cam.y + H / 2, mx = W / 2 + 60, my = H / 2 + 60;
-  for (const g of LIFE.giants) if (g.glow > 0.05 && near(g, cx, cy, mx, my)) addLight(g.x, g.y, g.len * 1.3, g.glow * 0.5, g.kind === 'eel' ? EEL_GLOW : SEA_GLOW);
+  for (const g of LIFE.giants) if (creatureShown(g) && g.glow > 0.05 && near(g, cx, cy, mx, my)) addLight(g.x, g.y, g.len * 1.3, g.glow * 0.5, g.kind === 'eel' ? EEL_GLOW : SEA_GLOW);
   swarmLights.clear(); swarmOrder.length = 0;
-  for (const j of LIFE.jellies) if (j.glow > 0.05 && near(j, cx, cy, mx, my)) {
+  for (const j of LIFE.jellies) if (creatureShown(j) && j.glow > 0.05 && near(j, cx, cy, mx, my)) {
     const k = Math.floor(j.x / 48) * 4096 + Math.floor(j.y / 48), c = j.col;
     let e = swarmLights.get(k);
     if (!e) swarmLights.set(k, e = swarmEntry());
@@ -1352,7 +1358,7 @@ function foamPoints(bs: BoatPose): number {
   }
   for (const w of LIFE.whales) {                          // a surfacing whale pushes up a slick of ripples and foam
     const s = w.size * WHALE_K;
-    if (!near(w, cx, cy, mx, my)) continue;
+    if (!creatureShown(w) || !near(w, cx, cy, mx, my)) continue;
     const up = clamp(1 - Math.abs(w.z - 0.5) / 3, 0, 1);
     if (up > 0) hullWash(w.x - Math.cos(w.a) * 3 * s, w.y - Math.sin(w.a) * 3 * s, w.a, 30 * s, 8 * s, 0, w.t, up);
     if (w.tail > 0.25) foam(w.x + Math.cos(w.a) * (MS.WHALE.joint - 5) * s, w.y + Math.sin(w.a) * (MS.WHALE.joint - 5) * s, 10 * s, w.tail * 0.5, 0, w.a + Math.PI / 2, 0.5);
@@ -1370,7 +1376,7 @@ function foamPoints(bs: BoatPose): number {
     else if (kind === FX_SPRAY) foam(schoolFx[i], schoolFx[i + 1], 9, 0.6, 1);
   }
   for (const g of LIFE.giants) {                           // something big just under the surface bulges the water
-    if (g.z < -5 || !near(g, cx, cy, mx, my)) continue;
+    if (!creatureShown(g) || g.z < -5 || !near(g, cx, cy, mx, my)) continue;
     for (let i = 0; i < 2; i++) {
       const ph = frac(G.t * 0.25 + i / 2 + g.ph * 0.1);
       foam(g.x, g.y, g.len * (1 + ph * 0.6), (1 + g.z / 5) * 0.45 * Math.sin(Math.PI * ph), 1, g.a, g.kind === 'ray' ? 0.9 : 0.4, 0);

@@ -7,6 +7,8 @@ import { boundKey } from '../settings';
 import { boatFrame, SHIPPED, NA, PLAIN, type Fit } from '../models';
 import type { BoatId, WeatherState } from '../types';
 import { icon, fishIcon } from './icons';
+import { SET } from '../prefs';
+import { fitSprite, opaqueBounds, type SpriteBounds } from './sprite';
 
 /** World position -> percent of the view, for things pinned over the canvas. */
 /** The bait on the hook and the chum aboard, with their keys: shown by a school before the cast and on the fishing dial. */
@@ -141,7 +143,7 @@ export const Hint = ({ k, k2, pad, children }: { k: string; k2?: string; pad?: s
 );
 
 // prompt tokens -> [default key, pad button]: "[E] Dock at X" -> keycap + text
-const PROMPT_KEYS: Record<string, [string, string]> = { SPACE: [' ', 'A'], E: ['e', 'X'] };
+const PROMPT_KEYS: Record<string, [string, string]> = { SPACE: [' ', 'A'], E: ['e', 'X'], Q: ['q', 'R3'] };
 /**
  * On touch screens the controls are buttons, not keys: "[SPACE] Cast for Perch" reads "Cast for Perch", "Hold [SPACE]
  * to reel" reads "Hold the button to reel", and "press Space to cast" in dialogue reads "tap Cast".
@@ -160,20 +162,36 @@ export const keyed = (s: string) => forTouch(s).split(/(\[[^\]]+\])/).map(part =
 });
 
 // ---------- boats ----------
-/** An animated, turning boat for preview panels. */
-export function boatPreview(id: BoatId, eq: Fit, speed = 6): DrawFn {
+const spriteBounds = new WeakMap<HTMLCanvasElement, SpriteBounds>();
+function boundsOf(img: HTMLCanvasElement): SpriteBounds {
+  let bounds = spriteBounds.get(img);
+  if (!bounds) {
+    bounds = opaqueBounds(img.getContext('2d')!.getImageData(0, 0, img.width, img.height));
+    spriteBounds.set(img, bounds);
+  }
+  return bounds;
+}
+
+export function boatPreview(id: BoatId, eq: Fit): DrawFn {
   return (ctx, w, h) => {
     ctx.clearRect(0, 0, w, h);
     ctx.imageSmoothingEnabled = false;
-    const f = boatFrame(id, Math.floor(G.t * speed) % NA, SHIPPED, eq);
-    const sc = Math.max(1, Math.floor(Math.min(w / f.img.width, h / (f.img.height * 0.8)) * 0.95));
-    const x = w / 2 - f.cx * sc, y = h * 0.66 - f.cy * sc;
+    const sway = SET.calm ? 0 : Math.sin(G.t * 0.35) * 4;
+    const f = boatFrame(id, Math.round(NA * 0.58 + sway), SHIPPED, eq);
+    const { x, y, scale } = fitSprite(boundsOf(f.img), w, h);
+    ctx.strokeStyle = 'rgba(245, 248, 232, 0.3)';
+    ctx.lineWidth = Math.max(1, w / 300);
+    for (const radius of [0.27, 0.35]) {
+      ctx.beginPath();
+      ctx.ellipse(w / 2, h * 0.68, w * radius, h * radius * 0.3, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     if (f.shadow) {
-      ctx.globalAlpha = 0.5;
-      ctx.drawImage(f.shadow, x + sc, y + 2 * sc, f.shadow.width * sc, f.shadow.height * sc);
+      ctx.globalAlpha = 0.35;
+      ctx.drawImage(f.shadow, x, y, f.shadow.width * scale, f.shadow.height * scale);
       ctx.globalAlpha = 1;
     }
-    ctx.drawImage(f.img, x, y, f.img.width * sc, f.img.height * sc);
+    ctx.drawImage(f.img, x, y, f.img.width * scale, f.img.height * scale);
   };
 }
 
@@ -181,7 +199,13 @@ const thumbs = new Map<BoatId, string>();
 /** A still, unpainted three-quarter view of a boat, cached as a data URL. */
 export function boatThumb(id: BoatId): string {
   let url = thumbs.get(id);
-  if (url === undefined) thumbs.set(id, url = boatFrame(id, Math.floor(NA * 0.58), SHIPPED, PLAIN).img.toDataURL());
+  if (url === undefined) {
+    const { img } = boatFrame(id, Math.floor(NA * 0.58), SHIPPED, PLAIN);
+    const bounds = boundsOf(img), canvas = document.createElement('canvas');
+    canvas.width = bounds.width + 2; canvas.height = bounds.height + 2;
+    canvas.getContext('2d')!.drawImage(img, bounds.x, bounds.y, bounds.width, bounds.height, 1, 1, bounds.width, bounds.height);
+    thumbs.set(id, url = canvas.toDataURL());
+  }
   return url;
 }
 

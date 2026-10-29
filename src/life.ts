@@ -9,12 +9,17 @@ import { hash, mulberry } from './noise';
 import { OAR } from './models';
 import { sfx } from './audio';
 import { biomeAt, type BiomeId } from './biome';
+import type { School } from './types';
+
+export interface CatchableLife { x: number; y: number; fishing?: School }
+const onLine = (animal: CatchableLife): boolean => !!animal.fishing && G.fish?.s === animal.fishing;
+const uncaught = (animal: CatchableLife): boolean => !animal.fishing || animal.fishing.stock > 0;
 
 // ---------------------------------------------------------------- shapes
 type WhalePhase = 'swim' | 'surface' | 'breach' | 'dive' | 'slap';
 /** a whale circling a still boat out of curiosity: approach ('go'), then one lap ('circle') */
 interface Curiosity { st: 'go' | 'circle'; acc: number; last: number; dir: number }
-export interface Whale {
+export interface Whale extends CatchableLife {
   x: number; y: number;
   /** heading */
   a: number;
@@ -47,7 +52,7 @@ export interface Whale {
 }
 type GiantKind = 'shadow' | 'ray' | 'squid' | 'eel';
 /** something huge passing under the boat */
-export interface Giant {
+export interface Giant extends CatchableLife {
   x: number; y: number; a: number;
   /** depth below the surface (negative) */
   z: number;
@@ -63,7 +68,7 @@ export interface Giant {
   zt: number;
   seed: number;
 }
-interface Jelly {
+interface Jelly extends CatchableLife {
   x: number; y: number; z: number;
   ph: number;
   /** tint, 0..1 per channel */
@@ -79,7 +84,7 @@ interface Jelly {
 }
 interface Swarm { cx: number; cy: number; m: Jelly[] }
 /** a dolphin in a bow-riding pod; each has its own position, velocity and heading */
-interface Dolphin {
+interface Dolphin extends CatchableLife {
   /** which side of the bow it rides, how far out and how far ahead */
   side: number; off: number; lead: number;
   ph: number;
@@ -104,6 +109,13 @@ export const LIFE: Life = {
   nextWhale: 20, nextPod: 12, nextGiant: 50, t: 0,
   swarms: new Map(), callCd: 0,
 };
+
+export function resetLife(): void {
+  LIFE.whales = []; LIFE.giants = []; LIFE.pods = []; LIFE.jellies = [];
+  LIFE.swarms.clear();
+  LIFE.nextWhale = 20; LIFE.nextPod = 12; LIFE.nextGiant = 50;
+  LIFE.t = 0; LIFE.callCd = 0;
+}
 
 const TAU = Math.PI * 2, rnd = () => Math.random() - 0.5;
 const ease = (v: number, target: number, rate: number, dt: number) => v + (target - v) * (1 - Math.exp(-rate * dt));
@@ -336,6 +348,7 @@ function whales(dt: number): void {
     LIFE.nextWhale = groups >= 2 ? 15 : spawnWhales() ? 40 + Math.random() * 60 : 6;
   }
   for (const w of LIFE.whales) {
+    if (!uncaught(w) || onLine(w)) continue;
     if (w.mom) updateCalf(w, w.mom, dt);
     else updateWhale(w, dt);
   }
@@ -343,7 +356,7 @@ function whales(dt: number): void {
   let j = 0;
   for (let i = 0; i < L.length; i++) {
     const w = L[i];
-    const gone = Math.hypot(w.x - b.x, w.y - b.y) > viewR() + 160 ||   // only once well out of view
+    const gone = !uncaught(w) || (!onLine(w) && Math.hypot(w.x - b.x, w.y - b.y) > viewR() + 160) ||   // only once well out of view
       (w.mom && !L.includes(w.mom)) || !Number.isFinite(w.x + w.y + w.z);
     if (!gone) L[j++] = w;
   }
@@ -397,6 +410,7 @@ function giants(dt: number): void {
   if (!LIFE.giants.length && sp > 4 && depth(b.x, b.y) < -0.38 && (LIFE.nextGiant -= dt) <= 0) LIFE.nextGiant = spawnGiant() ? 70 + Math.random() * 70 : 8;
   const gk = glowK();
   for (const g of LIFE.giants) {
+    if (!uncaught(g) || onLine(g)) continue;
     g.t += dt;
     let v = g.v;
     if (g.kind === 'ray') { g.ph += dt * 1.7; g.a = g.a0 + Math.sin(g.t * 0.35 + g.seed) * 0.25; }
@@ -413,7 +427,7 @@ function giants(dt: number): void {
     g.glow = f * (g.kind === 'squid' ? 0.25 + 0.75 * gk : g.kind === 'eel' ? 0.65 * gk : g.kind === 'ray' ? 0.15 * gk : 0);
     if (gk > 0 && f > 0.5 && Math.random() < dt * 8 * gk) glow(g.x + rnd() * g.len * 0.8, g.y + rnd() * g.len * 0.5, 3, 1.4);
   }
-  if (LIFE.giants.length) LIFE.giants = LIFE.giants.filter(g => g.t < g.dur && Number.isFinite(g.x + g.y));
+  if (LIFE.giants.length) LIFE.giants = LIFE.giants.filter(g => uncaught(g) && (onLine(g) || g.t < g.dur) && Number.isFinite(g.x + g.y));
 }
 
 // ---------------------------------------------------------------- jellyfish swarms
@@ -462,6 +476,8 @@ function jellies(dt: number): void {
     if (d > reach + JC * 1.5) { S.delete(k); continue; }        // regenerates identically when we come back
     if (d > reach + 70 || !sw.m.length) continue;
     for (const m of sw.m) {
+      if (!uncaught(m)) continue;
+      if (onLine(m)) { out.push(m); continue; }
       m.ph += dt * m.rate;
       const T = LIFE.t;
       m.px *= Math.exp(-0.4 * dt); m.py *= Math.exp(-0.4 * dt);
@@ -524,6 +540,7 @@ const POD_STAY = 14;   // seconds alongside before they peel away
 function dolphins(dt: number): void {
   const b = G.boat, c = Math.cos(b.a), s = Math.sin(b.a), gk = glowK();
   for (const p of LIFE.pods) for (const m of p.m) {
+    if (!uncaught(m) || onLine(m)) continue;
     const leave = p.t > POD_STAY ? (p.t - POD_STAY) * 18 : 0, weave = Math.sin(p.t * 0.9 + m.wv) * 5;
     const lead = m.lead + Math.sin(p.t * 0.7 + m.ph) * 5, off = m.side * (m.off + weave + leave);
     const tx = b.x + c * lead - s * off + b.vx * 0.35, ty = b.y + s * lead + c * off + b.vy * 0.35;
@@ -539,7 +556,49 @@ function dolphins(dt: number): void {
   }
   // a pod stays a while, then peels away and is removed only once every dolphin is off-screen
   const edge = offscreenSide(c, s) + 20;
-  LIFE.pods = LIFE.pods.filter(p => (p.t += dt) < POD_STAY || (p.t < 40 && p.m.some(m => Math.hypot(m.x - b.x, m.y - b.y) < edge)));
+  for (const p of LIFE.pods) p.m = p.m.filter(uncaught);
+  LIFE.pods = LIFE.pods.filter(p => p.m.length && (p.m.some(onLine) || (p.t += dt) < POD_STAY || (p.t < 40 && p.m.some(m => Math.hypot(m.x - b.x, m.y - b.y) < edge))));
+}
+
+export type SeaLifeCall = 'whale' | 'dolphins' | 'jellies' | 'squid';
+
+/** Deliberate sandbox encounters use the real simulation and remain catchable. */
+export function summonSeaLife(kind: SeaLifeCall): string {
+  const b = G.boat, floor = kind === 'whale' || kind === 'squid' ? -0.38 : -0.22;
+  let at: { x: number; y: number } | null = null;
+  for (let d = 28; d <= 120 && !at; d += 12) for (let k = 0; k < 16; k++) {
+    const a = b.a + k * TAU / 16, x = b.x + Math.cos(a) * d, y = b.y + Math.sin(a) * d;
+    if ([0, 1, 2, 3].every(q => depth(x + Math.cos(q * TAU / 4) * 20, y + Math.sin(q * TAU / 4) * 20) < floor)) { at = { x, y }; break; }
+  }
+  if (!at) return 'Sail into deeper, open water to call sea life';
+  if (kind === 'whale') {
+    if (LIFE.whales.length >= 6) return 'There are enough whales nearby. Give them room';
+    const whale = newWhale(at.x, at.y, b.a + Math.PI / 2, 1);
+    Object.assign(whale, { phase: 'surface', z: -0.5, dur: 24, cur: { st: 'go', acc: 0, last: 0, dir: 1 } });
+    LIFE.whales.push(whale);
+    return 'A friendly humpback answers your call. Bring a big deck and a strong rod';
+  }
+  if (kind === 'dolphins') {
+    if (LIFE.pods.length >= 3) return 'The dolphin parade is already here';
+    LIFE.pods.push({ t: 0, m: [0, 1, 2].map(k => ({ side: k % 2 ? 1 : -1, off: 12 + k * 5, lead: 8 + k * 5,
+      ph: k * 0.3, x: at!.x - k * 9, y: at!.y + (k % 2 ? 10 : -10), vx: 0, vy: 0, a: b.a, wv: k })) });
+    return 'A dolphin parade! Slow down and choose one to cast for';
+  }
+  if (kind === 'squid') {
+    if (LIFE.giants.length >= 4) return 'The deep is crowded already';
+    LIFE.giants.push({ x: at.x, y: at.y, a: b.a, a0: b.a, z: -4, len: 24, kind: 'squid', glow: 1,
+      ph: 0, t: 7, dur: 50, v: 5, zt: -4, seed: 1 });
+    return 'Release the kraken! A catchable giant squid rises from the deep';
+  }
+  const m: Jelly[] = [];
+  for (let k = 0; k < 16; k++) {
+    const a = k * 2.4, r = 4 + Math.sqrt(k) * 7, x = at.x + Math.cos(a) * r, y = at.y + Math.sin(a) * r;
+    if (depth(x, y) > -0.2) continue;
+    m.push({ x, y, z: -2, ph: a, col: JELLY.reef.col[k % 3], glow: 1, size: 0.8 + k % 3 * 0.2,
+      hx: x, hy: y, A: 2, w1: 0.05, w2: 0.04, s1: a, rate: 1.5, bright: 1, day: true, px: 0, py: 0 });
+  }
+  LIFE.swarms.set('jelly-party', { cx: at.x, cy: at.y, m });
+  return 'Jellyfish lantern party! Every lantern is a real catch';
 }
 
 // ---------------------------------------------------------------- main entry

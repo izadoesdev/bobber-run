@@ -144,8 +144,10 @@ test('the chart draws the land and sea themselves, not a flat fill', async ({ pa
   const rgb = async (p: { x: number; y: number }) => {
     const [cx, cy] = await onChart(page, p.x, p.y);
     return page.evaluate(([fx, fy]) => {
-      const c = document.querySelector('.chartwrap canvas') as HTMLCanvasElement, d = c.getContext('2d')!.getImageData(Math.round(fx * c.width), Math.round(fy * c.height), 1, 1).data;
-      return [d[0], d[1], d[2]];
+      const c = document.querySelector('.chartwrap canvas') as HTMLCanvasElement;
+      // A region-name glyph can cross the exact sample pixel; the surrounding terrain is the subject here.
+      const d = c.getContext('2d')!.getImageData(Math.round(fx * c.width) - 8, Math.round(fy * c.height) - 8, 17, 17).data;
+      return [0, 1, 2].map(channel => Array.from({ length: 17 * 17 }, (_, i) => d[i * 4 + channel]).sort((a, b) => a - b)[144]);
     }, [(cx - box.x) / box.width, (cy - box.y) / box.height]);
   };
   // tiles are sampled by a worker and drawn as they arrive: give a slow runner painted frames and time to get there

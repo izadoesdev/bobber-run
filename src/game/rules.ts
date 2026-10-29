@@ -1,7 +1,7 @@
 // Derived stats: what the current boat and upgrades add up to, the day clock and the wind.
 import { nA } from '../noise';
 import { WX } from '../weather';
-import { SPECIES, BOATS } from '../econ';
+import { SPECIES, BOATS, UPGRADE_STEP } from '../econ';
 import type { BoatDef, Env, Fish, ProjectId, UpgradeKey, Helper } from '../types';
 import type { Fit } from '../models';
 import { G } from './state';
@@ -12,7 +12,7 @@ import { FEATURED_PRICE, featuredToday } from '../today';
 
 // ---------- boat and gear ----------
 // how much one level of each stat upgrade adds (the shop quotes these numbers)
-const PROP_STEP = 0.12, HULL_STEP = 0.25, HOLD_STEP = 2, LINE_STEP = 0.12, ICE_STEP = 0.05;
+const { prop: PROP_STEP, hull: HULL_STEP, hold: HOLD_STEP, line: LINE_STEP, ice: ICE_STEP } = UPGRADE_STEP;
 // boatId always names a BOATS entry (saves only ever store ids from that list)
 export const boatDef = (): BoatDef => BOATS.find(b => b.id === G.boatId)!;
 /** Deck size of the boat you sail: sea giants need 1 (Trawler and up), the very largest 2 (Flagship). */

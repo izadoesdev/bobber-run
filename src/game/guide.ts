@@ -4,11 +4,12 @@
 import { SPECIES, SP, UPGRADES, PROJECTS, BOATS } from '../econ';
 import { poisNear, schoolsNear, homePort, LAIR } from '../world';
 import { lockedAt } from './regions';
+import { SHIP_NEED } from '../species';
 import { SET } from '../prefs';
 import { currentQuest, type Quest } from '../story';
 import type { BoatDef, Poi, Point, Port, Project, ProjectId, School, UpgradeKey } from '../types';
 import { G, boatDist, nearest } from './state';
-import { boatDef, canLand, cap, hpMax, isNight, dayFrac, DAYLEN, logged, projDone } from './rules';
+import { boatDef, canLand, cap, deckLvl, hpMax, isNight, dayFrac, DAYLEN, keelLvl, logged, projDone } from './rules';
 import { needStatus, nextProject } from './port';
 import { castRange } from './fishing';
 import { portById } from './save';
@@ -65,15 +66,30 @@ function earnStep(amount: number, what: string): Step {
   return fishStep(`Catch and sell fish to earn ${money(amount)} more for ${what}`);
 }
 function buyStep(k: UpgradeKey, what: string): Step {
-  const cost = UPGRADES[k].costs[G.up[k]];
+  const upgrade = UPGRADES[k];
+  if (upgrade.req && !projDone(upgrade.req)) return projectStep(PROJECTS.find(p => p.id === upgrade.req)!);
+  const cost = upgrade.costs[G.up[k]];
   if (cost === undefined) return { text: `Upgrade your ${what}`, icon: k, near: 0 };
   const name = k === 'rod' ? `a level ${G.up.rod + 2} rod` : `a better ${what}`;
   if (G.coins < cost) return earnStep(cost - G.coins, name);
   const p = nearestPort();
   return at(`Buy ${name} at ${p.name} for ${money(cost)}`, p.end, k, dockNear());
 }
-/** A catch that needs a stronger rod sends you to the outfitter first. */
-const rodFor = (sp: number): Step | null => SPECIES[sp].rod > G.up.rod ? buyStep('rod', 'rod') : null;
+function gearFor(sp: number): Step | null {
+  const species = SPECIES[sp], need = SHIP_NEED[species.id];
+  if (species.rod > G.up.rod) return buyStep('rod', 'rod');
+  if (canLand(sp)) return null;
+  const hullFits = (boat: BoatDef): boolean => (boat.deck ?? 0) >= species.deck && (need !== 'sail' || boat.prop !== 'ENGINE');
+  const owned = BOATS.find(boat => boat.id !== G.boatId && G.owned.includes(boat.id) && hullFits(boat)
+    && (need !== 'keel' || Math.max(boat.keel ?? 0, G.boatUp[boat.id]?.keel ?? 0) >= 1));
+  if (owned) return boatStep(owned);
+  if (species.deck > deckLvl() || (need === 'sail' && boatDef().prop === 'ENGINE')) {
+    const boat = BOATS.find(hullFits);
+    if (boat) return boatStep(boat);
+  }
+  if (need === 'keel' && keelLvl() < 1) return buyStep('keel', 'Storm Keel');
+  return null;
+}
 const untilNight = (): number => ((0.64 - dayFrac() + 1) % 1) * DAYLEN;
 
 const SHORT: Record<ProjectId, string> = { pier: 'the pier', market: 'the market', drydock: 'the dry dock', lights: 'the lights', grand: 'the Grand Harbour' };
@@ -89,7 +105,7 @@ function projectStep(pr: Project): Step {
     if ('trophy' in nd) return fishStep(`Catch ${left} more trophy fish for ${name}`);
     if (nd.sp === 'oldone') return lairStep();
     const sp = SP[nd.sp];
-    return rodFor(sp) ?? (nd.sp === 'beacon' ? beaconStep(left) : fishStep(`Catch ${left} more ${SPECIES[sp].name}`, s => s.sp === sp, SEARCH / 2));
+    return gearFor(sp) ?? (nd.sp === 'beacon' ? beaconStep(left) : fishStep(`Catch ${left} more ${SPECIES[sp].name}`, s => s.sp === sp, SEARCH / 2));
   }
   return at(`Fund ${name} in the Harbour tab at ${home.name}`, home.end, 'anchor', dockNear());
 }
@@ -100,7 +116,8 @@ function beaconStep(left: number): Step {
   return at(`${what} below ${L.name}${isNight() ? '' : ` after dark, in ${clock(untilNight())}`}`, L.school, 'glow', castRange());
 }
 function lairStep(): Step {
-  return rodFor(SP.oldone) ?? at(isNight() ? 'Catch the Old One at its lair'
+  if (full()) return sellStep();
+  return gearFor(SP.oldone) ?? at(isNight() ? 'Catch the Old One at its lair'
     : `Sail to the Old One's lair. It comes up at night, in ${clock(untilNight())}`, LAIR, 'moon', castRange());
 }
 
@@ -121,8 +138,8 @@ function questStep(q: Quest): Step {
     case 'species': return speciesStep();
     case 'trophy': return fishStep(G.baitSel === 'none' ? 'Catch a trophy fish. Bait helps' : 'Catch a trophy fish');
     case 'ghost': {
-      const r = rodFor(SP.ghost);
-      if (r) return r;
+      const gear = gearFor(SP.ghost);
+      if (gear) return gear;
       if (full()) return sellStep();
       const w = poiNear(p => p.type === 'wreck' && p.school?.sp === SP.ghost && schoolShown(p.school));
       return seek(w?.school, 'Fish for the Ghost Carp by the wreck', 'Search far-off wrecks for the Ghost Carp', 'map', castRange());
@@ -135,6 +152,11 @@ function speciesStep(): Step {
   if (full()) return sellStep();
   const s = nearestSchool(fresh, 900), rodCost = UPGRADES.rod.costs[G.up.rod];
   if (s) return at('Catch a new species for your logbook', s, 'rod', castRange());
+  const blocked = nearest(schoolsNear(G.boat.x, G.boat.y, 900), s => !s.boss && fresh(s) && schoolActive(s) && !lockedAt(s.x, s.y) && !canLand(s.sp));
+  if (blocked) {
+    const gear = gearFor(blocked.sp);
+    if (gear) return gear;
+  }
   if (rodCost !== undefined && G.coins >= rodCost) return buyStep('rod', 'rod');
   return { text: isNight() ? 'Fish in new places to find new species' : 'Fish in new places, or wait for night', icon: 'rod', near: 0 };
 }
@@ -143,11 +165,16 @@ function speciesStep(): Step {
 const UPGRADE_ORDER: UpgradeKey[] = ['hold', 'rod', 'cook', 'ice', 'sonar', 'prop', 'reel', 'line', 'tackle', 'harpoon', 'hull', 'radio', 'lantern', 'spyglass', 'sextant'];
 /** The next boat you can buy (its project done), cheapest first. */
 const nextBoat = (): BoatDef | undefined => BOATS.find(b => !G.owned.includes(b.id) && (!b.req || projDone(b.req)));
-/** Buy the next boat at a shipyard, or earn toward it. The bigger ships open sea giants (Trawler) and the very largest (Flagship). */
+/** Use an owned boat first; otherwise unlock and earn toward it before visiting a shipyard. */
 function boatStep(b: BoatDef): Step {
-  if (G.coins < b.cost) return earnStep(b.cost - G.coins, `the ${b.name}`);
-  const p = nearest(chartedPorts(), p => !!p.shipyard) || homePort();
-  return at(`Buy the ${b.name} at ${p.name}'s shipyard for ${money(b.cost)}`, p.end, 'anchor', dockNear());
+  const owned = G.owned.includes(b.id);
+  if (!owned && b.req && !projDone(b.req)) return projectStep(PROJECTS.find(p => p.id === b.req)!);
+  if (!owned && G.coins < b.cost) return earnStep(b.cost - G.coins, `the ${b.name}`);
+  const p = nearest(chartedPorts(), p => !!p.shipyard && !lockedAt(p.x, p.y)) || homePort();
+  let action = 'Buy';
+  if (owned) action = G.fleet[b.id] ? 'Recall and sail' : 'Sail';
+  const price = owned ? '' : ` for ${money(b.cost)}`;
+  return at(`${action} the ${b.name} at ${p.name}'s shipyard${price}`, p.end, 'anchor', dockNear());
 }
 function freeStep(): Step {
   const pr = nextProject();
@@ -172,7 +199,7 @@ function decide(): Step {
 // the HUD asks every frame; the answer is worked out a few times a second, or at once when something it depends on changes
 let cache: Step | null = null, cacheKey = '';
 export function guide(): Step {
-  const k = `${Math.floor(G.t * 4)}|${G.story?.i}|${G.hold.length}|${G.coins}|${G.found.size}|${G.salvaged.size}|${G.boatId}|${G.projects.length}`;
+  const k = `${Math.floor(G.t * 4)}|${G.story?.i}|${G.hold.length}|${G.coins}|${G.found.size}|${G.salvaged.size}|${G.boatId}|${G.projects.length}|${G.up.rod},${G.up.hold},${G.up.keel}|${G.owned.length}|${Object.keys(G.fleet).join(',')}`;
   if (!cache || k !== cacheKey) { cache = decide(); cacheKey = k; }
   return cache;
 }
@@ -218,5 +245,6 @@ export function tip(): { text: string; fade: boolean } | null {
       try { localStorage.setItem(TIP_KEY, JSON.stringify(seen)); } catch { }
     }
   }
+  if (G.mode !== 'play' || G.fish || G.card) return null;
   return shown && { text: shown.text, fade: G.t - shown.t > TIP_S - 0.6 };
 }

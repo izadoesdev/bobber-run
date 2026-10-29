@@ -1,14 +1,10 @@
-// Claimable islands, the end game. While sailing, only the owners' signs show (flag, name, title and a link if they've
-// added one). Buying, building and managing happen in the island card, opened from a port's Islands tab, from the sea
-// chart, or by clicking a sign. Islands and buildings are paid in coins, checked against the earnings the server has
-// counted for you.
 import { W, H, money } from '../config';
 import { G, saveGame } from '../game';
 import { addCoins } from '../game/feedback';
 import { claimableNear, claimableAt, heightAt, homesteadSite, realmPlots } from '../world';
 import { sfx } from '../audio';
 import { NET, buyIsland, buildOnIsland, renameIsland, releaseIsland, uploadIslandLogo, reportIsland, setIslandUrl } from '../net';
-import { ISLANDS, REALM, focusIsland, islandLanding, islandPrice, ledgerLeft, realmTitle, realmDockAt, TREASURY_MIN } from '../islands';
+import { ISLANDS, REALM, focusIsland, islandLanding, islandPrice, ledgerLeft, realmTitle, realmDockAt, realmInReach, collectRealm, TREASURY_MIN } from '../islands';
 import { realmSaleValue, sellAtRealm } from '../game/port/market';
 import { boardOwned } from '../game/port/shop';
 import { BOATS } from '../econ';
@@ -134,7 +130,7 @@ export function IslandDialog() {
         {row?.mine && row.logoPending && <p class="muted small">Your new flag is waiting for review. Other sailors will see it once a moderator approves it.</p>}
         {(!row || row.mine) && <IslandForm f={f} onPick={pick} />}
         {!row && !admin && <p class="muted small">Islands are the end game: the bigger and the nearer Alderhaven, the dearer. Rule up to {MAX_ISLANDS}; build on them for an income and a title. Your name, flag and link show to every sailor.{left !== null && ` Earnings counted for you: ${money(left)}.`}</p>}
-        {own && <AtIsland name={own.name} have={own.buildings} landed={realmDockAt(G.boat.x, G.boat.y)?.key === key} />}
+        {own && <AtIsland islandKey={key} name={own.name} have={own.buildings} landed={realmDockAt(G.boat.x, G.boat.y)?.key === key} />}
         {row && <Buildings have={mine?.buildings ?? row.buildings} income={islandIncome(i, j, mine?.buildings ?? row.buildings)} build={mine ? build : null} short={short} busy={f.busy} berth={berth(key)} />}
         {!row && NET.profile?.guest && <p class="why left">Sign in to buy islands, so yours stay yours on any device.</p>}
         {f.msg && <p class={f.msg.bad ? 'why left' : 'good'}>{f.msg.s}</p>}
@@ -193,14 +189,25 @@ function Buildings({ have, income, build, short, busy, berth }: { have: readonly
   );
 }
 
-/** On your own island: its treasury, and once you've landed at its dock, its market and shipyard. */
-function AtIsland({ name, have, landed }: { name: string; have: readonly string[]; landed: boolean }) {
+function IslandTreasury({ islandKey }: { islandKey: string }) {
+  const banked = Math.floor(G.treasury), near = realmInReach(islandKey), fishing = !!(G.fish || G.card);
+  const why = !near ? 'Sail near this island to collect.' : fishing ? 'Finish your catch to collect.' : '';
+  return <>
+    <p class="small muted">{G.realmRate > 0
+      ? `Your islands bring in ${money(G.realmRate)} a minute while sailing or away. The treasury holds ${TREASURY_MIN / 60} hours' worth. Collect here when nearby; sailing past never collects it.`
+      : 'Build a fishery, a market or gardens for an income.'}</p>
+    {(G.realmRate > 0 || banked > 0) && <div class="row isl-act">
+      <span class="grow">Treasury: <b class="gold">{money(banked)}</b>{why && ` · ${why}`}</span>
+      <button data-track="island-collect" class="btn small-btn" disabled={!near || fishing || banked < 1} onClick={() => collectRealm(islandKey)}>Collect treasury</button>
+    </div>}
+  </>;
+}
+
+function AtIsland({ islandKey, name, have, landed }: { islandKey: string; name: string; have: readonly string[]; landed: boolean }) {
   const sale = realmSaleValue(), boats = BOATS.filter(b => G.owned.includes(b.id));
   return (
     <div class="isl-here">
-      <p class="small muted">{G.realmRate > 0
-        ? `Your islands bring in ${money(G.realmRate)} a minute. ${money(Math.floor(G.treasury))} waits in the treasury (it holds ${TREASURY_MIN / 60} hours' worth), paid out when you sail to any of your islands.`
-        : 'Build a fishery, a market or gardens for an income.'}</p>
+      <IslandTreasury islandKey={islandKey} />
       {landed && have.includes('market') && <div class="row isl-act"><span class="grow">Sell your catch at {name}'s market (a third over a fair price)</span>
         <button data-track="island-sell" class="btn small-btn" disabled={!sale.n} onClick={() => sellAtRealm(name)}>{sale.n ? `Sell ${sale.n} · ${money(sale.tot)}` : 'Nothing to sell'}</button></div>}
       {landed && have.includes('shipyard') && boats.length > 1 && <div class="row isl-act"><span class="grow">Change boats</span>

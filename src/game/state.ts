@@ -11,7 +11,7 @@ export const G: GameState = {
   // progress (saved)
   coins: 0, earned: 0, boatId: 'row', owned: ['row'], up: freshUpgrades(), paint: 'classic', paints: ['classic'],
   bait: { shrimp: 0, glow: 0, chum: 0 }, baitSel: 'shrimp', hold: [], log: {}, found: new Set(), salvaged: new Set(),
-  lastPort: null, stats: freshStats(), story: null, gifts: {}, pet: null, projects: [], fleet: {}, dives: {},
+  lastPort: null, stats: freshStats(), story: null, gifts: {}, pet: null, projects: [], fleet: {}, dives: {}, visits: {},
   goalsDone: [], maps: [], escaped: [], packs: {}, regionsSeen: [], explored: '', unlocked: [], waypoint: null, gearOff: {}, zones: {}, docks: {}, streak: 0, treasury: 0, realmRate: 0, hulls: {}, boatUp: {}, musicOn: true, offers: {}, active: [], pity: 0, clock: 0,
   // the voyage
   mode: 'title', t: 0,
@@ -28,11 +28,11 @@ export const G: GameState = {
   // input
   keys: {}, pressed: new Set(), pad: false,
   // surroundings
-  prompt: null, nearPort: null, nearWreck: null, nearSchool: null, aim: null, nearTreasure: null,
+  prompt: null, nearPort: null, nearWreck: null, nearSchool: null, aim: null, nearTreasure: null, nearEncounter: null,
   // screens
   menu: { tab: 0, sel: 0, port: null }, map: { x: 0, y: 0, zoom: 1 }, talk: null,
   shipSel: 0, logSel: 0, titleSel: 0, pauseSel: 0, newConfirm: -1, setSel: 0, ctlSel: 0, emoteSel: 0,
-  back: 'title', accountBack: 'play', journalBack: 'play', cheatBack: 'play', leadersBack: 'play', leaderTab: 0, islandKey: null, islandBack: 'play', cheatBuf: '', cheatErr: false,
+  back: 'title', accountBack: 'play', journalBack: 'play', cheatBack: 'play', leadersBack: 'play', leaderTab: 0, islandKey: null, islandBack: 'play', encounter: null, cheatBuf: '', cheatErr: false,
   rebinding: null, netForm: null, netMsg: null, needName: false,
   // cheats
   god: false, cheated: false,

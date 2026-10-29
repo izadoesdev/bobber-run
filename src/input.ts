@@ -38,7 +38,9 @@ function cheatConsoleKey(e: KeyboardEvent): void {
 function onKeyDown(e: KeyboardEvent): void {
   if (isTyping(e.target)) { if (e.key === 'Escape') e.target.blur(); return; }   // a form field has the keyboard
   unlockAudio(); G.pad = false;
-  if (BLOCKED.has(e.key) && !(e.key === 'Tab' && G.mode === 'account')) e.preventDefault();   // Tab moves between the account form's fields
+  if (e.key === 'Tab' && ['account', 'journal', 'map', 'island', 'talk', 'encounter'].includes(G.mode)) return;
+  if ((e.key === 'Enter' || e.key === ' ') && e.target instanceof Element && e.target.closest('button, a, summary, select')) return;
+  if (BLOCKED.has(e.key)) e.preventDefault();
   if (G.mode === 'cheat') return cheatConsoleKey(e);
   if (CHEATS_ENABLED && isCheatKey(e) && (G.mode === 'play' || G.mode === 'port')) {
     e.preventDefault(); G.cheatBack = G.mode; G.mode = 'cheat'; G.cheatBuf = ''; G.cheatErr = false; sfx('select'); return;
@@ -92,7 +94,7 @@ export function pollPad(): void {
   const state: Record<string, boolean> = {
     ArrowLeft: ax < -0.4 || btn(14), ArrowRight: ax > 0.4 || btn(15), ArrowUp: ay < -0.4 || btn(12) || btn(7), ArrowDown: ay > 0.4 || btn(13) || btn(6),
     ' ': btn(0), Escape: btn(1), e: !port && btn(2), m: btn(3), l: !port && btn(4), b: !port && btn(5),
-    PageUp: port && btn(4), PageDown: port && btn(5), Tab: btn(8), Enter: btn(9),
+    PageUp: port && btn(4), PageDown: port && btn(5), Tab: btn(8), Pause: btn(9), q: !port && btn(11),
   };
   for (const [k, down] of Object.entries(state)) {
     if (down && !padPrev[k]) { G.pressed.add(k); G.pad = true; unlockAudio(); if (TAKES_HELM.has(k)) dropCourse(); }

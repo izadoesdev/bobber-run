@@ -1,5 +1,5 @@
-## Keeps the voyage (SaveGame): picks it up when the game starts, and writes it as you play: when the purse, the hold
-## or the clock jumps, on docking and casting off, when the window loses focus, and every 15 seconds, as the game does.
+## Keeps the voyage (SaveGame): picks it up when the game starts, and writes it as you play: when the purse, the hold,
+## the upgrades or the clock jumps, on docking and casting off, when the window loses focus, and every 15 seconds, as the game does.
 class_name Autosave
 extends Node
 
@@ -26,6 +26,8 @@ func restore() -> bool:
 		return false
 	State.coins = v.get("coins", State.coins)
 	State.clock = v.get("clock", State.clock)
+	State.up = v.up
+	boat.fit_upgrades()
 	State.hold.assign(v.hold.slice(0, int(boat.stats().hold)))
 	if v.has("x") and v.has("y") and Terrain.height_at(v.x, v.y) < 0.0:
 		boat.place_at(v.x, v.y, v.get("a", 0.0))
@@ -49,4 +51,5 @@ func save() -> void:
 	_t = 0.0
 	_due = false
 	if not path.is_empty():
-		SaveGame.write(path, SaveGame.to_text(State.coins, State.clock, State.hold, Vector2(boat.x, boat.y), boat.a))
+		SaveGame.write(path, SaveGame.to_text({ coins = State.coins, clock = State.clock, hold = State.hold, up = State.up,
+			x = boat.x, y = boat.y, a = boat.a }))

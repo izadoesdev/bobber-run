@@ -48,7 +48,7 @@ func _process(delta: float) -> void:
 	var ease := 1.0 - exp(-1.6 * minf(delta, 0.1))
 	for s in Schools.near(Vector2(boat.x, boat.y), _NEAR):
 		var d := Vector2(s.x - boat.x, s.y - boat.y).length()
-		var lit: bool = not night or Species.all[s.sp].look.glow or d < DayNight.LAMP_R + 14.0
+		var lit: bool = not night or Species.all[s.sp].look.glow or d < DayNight.light_r() + 14.0
 		var want := (1.0 if lit else clampf((_DIM - d) / 30.0, 0.0, 1.0)) if Species.biting(s.sp, State.is_night(), State.is_twilight()) else 0.0
 		var shown: float = want if not _shown.has(s.id) else lerpf(_shown[s.id], want, ease)   # (a school met out of sight is simply there)
 		if shown < 0.02 and want == 0.0:

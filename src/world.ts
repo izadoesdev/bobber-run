@@ -404,6 +404,10 @@ declare module './types' {
   interface School {
     /** a golden fish swims with this school */
     gold?: boolean;
+    /** Changes when a hotspot replaces its population; displayed fish counts must restart. */
+    generation?: number;
+    /** Runtime depth, from 0 at the surface to 1 fully submerged. */
+    submergence?: number;
     /** game time the school last scattered */
     scatterT?: number;
     /** recent scares; enough in a row and the school dives (until `spooked`) */
@@ -521,17 +525,17 @@ function placeSpot(i: number, j: number, sl: HotSlot): void {
   let bait = false, predator = false, reach = 0;
   for (const s of spot.schools) { s.spooked = DOWN; s.stock = 0; s.gold = false; s.swim = undefined; s.prey = s.hunter = undefined; }
   if (best) {
-    for (let m = 0, tries = 0; m < CLUSTER && tries < 12; tries++) {
+    for (let m = 0, tries = 0; m < CLUSTER && tries < 40; tries++) {
       // fish of the first school's water; behind a bait ball, a predator from a little deeper
-      const ox = best.x + (m ? (r() - 0.5) * 50 : 0), oy = best.y + (m ? (r() - 0.5) * 36 : 0), h = heightAt(ox, oy);
+      const ox = best.x + (m ? (r() - 0.5) * 240 : 0), oy = best.y + (m ? (r() - 0.5) * 240 : 0), h = heightAt(ox, oy);
       if (h > -0.08) continue;
       const d = Math.hypot(ox - HOME_ISLAND.x, oy - HOME_ISLAND.y), sp = pickSpecies(m === 1 && bait ? h - 0.15 : h, d, r, ox, oy);
       if (used.includes(sp) || (m > 0 && BAIT_FISH.has(sp) && bait)) continue;
       const home = settle(ox, oy, schoolReach(sp), box);
-      if (!home || crowded(home.x, home.y, sp, fixed)) continue;
+      if (!home || crowded(home.x, home.y, sp, [...fixed, ...spot.schools.slice(0, m)])) continue;
       const s = spot.schools[m] ??= makeSchool(`${spot.id},${m}`, home.x, home.y, sp, r);
       const n = BAIT_FISH.has(sp) ? 3 + Math.floor(r() * 3) : 2 + Math.floor(r() * 2);
-      Object.assign(s, { x: home.x, y: home.y, sp, stock: n, max: n, respawn: 0, ph: r() * 6.28, spooked: undefined, gold: false, swim: undefined, scatterT: undefined, heat: 0 });
+      Object.assign(s, { x: home.x, y: home.y, sp, stock: n, max: n, respawn: 0, ph: r() * 6.28, spooked: undefined, gold: false, swim: undefined, scatterT: undefined, heat: 0, submergence: undefined, generation: (s.generation ?? 0) + 1 });
       if (m === 0) bait = BAIT_FISH.has(sp);
       else if (bait && !BAIT_FISH.has(sp)) predator = true;
       used.push(sp); reach = Math.max(reach, Math.hypot(home.x - best.x, home.y - best.y) + schoolReach(sp));
@@ -585,10 +589,19 @@ function hotCell(i: number, j: number): HotSlot[] {
   for (const sl of c) stepSlot(i, j, sl);
   return c;
 }
+export interface FishObserver extends Point { r: number; hooked?: School | null }
+let observer: FishObserver | undefined;
+
 // bring one slot to the hotspot clock: surfacing (somewhere new), diving, and the ease of its signs
 function stepSlot(i: number, j: number, sl: HotSlot): void {
   const cyc = hotClock / sl.period + sl.phase, n = sl.fixed ? 0 : Math.floor(cyc), f = cyc - Math.floor(cyc);
   const up = sl.fixed || f < sl.duty;
+  const view = observer;
+  if (view) {
+    if (view.hooked && sl.spot.schools.includes(view.hooked)) return;
+    const inView = sl.spot.schools.some(s => Math.hypot(s.x - view.x, s.y - view.y) < view.r + schoolReach(s.sp));
+    if (sl.up && inView && (n !== sl.n || !up)) return;
+  }
   if (up && n !== sl.n) { sl.n = n; placeSpot(i, j, sl); }
   else if (!up && sl.up) for (const s of sl.spot.schools) s.spooked = DOWN;
   sl.up = up;
@@ -648,8 +661,9 @@ function stepRoamer(ro: Roamer): void {
   }
 }
 /** Move the hotspots on to game clock `clock` (seconds): call once a frame from the game loop. */
-export function tickHotspots(clock: number): void {
+export function tickHotspots(clock: number, view?: FishObserver): void {
   hotClock = clock;
+  observer = view;
   for (const [k, c] of hotCells) { const i = Math.floor(k / 100000) - 50000, j = (k % 100000) - 50000; for (const sl of c) stepSlot(i, j, sl); }
   for (const ro of roamCells.values()) if (ro) stepRoamer(ro);
 }

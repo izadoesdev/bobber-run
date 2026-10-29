@@ -1,4 +1,5 @@
-## The voyage on disk: the purse, the fish in the hold, the clock and where the boat lies, as JSON in user:// (in a
+## The voyage on disk: the purse, the fish in the hold, the upgrades, the clock and where the boat lies, as JSON in
+## user:// (in a
 ## browser, Godot keeps user:// in IndexedDB). Fish are saved by species id, not by their place in the table, so a
 ## save still reads after species are added. A file that won't parse, or is from another version, is no save at all;
 ## a field that's missing or the wrong type is left out, so the new voyage's stands.
@@ -8,18 +9,18 @@ const PATH := "user://voyage.json"
 const VERSION := 1
 
 
-## The save text for this voyage.
-static func to_text(coins: int, clock: float, hold: Array[Dictionary], at: Vector2, heading: float) -> String:
+## The save text for voyage `v`: { coins, clock, hold, up, x, y, a }, as parse() gives it back.
+static func to_text(v: Dictionary) -> String:
 	var fish := []
-	for f in hold:
+	for f: Dictionary in v.hold:
 		fish.append({ sp = Species.all[f.sp].id, kg = f.kg, stars = f.stars, value = f.value })
-	return JSON.stringify({ version = VERSION, savedAt = Time.get_unix_time_from_system(), coins = coins, clock = clock,
-		hold = fish, x = at.x, y = at.y, a = heading }, "\t")
+	return JSON.stringify({ version = VERSION, savedAt = Time.get_unix_time_from_system(), coins = v.coins, clock = v.clock,
+		hold = fish, up = v.up, x = v.x, y = v.y, a = v.a }, "\t")
 
 
-## A voyage read back from save text, checked field by field: { hold, and coins, clock, x, y, a where they're sound
-## numbers }, with each fish as the hold keeps it ({ sp, name, kg, stars, value }); empty if the text isn't a save of
-## this version.
+## A voyage read back from save text, checked field by field: { hold, up, and coins, clock, x, y, a where they're
+## sound numbers }, with each fish as the hold keeps it ({ sp, name, kg, stars, value }) and each upgrade's level
+## within its levels; empty if the text isn't a save of this version.
 static func parse(text: String) -> Dictionary:
 	var json := JSON.new()                             # (quietly: a damaged save isn't an engine error)
 	if json.parse(text) != OK:
@@ -36,7 +37,13 @@ static func parse(text: String) -> Dictionary:
 		var sp := Species.index_of(id)
 		hold.append({ sp = sp, name = Species.all[sp].name, kg = maxf(0.0, _num(f, "kg", 0.0)),
 			stars = clampi(int(_num(f, "stars", 1.0)), 1, 3), value = maxi(0, int(_num(f, "value", 0.0))) })
-	var out := { hold = hold }
+	var up: Dictionary[String, int] = {}
+	var levels: Variant = d.get("up")
+	for key: String in Upgrades.FOR_SALE:
+		var n := int(_num(levels, key, 0.0)) if levels is Dictionary else 0
+		if n > 0:
+			up[key] = mini(n, Upgrades.levels(key))
+	var out := { hold = hold, up = up }
 	for key: String in ["coins", "clock", "x", "y", "a"]:
 		if is_finite(_num(d, key, NAN)):
 			out[key] = d[key]

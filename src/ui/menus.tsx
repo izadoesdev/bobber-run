@@ -1,8 +1,7 @@
-// Menus and dialogs: title, pause, settings, controls, online, cheats, greeting picker,
-// conversations, the finale and the boat-sank card.
 import type { ComponentChildren, TargetedMouseEvent, TargetedSubmitEvent } from 'preact';
 import { CHEATS_ENABLED } from '../input';
 import { G, hasSave, savedVoyage, dayNum, logged, loadGame, newGame, toast } from '../game';
+import { saveGame, SAVE_STATUS } from '../game/save';
 import { SPECIES } from '../econ';
 import { ROWS, ACTIONS, SET } from '../settings';
 import { CHEATS } from '../cheats';
@@ -51,10 +50,11 @@ function NewVoyageConfirm() {
 }
 
 export function Title() {
+  const saved = savedVoyage();
   return (
-    <div class="center">
+    <div class="center title-screen">
       <div class="logo">Bobber Run</div>
-      <div class="tagline">Fish, sell, upgrade, and sail further</div>
+      <div class="tagline">{saved ? `Day ${saved.day} · ${saved.boat} · ${saved.species} species logged` : 'Fish, sell, upgrade, and sail further'}</div>
       {G.newConfirm >= 0 ? <NewVoyageConfirm /> : <div class="panel rivets menu-box">
         <Menu items={TITLE_ITEMS()} sel={G.titleSel || 0} set={i => { G.titleSel = i; }} />
       </div>}
@@ -89,12 +89,22 @@ export function forceName(): void {
   G.needName = true; G.accountBack = 'play'; G.mode = 'account';
 }
 
+export function SaveWarning() {
+  if (!SAVE_STATUS.failed) return null;
+  return <div class="save-warning chip" role="status" aria-live="polite">
+    <span><b>Progress is not being saved.</b> Storage is full or unavailable. Keep this tab open and enable site storage, then retry.</span>
+    <button data-track="save-retry" class="btn small-btn" onClick={() => saveGame()}>Retry save</button>
+  </div>;
+}
+
 export function Pause() {
   return (
     <div class="center dim-bg">
       <div class="logo still">Paused</div>
-      <div class="panel rivets menu-box">
+      <div class="panel rivets menu-box pause-box">
+        <SaveWarning />
         <Menu items={PAUSE_ITEMS} sel={G.pauseSel || 0} set={i => { G.pauseSel = i; }} />
+        {G.fish && <p class="small muted">Saving keeps your voyage, not a fish on the line. Resume to finish this catch.</p>}
       </div>
     </div>
   );
@@ -141,7 +151,7 @@ export function Settings() {
   );
 }
 
-const CONTROLS_HELP = 'Choose an action and press Enter to change its key. The WASD keys also steer.' + (CHEATS_ENABLED ? ' Press ` or F2 while sailing for the cheat console.' : '') + ' Gamepad: stick steers, A casts, X docks, Y opens the chart, B goes back.';
+const CONTROLS_HELP = 'Choose an action and press Enter to change its key. The WASD keys also steer.' + (CHEATS_ENABLED ? ' Press ` or F2 while sailing for the cheat console.' : '') + ' Tab opens your ship and hold; Q chooses the next fish or sea creature. Gamepad: stick steers, A casts, X interacts, Y opens the chart, R3 chooses the next creature, Start pauses or resumes (including while fishing), B goes back.';
 export function Controls() {
   const sel = G.ctlSel || 0, set = (i: number) => { G.ctlSel = i; };
   return (

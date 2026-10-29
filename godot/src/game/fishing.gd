@@ -3,8 +3,10 @@
 ## fish in but builds tension on the line, and the fish surges in its species' own pattern; let go through the surges
 ## or the line snaps, slack off too long and it shakes the hook. A landed fish goes in the hold.
 ##
-## Bait, crew, gear upgrades, towing giants, the catch card's stars and mastery come later; the numbers here are the
-## game's (TUNE, the strike windows, the fight patterns and lengths) for a starting rod.
+## The gear tells: a fish needs a rod of its level (and the sea giants a boat with a deck), each rod level and the
+## tackle box bring bites sooner and widen the strike, the reel and a rod beyond the fish's shorten the fight, and
+## braided line takes more strain. Bait, crew, towing giants, the catch card's stars and mastery come later; the
+## numbers are the game's (TUNE, the strike windows, the fight patterns and lengths).
 class_name Fishing
 extends Node3D
 
@@ -110,7 +112,11 @@ func _process(dt: float) -> void:
 	if stage == Stage.NONE:
 		target = _nearest_school()
 		if cast and target and boat.speed() < 10.0:
-			_cast(target)
+			var need := catch_need(target.sp)
+			if need.is_empty():
+				_cast(target)
+			else:
+				said.emit("%s %s" % [Species.all[target.sp].name, need])
 		return
 	t += dt
 	# rowing off reels the line in
@@ -137,11 +143,13 @@ func _process(dt: float) -> void:
 				said.emit("A bite! Strike now")
 		Stage.BITE:
 			var sp := Species.all[school.sp]
-			var widen := 1.5 * (1.0 + 0.2 * mini(3, _misses))   # a new captain's windows, wider after each miss
-			var perfect := (0.32 if boat.stats().prop == "OARS" else 0.2) * widen
+			var rod := State.level("rod")
+			# a new captain's windows, wider after each miss, a little narrower for rarer fish
+			var widen := 1.5 * (1.0 + 0.2 * mini(3, _misses)) * clampf(0.7 + 0.06 * float(sp.w), 0.75, 1.0)
+			var perfect := ((0.32 if boat.stats().prop == "OARS" else 0.2) + 0.03 * rod + 0.05 * maxi(0, State.level("tackle") - 1)) * widen
 			if cast:
 				_hook(t < perfect)
-			elif t > 0.75 * widen * clampf(0.7 + 0.06 * float(sp.w), 0.75, 1.0):
+			elif t > (0.75 + 0.12 * rod) * widen:
 				said.emit("It got away")
 				_misses += 1
 				_start_wait()
@@ -165,7 +173,7 @@ func _start_wait() -> void:
 	var sp := Species.all[school.sp]
 	stage = Stage.WAIT
 	t = 0.0
-	_wait = (2.5 + randf() * 4.5) * (0.7 if sp.role == "bait" else 1.0)
+	_wait = (2.5 + randf() * 4.5) * (1.0 - 0.1 * State.level("rod")) * (1.0 - 0.12 * State.level("tackle")) * (0.7 if sp.role == "bait" else 1.0)
 	_teases = _TEASES[sp.fight].filter(func(before: float) -> bool: return before < _wait - 0.3)
 
 
@@ -180,7 +188,8 @@ func _hook(perfect: bool) -> void:
 	_ph = randf() * 10.0
 	_size = minf(1.0, pow(randf(), 2.2) + (0.1 if perfect else 0.0))
 	_kg = snappedf(lerpf(sp.kg[0], sp.kg[1], _size), 0.01)
-	_len = (3.5 + 27.0 * _heft(_kg)) * (1.0 - 0.35 * float(sp.diff))
+	var edge := clampi(State.level("rod") - int(sp.rod), 0, 3)   # rod levels beyond what the fish needs
+	_len = (3.5 + 27.0 * _heft(_kg)) * (1.0 - 0.35 * float(sp.diff)) * (1.0 - 0.08 * edge) / (1.0 + 0.12 * State.level("reel"))
 	said.emit("Perfect strike!" if perfect else "Hooked!")
 
 
@@ -200,8 +209,8 @@ func _reel(dt: float) -> void:
 		tension -= _TUNE.relax * dt
 		if surge > 0.9:
 			progress -= (surge - 0.9) * _TUNE.take * power * dt   # it runs against a slack reel and takes line back
-	tension = clampf(tension, 0.0, 0.55 if grace else 1.0)
-	if tension >= 1.0:
+	tension = clampf(tension, 0.0, line_max() * (0.55 if grace else 1.0))
+	if tension >= line_max():
 		_end("Your line snapped")
 	elif progress <= 0.0 and t > 1.5:
 		_end("It shook the hook. Reel in when it calms")
@@ -245,15 +254,32 @@ func _fight(style: String, ph: float) -> float:
 	return maxf(0.0, sin(ph) * 1.3 + sin(ph * 2.7 + 1.0) * 0.6 - 0.2)   # generic
 
 
-# The nearest biting school in casting range that still has fish.
+## The strain the line takes before it snaps: 1, and more with braided line.
+func line_max() -> float:
+	return 1.0 + Upgrades.step.line * State.level("line")
+
+
+## Why species `sp` can't be landed with this rod and boat ("needs a level 3 rod"), or "" if it can.
+func catch_need(sp: int) -> String:
+	var s := Species.all[sp]
+	if int(s.rod) > State.level("rod"):
+		return "needs a level %d rod" % (int(s.rod) + 1)
+	if int(s.deck) > int(boat.stats().deck):
+		return "needs a bigger boat"                   # (the shipyard comes later)
+	return ""
+
+
+# The school to fish: the nearest biting one in casting range that still has fish, one you can land before one you
+# can't (castTargets in the game).
 func _nearest_school() -> Schools.School:
 	var best: Schools.School = null
+	var best_key := INF
 	var reach := 50.0 + float(boat.stats().L) * 0.5
-	var bd := reach
 	for s in Schools.near(Vector2(boat.x, boat.y), reach):
 		var d := Vector2(s.x - boat.x, s.y - boat.y).length()
-		if d < bd and s.stock > 0 and Species.biting(s.sp, State.is_night(), State.is_twilight()):
-			bd = d
+		var key := d + (0.0 if catch_need(s.sp).is_empty() else 1e6)
+		if d < reach and key < best_key and s.stock > 0 and Species.biting(s.sp, State.is_night(), State.is_twilight()):
+			best_key = key
 			best = s
 	return best
 

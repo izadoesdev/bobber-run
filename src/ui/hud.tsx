@@ -1,7 +1,3 @@
-// The sailing HUD, kept quiet: one slim status bar and one objective line top left, the minimap (with the wind and
-// the day on its ring) top right, and the rest only when it matters: hull when damaged, bait by a school, contracts
-// while you hold some, key hints until the first catches. The reel gauge, catch card and toasts sit at the bottom;
-// what sits on the sea itself is in overlay.tsx.
 import type { JSX } from 'preact';
 import { clamp, money, dirTo, W, H } from '../config';
 import { G, cap, hpMax, boatDef, isNight, dayNum, dayFrac, windAngle, sailEfficiency, lineMax, fishValue } from '../game';
@@ -11,7 +7,6 @@ import { featuredToday } from '../today';
 import { WX } from '../weather';
 import { SET } from '../settings';
 import { savePrefs } from '../prefs';
-import { sfx } from '../audio';
 import { currentQuest, questProgress } from '../story';
 import { guide, guideOn, stepLine, tip, whereText, type Step } from '../game/guide';
 import type { CatchCard as CatchCardState, FishLine, Point, Toast } from '../types';
@@ -21,6 +16,7 @@ import { SeaLayer } from './overlay';
 import { ShareButton, ShareChip } from './share';
 import { clearWaypoint, sailToWaypoint, waypointMetres } from '../waypoint';
 import { courseTarget } from '../game/autopilot';
+import { openChart } from '../game/chart';
 import { SPOOL } from '../game/fishing';
 import { Bar, BaitTag, Canvas, Fish, Hint, Icon, Key, WX_ICON, cap1, clockText, keyed, type DrawFn } from './parts';
 
@@ -29,9 +25,15 @@ const toastIds = new WeakMap<Toast, number>();
 let toastN = 0;
 const TOAST_ICON: Partial<Record<Toast['kind'], string>> = { good: 'star', bad: 'warn' };
 
-/** At most the two newest; `low` tucks them lower, outside the sailing view. */
+const READING_SCREENS = new Set(['journal', 'map', 'log', 'ship']);
+
 export function Toasts({ low }: { low: boolean }) {
-  const shown = G.toasts.slice(-2);
+  const reading = READING_SCREENS.has(G.mode);
+  const shown = G.toasts.filter(t => {
+    if (t.kind === 'bad') return true;
+    if (reading) return false;
+    return t.scope !== 'sailing' || (!low && !G.fish && !G.card);
+  }).slice(-2);
   return (
     <div class={'toasts' + (low ? ' low' : '')} role="status" aria-live="polite">
       {shown.map(t => {
@@ -112,7 +114,7 @@ function Minimap({ step }: { step: Step }) {
     ctx.fillStyle = '#1b2a33'; ctx.fillRect(x - s - dpr, y - s - dpr, 2 * (s + dpr), 2 * (s + dpr));
     ctx.fillStyle = '#b8c0c6'; ctx.fillRect(x - s, y - s, 2 * s, 2 * s);
   };
-  const open = () => { if (G.mode !== 'play') return; G.map.x = G.map.y = 0; G.mode = 'map'; sfx('move'); };
+  const open = () => { if (G.mode === 'play') openChart(); };
   const night = isNight(), c = dayFrac();
   const sail = boatDef().prop === 'SAIL', eff = sail ? sailEfficiency() : 0;
   const wxIcon = WX.state === 'clear' && night ? 'moon' : WX_ICON[WX.state];
@@ -337,6 +339,7 @@ function Fishing() {
 export function Hud() {
   if (!SET.hud) return <div><Fishing /></div>;
   const quest = currentQuest(), step = guide(), pr = quest && questProgress(quest);
+  const sailing = !G.fish && !G.card;
   // a waypoint the player set takes over the on-screen arrow from the guide
   const wp: Step | null = G.waypoint ? { text: 'Waypoint', at: G.waypoint, icon: 'map', near: 25 } : null;
   return (
@@ -344,7 +347,7 @@ export function Hud() {
       <SeaLayer step={step} wp={wp} />
       <div class="hud-left">
         <Status />
-        {G.stats.caught > 0 && <Objective step={step} prog={pr && pr.want > 1 ? `${pr.have}/${pr.want}` : null} />}
+        {sailing && G.stats.caught > 0 && <Objective step={step} prog={pr && pr.want > 1 ? `${pr.have}/${pr.want}` : null} />}
         {wp && <WaypointChip />}
         {G.active.length > 0 && (
           <div class="chip contracts small">
@@ -358,7 +361,7 @@ export function Hud() {
       </div>
       <Minimap step={step} />
       <Fishing />
-      {G.stats.caught === 1 && !G.fish && <div class="hints">
+      {G.stats.caught === 1 && sailing && <div class="hints">
         <Hint k="Tab" pad="View">Ship</Hint><Hint k="m" pad="Y">Chart</Hint><Hint k="l" pad="LB">Log</Hint>
         <Hint k="Escape" pad="Start">Menu</Hint>{G.pet && <Hint k="p">Pet</Hint>}
       </div>}

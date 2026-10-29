@@ -46,6 +46,8 @@ export const PROJECTS: Project[] = [
   { id: 'lights', name: 'Light the coast', cost: 10000, need: { sp: 'beacon', n: 3 }, gives: 'The Flagship, and every nearby lighthouse charted', what: 'Light the lighthouses again with Beaconfish oil. Beaconfish bite below lighthouses at night.' },
   { id: 'grand', name: 'The Grand Harbour', cost: 30000, need: { sp: 'oldone', n: 1 }, gives: 'The greatest harbour on the coast, and the finale', what: 'Banners, a festival, and the Old One watching over the harbour gate. Catch it at its lair, which is marked on your chart.' },
 ];
+/** What each level of these upgrades adds: top speed and hull (fractions), fish carried, line strain and sale value. */
+export const UPGRADE_STEP = { prop: 0.12, hull: 0.25, hold: 2, line: 0.12, ice: 0.05 } as const;
 // Upgrade tracks, grouped into shop categories. `lv[i]` says, in plain words, what owning level i+1 does;
 // the shop adds the exact before and after numbers (see upgradeStat in game/rules).
 export const UPGRADES: Record<UpgradeKey, Upgrade> = {

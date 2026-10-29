@@ -1,5 +1,3 @@
-// What a press does on each screen. Called once per frame before the simulation;
-// a press that changes screens is consumed, so it can't also act on the new screen.
 import { G, hit, portMenuInput, shipInput, newGame, loadGame, wipeSave, saveGame, toast, hasSave } from './game';
 import { SET, savePrefs } from './prefs';
 import { SPECIES } from './econ';
@@ -8,16 +6,17 @@ import { NET, sendEmote, EMOTES } from './net';
 import { TITLE_ITEMS, PAUSE_ITEMS } from './ui/menus';
 import { BOARDS } from './ui/leaders';
 import { closeIsland } from './ui/island';
+import { closeEncounter } from './game/encounters';
 import { sfx } from './audio';
 import { voyageStarted } from './telemetry';
 import type { Mode } from './types';
-import { placeByStarterSchool } from './game/fishing';
+import { cancelFishing, placeByStarterSchool } from './game/fishing';
 import { SHARED } from './share';
-import { talkNext, voyage } from './story';
+import { dismissSpeech, speech, talkNext, voyage } from './story';
+import { openChart, closeChart } from './game/chart';
 
 type ListKey = 'titleSel' | 'pauseSel' | 'ctlSel' | 'emoteSel';
 const up = () => hit('ArrowUp', 'w', 'W'), down = () => hit('ArrowDown', 's', 'S');
-/** Up/down through a wrapping list stored in G[key]. */
 function nav(key: ListKey, n: number): void {
   if (up()) { G[key] = (G[key] + n - 1) % n; sfx('move'); }
   if (down()) { G[key] = (G[key] + 1) % n; sfx('move'); }
@@ -28,7 +27,6 @@ const startVoyage = () => {
   G.newConfirm = -1; wipeSave(); newGame(); placeByStarterSchool(SHARED?.at);   // a shared catch link starts you by its spot
   G.mode = 'play'; voyage.startedAt = G.t; voyageStarted('new');
 };
-/** A new voyage erases the save, so with one on this device it asks first. */
 const askNewVoyage = () => { if (hasSave()) G.newConfirm = 0; else startVoyage(); };
 
 // the question has two answers side by side; keeping the save is picked first, and Escape keeps it too
@@ -56,11 +54,15 @@ function title(): void {
 }
 function pause(): void {
   nav('pauseSel', PAUSE_ITEMS.length);
-  if (hit('Escape')) return go('play');
+  if (hit('Escape', 'Pause')) return go('play');
   if (!hit(' ', 'Enter')) return;
   const pick = PAUSE_ITEMS[G.pauseSel]; sfx('select');
   if (pick === 'RESUME') G.mode = 'play';
-  else if (pick === 'SAVE & QUIT') { saveGame(); G.mode = 'title'; G.titleSel = 0; }
+  else if (pick === 'SAVE & QUIT') {
+    if (!saveGame()) return;
+    cancelFishing();
+    G.mode = 'title'; G.titleSel = 0;
+  }
   else if (pick === 'JOURNAL') { G.journalBack = 'pause'; G.mode = 'journal'; }
   else if (pick === 'LEADERBOARD') { G.leadersBack = 'pause'; G.mode = 'leaders'; }
   else if (pick === 'ONLINE') { G.accountBack = 'pause'; G.mode = 'account'; }
@@ -88,7 +90,7 @@ function controls(): void {                            // rows: each action, the
   }
   if (hit('Escape', 'Backspace')) go(G.back);
 }
-function emote(): void {                               // a preset greeting other sailors see over your boat
+function emote(): void {
   nav('emoteSel', EMOTES.length);
   const digits = Math.min(9, EMOTES.length);
   let chosen = false;
@@ -105,19 +107,31 @@ function logbook(): void {
   if (hit('l', 'L', 'Escape')) go('play');
 }
 function sailing(): void {
-  if (hit('m', 'M')) { G.map.x = G.map.y = 0; go('map'); }
+  if (hit('Escape') && SET.hud && speech()) { dismissSpeech(); return; }
+  if (hit('m', 'M')) openChart();
   else if (hit('l', 'L')) go('log');
   else if (hit('j')) { G.journalBack = 'play'; go('journal'); }
   else if (hit('g') && NET.authed) go('emote', 'select');
   else if (hit('Tab', 'i', 'I')) { G.shipSel = 0; go('ship'); }
-  else if (hit('Escape') && !G.fish) { G.pauseSel = 0; go('pause'); }
+  else if (hit('Escape', 'Pause')) { G.pauseSel = 0; go('pause'); }
   else if (hit('h', 'H')) toggleHud();
 }
-/** H: hide the sailing interface for screenshots or calm sailing, or bring it back. */
 function toggleHud(): void {
   SET.hud = !SET.hud; savePrefs(); sfx('select');
   G.toasts = G.toasts.filter(t => !t.s.startsWith('Interface '));
   toast(SET.hud ? 'Interface shown' : 'Interface hidden. Press H to bring it back');
+}
+
+function documentGamepadInput(): void {
+  if (!G.pad || !hit('ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter')) return;
+  const root = document.querySelector(G.mode === 'island' ? '.dialog.island' : G.mode === 'encounter' ? '.dialog.encounter' : '.screen');
+  if (!root) return;
+  const actions = [...root.querySelectorAll<HTMLElement>('button:not([disabled]), summary, a[href]')].filter(e => e.getClientRects().length > 0);
+  if (!actions.length) return;
+  const i = actions.findIndex(e => e === document.activeElement);
+  if (hit('ArrowDown', 'ArrowRight')) actions[(i + 1) % actions.length].focus();
+  else if (hit('ArrowUp', 'ArrowLeft')) actions[i < 0 ? actions.length - 1 : (i + actions.length - 1) % actions.length].focus();
+  else if (hit(' ', 'Enter')) { if (i < 0) actions[0].focus(); else actions[i].click(); }
 }
 
 function screenInput(dt: number, refit: () => void): void {
@@ -131,8 +145,9 @@ function screenInput(dt: number, refit: () => void): void {
     case 'account':                                   // a name must be picked first, unless the connection is gone
       if (hit('Escape') && !(G.needName && NET.authed)) { G.needName = false; go(G.accountBack); }
       return;
-    case 'journal': if (hit('j', 'Escape', 'Enter', ' ')) go(G.journalBack); return;
-    case 'island': if (hit('Escape')) closeIsland(); return;
+    case 'journal': if (hit('j', 'Escape')) go(G.journalBack); else documentGamepadInput(); return;
+    case 'island': if (hit('Escape')) closeIsland(); else documentGamepadInput(); return;
+    case 'encounter': if (hit('Escape')) closeEncounter(); else documentGamepadInput(); return;
     case 'leaders':
       if (hit('ArrowLeft', 'a', 'A')) { G.leaderTab = (G.leaderTab + BOARDS.length - 1) % BOARDS.length; sfx('move'); }
       if (hit('ArrowRight', 'd', 'D', 'Tab')) { G.leaderTab = (G.leaderTab + 1) % BOARDS.length; sfx('move'); }
@@ -141,7 +156,7 @@ function screenInput(dt: number, refit: () => void): void {
     case 'finale': if (hit(' ', 'Enter', 'Escape')) go('play', 'select'); return;
     case 'port': return portMenuInput(dt);
     case 'map':
-      if (hit('m', 'M', 'Escape')) go('play');
+      if (hit('m', 'M', 'Escape')) { closeChart(); return; }
       if (hit('z', 'Z')) { G.map.zoom = G.map.zoom === 1 ? 2 : 1; sfx('move'); }
       if (hit('c', 'C')) { G.map.x = G.map.y = 0; sfx('move'); }
       return;

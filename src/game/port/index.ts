@@ -50,7 +50,7 @@ function ferry(from: Port, to: Port): void {
   track('ferry_used', { cost_bucket: bucket(cost) });
   G.clock += Math.hypot(from.x - to.x, from.y - to.y) / 6;     // the trip still takes time
   placeAtPort(to);
-  G.menu.port = to; G.lastPort = to.id; G.menu.tab = 0; G.menu.sel = 1;
+  G.menu = { port: to, tab: 0, sel: 1 }; G.lastPort = to.id;
   sfx('dock'); toast(`You took the ferry to ${to.name}`); saveGame();
 }
 function ferryItems(p: Port, items: Rows): void {
@@ -97,7 +97,11 @@ export function portTabs(p: Port): PortTab[] {
     'FERRY', ...(NET.on ? ['ISLANDS' as const] : []), ...(p.id === homePort().id ? ['HARBOUR' as const] : [])];
 }
 function marketItems(p: Port, items: Rows): void {
-  sellItems(p, items);
+  sellItems(p, items, () => {
+    if (G.mode !== 'port' || G.menu.port?.id !== p.id) return;
+    setTab(portTabs(p).indexOf('OUTFITTER'));
+    G.menu.sel = portItems(p).findIndex(it => it.kind === 'upgrade' && it.key === 'hold');
+  });
   header(items, 'CONTRACTS');
   contractItems(p, items);
   header(items, 'INN');
@@ -121,7 +125,7 @@ const selectable = (it: PortItem): it is PortRow => it.kind !== 'header';
 // ---------- docking ----------
 export function dock(p: Port): void {
   G.mode = 'port';
-  G.menu = { tab: 0, sel: 1, port: p };   // opens on Market with "Sell your catch" selected
+  G.menu = { tab: 0, sel: 1, port: p };
   G.lastPort = p.id; G.fish = null;
   const b = G.boat;
   b.vx = b.vy = b.w = b.helm = b.thr = 0;

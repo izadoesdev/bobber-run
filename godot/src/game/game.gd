@@ -130,7 +130,7 @@ func _autofish() -> bool:
 	var fishing: Fishing = $View/Viewport/World/Fishing
 	# moor beside the nearest school that's biting, on open water
 	var at := Vector2(_boat.x, _boat.y)
-	var near := Schools.near(at, 900).filter(func(q: Schools.School) -> bool: return Species.biting(q.sp, State.is_night(), State.is_twilight()) and q.stock > 0)
+	var near := Schools.near(at, 900).filter(func(q: Schools.School) -> bool: return Species.biting(q.sp, State.is_night(), State.is_twilight()) and q.stock > 0 and fishing.catch_need(q.sp).is_empty())
 	near.sort_custom(func(p: Schools.School, q: Schools.School) -> bool: return at.distance_to(Vector2(p.x, p.y)) < at.distance_to(Vector2(q.x, q.y)))
 	if not near.is_empty():
 		var s: Schools.School = near[0]
@@ -162,8 +162,9 @@ func _autofish() -> bool:
 	return not landed.is_empty()
 
 
-# Tie up at Alderhaven's pier and sell the hold as a player would (E to dock, Space on the focused Sell all); whether
-# the coins came in and the hold emptied.
+# Tie up at Alderhaven's pier and sell the hold as a player would (E to dock, Space on the focused Sell all), then buy
+# the cheapest upgrade the purse runs to on the Outfitter tab; whether the coins came in, the hold emptied and the
+# upgrade was fitted. `--snap-docked=out.png` saves the port panel before selling, and the outfitter after buying.
 func _autosell() -> bool:
 	var home := Ports.home()
 	var off := home.end + Vector2.from_angle(home.ang) * 12.0
@@ -176,14 +177,34 @@ func _autosell() -> bool:
 	if State.docked == null:
 		print("autosell: couldn't dock at ", home.name)
 		return false
-	for arg in OS.get_cmdline_user_args():            # --snap-docked=out.png: the port panel, before selling
+	var snap := ""
+	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--snap-docked="):
-			await RenderingServer.frame_post_draw
-			get_viewport().get_texture().get_image().save_png(arg.trim_prefix("--snap-docked="))
+			snap = arg.trim_prefix("--snap-docked=")
+	if snap:
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(snap)
 	await _tap("ui_accept")
 	var ok := State.coins > before and State.hold.is_empty()
 	print("autosell: docked at %s, sold %d fish for $%d (purse $%d)" % [home.name, fish, State.coins - before, State.coins])
-	return ok
+	var panel: PortPanel = find_children("*", "PortPanel", true, false)[0]
+	panel.tabs.current_tab = 1
+	var cheapest := ""
+	for key in panel.buy_buttons:
+		var price := Upgrades.cost(key, State.level(key))
+		if not panel.buy_buttons[key].disabled and (cheapest.is_empty() or price < Upgrades.cost(cheapest, State.level(cheapest))):
+			cheapest = key
+	if cheapest.is_empty():
+		print("autosell: nothing in the outfitter for $%d" % State.coins)
+		return false
+	var level := State.level(cheapest)
+	panel.buy_buttons[cheapest].grab_focus()
+	await _tap("ui_accept")
+	print("autosell: bought %s level %d (purse $%d)" % [cheapest, State.level(cheapest), State.coins])
+	if snap:
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(snap.get_basename() + "-outfitter.png")
+	return ok and State.level(cheapest) == level + 1
 
 
 # A press and release of `action` as real input events, so focused buttons hear it as well as polled actions.

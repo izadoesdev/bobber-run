@@ -5,15 +5,16 @@
 // the weather leave a save as it is; anything that hands out coins, gear or fish goes through the cheat console's
 // codes, which mark the save as cheated (off the world records and the coastwide fund), as cheats always have.
 import { useEffect, useState } from 'preact/hooks';
-import { G, toast, saveGame, schoolActive, DAYLEN } from '../game';
+import { G, toast, saveGame, DAYLEN } from '../game';
 import { NET, adminPlayers, type AdminPlayer } from '../net';
 import { ONLINE } from '../online';
 import { W, H } from '../config';
-import { heightAt, homePort, regionSites, schoolsNear } from '../world';
+import { heightAt, homePort, regionSites } from '../world';
 import { regionAt } from '../biome';
 import { setWeather } from '../weather';
-import { runCheat, CHEATS } from '../cheats';
+import { runCheat, CHEATS, SEA_TOYS } from '../cheats';
 import { reveal } from '../game/explore';
+import { openChart } from '../game/chart';
 import { setWaypoint } from '../waypoint';
 import { sfx } from '../audio';
 import type { WeatherState } from '../types';
@@ -73,6 +74,7 @@ function regions(): typeof regionList & object {
 type Tab = 'sailors' | 'teleport' | 'fun';
 export function AdminPanel() {
   const [tab, setTab] = useState<Tab>('sailors'), [q, setQ] = useState(''), [xy, setXy] = useState('');
+  const [command, setCommand] = useState('');
   // every captain by name, online or not, in any sea (admin:players), a moment after typing stops
   const [found, setFound] = useState<AdminPlayer[] | null>(null);
   useEffect(() => {
@@ -89,8 +91,9 @@ export function AdminPanel() {
   const clock = (f: number, name: string) => go(() => { atClock(f); toast(`Time: ${name}`, 'good'); });
   return (
     <div class="admin panel" onPointerDown={e => e.stopPropagation()}>
-      <div class="admin-head"><b>Admin</b><span class="muted small">F9 to close</span></div>
+      <div class="admin-head"><b>Captain’s sandbox</b><button class="btn small-btn" aria-label="Close admin panel" onClick={() => { ADMIN.open = false; }}>Close · F9</button></div>
       <div class="admin-tabs">{(['sailors', 'teleport', 'fun'] as Tab[]).map(t => <button class={'btn small-btn' + (t === tab ? ' on' : '')} onClick={() => setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</button>)}</div>
+      <div class="admin-body">
       {tab === 'sailors' && <>
         <div class="caps small">In your sea</div>
         <input class="admin-input" placeholder="Find a sailor by name (2+ letters searches every captain)" value={q} onInput={e => setQ((e.target as HTMLInputElement).value)} />
@@ -126,7 +129,7 @@ export function AdminPanel() {
         </div>
         <div class="admin-row">
           <button class="btn small-btn" onClick={go(() => { const h = homePort(); teleport(h.dock.x, h.dock.y, 'Alderhaven'); })}>Home</button>
-          <button class={'btn small-btn' + (ADMIN.clickTeleport ? ' on' : '')} onClick={go(() => { ADMIN.clickTeleport = !ADMIN.clickTeleport; if (ADMIN.clickTeleport) G.mode = 'map'; })}>{ADMIN.clickTeleport ? 'Click the chart…' : 'Click on chart'}</button>
+          <button class={'btn small-btn' + (ADMIN.clickTeleport ? ' on' : '')} onClick={go(() => { ADMIN.clickTeleport = !ADMIN.clickTeleport; if (ADMIN.clickTeleport) openChart(); })}>{ADMIN.clickTeleport ? 'Click the chart…' : 'Click on chart'}</button>
         </div>
         <div class="caps small">Regions</div>
         <div class="admin-list">{regions().map(r => <button class="btn small-btn admin-chip" onClick={go(() => teleport(r.x, r.y, r.name))}>{r.name}</button>)}</div>
@@ -134,22 +137,28 @@ export function AdminPanel() {
         <div class="admin-list">{regionSites().map(s => <button class="btn small-btn admin-chip" onClick={go(() => teleport(s.x, s.y, s.id))}>{s.id.replace('legend-', '').replace(/-village$/, ' village')}</button>)}</div>
       </>}
       {tab === 'fun' && <>
+        <p class="admin-warning">Sea toys and cheats mark this voyage as a sandbox: no world records or coastwide fund contributions. Weather and time controls do not.</p>
+        <div class="caps small">Make a little mischief</div>
+        <div class="admin-toys">{SEA_TOYS.map(toy => <button key={toy.code} class="btn admin-toy" onClick={() => runCheat(toy.code)}><b>{toy.name}</b><span>{toy.what}</span><code>{toy.code}</code></button>)}</div>
+        <label class="caps small" htmlFor="admin-command">Secret code</label>
+        <div class="admin-row"><input id="admin-command" class="admin-input grow" value={command} placeholder="Try dontpanic…" onInput={e => setCommand(e.currentTarget.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); runCheat(command); } }} /><button class="btn small-btn" onClick={() => runCheat(command)}>Run</button></div>
         <div class="caps small">Weather</div>
         <div class="admin-row">{(['clear', 'rain', 'storm'] as WeatherState[]).map(s => <button class="btn small-btn" onClick={weather(s)}>{s}</button>)}</div>
         <div class="caps small">Time</div>
         <div class="admin-row"><button class="btn small-btn" onClick={clock(0.06, 'dawn')}>Dawn</button><button class="btn small-btn" onClick={clock(0.3, 'noon')}>Noon</button><button class="btn small-btn" onClick={clock(0.6, 'dusk')}>Dusk</button><button class="btn small-btn" onClick={clock(0.75, 'night')}>Night</button></div>
         <div class="caps small">Sea</div>
         <div class="admin-row">
-          <button class="btn small-btn" onClick={go(() => { const s = schoolsNear(G.boat.x, G.boat.y, 400).find(schoolActive); if (!s) return toast('No school nearby', 'bad'); s.stock = Math.max(s.stock, 8); G.frenzy = { s, until: G.t + 70 }; toast('A feeding frenzy!', 'good'); })}>Frenzy</button>
-          <button class="btn small-btn" onClick={go(() => { const s = schoolsNear(G.boat.x, G.boat.y, 400).find(schoolActive); if (!s) return toast('No school nearby', 'bad'); s.gold = true; toast('That school is golden now', 'good'); })}>Golden school</button>
+          <button class="btn small-btn" onClick={() => runCheat('frenzy')}>Frenzy</button>
+          <button class="btn small-btn" onClick={() => runCheat('goldrush')}>Golden school</button>
           <button class="btn small-btn" onClick={go(() => { reveal(G.boat.x, G.boat.y, 3000); toast('The fog lifts for 300 m round you', 'good'); })}>Lift fog</button>
-          <button class="btn small-btn" onClick={go(() => { for (const r of regions()) if (!G.unlocked.includes(r.id)) G.unlocked.push(r.id); toast('Every region is open to you', 'good'); saveGame(); })}>Open all regions</button>
-          <button class="btn small-btn" onClick={go(() => { G.god = !G.god; toast(G.god ? 'Your hull cannot be damaged' : 'Your hull is mortal again', 'good'); })}>{G.god ? 'Mortal hull' : 'Unsinkable'}</button>
+          <button class="btn small-btn" onClick={() => runCheat('openwaters')}>Open all regions</button>
+          <button class="btn small-btn" onClick={() => runCheat('unsinkable')}>{G.god ? 'Mortal hull' : 'Unsinkable'}</button>
         </div>
         <div class="caps small">Cheats <span class="muted">(mark this save as cheated)</span></div>
-        <div class="admin-list">{CHEATS.filter(c => !['stormy', 'clearsky', 'nightfall', 'daybreak', 'frenzy', 'unsinkable', 'homeward'].includes(c.code)).map(c =>
+        <div class="admin-list">{CHEATS.filter(c => !['stormy', 'clearsky', 'nightfall', 'daybreak', 'frenzy', 'unsinkable', 'homeward', 'goldrush', 'openwaters', ...SEA_TOYS.map(t => t.code)].includes(c.code)).map(c =>
           <button class="btn small-btn admin-chip" title={c.what} onClick={go(() => runCheat(c.code))}>{c.code}</button>)}</div>
       </>}
+      </div>
     </div>
   );
 }

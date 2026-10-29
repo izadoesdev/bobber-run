@@ -10,6 +10,8 @@ import { W, H, frac, wrapAngle } from '../config';
 import { G } from './state';
 import { boatDef, env } from './rules';
 import { burst, spawn, toast } from './feedback';
+import { separateFish, shoalPositions, type FishBody } from './shoal';
+import { advanceDive } from './diving';
 
 /** Only an engine at a fair clip, passing almost over the fish, scares them. Sails and oars never do. */
 const SCARE = { speed: 38, dist: 24 };
@@ -35,10 +37,10 @@ export function attackK(s: School): number {
 /** Scattered within the last `within` seconds (by default: still regrouping). */
 const scattered = (s: School, within = SCATTER_S): boolean => s.scatterT !== undefined && G.t - s.scatterT < within;
 const dived = (s: School): boolean => (s.spooked ?? 0) > G.t;
-/** The school is in the water to be seen: its species is about, and it hasn't dived. Depleted schools still show a straggler. */
+/** Whether conditions allow this school to stay near the surface; actual depth changes gradually. */
 export const schoolShown = (s: School): boolean => activeAt(s.sp, env()) && !dived(s);
 /** The school will take a bait right now. */
-export const schoolActive = (s: School): boolean => s.stock > 0 && schoolShown(s) && !scattered(s);
+export const schoolActive = (s: School): boolean => s.stock > 0 && schoolShown(s) && (s.submergence ?? 0) < 0.25 && !scattered(s);
 type SchoolMood = 'biting' | 'scattered' | 'empty';
 export const schoolMood = (s: School): SchoolMood => scattered(s) ? 'scattered' : s.stock > 0 ? 'biting' : 'empty';
 
@@ -51,7 +53,19 @@ export const schoolDrawR = (): number => Math.max(240, Math.hypot(W, H) / 2 + 90
  */
 export function swimSchools(dt: number): void {
   const n = Math.min(4, Math.ceil(dt / SWIM_STEP - 1e-6)), step = dt / Math.max(1, n);
-  for (const s of schoolsNear(G.cam.x + W / 2, G.cam.y + H / 2, Math.max(320, schoolDrawR() + 80), nearScratch)) if (!s.boss) for (let i = 0; i < n; i++) swim(s, step);
+  const schools = schoolsNear(G.cam.x + W / 2, G.cam.y + H / 2, Math.max(320, schoolDrawR() + 80), nearScratch);
+  for (const s of schools) {
+    const surfaced = G.fish?.s === s || (s.stock > 0 && schoolShown(s));
+    s.submergence = advanceDive(s.submergence ?? (surfaced ? 0 : 1), surfaced, dt);
+    if (!s.boss) for (let i = 0; i < n; i++) swim(s, step);
+  }
+  const bodies: FishBody[] = [];
+  for (const s of schools) {
+    if (s.boss || s.stock <= 0 || (s.submergence ?? 0) >= 1) continue;
+    const look = schoolLook(s.sp), count = Math.max(1, Math.round((look.count + (G.frenzy?.s === s ? 2 : 0)) * Math.min(1, s.stock / Math.max(1, s.max))));
+    for (const point of (s.swim ?? []).slice(0, count)) bodies.push({ point, radius: look.body * 0.28 });
+  }
+  separateFish(bodies, (x, y) => depthAt(x, y) <= FISH_SHORE);
 }
 /** While sailing: fished schools refill, and a fast engine passing over one scatters it. */
 export function updateSchools(speed: number, dt: number): void {
@@ -135,14 +149,14 @@ function rhythm(style: FightStyle, role: FishRole, cruise: number, f: Swimmer): 
   return cruise * (0.8 + 0.3 * Math.sin(G.t * 0.4 + f.ph));
 }
 function spawnSwimmers(s: School): Swimmer[] {
-  const look = schoolLook(s.sp), cruise = CRUISE[SPECIES[s.sp].fight], L: Swimmer[] = [];
-  for (let k = 0; k < look.count + 2; k++) {
-    const a = s.ph + k * 2.4, r = look.radius * (0.3 + 0.5 * frac(k * 0.618));
-    let x = s.x + Math.cos(a) * r, y = s.y + Math.sin(a) * r;
-    if (depthAt(x, y) > FISH_SHORE) { x = s.x; y = s.y; }      // the home itself is always open water
-    L.push({ x, y, vx: -Math.sin(a) * cruise, vy: Math.cos(a) * cruise, h: a + Math.PI / 2, ph: s.ph + k * 0.37, turn: k * 0.4, bias: 0 });
-  }
-  return L;
+  const look = schoolLook(s.sp), cruise = CRUISE[SPECIES[s.sp].fight];
+  const positions = shoalPositions(s, look.radius, look.count + 2, look.body * 0.56, s.ph,
+    (x, y) => depthAt(x, y) <= FISH_SHORE);
+  return positions.map(({ x, y }, k) => {
+    const a = Math.atan2(y - s.y, x - s.x);
+    return { x, y, vx: -Math.sin(a) * cruise, vy: Math.cos(a) * cruise, h: a + Math.PI / 2,
+      ph: s.ph + k * 0.37, turn: k * 0.4, bias: 0 };
+  });
 }
 /** The swim runs in steps of at most SWIM_STEP seconds whatever the frame rate, so a slow frame never throws fish about. */
 const SWIM_STEP = 1 / 60;
