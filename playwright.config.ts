@@ -7,7 +7,7 @@ export default defineConfig({
   testDir: 'e2e',
   timeout: 60_000,
   retries: CI ? 1 : 0,
-  workers: CI ? 2 : 4,                      // SwiftShader renders on the CPU; more browsers at once make frames too slow
+  workers: CI ? 1 : 4,                      // One CPU-rendered browser per CI runner; high-DPI phone contexts otherwise contend.
   reporter: CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: `http://localhost:${PORT}`,
