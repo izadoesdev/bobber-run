@@ -96,13 +96,15 @@ The shipping pass includes the accumulated browser work and the existing Godot O
 
 A new Godot regression reproduced upgraded-hold data loss: restore loaded six saved fish using the starter four-fish capacity before fitting the saved upgrade. Restoration now fits upgrades first, retaining all six. Headless tests start after autoload initialization and cover purchase affordability, completed tracks, table descriptions, and the full upgraded hold. The existing Godot work is included, not discarded or presented as complete browser-feature parity.
 
+The first pushed Godot check exposed ARM64/x64 floating-point differences in three derived fish-size values. Export serialization now retains twelve significant digits for fractions and preserves integers exactly, with tests using the observed values; TypeScript runtime calculations are unchanged. Remote browser checks also found stale DOM after direct fixture-state mutations and a timeout while sampling 90 rendered minimap frames. Those fixtures now explicitly render a tick after changing state; the minimap test retains all 90 frames and every pixel assertion with a targeted two-minute budget. These failed remote runs are not reported as successful validation.
+
 ## Verification
 
 Latest completed local verification includes the shipping cleanup, returning-voyage clarity, first-voyage clarity, and earlier session-comfort and guidance work:
 
 - Client and Convex typechecks: passed.
 - Relay-server typecheck: passed.
-- Unit tests: **200 passed, 0 failed**; 418,886 assertions across 26 files.
+- Unit tests: **203 passed, 0 failed**; 418,892 assertions across 27 files, including portable-export regressions.
 - Full production-build browser suite: **163 passed**, no retries, two workers, 4.0 minutes; rerun during shipping cleanup.
 - Godot 4.7.2 import and headless suite: **15 passed, 0 failed**. Daytime catch → sale → Hold purchase and nighttime catch smoke runs passed. The latter emitted a camera-interpolation warning; this is not a complete graphical/device validation.
 - Godot fixtures/data were regenerated twice with identical hashes, and the export scripts passed a separate TypeScript check.

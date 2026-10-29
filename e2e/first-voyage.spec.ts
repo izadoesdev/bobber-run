@@ -72,7 +72,7 @@ test('the first catch presentation does not compete with objective or shortcut t
   await expect(page.locator('.card.first')).toBeVisible();
   await expect(page.locator('.chip.objective')).toHaveCount(0);
   await expect(page.locator('.hints')).toHaveCount(0);
-  await page.evaluate(() => { window.BR.G.card = null; });
+  await page.evaluate(() => { window.BR.G.card = null; window.BR.tick(0); });
   await expect(page.locator('.chip.objective')).toBeVisible();
 });
 

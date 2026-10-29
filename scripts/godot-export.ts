@@ -3,6 +3,7 @@
 // no gear fitted), the rowboat's oars, the harbours, the trees, rocks and bushes that grow on the islands, the fish
 // species, and the outfitter's upgrades. Re-run after changing them: bun scripts/godot-export.ts
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { godotJson } from './godot-json';
 import { BOATS, UPGRADES, UPGRADE_KEYS, UPGRADE_STEP, UP_CATS } from '../src/econ';
 import { decorate, PLAIN, OAR, M } from '../src/models';
 import { RGB, EMISSIVE, type Vox } from '../src/voxel';
@@ -31,13 +32,13 @@ function model(V: Vox) {
   return { u0: V.u0, v0: V.v0, nu: V.nu, nv: V.nv, nz: V.nz, palette, cells: Buffer.from(cells).toString('base64') };
 }
 
-for (const b of BOATS) writeFileSync(new URL(`boats/${b.id}.json`, out), JSON.stringify(model(decorate(b.id, PLAIN))) + '\n');
+for (const b of BOATS) writeFileSync(new URL(`boats/${b.id}.json`, out), godotJson(model(decorate(b.id, PLAIN))));
 // the stats the sailing needs, as the game has them
-writeFileSync(new URL('boats.json', out), JSON.stringify(BOATS.map(({ id, name, speed, accel, turn, L, B, prop, hp, hold, deck }) => ({ id, name, speed, accel, turn, L, B, prop, hp, hold, deck: deck ?? 0 })), null, 1) + '\n');
+writeFileSync(new URL('boats.json', out), godotJson(BOATS.map(({ id, name, speed, accel, turn, L, B, prop, hp, hold, deck }) => ({ id, name, speed, accel, turn, L, B, prop, hp, hold, deck: deck ?? 0 })), 1));
 // the harbours: each design's model, the pier along +u from where it meets the land (0 is Alderhaven's)
-HARBOURS.forEach((build, k) => writeFileSync(new URL(`harbours/${k}.json`, out), JSON.stringify(model(build())) + '\n'));
+HARBOURS.forEach((build, k) => writeFileSync(new URL(`harbours/${k}.json`, out), godotJson(model(build()))));
 // trees, rocks and bushes, each kind's model
-for (const k of TREE_KINDS) writeFileSync(new URL(`trees/${k}.json`, out), JSON.stringify(model(TREE_BUILD[k]())) + '\n');
+for (const k of TREE_KINDS) writeFileSync(new URL(`trees/${k}.json`, out), godotJson(model(TREE_BUILD[k]())));
 // fish: each species' table entry, how its school looks, its fish model, and where it lives. Its waters are a function
 // of the sea's depth h and the distance d from home (Species.zone), sampled on a grid into a bitmap, exact to the grid:
 // bit (i, j) is zone(ZONE.h0 + i * ZONE.dh, j * ZONE.dd)
@@ -45,17 +46,17 @@ const ZONE = { h0: -0.8, dh: 0.01, nh: 91, dd: 100, nd: 81 };
 const species = SPECIES.map((s, n) => {
   const bits = new Uint8Array(Math.ceil(ZONE.nh * ZONE.nd / 8));
   for (let j = 0; j < ZONE.nd; j++) for (let i = 0; i < ZONE.nh; i++) if (s.zone(ZONE.h0 + i * ZONE.dh, j * ZONE.dd)) bits[(j * ZONE.nh + i) >> 3] |= 1 << ((j * ZONE.nh + i) & 7);
-  writeFileSync(new URL(`fish/${s.id}.json`, out), JSON.stringify(model(fishVox(n))) + '\n');
+  writeFileSync(new URL(`fish/${s.id}.json`, out), godotJson(model(fishVox(n))));
   const { zone: _, diff, ...rest } = s;
   return { ...rest, diff, habitat: HABITAT[s.id] ?? null, look: schoolLook(n), zone: Buffer.from(bits).toString('base64') };   // habitat: the biome it lives in only
 });
-writeFileSync(new URL('species.json', out), JSON.stringify({ zoneGrid: ZONE, species }) + '\n');
+writeFileSync(new URL('species.json', out), godotJson({ zoneGrid: ZONE, species }));
 // the rowboat's oars: oarlock, reach and stroke (OAR), and the colours of shaft, blade, tip, the rower's coat and hands
 const mid = (m: number): string => hex(RGB[m][1]), lit = (m: number): string => hex(RGB[m][2]);
-writeFileSync(new URL('oars.json', out), JSON.stringify({ ...OAR, shaft: mid(M.oar), blade: lit(M.blade), tip: mid(M.tip), coat: mid(M.coat), skin: lit(M.skin) }, null, 1) + '\n');
+writeFileSync(new URL('oars.json', out), godotJson({ ...OAR, shaft: mid(M.oar), blade: lit(M.blade), tip: mid(M.tip), coat: mid(M.coat), skin: lit(M.skin) }, 1));
 // the outfitter's upgrades in shop order: each one's name (by the boat's drive, for the one named after it), shop
 // category, costs, what each level does, and the harbour project it waits on; and what a level of each adds
 const names = (k: keyof typeof UPGRADES) => Object.fromEntries(['OARS', 'SAIL', 'ENGINE'].map(prop => [prop, UPGRADES[k].name(BOATS.find(b => b.prop === prop)!)]));
 const upgrades = UPGRADE_KEYS.map(key => { const { cat, costs, lv, req } = UPGRADES[key]; return { key, names: names(key), cat, costs, lv, req: req ?? null }; });
-writeFileSync(new URL('upgrades.json', out), JSON.stringify({ step: UPGRADE_STEP, cats: UP_CATS, upgrades }, null, 1) + '\n');
+writeFileSync(new URL('upgrades.json', out), godotJson({ step: UPGRADE_STEP, cats: UP_CATS, upgrades }, 1));
 console.log(`wrote ${BOATS.length} boats, the oars, ${TREE_KINDS.length} trees and ${SPECIES.length} species to godot/data`);

@@ -64,6 +64,6 @@ godot --headless --path godot -- --autofish --autosell
 godot --headless --path godot -- --clock=0.75 --autofish
 ```
 
-The `Godot` workflow checks that generated data is committed, imports the project, runs the tests, and exercises daytime catch/sale/purchase and nighttime fishing. Tests include upgrade affordability, maximum levels, exported descriptions, and restoring every fish in an upgraded hold. Commit regenerated tables, models, fixtures, and new script `.uid` files together; `.godot/` remains ignored.
+The `Godot` workflow checks that generated data is committed, imports the project, runs the tests, and exercises daytime catch/sale/purchase and nighttime fishing. Exports serialize fractional values to twelve significant digits to avoid ARM64/x64 rounding drift; integer prices and identifiers remain exact. Tests include upgrade affordability, maximum levels, exported descriptions, and restoring every fish in an upgraded hold. Commit regenerated tables, models, fixtures, and new script `.uid` files together; `.godot/` remains ignored.
 
 The Outfitter currently sells drive, hold, rod, reel, line, tackle, ice, lantern, and cook upgrades. Saves retain those levels, and restoration fits the saved hold before loading its fish. This is still a partial port: the browser's shipyard, harbour projects, optional stories, and other systems are not all implemented here.

@@ -10,6 +10,7 @@ async function openJournal(page: Page, from: 'play' | 'pause' = 'play'): Promise
     G.mode = 'journal';
     G.waypoint = { x: G.boat.x + 350, y: G.boat.y + 100 };
     GAME.saveGame();
+    window.BR.tick(0);
   }, from);
   await expect(page.getByRole('heading', { name: 'Journal', exact: true })).toBeVisible();
 }

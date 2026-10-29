@@ -198,6 +198,8 @@ test('sea charted far from home shows on the chart too', async ({ page }) => {
 });
 
 test('the minimap keeps its colours and charted sea after the chart was open, frame after frame as new sea is seen', async ({ page }) => {
+  // Keep all 90 rendered frames even when CI's software renderer cannot finish them within the default minute.
+  test.setTimeout(120_000);
   await openChart(page);
   await page.evaluate(() => { window.BR.SET.minimap = true; });
   await page.keyboard.press('m');                                  // back to sailing, the shared GPU canvas now chart-sized

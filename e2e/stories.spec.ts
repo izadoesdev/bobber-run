@@ -1,7 +1,7 @@
 import { test, expect, sail } from './fixtures';
 
 const journal = async (page: import('@playwright/test').Page) => {
-  await page.evaluate(() => { const { G } = window.BR; G.journalBack = 'play'; G.mode = 'journal'; });
+  await page.evaluate(() => { const { G, tick } = window.BR; G.journalBack = 'play'; G.mode = 'journal'; tick(0); });
   await expect(page.locator('.journal-list')).toBeVisible();
 };
 
