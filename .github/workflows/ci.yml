@@ -1,4 +1,4 @@
-# Railway waits for this check before deploying main.
+# Browser and backend verification; deployment gating is configured by the hosting provider.
 name: CI
 
 on:
@@ -6,7 +6,7 @@ on:
     branches: [main]
   pull_request:
 
-# a newer push supersedes an older run on the same branch (on main, Railway then deploys only the newest)
+# A newer push supersedes an older verification run on the same branch.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -27,7 +27,7 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    strategy: { fail-fast: false, matrix: { shard: [1/2, 2/2] } }   # two machines at once: SwiftShader renders on the CPU
+    strategy: { fail-fast: false, matrix: { shard: [1/4, 2/4, 3/4, 4/4] } }   # one CPU renderer per runner; split the high-DPI phone work too
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2

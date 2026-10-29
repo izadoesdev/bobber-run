@@ -101,7 +101,10 @@ test('portrait shipyard and journal keep their controls inside the viewport @pho
   await expect(action).toBeInViewport({ ratio: 1 });
   await page.screenshot({ path: test.info().outputPath('portrait-shipyard-detail.png'), animations: 'disabled' });
   await page.getByRole('button', { name: /Leave port/i }).tap();
-  await page.evaluate(() => { const { G } = window.BR; G.regionsSeen.push('volcanic'); G.mode = 'journal'; });
+  await expect.poll(() => page.evaluate(() => window.BR.G.mode)).toBe('play');
+  await page.evaluate(() => { window.BR.G.regionsSeen.push('volcanic'); });
+  await page.getByRole('button', { name: 'Menu', exact: true }).tap();
+  await page.getByRole('button', { name: 'JOURNAL', exact: true }).tap();
   await expect(page.getByRole('button', { name: 'Close journal' })).toBeVisible();
   await expect(page.locator('html')).toHaveClass(/touch/);
   await expect(page.locator('.detail')).toContainText('tap Cast');
