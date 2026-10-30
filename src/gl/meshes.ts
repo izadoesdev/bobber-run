@@ -1320,8 +1320,6 @@ const fishBuild = (gold: boolean) => (spIdx: number) => () => {
 };
 const plainFish = family<number>(sp => 'fish:' + sp, fishBuild(false)), goldFish = family<number>(sp => 'goldfish:' + sp, fishBuild(true));
 export const fishMesh = (spIdx: number, gold = false): Mesh => (gold ? goldFish : plainFish)(spIdx);
-/** A species' fish model (the Godot port exports it: scripts/godot-export.ts). */
-export const fishVox = (spIdx: number): Vox => fishBuild(false)(spIdx)();
 
 // ---------- sea life and props ----------
 const LM = { whale: mat(['#26343e', '#34464f', '#4a5c66']), belly: mat(['#6d7780', '#8a949c', '#a9b1b7']), dolphin: mat(['#4a5862', '#66747e', '#86949c']),

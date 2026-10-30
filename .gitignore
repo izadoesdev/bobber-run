@@ -8,4 +8,3 @@ dist/
 .convex/
 test-results/
 playwright-report/
-dist-godot/
