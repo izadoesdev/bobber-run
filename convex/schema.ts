@@ -1,11 +1,16 @@
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
-import { authTables } from '@convex-dev/auth/server';
 
 // Bobber Run online data. Fast-changing boat positions live in their own table so position
 // writes never re-run queries that read saves, records or the fund.
 export default defineSchema({
-  ...authTables,
+  // the fields other than isAnonymous and lastSeen are only on rows from Convex Auth v1, whose schema this was
+  users: defineTable({ name: v.optional(v.string()), image: v.optional(v.string()), email: v.optional(v.string()), emailVerificationTime: v.optional(v.number()),
+    phone: v.optional(v.string()), phoneVerificationTime: v.optional(v.number()), isAnonymous: v.optional(v.boolean()), lastSeen: v.optional(v.number()) }),
+  // Convex Auth v1's accounts, kept until their owners have moved to v2 (see legacyAccounts.ts). reserved: its email is held as a v2 username
+  authAccounts: defineTable({ userId: v.id('users'), provider: v.string(), providerAccountId: v.string(), secret: v.optional(v.string()),
+    emailVerified: v.optional(v.string()), phoneVerified: v.optional(v.string()), reserved: v.optional(v.boolean()) })
+    .index('userIdAndProvider', ['userId', 'provider']).index('by_provider_reserved', ['provider', 'reserved']),
   profiles: defineTable({ userId: v.id('users'), name: v.string(), nameAt: v.optional(v.number()), sea: v.optional(v.number()), catchAt: v.optional(v.number()) }).index('by_user', ['userId']),
   saves: defineTable({ userId: v.id('users'), data: v.string(), updatedAt: v.number(), putAt: v.optional(v.number()) }).index('by_user', ['userId']),
   // best catch per player per species

@@ -1,9 +1,8 @@
 import { v } from 'convex/values';
 import { query, internalMutation, type QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
-import { getAuthUserId } from '@convex-dev/auth/server';
 import { isAdminEmail } from './profiles';
-import { profileOf } from './lib';
+import { authUserId, emailOf, profileOf } from './lib';
 import { MAX_KG, SPECIES_NAMES } from './limits';
 import { runningSpecies, weekOf, weekBounds } from './rotation';
 
@@ -12,15 +11,15 @@ type Row = { name: string; value: number; label?: string; admin?: boolean };
 const by = v.union(v.literal('species'), v.literal('records'), v.literal('heaviest'), v.literal('caught'), v.literal('earned'));
 
 async function rowFor(ctx: QueryCtx, userId: Id<'users'>, value: number, label?: string): Promise<Row> {
-  const [p, u] = await Promise.all([profileOf(ctx, userId), ctx.db.get(userId)]);
-  return { name: p?.name ?? 'Sailor', value, ...(label ? { label } : {}), ...(isAdminEmail(u?.email) ? { admin: true } : {}) };
+  const [p, email] = await Promise.all([profileOf(ctx, userId), emailOf(ctx, userId)]);
+  return { name: p?.name ?? 'Sailor', value, ...(label ? { label } : {}), ...(isAdminEmail(email) ? { admin: true } : {}) };
 }
 
 /** The top 20 by a measure, and where the caller stands. */
 export const top = query({
   args: { by },
   handler: async (ctx, { by }): Promise<{ rows: Row[]; me: { rank: number; value: number } | null }> => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await authUserId(ctx);
     if (by === 'records') {                    // world records held: the best valid catch of each species
       const held = new Map<Id<'users'>, number>();
       for (const sp of Object.keys(MAX_KG)) {
@@ -52,7 +51,7 @@ export const top = query({
 export const weekly = query({
   args: {},
   handler: async ctx => {
-    const userId = await getAuthUserId(ctx), week = weekOf(Date.now()), { start, end } = weekBounds(week);
+    const userId = await authUserId(ctx), week = weekOf(Date.now()), { start, end } = weekBounds(week);
     const species = await Promise.all(runningSpecies(week).map(async id => {
       const best = await ctx.db.query('weekly').withIndex('by_week_species_kg', q => q.eq('week', week).eq('species', id)).order('desc').take(5);
       const top = await Promise.all(best.map(async b => ({ ...(await rowFor(ctx, b.userId, b.kg)), at: b.at })));

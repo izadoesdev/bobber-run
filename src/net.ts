@@ -3,7 +3,7 @@
 // netClient.ts, loaded after the first frame so it never delays the game appearing; this module owns all the state.
 import type { ConvexReactClient } from 'convex/react';
 import type { FunctionArgs, FunctionReference, FunctionReturnType } from 'convex/server';
-import type { useAuthActions } from '@convex-dev/auth/react';
+import type { SignInWithUsernamePasswordResult, SignUpWithUsernamePasswordResult } from '@convex-dev/auth/methods/username-password/react';
 import { api } from '../convex/_generated/api';
 import { ONLINE, type Sailor } from './online';
 import type { ToastKind } from './types';
@@ -24,7 +24,9 @@ type Profile = NonNullable<FunctionReturnType<typeof api.profiles.me>>;
 /** round: which filling of the fund this is (each filled round raises the next goal). */
 type Fund = FunctionReturnType<typeof api.fund.get>;
 type Status = 'offline' | 'connecting' | 'online';
-type Result = { ok: true; msg?: string; loaded?: boolean; name?: string } | { ok: false; why: string };
+type Result = { ok: true; msg?: string; loaded?: boolean; name?: string } | { ok: false; why: string; needNew?: boolean };
+type Credentials = { username: string; password: string };
+interface AuthActions { signIn(c: Credentials): Promise<SignInWithUsernamePasswordResult>; signUp(c: Credentials): Promise<SignUpWithUsernamePasswordResult>; signOut(): Promise<void> }
 /** Set once this browser has signed into an account, so the Online screen opens on "I have an account". */
 export const HAD_ACCOUNT_KEY = 'bobber-run-had-account';
 
@@ -37,7 +39,7 @@ const errText = (e: unknown) => String(e instanceof Error ? e.message : e).slice
 type News = { id: string; name: string; text: string; at: number };
 
 let client: ConvexReactClient | null = null;
-let actions: ReturnType<typeof useAuthActions> | null = null, authToken: string | null = null;
+let actions: AuthActions | null = null, authToken: string | null = null;
 let G: Game | null = null, speciesIds: string[] = [], toast: (s: string, kind?: ToastKind) => void = () => { };
 let signingIn = false, switching = false, naming = false;
 /** Re-runs the guest sign-in check (after an account switch or delete ends signed out, or a failed guest sign-in). */
@@ -59,7 +61,7 @@ const call = <A extends Record<string, unknown>>(ref: FunctionReference<'mutatio
 // ---------- sign-in ----------
 /** What the sign-in bridge in netClient.ts reports here and asks of this module. */
 export const bridge = {
-  connected(a: ReturnType<typeof useAuthActions>, token: string | null, wake: () => void): void { actions = a; authToken = token; wakeBridge = wake; },
+  connected(a: AuthActions, token: string | null, wake: () => void): void { actions = a; authToken = token; wakeBridge = wake; },
   /** A guest session may start now (nobody signed in, and no account switch in progress). */
   mayStartGuest: (): boolean => !signingIn && !switching,
   guestStarting(on: boolean): void { signingIn = on; },
@@ -140,14 +142,17 @@ export function sendEmote(i: number) {
 }
 
 // ---------- accounts: a guest can make an account (keeping this save), sign into one (loading its save), or sign out ----------
+const MIN_PASSWORD = 10;   // Convex Auth's own minimum; accounts from before it can be as short as 8
 const waitFor = async (test: () => boolean, ms = 10_000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (test()) return true; await new Promise(r => setTimeout(r, 150)); } return false; };
-/** Convex Auth's error codes (raw messages are codes like InvalidSecret), the reason analytics records, and what the player reads. */
+/** Convex Auth's error codes, the reason analytics records, and what the player reads. */
 const FAILS = [
-  [/TooManyFailedAttempts|rate/i, 'rate_limited', 'Too many tries. Wait a few minutes, then try again'],
-  [/InvalidAccountId/i, 'no_account', 'No account uses that email. Make one instead'],
-  [/InvalidSecret|Invalid password/i, 'wrong_password', 'Wrong password for that email'],
-  [/already exists/i, 'exists', 'That email already has an account. Sign in instead'],
-  [/password/i, 'weak_password', 'Use a password of at least 8 characters'],
+  [/RATE_LIMITED/, 'rate_limited', 'Too many tries. Wait a few minutes, then try again'],
+  [/USER_NOT_FOUND/, 'no_account', 'No account uses that email. Make one instead'],
+  [/INVALID_CREDENTIALS/, 'wrong_password', 'Wrong password for that email'],
+  [/USERNAME_TAKEN/, 'exists', 'That email already has an account. Sign in instead'],
+  [/PASSWORD_TOO_COMMON/, 'weak_password', 'That password is too common. Try another'],
+  [/PASSWORD_HAS_SURROUNDING_WHITESPACE/, 'weak_password', "A password can't start or end with a space"],
+  [/PASSWORD/, 'weak_password', `Use a password of ${MIN_PASSWORD} to 100 characters`],
 ] as const;
 const NETWORK = [/$/, 'network', 'Could not reach the server. Check your connection and try again'] as const;
 /** `m` is the error text, or null when the server never confirmed the sign-in. */
@@ -157,11 +162,11 @@ function failed(flow: 'signUp' | 'signIn', m: string | null): Result {
   track('sign_in_failed', { flow, reason });
   return { ok: false, why: reason === 'no_account' && flow === 'signUp' ? 'Could not make the account. Try again' : why };
 }
-export async function account(flow: 'signUp' | 'signIn', rawEmail: string, password: string): Promise<Result> {
+export async function account(flow: 'signUp' | 'signIn', rawEmail: string, password: string, newPassword?: string): Promise<Result> {
   if (!actions || !client) return { ok: false, why: 'You are offline' };
   const email = rawEmail.trim().toLowerCase();                       // addresses are case-insensitive; accounts are stored lower case
   if (!/^\S+@\S+\.\S+$/.test(email)) return { ok: false, why: 'Enter a valid email address' };
-  if (password.length < 8) return { ok: false, why: 'Use a password of at least 8 characters' };
+  if ((flow === 'signUp' || newPassword !== undefined) && (newPassword ?? password).length < MIN_PASSWORD) return { ok: false, why: `Use a password of at least ${MIN_PASSWORD} characters` };
   if (NET.busy) return { ok: false, why: 'Still working on the last request' };
   NET.busy = true; switching = true;
   let timedOut = false;
@@ -171,12 +176,15 @@ export async function account(flow: 'signUp' | 'signIn', rawEmail: string, passw
     // Convex Auth only re-authenticates the connection on a signed-out -> signed-in change, so leave the guest
     // session first; otherwise the server keeps seeing the guest. If sign-in then fails, a new guest session starts (finally).
     if (NET.authed) { await actions.signOut(); await waitFor(() => !NET.authed, 4000); }
-    try { await actions.signIn('password', { email, password, flow }); }
-    catch (e) {                                                        // accounts made before emails were lower-cased keep their original case
-      const typed = rawEmail.trim();
-      if (flow !== 'signIn' || typed === email || !/InvalidAccountId/i.test(errText(e))) throw e;
-      await actions.signIn('password', { email: typed, password, flow });
+    if (flow === 'signIn') {                                           // an account from before Convex Auth v2 moves across first (convex/legacySignIn.ts)
+      const moved = await client.action(api.legacySignIn.migrate, { email, password, newPassword });
+      if (moved === 'weak') return { ok: false, needNew: true, why: 'Your password is right, but too short or too common for our new sign-in. Choose a new one' };
+      if (moved === 'wrong') return failed(flow, 'INVALID_CREDENTIALS');
+      if (moved === 'rate_limited') return failed(flow, 'RATE_LIMITED');
     }
+    const creds = { username: email, password: newPassword ?? password };
+    const r = flow === 'signUp' ? await actions.signUp(creds) : await actions.signIn(creds);
+    if (r.status === 'error') return failed(flow, r.userError.error);
     // wait until the server sees the new account (slow connections can take a while)
     if (!await waitFor(() => !!NET.profile && NET.profile.userId !== oldUser && !NET.profile.guest, 20_000)) { timedOut = true; return failed(flow, null); }
     try { localStorage.setItem(HAD_ACCOUNT_KEY, '1'); } catch { /* private mode */ }

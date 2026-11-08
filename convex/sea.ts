@@ -1,7 +1,6 @@
 import { v } from 'convex/values';
 import { query, mutation, internalMutation } from './_generated/server';
-import { getAuthUserId } from '@convex-dev/auth/server';
-import { requireUser, profileOf, cellOf, finite } from './lib';
+import { authUserId, requireUser, profileOf, cellOf, finite } from './lib';
 import { touchIslands } from './islands';
 import { NEAR_MAX, MOVE_MIN_MS, EMOTE_MIN_MS } from './limits';
 
@@ -13,6 +12,7 @@ export const join = mutation({
   handler: async ctx => {
     const userId = await requireUser(ctx), p = await profileOf(ctx, userId);
     await touchIslands(ctx, userId);                                      // their islands count as visited
+    await ctx.db.patch(userId, { lastSeen: Date.now() });                 // keeps a guest from the idle sweep (cleanup.ts)
     if (p?.sea === 0) return 0;
     if (p) await ctx.db.patch(p._id, { sea: 0 }); else await ctx.db.insert('profiles', { userId, name: 'Sailor', sea: 0 });
     return 0;
@@ -44,7 +44,7 @@ export const emote = mutation({
 export const leave = mutation({
   args: {},
   handler: async ctx => {
-    const userId = await getAuthUserId(ctx); if (!userId) return;
+    const userId = await authUserId(ctx); if (!userId) return;
     const p = await ctx.db.query('positions').withIndex('by_user', q => q.eq('userId', userId)).unique(); if (p) await ctx.db.delete(p._id);
   },
 });
@@ -52,7 +52,7 @@ export const leave = mutation({
 export const near = query({
   args: { cells: v.array(v.string()) },
   handler: async (ctx, { cells }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await authUserId(ctx);
     const out: { id: string; x: number; y: number; a: number; vx: number; vy: number; w: number; boat: string; paint: string; name: string; at: number; emote: number | null; emoteAt: number }[] = [];
     if (!userId) return out;
     const prefix = `${(await profileOf(ctx, userId))?.sea ?? 0}|`;

@@ -12,7 +12,7 @@ const env = (k: string) => { const v = process.env[k]; if (!v) throw new Error(`
 const CONVEX_URL = env('CONVEX_URL'), SITE = env('CONVEX_SITE_URL'), RELAY_SECRET = process.env.RELAY_SECRET;
 const ORIGINS = (process.env.ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
 const PORT = Number(process.env.PORT ?? 4820);
-const JWKS = createRemoteJWKSet(new URL(`${SITE}/.well-known/jwks.json`));
+const JWKS = createRemoteJWKSet(new URL(`${SITE}/auth/.well-known/jwks.json`));
 const me = makeFunctionReference<'query', Record<string, never>, { userId: string; name: string; sea: number | null; admin: boolean } | null>('profiles:me');
 
 const TICK_MS = 100;          // how often each boat is told about its neighbours

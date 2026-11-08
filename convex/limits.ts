@@ -18,5 +18,6 @@ export const NEWS_MIN_MS = 20_000;      // at most one coastwide news item this 
 export const GUESTS_PER_WINDOW = 300;   // new guest accounts per window, across everyone
 export const GUEST_WINDOW_MS = 10 * 60_000;
 export const GUEST_IDLE_MS = 30 * 86_400_000;   // guests unseen this long are deleted
+export const LEGACY_SIGN_INS_PER_HOUR = 10;
 export const SAVE_MIN_MS = 2_000;    // the client uploads at most every 4 s
 export const MAX_SAVE_CHARS = 200_000;

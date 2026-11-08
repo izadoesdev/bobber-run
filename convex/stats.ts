@@ -1,9 +1,8 @@
 import { v } from 'convex/values';
 import { query, mutation, internalMutation, httpAction, type MutationCtx } from './_generated/server';
-import { getAuthUserId } from '@convex-dev/auth/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
-import { requireUser, trusted, isFromRelay } from './lib';
+import { authUserId, requireUser, trusted, isFromRelay, userIdByEmail } from './lib';
 import { GUEST_TRUST_MS, MAX_KG } from './limits';
 
 // Per-player totals for the leaderboards. Species logged and the heaviest fish come from records.submit (the server
@@ -32,7 +31,7 @@ export async function spend(ctx: MutationCtx, userId: Id<'users'>, amount: numbe
 export const ledger = query({
   args: {},
   handler: async ctx => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await authUserId(ctx);
     if (!userId) return null;
     const s = await ctx.db.query('stats').withIndex('by_user', q => q.eq('userId', userId)).unique();
     return { earned: s?.earned ?? 0, spent: s?.spent ?? 0 };
@@ -59,9 +58,9 @@ export const report = mutation({
 export const credit = internalMutation({
   args: { email: v.string(), earned: v.number() },
   handler: async (ctx, { email, earned }) => {
-    const acct = await ctx.db.query('authAccounts').withIndex('providerAndAccountId', q => q.eq('provider', 'password').eq('providerAccountId', email.toLowerCase())).unique();
-    if (!acct) throw new Error('No account with that email');
-    const s = await statsOf(ctx, acct.userId), next = s.earned + Math.floor(earned);
+    const userId = await userIdByEmail(ctx, email);
+    if (!userId) throw new Error('No account with that email');
+    const s = await statsOf(ctx, userId), next = s.earned + Math.floor(earned);
     await ctx.db.patch(s._id, { earned: next, at: Date.now() });
     return { earned: next, spent: s.spent ?? 0 };
   },

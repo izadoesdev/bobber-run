@@ -1,7 +1,6 @@
 import { v } from 'convex/values';
 import { query, mutation } from './_generated/server';
-import { getAuthUserId } from '@convex-dev/auth/server';
-import { requireUser, trusted, limits } from './lib';
+import { authUserId, requireUser, trusted, limits } from './lib';
 import { FUND_DAILY, FUND_KEYS, GUEST_TRUST_MS } from './limits';
 
 // Sized for the coast's real traffic: a few sailors can fill the first round in an evening, and each filled round
@@ -13,7 +12,7 @@ export const get = query({
   args: { key: v.string() },
   handler: async (ctx, { key }) => {
     const f = await ctx.db.query('fund').withIndex('by_key', q => q.eq('key', key)).unique();
-    const userId = await getAuthUserId(ctx);
+    const userId = await authUserId(ctx);
     const mine = userId ? await ctx.db.query('gifts').withIndex('by_key_user', q => q.eq('key', key).eq('userId', userId)).unique() : null;
     return { total: f?.total ?? 0, givers: f?.givers ?? 0, goal: f?.goal ?? FIRST_GOAL, round: f?.round ?? 1, mine: mine?.amount ?? 0 };
   },

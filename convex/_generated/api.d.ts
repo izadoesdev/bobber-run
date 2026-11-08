@@ -19,6 +19,8 @@ import type * as islandRules from "../islandRules.js";
 import type * as islands from "../islands.js";
 import type * as jev from "../jev.js";
 import type * as leaderboard from "../leaderboard.js";
+import type * as legacyAccounts from "../legacyAccounts.js";
+import type * as legacySignIn from "../legacySignIn.js";
 import type * as lib from "../lib.js";
 import type * as limits from "../limits.js";
 import type * as names from "../names.js";
@@ -28,6 +30,7 @@ import type * as rotation from "../rotation.js";
 import type * as saves from "../saves.js";
 import type * as sea from "../sea.js";
 import type * as stats from "../stats.js";
+import type * as users from "../users.js";
 
 import type {
   ApiFromModules,
@@ -47,6 +50,8 @@ declare const fullApi: ApiFromModules<{
   islands: typeof islands;
   jev: typeof jev;
   leaderboard: typeof leaderboard;
+  legacyAccounts: typeof legacyAccounts;
+  legacySignIn: typeof legacySignIn;
   lib: typeof lib;
   limits: typeof limits;
   names: typeof names;
@@ -56,6 +61,7 @@ declare const fullApi: ApiFromModules<{
   saves: typeof saves;
   sea: typeof sea;
   stats: typeof stats;
+  users: typeof users;
 }>;
 
 /**
@@ -85,5 +91,9 @@ export declare const internal: FilterApi<
 >;
 
 export declare const components: {
+  auth: import("@convex-dev/auth/_generated/component.js").ComponentApi<"auth">;
+  authAnonymous: import("@convex-dev/auth/components/anonymous/_generated/component.js").ComponentApi<"authAnonymous">;
+  authPassword: import("@convex-dev/auth/components/password/_generated/component.js").ComponentApi<"authPassword">;
+  authUsername: import("@convex-dev/auth/components/username/_generated/component.js").ComponentApi<"authUsername">;
   rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
 };

@@ -22,7 +22,7 @@ Without configuration the game runs fully offline. To enable accounts, cloud sav
 bunx convex dev   # creates a dev deployment and writes VITE_CONVEX_URL to .env.local
 ```
 
-Convex Auth also needs `JWT_PRIVATE_KEY`, `JWKS` and `SITE_URL` set on the deployment (see the Convex Auth setup guide). `.env.local` is gitignored.
+Convex Auth also needs `AUTH_PRIVATE_KEY` and `AUTH_JWKS` on the deployment: `bunx @convex-dev/auth` generates and sets them. `.env.local` is gitignored.
 
 ## Controls
 
