@@ -197,6 +197,8 @@ function Controls() {
   return null;
 }
 
+/** A fight is on: a ship after you or hailing you, or one (fleeing ones too) in your guns' arc. */
+const fighting = (): boolean => !!(threat() || hailer() || cannonTarget() || chaserTarget());
 /** In a fight: the broadside (lit when a pirate is in a loaded rail's arc), the mortar, a keg, and the shot being loaded. */
 function ArmsButtons() {
   const me = PIRATES.me, bearing = railsBearing(), off = turretOff(), turret = boatDef().signature === 'turret', l = launcher();
@@ -233,7 +235,7 @@ function PlayControls() {
         {!G.fish && !G.card && castTargets().length > 1 && <Btn k="q" label="Next fish"><Icon k="rod" /></Btn>}
         <SpecialBtn />
         {use && <Btn k="e" label={use.label} cls="use" off={!offered('E')}><Icon k={use.icon} /></Btn>}
-        {!G.fish && (threat() || hailer() || cannonTarget() || chaserTarget()) && <ArmsButtons />}   {/* a fleeing ship in your arc is still fair game */}
+        {!G.fish && fighting() && <ArmsButtons />}
         <Btn k=" " label={main.label} cls={'main' + (G.stats.caught === 0 && !G.fish && !main.off ? ' pulse' : '')} off={main.off}><Icon k={main.icon} /></Btn>
       </div>
     </>
@@ -245,7 +247,7 @@ const SPECIAL_BTN: Record<Exclude<Special, 'heli'>, [string, string]> = { boost:
 function SpecialBtn() {
   const sp = specialOf();
   if (G.fish || G.card || (sp === 'sprint' && G.stats.caught < 3)) return null;   // the first voyage keeps its bar to fishing
-  if (sp === 'horn' && (threat() || hailer())) return null;              // the fight's buttons need the room
+  if (sp === 'horn' && fighting()) return null;                          // the fight's buttons need the room
   if (sp === 'heli') return heliReady() ? <Btn k="k" label="Heli" badge={G.hold.length}><Icon k="heli" /></Btn> : null;
   const [name, icon] = SPECIAL_BTN[sp], wait = SPECIAL.cool > 0 && sp !== 'horn';
   const label = wait ? `${Math.ceil(SPECIAL.cool)}s` : sp === 'spinnaker' && SPECIAL.spinUp ? 'Douse' : name;
