@@ -15,7 +15,7 @@ import { boostMul } from './special';
 import { boatDef, chartPerks, hpMax, keelLvl, speedMul, sailEfficiency, windAngle, toWorld } from './rules';
 import { spawn, toast, jitter, burst } from './feedback';
 import { cancelFishing, hitstop, towStretch } from './fishing';
-import { rigFactor } from './pirates';
+import { rigFactor } from './pirates';               // pirates imports physics too; both only call across inside functions
 import { lockPush } from './regions';
 
 // the hull outline as 18 points on an ellipse, slightly blunter at the stern

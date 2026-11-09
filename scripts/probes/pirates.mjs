@@ -20,7 +20,7 @@ const cove = await p.evaluate(() => {
 console.log('cove', JSON.stringify(cove));
 const shot = async (name, ms = 1500) => { await p.waitForTimeout(ms); await p.screenshot({ path: `${out}/${name}.png` }); };
 const place = (x, y, a) => p.evaluate(([x, y, a]) => { const { G } = window.BR; Object.assign(G.boat, { x, y, px: x, py: y, a, vx: 0, vy: 0 }); G.cam.x = x - 160; G.cam.y = y - 100; G.mode = 'play'; }, [x, y, a]);
-// 1. the cove, its fleet riding at anchor (quiet: pirates off so nobody fires yet)
+// 1. the cove, its fleet riding at anchor (quiet: god mode keeps their shot off you)
 await p.evaluate(() => { window.BR.SET.pirates = true; });
 await place(cove.ax + Math.cos(cove.ang) * 40, cove.ay + Math.sin(cove.ang) * 40, cove.ang + Math.PI);
 await p.evaluate(() => { window.BR.G.god = true; });

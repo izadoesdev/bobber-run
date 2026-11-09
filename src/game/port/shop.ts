@@ -1,5 +1,5 @@
 // The outfitter (upgrades and supplies) and the shipyard (boats and paint).
-import { AMMO, SHOTS, type BoughtShot } from '../arms';
+import { AMMO, SHOTS, freshWounds, type BoughtShot } from '../arms';
 import { BOATS, BOAT_PARTS, UPGRADES, UPGRADE_KEYS, UP_CATS, PAINTS, SUPPLIES, BAIT_KINDS, PROJECTS } from '../../econ';
 import { sfx } from '../../audio';
 import { track } from '../../analytics';
@@ -14,6 +14,7 @@ import { homePort } from '../../world';
 import { setWaypoint } from '../../waypoint';
 import { deny, header, short, spend, type Rows } from './kit';
 import { toggleFleet } from './fleet';
+import { PIRATES } from '../pirates';
 import { chartedPorts } from './contracts';
 import { COLLECTIONS } from '../mastery';
 
@@ -81,6 +82,7 @@ function switchBoat(bd: BoatDef, bought = false): void {
   delete G.boatUp[bd.id];
   G.boatId = bd.id;
   G.boat.hp = Math.round(hpMax() * (bought ? 1 : G.hulls[bd.id] ?? 1));
+  PIRATES.me.wounds = freshWounds();                      // torn rigging and a fire stay with the boat you left
   while (G.hold.length > cap()) G.hold.pop();
 }
 

@@ -164,7 +164,7 @@ function guns(): Gun[] {
       `${TURRET.at.length} turrets of two big guns train together onto the nearest pirate on any bearing, out to ${metres(TURRET.range)}. When they're on her, [R]: a salvo of ${TURRET.at.length * 2} shells, ${TURRET.dmg} each. A pirate below ${AWE.hull * 100}% of her hull within ${metres(AWE.reach)} strikes or runs from it. Reloads in ${secs(TURRET.reload * rf)}.`);
   }
   if (bd.signature === 'chaser') gun('r', 'Chaser', me.chaser, CHASER.reload * rf, !!chaserTarget(), 'Ahead', fireBroadside,
-    `A long gun in the bow, dead ahead (${deg(CHASER.arc)} either way), out to ${metres(CHASER.range)}: point at her and [R]. Reloads in ${secs(CHASER.reload * rf)}.`);
+    `A long gun in the bow, dead ahead (${deg(CHASER.arc)} either way), out to ${metres(CHASER.range)}: point at her and [R]. The same key fires the broadsides: whichever guns bear on her go. Reloads in ${secs(CHASER.reload * rf)}.`);
   if (M) {
     const rockets = bd.signature === 'barrage';
     gun('t', rockets ? 'Rockets' : 'Mortar', me.mortar, M.reload * rf, !!mortarTarget(), `${metres(M.min)}+`, fireMortar, rockets

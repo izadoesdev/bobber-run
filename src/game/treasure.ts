@@ -26,7 +26,8 @@ export function beachSpot(x: number, y: number, min: number, max: number, rnd = 
     for (let d = c.R * 0.3; d < c.R * 2.6 && !shore; d += 3) if (heightAt(c.x + cs * d, c.y + sn * d) < -0.02) shore = d;
     if (!shore) continue;
     const bx = c.x + cs * (shore - 9), by = c.y + sn * (shore - 9), h = heightAt(bx, by);
-    if (h < 0.02 || h > 0.3 || heightAt(c.x + cs * (shore + 22), c.y + sn * (shore + 22)) > -0.08 || lockedAt(bx, by)) continue;
+    const far = Math.hypot(bx - x, by - y);
+    if (far < min || far > max || h < 0.02 || h > 0.3 || heightAt(c.x + cs * (shore + 22), c.y + sn * (shore + 22)) > -0.08 || lockedAt(bx, by)) continue;
     if (poisNear(bx, by, 160).some(p => p.type === 'port' && Math.hypot(p.end.x - bx, p.end.y - by) < 160)) continue;   // not by a pier, where E would dock
     return { x: Math.round(bx), y: Math.round(by) };
   }
@@ -59,6 +60,7 @@ export function updateDig(dt: number, speed: number): void {
     toast('Your hand rowed back aboard before the chest came up', 'bad', 'sailing');
     return;
   }
+  if (G.fish || G.card) return;                           // the hand waits while a fish or a card has you
   const before = d.t;
   d.t += dt;
   if (Math.floor(d.t / 0.5) !== Math.floor(before / 0.5)) { burst('debris', d.m.x, d.m.y, 4, 14, 0.6); sfx('scrape', 0.25); }

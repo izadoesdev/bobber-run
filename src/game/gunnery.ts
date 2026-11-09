@@ -28,7 +28,7 @@ export const KEG_LIFE = 45, KEG_ARM = 1.2;
 
 /**
  * Where a ball at `speed` from (sx, sy) meets a target at (tx, ty) moving at (tvx, tvy): the intercept point and the
- * flight time. When the target outruns the ball, the best it can do is aim where the target is now.
+ * flight time. When the ball can't catch the target, it leads her by the time the ball takes to cover today's range.
  */
 export function leadPoint(sx: number, sy: number, tx: number, ty: number, tvx: number, tvy: number, speed = BALL_SPEED): Point & { t: number } {
   const dx = tx - sx, dy = ty - sy;
@@ -112,7 +112,7 @@ export function stepBalls(balls: Ball[], dt: number, hit: (b: Ball) => boolean, 
     }
   }
 }
-/** Kegs drift a little with the swell, sink when old, and blow when `near` says an enemy hull is within reach. */
+/** Kegs sink when old, and blow when `near` says an enemy hull is within reach (their bob on the swell is only drawn). */
 export function stepKegs(kegs: Keg[], dt: number, near: (k: Keg) => boolean, blow: (k: Keg) => void): void {
   for (let i = kegs.length - 1; i >= 0; i--) {
     const k = kegs[i];

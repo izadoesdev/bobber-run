@@ -76,7 +76,10 @@ export type ParsedSave = v.InferOutput<typeof saveSchema>;
  *  motor yacht, the steam frigate and ironclad into the dreadnought), and what they cost: a save that owned one gets it back. */
 const RETIRED: Record<string, number> = { canoe: 150, jetski: 1400, cruiser: 24000, frigate: 48000, ironclad: 90000 };
 export function parseSave(raw: unknown): ParsedSave {
-  const save = v.parse(saveSchema, raw && typeof raw === 'object' ? raw : {}), owned = raw && typeof raw === 'object' && 'owned' in raw ? raw.owned : null;
-  if (Array.isArray(owned)) save.coins += owned.reduce((n: number, id) => n + (RETIRED[String(id)] ?? 0), 0);
-  return save;
+  return v.parse(saveSchema, raw && typeof raw === 'object' ? raw : {});
+}
+/** What a raw save's retired boats cost, to give back on load (parseSave has already dropped them from `owned`). */
+export function retiredBoatRefund(raw: unknown): number {
+  const owned = raw && typeof raw === 'object' && 'owned' in raw ? raw.owned : null;
+  return Array.isArray(owned) ? owned.reduce((n: number, id) => n + (Object.hasOwn(RETIRED, String(id)) ? RETIRED[String(id)] : 0), 0) : 0;
 }

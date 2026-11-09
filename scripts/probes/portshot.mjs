@@ -41,6 +41,7 @@ const plain = ports.find(q => !q.yard), yard = ports.find(q => q.yard && q.id !=
 if (plain) await shootTabs(p, 'plain', plain.id);
 // from the water, near each harbour, then the chart round home
 for (const [tag, q] of [['sea-plain', plain], ['sea-yard', yard], ['sea-home', null]]) {
+  if (q === undefined) { console.log(`no harbour for ${tag}, skipped`); continue; }   // not the home port under the wrong name
   await p.evaluate(id => {
     const { G, GAME, homePort, poisNear, SET, apply } = window.BR, h = homePort(); const q = id ? poisNear(h.x, h.y, 9000).find(x => x.id === id) : h;
     GAME.placeAtPort(q); G.menu.port = q; GAME.leavePort(); SET.zoom = 1.6; apply();

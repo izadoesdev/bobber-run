@@ -161,10 +161,11 @@ describe('pirate ships', () => {
   test('stay in their coves with pirates switched off', async () => {
     const { SET } = await import('../src/prefs');
     SET.pirates = false;
-    placeBoat(at(ARENA, 250).x, at(ARENA, 250).y);
-    run(2);
-    expect(P.PIRATES.ships.length).toBe(0);
-    SET.pirates = true;
+    try {                                                   // a failed check mustn't leave pirates off for later tests
+      placeBoat(at(ARENA, 250).x, at(ARENA, 250).y);
+      run(2);
+      expect(P.PIRATES.ships.length).toBe(0);
+    } finally { SET.pirates = true; }
     run(1);
     expect(P.PIRATES.ships.filter(p => p.cove.id === ARENA.id).length).toBe(P.fleetOf(ARENA).length);
   });
@@ -466,11 +467,13 @@ describe('the parley', () => {
     quietOthers();
     placeBoat(at(ARENA, 200).x, at(ARENA, 200).y);
     WX.state = 'storm';
-    run(6);
-    const fleet = P.PIRATES.ships.filter(p => p.cove.id === ARENA.id);
-    expect(fleet.length).toBeGreaterThan(0);
-    expect(fleet.every(p => p.mood === 'anchored')).toBe(true);
-    WX.state = 'clear';
+    let fleet: typeof P.PIRATES.ships = [];
+    try {                                                   // the storm mustn't outlast a failed check
+      run(6);
+      fleet = P.PIRATES.ships.filter(p => p.cove.id === ARENA.id);
+      expect(fleet.length).toBeGreaterThan(0);
+      expect(fleet.every(p => p.mood === 'anchored')).toBe(true);
+    } finally { WX.state = 'clear'; }
     run(3);
     expect(fleet.some(p => p.mood !== 'anchored')).toBe(true);
   });
@@ -643,12 +646,12 @@ describe('fighting vessels', () => {
     p.a = Math.PI;
     G.boat.hp = 5000;
     const mateHp = mate.hp;
-    let lit = false;
-    run(25, () => { Object.assign(G.boat, { vx: 0, vy: 0 }); Object.assign(mate, { x: G.boat.x + 30, y: G.boat.y + 30, vx: 0, vy: 0, think: 1 }); if (p.lit >= 0) lit = true; });
+    let lit = false, burnt = 0;
+    run(25, () => { Object.assign(G.boat, { vx: 0, vy: 0 }); Object.assign(mate, { x: G.boat.x + 30, y: G.boat.y + 30, vx: 0, vy: 0, think: 1 }); if (p.lit >= 0) lit = true; burnt = Math.max(burnt, P.PIRATES.me.wounds.burn); });
     expect(lit).toBe(true);
     expect(p.mood === 'sinking' || !P.PIRATES.ships.includes(p)).toBe(true);
     expect(G.boat.hp).toBeLessThan(5000 - 60);
-    expect(P.PIRATES.me.wounds.burn + (G.boat.hp < 5000 ? 1 : 0)).toBeGreaterThan(0);
+    expect(burnt).toBeGreaterThan(0);                                   // set alight, not just holed
     expect(mate.hp).toBeLessThan(mateHp);
   });
   test('shot through while she\'s alight, a fire ship goes up where she is, not alongside you', () => {

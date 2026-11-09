@@ -8,7 +8,7 @@ import { G, freshStats, freshUpgrades } from './state';
 import { seedExplored } from './explore';
 import { fleetWhileAway } from './port/fleet';
 import { realmWhileAway } from '../islands';
-import { parseSave, type ParsedSave } from './saveSchema';
+import { parseSave, retiredBoatRefund, type ParsedSave } from './saveSchema';
 import { DAYLEN, cap, hpMax } from './rules';
 import { resetLife } from '../life';
 import { resetPirates } from './pirates';
@@ -179,8 +179,9 @@ export function loadGame(): void {
     if (!G.explored) seedExplored();
     if (moved) toast('The coast has changed while you were away. Your boat, coins and logbook are safe, but your chart starts fresh');
     // retired upgrades (bilge pumps went into Plating): give back what they cost, once
-    const refund = retiredRefund(G.up);
+    const refund = retiredRefund(G.up), boats = retiredBoatRefund(d);
     if (refund > 0) { G.coins += refund; G.coinsShown = G.coins; G.up.bilge = 0; toast(`Bilge pumps now come with Plating: refunded $${refund}`, 'good'); }
+    if (boats > 0) { G.coins += boats; G.coinsShown = G.coins; toast(`Boats you owned were folded into others: refunded $${boats}`, 'good'); }
     G.boat.hp = clamp(s.hp ?? hpMax(), 1, hpMax());
     // older saves stored destination names in capitals, and could ask for more fish than the hold carries
     for (const c of [...G.active, ...Object.values(G.offers).flat()]) if (c && c.to) { c.toName = portById(c.to).name; c.n = Math.min(c.n, cap()); }
@@ -191,5 +192,6 @@ export function loadGame(): void {
       Object.assign(G.boat, { x, y, a, px: x, py: y, pa: a });
       G.cam.x = x - W / 2; G.cam.y = y - H / 2;
     } else placeAtPort(portById(G.lastPort));
+    if (refund > 0 || boats > 0) saveGame();            // written straight back, so a refund is paid once
   } catch { newGame(); }   // a corrupt save starts a fresh voyage rather than a broken one
 }

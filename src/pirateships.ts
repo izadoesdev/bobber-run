@@ -149,7 +149,7 @@ function sloop(s: Scheme, k: number, white: boolean): Vox {
   return V;
 }
 function brig(s: Scheme, k: number, white: boolean): Vox {
-  const V = new Vox(-31, 41, -14, 14, 46);
+  const V = new Vox(-31, 41, -14, 14, 48);              // tall enough for the flag atop her main
   buildHull(V, { HL: 26, HB: 8.5, HZ: 8, paint: s.hull, stripe: s.trim, deckZ: 5, floorMat: M.plank, sternPow: 5 });
   for (let u = -26; u <= -15; u++) for (let v = -8; v <= 8; v++) if (V.get(u, v, 5) === M.plank) { V.set(u, v, 6, M.plank2); V.set(u, v, 7, M.plank); }   // quarterdeck
   for (let v = -7; v <= 7; v++) if (v % 2 === 0) V.set(-15, v, 9, s.trim);
@@ -453,14 +453,14 @@ export function navyVox(hull: WarHull): Vox {
 }
 
 /** The mainmast shot away: everything aloft of it gone above the break, the stump splintered, the spar over the side. */
-function dismast(V: Vox, kind: PirateHull): void {
+function dismast(V: Vox, kind: PirateHull, sail: number): void {
   const d = SHIP_DIMS[kind], reach = d.L * 0.55, aloft = new Set<number>([M.oar, M.post, M.gilt, M.bone, BLOOD, M.white, M.steel, M.redp, M.plank, M.plank2, ...SAIL_MATS]);   // spars, rigging, flags and the crow's nest
   for (let z = d.snap + 1; z < V.nz; z++) for (let u = d.mast - Math.round(reach); u <= d.mast + Math.round(reach); u++) for (let v = V.v0; v < V.v0 + V.nv; v++) {
     if (aloft.has(V.get(u, v, z))) V.set(u, v, z, 0);
   }
   V.set(d.mast, 1, d.snap, M.plank2); V.set(d.mast, -1, d.snap - 1, M.plank2);                             // splinters at the stump
   V.line([d.mast, 0, d.snap - 4], [d.mast - Math.round(d.L * 0.5), Math.round(d.B + 4), 2], M.oar);          // the mast over the side
-  for (let k = 0; k < 6; k++) V.set(d.mast - 4 - k * 2, Math.round(d.B * 0.6) + (k % 2), 2 + (k % 3), colours().schemes[0].sail);   // its sail in the water
+  for (let k = 0; k < 6; k++) V.set(d.mast - 4 - k * 2, Math.round(d.B * 0.6) + (k % 2), 2 + (k % 3), sail);   // its sail in the water
 }
 
 /** What a pirate ship looks like now: her colours and flag, and how battered she is. */
@@ -473,7 +473,7 @@ export function pirateVox(l: ShipLook): Vox {
   let base = bases.get(key);
   if (!base) bases.set(key, base = BUILD[l.kind](colours().schemes[l.scheme % SCHEME_COUNT], l.flag % FLAGS, l.white));
   const V = cloneVox(base);
-  if (l.dismasted) dismast(V, l.kind);
+  if (l.dismasted) dismast(V, l.kind, colours().schemes[l.scheme % SCHEME_COUNT].sail);
   if (l.torn || l.scorch) weather(V, l.torn, l.scorch, l.scheme * 31 + l.flag, SHIP_DIMS[l.kind].top);
   return V.finalize();
 }

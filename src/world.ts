@@ -324,9 +324,9 @@ function makePort(i: number, j: number, home: boolean, r: Rng, s: Point, di: num
   for (let k = 0; k < LEGACY_SPECIES; k++) mult[k] = 0.75 + pr() * 0.7;
   const shipyard = home || pr() < 0.45;
   for (let k = LEGACY_SPECIES; k < SPECIES.length; k++) mult[k] = 0.75 + hash01(i, j, fnv1a(SPECIES[k].id)) * 0.7;
-  // a shipyard's floating dock goes on whichever side of the pier has more open water
+  // a shipyard's floating dock goes on whichever side of the pier has more open water (only a yard pays for the scan)
   const wet = (side: number): number => [14, 22, 30].reduce((n, u) => n + [12, 17, 22].filter(v => heightAt(ax + u * c - v * side * sn, ay + u * sn + v * side * c) < -0.05).length, 0);
-  const sd = wet(-1) > wet(1) ? -1 : 1, at = (u: number): [number, number] => [ax + u * c - 16 * sd * sn, ay + u * sn + 16 * sd * c];
+  const sd = shipyard && wet(-1) > wet(1) ? -1 : 1, at = (u: number): [number, number] => [ax + u * c - 16 * sd * sn, ay + u * sn + 16 * sd * c];
   const [yax, yay] = at(16), [ybx, yby] = at(30);
   return {
     id: `port:${i},${j}`, type: 'port', name: home ? 'Alderhaven' : placeName(r), x: ax, y: ay, dir: di, ang: a,
