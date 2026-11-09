@@ -22,7 +22,7 @@ const ok = await p.evaluate(() => {
       for (const o of poisNear(c.x, c.y, 3000)) if (o.type === 'cove') G.raids[o.id] = Math.floor(G.clock / 480) + 1;
       Object.assign(G.boat, { x, y, px: x, py: y, vx: 0, vy: 0, a: c.ang + Math.PI / 2 });
       G.cam.x = x - 200; G.cam.y = y - 125;
-      PIRATES.state.ships.length = 0;                     // a fight with just this one ship
+      PIRATES.state.ships.length = 0;                     // clear the sea for the scripted brig, sloop and ketch
       PIRATES.spawnPirate('brig', x + Math.cos(c.ang) * 170, y + Math.sin(c.ang) * 170, 'gunner');
       PIRATES.spawnPirate('sloop', x - Math.cos(c.ang) * 150, y - Math.sin(c.ang) * 150, 'raider');
       PIRATES.spawnPirate('ketch', x + Math.cos(c.ang + 1.6) * 240, y + Math.sin(c.ang + 1.6) * 240, 'bomber');
