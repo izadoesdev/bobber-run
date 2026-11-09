@@ -22,6 +22,7 @@ const cove = await p.evaluate(() => {
   }
   return null;
 });
+if (!cove) { console.error('no quiet cove with open water off it found within 9000 of home'); await b.close(); process.exit(1); }
 const shot = async name => { await p.screenshot({ path: `${out}/${name}.png` }); };
 const frames = (n, still = true) => p.evaluate(([n, still]) => new Promise(res => { let i = 0; const f = () => { const { G } = window.BR; G.boat.hp = 9999; if (still) Object.assign(G.boat, { vx: 0, vy: 0 }); else Object.assign(G.boat, { vx: Math.cos(G.boat.a) * 30, vy: Math.sin(G.boat.a) * 30 }); if (++i < n) requestAnimationFrame(f); else res(); }; f(); }), [n, still]);
 await p.evaluate(c => {

@@ -36,8 +36,8 @@ const CASES: Case[] = [
     return 2;
   } },
   { name: 'seaProps', unit: 'tile',
-    setup: r => { const o = origin(r); for (let k = -1; k < 5; k++) for (let j = -1; j < 2; j++) getTile(Math.floor(o.x / TS) + k, Math.floor(o.y / TS) + j); },
-    run: r => { const o = origin(r); sink += seaPropsNear(o.x + 2 * TS, o.y + TS / 2, TS * 1.5, [], true).length; return 4; } },
+    setup: r => { const o = origin(r); for (let k = -1; k < 5; k++) for (let j = -1; j < 3; j++) getTile(Math.floor(o.x / TS) + k, Math.floor(o.y / TS) + j); },
+    run: r => { const o = origin(r); sink += seaPropsNear(o.x + 2 * TS, o.y + TS / 2, TS * 1.5, [], true).length; return 16; } },   // a 4x4 block of tiles
   { name: 'sail 1k units', unit: '1k units', run: r => {
     // what sailing into new sea asks of the world each step: landmarks, schools and islands round the boat
     const o = origin(r);

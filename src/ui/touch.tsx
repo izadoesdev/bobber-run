@@ -14,7 +14,7 @@ import { BOATS, SPECIES } from '../econ';
 import { castPoint, castTargets } from '../game/fishing';
 import { encountersNear, openEncounter } from '../game/encounters';
 import { realmDockAt } from '../islands';
-import { PIRATES, chaserTarget, crewReload, hailer, launcher, mortarTarget, railsBearing, threat, turretOff } from '../game/pirates';
+import { PIRATES, cannonTarget, chaserTarget, crewReload, hailer, launcher, mortarTarget, railsBearing, threat, turretOff } from '../game/pirates';
 import { SHOTS, TURRET, type BoughtShot } from '../game/arms';
 import { toast } from '../game/feedback';
 import { heliReady } from '../game/heli';
@@ -178,6 +178,7 @@ function useAction(): { label: string; icon: string } | null {
   if (G.fish || G.card) return null;
   if (G.nearPort) return { label: 'Dock', icon: 'anchor' };
   if (realmDockAt(G.boat.x, G.boat.y)) return { label: 'Land', icon: 'anchor' };
+  if (G.nearPrize) return { label: G.nearPrize.mood === 'surrender' ? 'Board' : 'Grapple', icon: 'skull' };   // same order as E
   if (G.nearCove) return { label: 'Raid', icon: 'skull' };
   if (G.nearTreasure) return G.nearTreasure.buried ? (G.dig ? null : { label: 'Dig', icon: 'map' }) : { label: 'Haul up', icon: 'map' };
   if (G.nearWreck) return { label: 'Salvage', icon: 'coin' };
@@ -232,7 +233,7 @@ function PlayControls() {
         {!G.fish && !G.card && castTargets().length > 1 && <Btn k="q" label="Next fish"><Icon k="rod" /></Btn>}
         <SpecialBtn />
         {use && <Btn k="e" label={use.label} cls="use" off={!offered('E')}><Icon k={use.icon} /></Btn>}
-        {!G.fish && (threat() || hailer()) && <ArmsButtons />}
+        {!G.fish && (threat() || hailer() || cannonTarget() || chaserTarget()) && <ArmsButtons />}   {/* a fleeing ship in your arc is still fair game */}
         <Btn k=" " label={main.label} cls={'main' + (G.stats.caught === 0 && !G.fish && !main.off ? ' pulse' : '')} off={main.off}><Icon k={main.icon} /></Btn>
       </div>
     </>

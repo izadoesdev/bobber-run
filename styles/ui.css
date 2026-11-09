@@ -497,7 +497,7 @@ html.touch #ui .screen.flush .foot { padding-right: 76px; }
 
 /* phones held upright: side-by-side panels stack, and the action buttons sit above the bar */
 @media (orientation: portrait) {
-  html.touch .tact { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 66px); }
+  html.touch .tact { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 66px); max-width: calc(100vw - 20px); flex-wrap: wrap-reverse; justify-content: flex-end; }   /* a fight's extra buttons stack upward */
   html.touch #ui .fishdial { bottom: 250px; } html.touch #ui .fishtip { bottom: calc(250px + 9.6em); } html.touch #ui .captions-stack { bottom: calc(250px + 11.8em); }
   html.touch #ui .chat-float .fade:not(:last-child) { display: none; }
   html.touch #ui .toasts { top: 32%; }

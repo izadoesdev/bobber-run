@@ -29,7 +29,11 @@ export function heliPort(): Port {
   return best;
 }
 /** Sitting on the pad with fish to fly: something the [K] key would do. */
-export const heliReady = (): boolean => boatDef().special === 'heli' && !HELI_STATE.flight && G.mode === 'play' && !G.fish && G.hold.some(f => !keptBack().has(f));
+export function heliReady(): boolean {
+  if (boatDef().special !== 'heli' || HELI_STATE.flight || G.mode !== 'play' || G.fish) return false;
+  const kept = keptBack();                                // worked out once, not per fish: this runs every frame
+  return G.hold.some(f => !kept.has(f));
+}
 
 export function flyCatch(): void {
   if (boatDef().special !== 'heli' || HELI_STATE.flight || G.mode !== 'play' || G.fish) { sfx('deny'); return; }

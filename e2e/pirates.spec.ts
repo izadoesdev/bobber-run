@@ -48,16 +48,17 @@ test('your cannons sink a pirate ship, its loot is hauled in, and the chart mark
     return { sunk: p.mood === 'sinking' || p.mood === 'struck', pirates: G.stats.pirates, loot: PIRATES.state.loot.length + (p.mood === 'struck' ? 1 : 0), boarded: p.mood === 'struck', hurt };
   });
   expect(fight).toMatchObject({ sunk: true, pirates: 1, loot: 1 });
-  if (fight.boarded) return;                                         // she struck and was boarded: no loot afloat to haul
-  const hauled = await page.evaluate(() => {
-    const { G, PIRATES, sim } = window.BR, l = PIRATES.state.loot[0], coins = G.coins;
-    Object.assign(G.boat, { x: l.x, y: l.y, px: l.x, py: l.y, vx: 0, vy: 0 });
-    sim(1 / 30);
-    return { gained: G.coins - coins, expected: l.coins, left: PIRATES.state.loot.length };
-  });
-  expect(hauled.gained).toBeGreaterThanOrEqual(hauled.expected);   // the loot, plus the goal for a first sinking
-  expect(hauled.left).toBe(0);
-  await page.keyboard.press('m');
+  if (!fight.boarded) {                                             // boarded, she leaves no loot afloat to haul
+    const hauled = await page.evaluate(() => {
+      const { G, PIRATES, sim } = window.BR, l = PIRATES.state.loot[0], coins = G.coins;
+      Object.assign(G.boat, { x: l.x, y: l.y, px: l.x, py: l.y, vx: 0, vy: 0 });
+      sim(1 / 30);
+      return { gained: G.coins - coins, expected: l.coins, left: PIRATES.state.loot.length };
+    });
+    expect(hauled.gained).toBeGreaterThanOrEqual(hauled.expected);   // the loot, plus the goal for a first sinking
+    expect(hauled.left).toBe(0);
+  }
+  await page.keyboard.press('m');                                    // either way, the chart marks the cove
   await expect(page.locator('body')).toContainText('Pirate cove');
 });
 
@@ -111,7 +112,13 @@ test('a ship after you out of sight shows at the screen\'s edge; in a fight her 
   await expect(page.locator('.threat-pip')).toHaveCount(0);
   await expect(page.locator('.label-world.pirate')).toContainText('brigantine');
   await expect(page.locator('.gundeck .gun').first()).toContainText('Guns');
-  await expect(page.locator('.crew-call')).toBeVisible({ timeout: 15_000 });
+  // the lookout calls her out as she works into position; step game time rather than wait on a slow renderer
+  expect(await page.evaluate(() => {
+    const { sim, PIRATES, G } = window.BR;
+    for (let i = 0; i < 1800; i++) { sim(1 / 30); const c = PIRATES.state.call; if (c && G.t - c.t < 0.5) return true; }
+    return false;
+  }), 'a lookout call within a minute of game time').toBe(true);
+  await expect(page.locator('.crew-call')).toBeVisible();
 });
 
 test('in a fight the gun deck shows each weapon with its key and reload, fires from a click, and explains them on request', async ({ page }) => {
@@ -136,7 +143,7 @@ test('in a fight the gun deck shows each weapon with its key and reload, fires f
   await expect(page.locator('.gun-notes')).toContainText('abeam');
 });
 
-test('the shipyard sells a fighting ship with her guns built in, and she can fire them at once', async ({ page }) => {
+test('the shipyard sells a fighting ship with her guns built in, with no cannon bought', async ({ page }) => {
   await sail(page);
   await page.evaluate(() => { const { G } = window.BR; G.coins = 5000; });
   await dockHome(page);

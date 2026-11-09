@@ -23,7 +23,8 @@ function accrue(seconds: number): number {
     const bd = BOATS.find(b => b.id === id);
     if (!bd) continue;
     const before = Math.floor(f.earned);
-    f.earned = Math.min(fleetCap(bd), f.earned + fleetPerMin(bd) / 60 * seconds);
+    // the cap stops new catch; it never takes back coins banked under a higher cap (the flagship's)
+    f.earned = Math.max(f.earned, Math.min(fleetCap(bd), f.earned + fleetPerMin(bd) / 60 * seconds));
     added += Math.floor(f.earned) - before;
   }
   return added;

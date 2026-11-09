@@ -1,5 +1,5 @@
 // Islands on the chart: hover each island near home and record what the popup says, then screenshot the chart.
-// node scripts/probes/isleshot.mjs http://localhost:4871 [out-dir]
+// node scripts/probes/isleshot.mjs [url, default http://localhost:5173] [out-dir]
 import { chromium } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 const url = process.argv[2] || 'http://localhost:5173', out = process.argv[3] || '/tmp/islelab';

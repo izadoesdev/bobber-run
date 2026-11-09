@@ -398,7 +398,7 @@ const BUILD: Record<string, () => Vox> = {
   },
   plane: planeVox,                                      // a carrier's jet
   heli: () => {                                         // a superyacht's helicopter from above, white to read on a dark button
-    const V = new Vox(-9, 6, -7, 7, 3);
+    const V = new Vox(-9, 7, -7, 7, 3);                 // to u = 7, where the rotor's far tips reach
     for (let u = -2; u <= 4; u++) for (let v = -2; v <= 2; v++) if (Math.hypot((u - 1) / 3.5, v / 2.5) <= 1) V.box(u, u, v, v, 0, 1, u >= 3 ? M.window : M.white);
     V.box(-8, -3, 0, 0, 1, 1, M.white); V.box(-9, -9, -2, 2, 1, 1, M.gilt);                 // tail boom and tailplane
     for (let k = -6; k <= 6; k++) { V.set(1 + k, k, 2, M.stone); V.set(1 + k, -k, 2, M.stone); }   // the rotor, light on a dark button
