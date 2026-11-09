@@ -36,6 +36,10 @@ const GOALS: Goal[] = [
   goal('Earn $10,000 in total', 500, () => G.earned >= 10000),
   goal('Max out every upgrade', 800, () => UPGRADE_KEYS.every(k => G.up[k] >= UPGRADES[k].costs.length)),
   goal('Catch a trophy of every species', 3000, () => SPECIES.every(s => G.log[s.id]?.trophy)),
+  goal('Dig up a buried treasure', 150, () => G.stats.dug >= 1),
+  goal('Sink a pirate ship', 250, () => G.stats.pirates >= 1),
+  goal('Raid a pirate cove', 400, () => G.stats.coves >= 1),
+  goal('Sink 10 pirate ships', 1200, () => G.stats.pirates >= 10),
 ];
 
 export function checkGoals(): void {

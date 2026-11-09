@@ -6,12 +6,12 @@ import { G } from './state';
 import { poisNear, homePort } from '../world';
 import { tickRegions } from './regions';
 
-export const CELL = 32;
+const CELL = 32;
 const CN = 32;                               // cells per chunk side (a chunk is 1024 units)
 const chunks = new Map<string, Uint8Array>();
 /** Chunks changed since the chart last looked (it re-uploads them), and a counter that moves on every change. */
 export const fogDirty = new Set<string>();
-export const fog = { version: 0 };
+const fog = { version: 0 };
 
 const ck = (cx: number, cy: number): string => cx + ',' + cy;
 /** The bits of chunk (cx, cy), if anything in it has been seen. */
@@ -45,19 +45,19 @@ export function reveal(x: number, y: number, r: number): void {
 /** How far the boat sees, by spyglass. */
 const sightRange = (): number => 260 * [1, 1.25, 1.5][G.up.spyglass ?? 0];
 // charted landmarks light up the chart round them: a lighthouse most of all
-const LANDMARK_R: Record<string, number> = { light: 520, port: 380, wreck: 160 };
+const LANDMARK_R: Record<string, number> = { light: 520, port: 380, wreck: 160, cove: 300 };
 
 let acc = 0, foundSeen = 0, wroteAt = -Infinity, wroteVersion = -1;
 // the G.explored string the chunks were last read from or written to: a load or a new game swaps it, and we follow
 let synced = '\0';
 function sync(): void {
   if (G.explored === synced) return;
-  exploredFromSave(G.explored, homePort());
+  exploredFromSave(G.explored);
   synced = G.explored;
 }
 /** For a save with nothing seen yet (a new game, or one from before the fog): seed it, and keep it in the save. */
 export function seedExplored(): void {
-  exploredFromSave('', homePort());
+  exploredFromSave('');
   G.explored = synced = exploredToSave(); wroteVersion = fog.version;
 }
 /** While sailing: reveal round the boat a few times a second and round any place charted since; keep the save's copy fresh. */
@@ -94,13 +94,14 @@ function exploredToSave(): string {
  * Loads the seen sea from a save string, with home and the boat's surroundings seen. (A save from before the fog
  * gets the sea round its charted places back as the chart comes to them: see revealPlace.)
  */
-function exploredFromSave(s: string | undefined, home: { x: number; y: number }): void {
+function exploredFromSave(s: string): void {
   chunks.clear(); fogDirty.clear(); fog.version++;
-  for (const part of (s ?? '').split(';')) {
+  for (const part of s.split(';')) {
     const m = /^(-?\d+),(-?\d+):([A-Za-z0-9+/=]+)$/.exec(part);
     if (!m) continue;
     try { const c = fromB64(m[3]); if (c.length === CN * CN / 8) { chunks.set(ck(+m[1], +m[2]), c); fogDirty.add(ck(+m[1], +m[2])); } } catch { /* a damaged chunk stays unseen */ }
   }
+  const home = homePort();
   reveal(home.x, home.y, 700);
   reveal(G.boat.x, G.boat.y, sightRange());
   foundSeen = G.found.size;

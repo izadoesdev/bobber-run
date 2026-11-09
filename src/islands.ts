@@ -1,5 +1,6 @@
 import { G } from './game';
 import { claimableNear, claimableAt, realmPlots } from './world';
+import { fnv1a } from './noise';
 import { reveal } from './game/explore';
 import { NET, watchIslands, watchKingdom, watchLedger, type IslandRow, type KingdomRow } from './net';
 import { toast, addCoins } from './game/feedback';
@@ -12,9 +13,7 @@ export { TREASURY_MIN } from './game/treasury';
 export { islandPrice } from '../convex/islandRules';
 /** An island's own colour, from its key: its pennant until the owner's logo is approved, the same on the chart and in the world. */
 export function islandColour(key: string): string {
-  let h = 2166136261;
-  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
-  const hue = (h >>> 0) % 360, f = (n: number) => { const k = (n + hue / 30) % 12, a = 0.6 * Math.min(0.55, 1 - 0.55); return Math.round(255 * (0.55 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
+  const hue = fnv1a(key) % 360, f = (n: number) => { const k = (n + hue / 30) % 12, a = 0.6 * Math.min(0.55, 1 - 0.55); return Math.round(255 * (0.55 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
   return '#' + [f(0), f(8), f(4)].map(v => v.toString(16).padStart(2, '0')).join('');
 }
 /** Where to sail for an island: the open water off its shore nearest to (fx, fy), since its middle is land. */
@@ -58,7 +57,7 @@ export const REALM = { islands: [] as KingdomRow[], ledger: null as { earned: nu
 /** Earnings the server will let you spend on islands (it checks them, not the save's coins). */
 export const ledgerLeft = (): number | null => REALM.ledger && Math.max(0, REALM.ledger.earned - REALM.ledger.spent);
 /** Coins a minute your islands bring in. */
-export const realmRate = (rows: readonly KingdomRow[] = REALM.islands): number => rows.reduce((a, r) => { const c = claimableAt(r.key); return a + (c ? islandIncome(c.i, c.j, r.buildings) : 0); }, 0);
+const realmRate = (rows: readonly KingdomRow[] = REALM.islands): number => rows.reduce((a, r) => { const c = claimableAt(r.key); return a + (c ? islandIncome(c.i, c.j, r.buildings) : 0); }, 0);
 /** Your islands' worth (prices and buildings), and the title it earns you. */
 const realmWorth = (): number => REALM.islands.reduce((a, r) => a + islandWorth(r.price, r.buildings), 0);
 export const realmTitle = (): string | null => titleOf(realmWorth());

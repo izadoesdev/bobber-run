@@ -1,7 +1,8 @@
 // The story: Nell, Alderhaven's old harbourmaster, vanished the night the lighthouses went dark.
 // Sixteen quests in five chapters walk you through the game's systems and end at the Grand Harbour.
 import { G, projDone, logged, toast, saveGame } from './game';
-import { coldness, BAIT_KINDS, PROJECTS } from './econ';
+import { BAIT_KINDS, PROJECTS } from './econ';
+import { coldness } from './biome';
 import { sfx } from './audio';
 import type { BaitKind, GameState, ProjectId, Speaker, Stats, StoryState, TalkLine } from './types';
 
@@ -11,7 +12,7 @@ import type { BaitKind, GameState, ProjectId, Speaker, Stats, StoryState, TalkLi
  * night: a school that bites at night; north: the cold water; species: a school not in the logbook yet; trophy: a school
  * to fish for a trophy; ghost: the Ghost Carp's far-off wreck; lair: the Old One.
  */
-export type QuestTarget =
+type QuestTarget =
   | 'school' | 'sell' | 'port' | 'light' | 'wreck' | 'night' | 'north' | 'species' | 'trophy' | 'ghost' | 'lair' | { project: ProjectId };
 export interface Quest {
   id: string;
@@ -105,7 +106,7 @@ export function questProgress(q: Quest | null = currentQuest()): { have: number;
 }
 function give(r: Quest['reward']): void {
   if (r.coins) { G.coins += r.coins; G.earned += r.coins; }
-  for (const k of BAIT_KINDS) { const n = r[k]; if (n) G.bait[k] = (G.bait[k] || 0) + n; }
+  for (const k of BAIT_KINDS) G.bait[k] += r[k] ?? 0;
 }
 // a conversation pauses the game; lines are [speaker, text]
 function talk(lines: TalkLine[], then?: () => void): void {

@@ -1,7 +1,7 @@
 // The chart's colours: each height band's colour at a point, by region and island theme. The chart itself is drawn on
 // the GPU (ui/chartgl.ts), which samples these per tile.
 import { hex } from './config';
-import { biomeMix, warmth, coldness, themeHold, THEMES, THEME_IDS, type BiomeMix, type IslandRef, type ThemeHold } from './biome';
+import { biomeMix, warmth, coldness, themeHold, THEMES, THEME_IDS, THEME_ROW, type BiomeMix, type IslandRef, type ThemeHold } from './biome';
 
 type RGB = [number, number, number];
 // colour per height band, from deep water to peaks: deep, mid, shallow, sand, grass, forest, rock
@@ -22,7 +22,6 @@ const THEME_RAMP: RGB[][] = THEME_IDS.map(id => {
   return [water(T.deep), water(T.mid), water(T.shallow), land(T.sand), land(T.grass), land(T.forest), land(T.rock)];
 });
 const hold: ThemeHold = { theme: 'home', w: 0, jitter: 0 };
-const ROWS: Record<string, number> = Object.fromEntries(THEME_IDS.map((t, i) => [t, i]));
 
 /**
  * Chart colour (0..255 rgb into out[o..o+2]) of height band b at latitude y: the region's ramps blended by the biome
@@ -45,6 +44,6 @@ function bandColour(b: number, m: BiomeMix, y: number, row: number, w: number, o
 export function chartBands(x: number, y: number, islands: readonly IslandRef[], out: Float32Array): void {
   const m = biomeMix(x, y);
   themeHold(x, y, islands, hold);
-  for (let b = 0; b < 7; b++) bandColour(b, m, y, ROWS[hold.theme], hold.w, out, b * 3);
+  for (let b = 0; b < 7; b++) bandColour(b, m, y, THEME_ROW[hold.theme], hold.w, out, b * 3);
   for (let i = 0; i < 21; i++) out[i] /= 255;
 }

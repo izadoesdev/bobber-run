@@ -1,19 +1,16 @@
 // Cheat console: press ` while sailing, type a code, press Enter.
-import { G, toast, placeAtPort, saveGame, DAYLEN, schoolActive, cap } from './game';
+import { G, toast, placeAtPort, saveGame, atClock, schoolActive, cap } from './game';
 import { SPECIES, BOATS, UPGRADES, UPGRADE_KEYS, PROJECTS } from './econ';
 import { homePort, LAIR, schoolsNear, nearestWater } from './world';
 import { summonSeaLife } from './life';
+import { spawnPirate } from './game/pirates';
+import { buriedMap } from './game/treasure';
 import { celebrate } from './game/feedback';
 import { regionAt } from './biome';
 import { setWeather } from './weather';
 import { sfx } from './audio';
 import type { ProjectId } from './types';
 
-/** Move the clock forward to `frac` of a day (today if still ahead, else tomorrow). */
-function atClock(frac: number): void {
-  const base = Math.floor(G.clock / DAYLEN) * DAYLEN;
-  G.clock = base + (frac > (G.clock - base) / DAYLEN ? 0 : DAYLEN) + frac * DAYLEN;
-}
 
 /** A cheat may return a message to show instead of the default, or 'finale' to jump to the ending. */
 interface Cheat { code: string; what: string; run: () => string | void }
@@ -39,6 +36,18 @@ export const CHEATS: Cheat[] = [
     const p = nearestWater(G.boat.x + Math.cos(G.boat.a) * 70, G.boat.y + Math.sin(G.boat.a) * 70, -0.12);
     G.maps.push({ id: `sandbox:${G.t}`, x: p.x, y: p.y, reward: 42 });
     return 'The answer to life, the universe, and fishing is buried at the new buoy';
+  } },
+  { code: 'pirates', what: 'A pirate sloop comes for you', run: () => {
+    const a = G.boat.a + Math.PI * 0.6, p = nearestWater(G.boat.x + Math.cos(a) * 240, G.boat.y + Math.sin(a) * 240, -0.15);
+    spawnPirate('sloop', p.x, p.y);
+    return 'A sail on the horizon, flying the black flag...';
+  } },
+  { code: 'xmarks', what: 'A map to treasure buried on a nearby beach', run: () => {
+    if (G.maps.length >= 3) return 'Find the treasure already on your chart first';
+    const m = buriedMap(120, G.boat, 150, 1200);
+    if (!m) return 'No beach near enough to bury anything on';
+    G.maps.push(m);
+    return 'X marks the spot: it is on your chart';
   } },
   { code: 'goldrush', what: 'Turn a nearby school golden', run: () => {
     const school = schoolsNear(G.boat.x, G.boat.y, 400).find(schoolActive);

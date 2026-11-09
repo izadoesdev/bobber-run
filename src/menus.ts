@@ -10,6 +10,7 @@ import { closeEncounter } from './game/encounters';
 import { sfx } from './audio';
 import { voyageStarted } from './telemetry';
 import type { Mode } from './types';
+import { W, H } from './config';
 import { cancelFishing, placeByStarterSchool } from './game/fishing';
 import { SHARED } from './share';
 import { dismissSpeech, speech, talkNext, voyage } from './story';
@@ -38,10 +39,11 @@ function confirmNew(): void {
   if (G.newConfirm === 1) startVoyage(); else G.newConfirm = -1;
 }
 
-// a first visit (no save) skips the title and starts on the water; the title is for coming back
+// a first visit (no save) skips the title and starts on the water, the view already on the boat (the harbour behind
+// the title was never shown, and main.ts builds the start's sea first); the title is for coming back
 let firstFrame = true;
 function title(): void {
-  if (firstFrame) { firstFrame = false; if (!hasSave()) { startVoyage(); return; } }
+  if (firstFrame) { firstFrame = false; if (!hasSave()) { startVoyage(); G.cam.x = G.boat.x - W / 2; G.cam.y = G.boat.y - H / 2; return; } }
   if (G.newConfirm >= 0) return confirmNew();
   const items = TITLE_ITEMS(); nav('titleSel', items.length);
   if (hit('n', 'N')) { askNewVoyage(); sfx('select'); return; }

@@ -1,6 +1,7 @@
 // Chart drawing for the minimap and the full sea chart (crisp canvas, real font labels).
 import { G, sonarLvl, logged, canLand } from '../game';
 import { schoolShown, schoolMood } from '../game/schools';
+import { pingShown } from '../game/special';
 import { SPECIES, PAINTS } from '../econ';
 import { poisNear, schoolsNear, claimableNear, heightAt, homesteadSite, LAIR, CELL } from '../world';
 import { livesAt } from '../species';
@@ -9,13 +10,15 @@ import { seen as isSeen, revealPlace } from '../game/explore';
 import { regionAt, regionBorders, type Region, type RegionBorder } from '../biome';
 import { regionOpen, regionOpenId, opensAfter, regionAbout, lockedAt } from '../game/regions';
 import { ONLINE } from '../online';
+import { NET } from '../net';
+import { PIRATES } from '../game/pirates';
 import { ISLANDS, watchExtra, islandPrice, islandColour } from '../islands';
 import type { Point, Poi } from '../types';
 import { waypointMetres, waypointRoute } from '../waypoint';
 import { clamp, dirTo, money } from '../config';
 import { SET } from '../settings';
 
-const COL = { you: '#ff9a6b', port: '#f0cf6a', light: '#efe9dc', wreck: '#dcb074', dim: '#8a949c', ink: '#1b2a33', red: '#c0493a', green: '#8fd48a' };
+const COL = { you: '#ff9a6b', port: '#f0cf6a', yard: '#f2c230', light: '#efe9dc', wreck: '#dcb074', dim: '#8a949c', ink: '#1b2a33', red: '#c0493a', green: '#8fd48a' };
 
 interface ChartOptions {
   /** ms to spend building missing map tiles this frame; the rest are drawn on later frames */
@@ -70,7 +73,7 @@ type Ctx = CanvasRenderingContext2D;
 type Project = (x: number, y: number) => [number, number];
 /** Notes that a kind of mark was drawn at canvas point (x, y), for the legend. */
 type Seen = (k: Legend, x: number, y: number) => void;
-export type Legend = 'you' | 'port' | 'light' | 'wreck' | 'treasure' | 'escaped' | 'owned' | 'frenzy' | 'uncharted' | 'target' | 'waypoint' | 'sailor' | 'island' | 'school';
+export type Legend = 'you' | 'port' | 'shipyard' | 'light' | 'wreck' | 'cove' | 'pirate' | 'treasure' | 'escaped' | 'owned' | 'frenzy' | 'uncharted' | 'target' | 'waypoint' | 'sailor' | 'island' | 'school';
 /** The kinds of mark the last full chart showed, so its legend only explains what's on it. */
 export const drawn = new Set<Legend>();
 const font = (ctx: Ctx, px: number, u: number): void => { ctx.font = `600 ${Math.round(px * u)}px Pixelify, monospace`; };
@@ -123,7 +126,9 @@ export function drawChart(ctx: Ctx, w: number, h: number, cx: number, cy: number
   // but what you'd already charted there, and their cells aren't even generated
   const pois = poisNear(cx, cy, Math.max(w, h) * wpp * 0.6, [], cellClosed).filter(p => G.found.has(p.id) || (!lockedAt(p.x, p.y) && (showUncharted || isSeen(p.x, p.y))));
   for (const p of pois) if (G.found.has(p.id) && !isSeen(p.x, p.y)) revealPlace(p);   // charted before the fog came in
-  if (son >= 1) drawSchools(ctx, cx, cy, Math.min(260, Math.max(w, h) * wpp * 0.6), S, u, son, seen);
+  const near = Math.min(260, Math.max(w, h) * wpp * 0.6), ping = pingShown();
+  if (son >= 1) drawSchools(ctx, cx, cy, near, S, u, son, seen);
+  if (ping) drawPing(ctx, ping, S, u, wpp, seen, son >= 1 ? { x: cx, y: cy, r: near } : null);
   drawPois(ctx, pois, S, u, showUncharted, seen);
   drawTreasure(ctx, S, u, seen);
   drawLair(ctx, S, u);
@@ -338,6 +343,28 @@ function drawSchools(ctx: Ctx, cx: number, cy: number, rad: number, S: Project, 
   ctx.globalAlpha = 1;
 }
 
+/**
+ * A research vessel's sonar ping: its pulse spreading out, then the edge of its reach, and every school inside it by
+ * species, charted or not (the ones the sonar already drew round `drawn` are left alone).
+ */
+function drawPing(ctx: Ctx, p: { x: number; y: number; r: number; age: number }, S: Project, u: number, wpp: number, seen: Seen, drawn: { x: number; y: number; r: number } | null): void {
+  const [x, y] = S(p.x, p.y), k = Math.min(1, p.age / 1.5), R = p.r / wpp * (k < 1 ? 1 - (1 - k) ** 2 : 1);
+  ctx.beginPath(); ctx.arc(x, y, R, 0, 7);
+  ctx.setLineDash(k < 1 ? [] : [3 * u, 4 * u]); ctx.lineWidth = (k < 1 ? 2 : 1) * u; ctx.strokeStyle = k < 1 ? `rgba(160,230,240,${1 - k * 0.6})` : 'rgba(160,230,240,0.45)'; ctx.stroke(); ctx.setLineDash([]);
+  if (k < 1) return;                                                       // the echoes come back once the pulse is out
+  for (const s of schoolsNear(p.x, p.y, p.r)) {
+    if (Math.hypot(s.x - p.x, s.y - p.y) > p.r || lockedAt(s.x, s.y) || !schoolShown(s) || s.boss) continue;
+    if (drawn && isSeen(s.x, s.y) && Math.abs(s.x - drawn.x) < drawn.r && Math.abs(s.y - drawn.y) < drawn.r) continue;
+    const [sx, sy] = S(s.x, s.y);
+    seen('school', sx, sy);
+    ctx.globalAlpha = schoolMood(s) === 'biting' ? 1 : 0.45;
+    ctx.beginPath(); ctx.arc(sx, sy, 2.2 * u, 0, 7);
+    rimmed(ctx, SPECIES[s.sp].c[1], 0.8 * u);
+    if (SPECIES[s.sp].legend) star(ctx, sx, sy, 4 * u, COL.port);
+  }
+  ctx.globalAlpha = 1;
+}
+
 function cross(ctx: Ctx, x: number, y: number, r: number, lw: number, col: string): void {
   ctx.strokeStyle = col; ctx.lineWidth = lw;
   ctx.beginPath(); ctx.moveTo(x - r, y - r); ctx.lineTo(x + r, y + r); ctx.moveTo(x + r, y - r); ctx.lineTo(x - r, y + r); ctx.stroke();
@@ -347,14 +374,28 @@ function drawPois(ctx: Ctx, pois: Poi[], S: Project, u: number, showUncharted: b
   for (const p of pois) {
     const [x, y] = S(p.x, p.y), found = G.found.has(p.id);
     seen(found ? p.type : 'uncharted', x, y);
+    if (found && p.type === 'port' && p.shipyard) seen('shipyard', x, y);
     if (!found && !showUncharted) {                                    // something's there: a faint ring until you've seen it
       ctx.beginPath(); ctx.arc(x, y, 2.4 * u, 0, 7); ctx.lineWidth = 1.2 * u; ctx.strokeStyle = 'rgba(240,248,250,0.55)'; ctx.stroke();
       continue;
     }
-    if (p.type === 'port') portMark(ctx, x, y, u, found);
+    if (p.type === 'port') { portMark(ctx, x, y, u, found); if (found && p.shipyard) yardBadge(ctx, x, y - 12.5 * u, u * 2); }
     else if (p.type === 'light') lightMark(ctx, x, y, u, found);
     else if (p.type === 'wreck') { const r = 3.4 * u; cross(ctx, x, y, r, 3.4 * u, COL.ink); cross(ctx, x, y, r, 1.8 * u, G.salvaged.has(p.id) ? '#9a7550' : COL.wreck); }
+    else if (p.type === 'cove') coveMark(ctx, x, y, u);
   }
+}
+/** A pirate cove: the Jolly Roger on its pole, a white skull on black. */
+function coveMark(ctx: Ctx, x: number, y: number, u: number): void {
+  ctx.fillStyle = COL.ink; ctx.fillRect(x - 3.2 * u, y - 7.4 * u, 1.4 * u, 9 * u); ctx.fillRect(x - 2.4 * u, y - 7.6 * u, 7.2 * u, 5.2 * u);
+  ctx.fillStyle = '#26262c'; ctx.fillRect(x - 1.8 * u, y - 7 * u, 6 * u, 4 * u);
+  ctx.fillStyle = '#efe9dc'; ctx.fillRect(x + 0.2 * u, y - 6.2 * u, 2 * u, 1.6 * u); ctx.fillRect(x + 0.6 * u, y - 4.6 * u, 1.2 * u, 0.8 * u);
+}
+/** A shipyard's badge on its port: the yellow gantry crane over the slip, on a dark tile. */
+function yardBadge(ctx: Ctx, x: number, y: number, u: number): void {
+  ctx.fillStyle = COL.ink; ctx.fillRect(x - 3 * u, y - 3 * u, 6 * u, 6 * u);
+  ctx.fillStyle = COL.yard; ctx.fillRect(x - 2.1 * u, y - 2.1 * u, 4.2 * u, 1.1 * u); ctx.fillRect(x - 2.1 * u, y - 1 * u, 1 * u, 3.1 * u); ctx.fillRect(x + 1.1 * u, y - 1 * u, 1 * u, 3.1 * u);
+  ctx.fillStyle = '#efe9dc'; ctx.fillRect(x - 0.25 * u, y - 1 * u, 0.5 * u, 1.6 * u);
 }
 /** A port: a gold disc with an anchor on it (grey until charted). */
 function portMark(ctx: Ctx, x: number, y: number, u: number, found: boolean): void {
@@ -382,6 +423,13 @@ function lightMark(ctx: Ctx, x: number, y: number, u: number, found: boolean): v
 
 function drawTreasure(ctx: Ctx, S: Project, u: number, seen: Seen): void {
   for (const m of G.maps) { const [x, y] = S(m.x, m.y); cross(ctx, x, y, 4 * u, 2.2 * u, COL.red); seen('treasure', x, y); }
+  for (const p of PIRATES.ships) {                                   // pirate ships about: a red diamond each, ringed in black
+    if (p.mood === 'sinking') continue;
+    const [x, y] = S(p.x, p.y), r = 3.6 * u;
+    ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.closePath();
+    rimmed(ctx, COL.red, 1.4 * u);
+    seen('pirate', x, y);
+  }
   for (const e of G.escaped) {                                       // the fish that got away: a red ring where it lives
     const [x, y] = S(e.x, e.y);
     ctx.lineWidth = 2.6 * u; ctx.strokeStyle = COL.ink; ctx.beginPath(); ctx.arc(x, y, 4 * u, 0, 7); ctx.stroke();
@@ -412,7 +460,7 @@ function drawLabels(ctx: Ctx, pois: Poi[], S: Project, u: number): void {
   };
   const named = pois.filter(p => G.found.has(p.id) && p.type !== 'wreck').sort((a, b) => +(a.type !== 'port') - +(b.type !== 'port'));
   for (const p of named) {
-    const [x, y] = S(p.x, p.y), port = p.type === 'port', s = port ? p.name : p.name.replace(' Light', '');
+    const [x, y] = S(p.x, p.y), port = p.type === 'port', s = p.name;
     font(ctx, port ? 12 : 11, u);
     const w = ctx.measureText(s).width + (port ? 9 : 4) * u, h = (port ? 16 : 13) * u, gap = (port ? 8 : 6) * u;
     const right = fits(x + gap, y - h / 2, x + gap + w, y + h / 2), left = !right && fits(x - gap - w, y - h / 2, x - gap, y + h / 2);
@@ -447,7 +495,7 @@ function drawIslandNames(ctx: Ctx, cx: number, cy: number, rad: number, S: Proje
     const row = ISLANDS.get(c.key), [x, y] = S(c.x, c.y);
     if (!row?.mine && (!isSeen(c.x, c.y) || lockedAt(c.x, c.y))) continue;   // only your own island shows through unseen or closed sea
     if (!row) {                                          // for sale: a faint dashed ring on the full chart
-      if (unclaimed) { seen('island', x, y); ctx.setLineDash([3 * u, 3 * u]); ctx.lineWidth = 1.2 * u; ctx.strokeStyle = 'rgba(58,42,28,0.45)'; ctx.beginPath(); ctx.arc(x, y, 5 * u, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
+      if (unclaimed && NET.on) { seen('island', x, y); ctx.setLineDash([3 * u, 3 * u]); ctx.lineWidth = 1.2 * u; ctx.strokeStyle = 'rgba(58,42,28,0.45)'; ctx.beginPath(); ctx.arc(x, y, 5 * u, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
       continue;
     }
     seen('owned', x, y);
@@ -595,7 +643,7 @@ export function chartAt(x: number, y: number, r: number, target: { at: Point; te
   if (sailor) return { title: sailor.name, sub: 'Another sailor', act: 'Click to set a waypoint here' };
   const fogged = !isSeen(x, y);
   const map = G.maps.find(near);
-  if (map) return { title: 'Treasure', sub: `Marked on a treasure map · ${away(map)}`, act: SAIL, snap: map };
+  if (map) return { title: map.buried ? 'Buried treasure' : 'Treasure', sub: `${map.buried ? 'Buried on the beach: bring your boat close and dig' : 'Marked on a treasure map'} · ${away(map)}`, act: SAIL, snap: map };
   const esc = G.escaped.find(near);
   if (esc) return { title: `The ${SPECIES[esc.sp].name} that got away`, sub: `Broke your line on day ${esc.day} · ${away(esc)}`, act: SAIL, snap: esc };
   const region = regionAt(x, y), shut = opensAfter(region);
@@ -605,16 +653,19 @@ export function chartAt(x: number, y: number, r: number, target: { at: Point; te
   if (poi) {
     const snap = poi.type === 'port' ? poi.dock : poi, where = away(poi);
     if (!G.found.has(poi.id)) return { title: 'Uncharted place', sub: `${where}. Sail close to put it on your chart`, act: SAIL, snap };
-    if (poi.type === 'port') return { title: poi.name, sub: `Port · ${where}`, act: SAIL, snap };
+    if (poi.type === 'port') return { title: poi.name, sub: `${poi.shipyard ? 'Port with a shipyard' : 'Port, no shipyard'} · ${where}`, act: SAIL, snap };
     if (poi.type === 'light') return { title: poi.name, sub: `Lighthouse · ${where}`, act: SAIL, snap };
+    if (poi.type === 'cove') return { title: poi.name, sub: G.raids[poi.id] !== undefined ? `Pirate cove, raided on day ${G.raids[poi.id]} · ${where}` : `Pirate cove: sink its ships to raid the stash · ${where}`, act: SAIL, snap: poi.anchor };
     return { title: G.salvaged.has(poi.id) ? 'Salvaged wreck' : 'Wreck', sub: where, act: SAIL, snap };
   }
   if ((logged() >= 10 || G.log.oldone) && near(LAIR)) return { title: "The Old One's lair", sub: away(LAIR), act: SAIL, snap: LAIR };
-  const isle = islandAt(x, y);
+  const isle = NET.on ? islandAt(x, y) : null;              // islands are bought online; offline they're just land
   if (isle) {
-    const row = ISLANDS.get(isle.key);
-    return row ? { title: row.name, sub: row.mine ? 'Your island' : `Held by ${row.title ? row.title + ' ' : ''}${row.owner}`, act: 'Click to view it', island: isle.key }
-      : { title: isle.i === 0 && isle.j === 0 ? 'Alderhaven' : 'Unclaimed island', sub: `For sale · ${money(islandPrice(isle.i, isle.j) ?? 0)}`, act: 'Click to view or buy it', island: isle.key };
+    // an island and the port on its shore are different things: say which port, so the two don't blur
+    const row = ISLANDS.get(isle.key), port = poisNear(isle.x, isle.y, isle.R).find(p => p.type === 'port' && G.found.has(p.id));
+    const on = port ? ` · ${port.name} harbour on its shore` : '';
+    return row ? { title: row.name, sub: (row.mine ? 'Your island' : `Held by ${row.title ? row.title + ' ' : ''}${row.owner}`) + on, act: 'Click to view it', island: isle.key }
+      : { title: isle.i === 0 && isle.j === 0 ? 'Alderhaven' : 'Unclaimed island', sub: `For sale · ${money(islandPrice(isle.i, isle.j) ?? 0)}${on}`, act: 'Click to view or buy it', island: isle.key };
   }
   return { title: region.name, sub: `${regionAbout(region)} ${away({ x, y })}`.trim(), act: 'Click to set a waypoint' };
 }

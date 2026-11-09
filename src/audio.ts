@@ -2,14 +2,15 @@
 // Everything is synthesised from filtered noise, damped sines and physically-modelled bubbles
 // (a sine whose pitch rises as it decays), mixed through a gentle compressor with a shared reverb send.
 // Pitched sounds are voiced on the chord the music is playing, so nothing ever clashes with it.
-import { compose, restAfter, rng, type MusicEvent, type Piece } from './music';
+import { mulberry } from './noise';
+import { compose, restAfter, type MusicEvent, type Piece } from './music';
 
 type Bus = 'sfx' | 'music' | 'amb';
 type NoiseColor = 'white' | 'pink' | 'brown';
 /** Semitones from C4 of a triad, e.g. [9, 12, 16] for A minor. */
 type Chord = readonly number[];
 
-/** The shared mix graph. Rebuilt into an OfflineAudioContext by renderOffline(). */
+/** The shared mix graph. Rebuilt into an OfflineAudioContext by renderMusicOffline(). */
 interface Graph {
   dry: GainNode;
   revIn: GainNode;
@@ -283,6 +284,34 @@ const SFX = {
     hiss(c, { a: 0.003, d: 0.05, vol: 0.06 * v, f: 1600, q: 0.8, pan: p });
     hiss(c, { t: 0.03, a: 0.03, d: 0.5, vol: 0.1 * v, f: 1100, f1: 400, q: 0.7, color: 'pink', pan: p, rev: 0.2 });
   },
+  cannon: (c, v, p) => {                                         // a gun goes off: a deep thump, the crack of powder, a rolling tail
+    tone(c, { f: 72, f1: 34, a: 0.004, d: 0.9, vol: 0.34 * v, pan: p, rev: 0.25 });
+    hiss(c, { a: 0.002, d: 0.12, vol: 0.2 * v, f: 2200, f1: 700, q: 0.7, pan: p });
+    hiss(c, { t: 0.02, a: 0.05, d: 1.1, vol: 0.14 * v, type: 'lowpass', f: 520, f1: 140, color: 'brown', pan: p, rev: 0.35 });
+  },
+  boom: (c, v, p) => {                                           // a ball strikes a hull: splintering wood over a heavy knock
+    tone(c, { f: 120, f1: 50, a: 0.004, d: 0.35, vol: 0.28 * v, pan: p });
+    for (let i = 0; i < 4; i++) tone(c, { t: r(0, 0.08), f: r(260, 520), a: 0.002, d: r(0.06, 0.14), vol: 0.06 * v, type: 'triangle', lp: 1400, pan: p });
+    hiss(c, { a: 0.002, d: 0.3, vol: 0.12 * v, f: 1800, f1: 600, q: 0.8, color: 'pink', pan: p, rev: 0.15 });
+  },
+  mortar: (c, v, p) => {                                         // a mortar: a hollow, deep thoomp, then the shell's whistle climbing away
+    tone(c, { f: 52, f1: 30, a: 0.006, d: 1.1, vol: 0.36 * v, pan: p, rev: 0.35 });
+    hiss(c, { a: 0.003, d: 0.2, vol: 0.16 * v, f: 900, f1: 300, q: 0.7, pan: p });
+    tone(c, { t: 0.15, f: 1400, f1: 2300, a: 0.2, d: 0.6, vol: 0.025 * v, type: 'sine', pan: p, rev: 0.3 });
+  },
+  explode: (c, v, p) => {                                        // powder going up: a huge low boom, crackle, and water falling back
+    tone(c, { f: 60, f1: 24, a: 0.004, d: 1.4, vol: 0.42 * v, pan: p, rev: 0.4 });
+    hiss(c, { a: 0.002, d: 0.35, vol: 0.24 * v, f: 2600, f1: 500, q: 0.6, pan: p });
+    for (let i = 0; i < 6; i++) tone(c, { t: r(0.05, 0.4), f: r(300, 900), a: 0.002, d: r(0.04, 0.1), vol: 0.04 * v, type: 'triangle', lp: 1800, pan: p });
+    hiss(c, { t: 0.3, a: 0.1, d: 1.2, vol: 0.12 * v, f: 1200, f1: 400, q: 0.7, color: 'pink', pan: p, rev: 0.3 });
+  },
+  clank: (c, v, p) => {                                          // gun carriages run out: wooden rumble and an iron knock
+    hiss(c, { a: 0.03, d: 0.25, vol: 0.06 * v, type: 'lowpass', f: 300, color: 'brown', pan: p });
+    tone(c, { t: 0.18, f: r(320, 360), a: 0.002, d: 0.12, vol: 0.07 * v, type: 'triangle', lp: 1600, pan: p });
+  },
+  alarm: (c, v) => {                                             // a ship's bell rung in haste: pirates have seen you
+    for (let k = 0; k < 4; k++) for (const [m, g] of [[1, 1], [2.76, 0.35], [5.4, 0.12]]) tone(c, { t: k * 0.22, f: 880 * m, a: 0.002, d: 0.5, vol: 0.06 * v * g, rev: 0.4 });
+  },
   slap: (c, v, p) => {                                           // two hulls meet: a flat wet smack, a hollow knock, water sloshing between
     hiss(c, { a: 0.001, d: 0.07, vol: 0.2 * v, f: 2400, f1: 900, q: 0.9, pan: p });
     tone(c, { f: r(230, 260), f1: 150, a: 0.002, d: 0.14, vol: 0.12 * v, type: 'triangle', lp: 1200, pan: p, rev: 0.12 });
@@ -441,6 +470,33 @@ const SFX = {
     hiss(c, { a: 0.02, d: 0.3, vol: 0.075 * v, f: 900, q: 0.6, rev: 0.4 });
     hiss(c, { t: 0.05, a: 0.25, d: 3.2, vol: 0.31 * v, type: 'lowpass', f: 600, f1: 80, color: 'brown', rev: 0.3 });
   },
+  throttle: (c, v, p) => {                                       // twin outboards opened wide: a rising roar
+    hiss(c, { a: 0.25, hold: 0.4, d: 0.9, vol: 0.13 * v, type: 'bandpass', f: 160, f1: 560, q: 2.5, color: 'brown', pan: p });
+    hiss(c, { t: 0.1, a: 0.2, hold: 0.3, d: 0.8, vol: 0.05 * v, type: 'bandpass', f: 900, f1: 1800, q: 1.5, color: 'pink', pan: p });
+  },
+  rotor: (c, v, p) => {                                          // a helicopter's blades: dull chops quickening, then fading as she climbs away
+    for (let i = 0, t = 0; i < 16; i++, t += 0.15 - i * 0.004) hiss(c, { t, a: 0.004, d: 0.08, vol: 0.11 * v * Math.min(1, (i + 2) / 5) * (1 - i / 18), type: 'lowpass', f: 520, color: 'brown', pan: p });
+  },
+  horn: (c, v, p) => {                                           // a big ship's horn: a low open fifth, swelling in and ringing off the water
+    for (const [f, k] of [[87, 1], [131, 0.7], [174, 0.25]]) tone(c, { f, a: 0.18, hold: 1.1, d: 0.6, vol: 0.075 * v * k, type: 'sawtooth', lp: 620, pan: p, rev: 0.5 });
+    hiss(c, { a: 0.1, hold: 1, d: 0.5, vol: 0.02 * v, type: 'lowpass', f: 400, color: 'brown', pan: p });
+  },
+  toot: (c, v, p) => {                                           // a small boat's horn: two bright toots
+    for (const t of [0, 0.32]) for (const [f, k] of [[392, 1], [494, 0.8]]) tone(c, { t, f, a: 0.015, hold: 0.16, d: 0.12, vol: 0.05 * v * k, type: 'square', lp: 1800, pan: p, rev: 0.25 });
+  },
+  ping: (c, v, p) => {                                           // sonar: a clean high ping, and its echo coming back off the bottom
+    tone(c, { f: 1480, a: 0.003, d: 1.4, vol: 0.11 * v, pan: p, rev: 0.6 });
+    tone(c, { t: 0.75, f: 1480, a: 0.003, d: 0.9, vol: 0.035 * v, pan: p, rev: 0.7 });
+  },
+  fill: (c, v, p) => {                                           // a sail filling: a soft whump of cloth taking the wind
+    hiss(c, { a: 0.03, d: 0.4, vol: 0.2 * v, type: 'lowpass', f: 380, f1: 160, color: 'brown', pan: p });
+    tone(c, { f: 70, f1: 48, a: 0.02, d: 0.3, vol: 0.1 * v, pan: p });
+    hiss(c, { t: 0.05, a: 0.02, d: 0.25, vol: 0.05 * v, f: 1400, q: 0.8, color: 'pink', pan: p });
+  },
+  rip: (c, v, p) => {                                            // a sail blowing out: a bang of cloth, then tearing
+    hiss(c, { a: 0.002, d: 0.12, vol: 0.25 * v, type: 'lowpass', f: 900, color: 'brown', pan: p });
+    for (let i = 0; i < 6; i++) hiss(c, { t: 0.08 + i * 0.07, a: 0.005, d: 0.09, vol: 0.09 * v * (1 - i / 7), f: r(1800, 3200), q: 1.4, pan: p });
+  },
   whale: (c, v, p) => {                                          // a distant humpback: a slow moan gliding between chord tones, mostly reverb
     const t0 = c.currentTime, T = r(2.2, 2.8), vol = 0.045 * v, g = out(c, p, 1.2);
     const o = c.createOscillator(), o2 = c.createOscillator(), g2 = c.createGain(), lp = c.createBiquadFilter(), vib = c.createOscillator(), vg = c.createGain();
@@ -517,7 +573,7 @@ const CAPTION: Partial<Record<SfxName, string>> = {
   nibble: 'Bobber twitches', bite: 'Bobber splashes', creak: 'Rod creaks', glint: 'Something glints',
   snap: 'Line snaps', crash: 'Hull crunches', slap: 'Boats bump', scrape: 'Hull scrapes', thunder: 'Thunder rumbles',
   gulls: 'Gulls crying', sink: 'Boat sinking', discover: 'Bell rings', purr: 'Cat purring', meow: 'Cat meows',
-  whale: 'Whale song', bigsplash: 'Big splash',
+  whale: 'Whale song', rotor: 'Helicopter rotors', throttle: 'Engines roar', horn: 'Ship\'s horn', toot: 'Horn toots', ping: 'Sonar pings', fill: 'Sail fills', rip: 'Sail blows out', bigsplash: 'Big splash', cannon: 'Cannon fires', boom: 'Hull hit', alarm: 'Ship\'s bell clangs', mortar: 'Mortar fires', explode: 'Explosion', clank: 'Guns run out',
 };
 let onCaption: ((text: string) => void) | null = null;
 export const setCaptionHook = (f: (text: string) => void): void => { onCaption = f; };
@@ -525,7 +581,7 @@ export const setCaptionHook = (f: (text: string) => void): void => { onCaption =
 // how far and how long a sound pushes the music down: [gain, hold s]. Rapid little ticks never duck, that would pump.
 const DUCK: Partial<Record<SfxName, [number, number]>> = {
   fanfare: [0.5, 1.3], stinger: [0.6, 1], levelup: [0.5, 0.9], discover: [0.5, 1.1], sink: [0.5, 1.2], catch: [0.56, 0.7],
-  perfect: [0.56, 0.5], thunder: [0.56, 1.4], whale: [0.6, 1.8], bigsplash: [0.6, 0.6],
+  perfect: [0.56, 0.5], thunder: [0.56, 1.4], whale: [0.6, 1.8], bigsplash: [0.6, 0.6], explode: [0.6, 0.8],
 };
 const NO_DUCK = new Set<SfxName>(['reel', 'move', 'oar', 'scrape', 'purr', 'gulls', 'plop', 'splash', 'nibble', 'glint']);
 let duckEnd = 0;
@@ -845,7 +901,7 @@ const playEvent = (c: BaseAudioContext, e: MusicEvent, t: number): void => {
 };
 
 const AHEAD = 0.25;                                              // notes are booked this far ahead on the audio clock
-const tune = { piece: null as Piece | null, at: 0, next: 0, restUntil: -1, last: undefined as string | undefined, R: rng(Date.now()) };
+const tune = { piece: null as Piece | null, at: 0, next: 0, restUntil: -1, last: undefined as string | undefined, R: mulberry(Date.now()) };
 
 /** Called every frame: plays the current piece's notes at their exact times, so the timing holds however uneven the frames
  * are, then rests before writing the next piece (night picks the night styles). */
@@ -886,21 +942,3 @@ export async function renderMusicOffline(seed: number, night: boolean, secs = 20
   const buf = await off.startRendering();
   return { piece, left: buf.getChannelData(0), right: buf.getChannelData(1) };
 }
-
-// ---------- offline rendering, used by tests to inspect levels and spectra ----------
-// `chord` optionally voices pitched effects on another chord (semitones from C4, e.g. [9, 12, 16] for A minor)
-export async function renderOffline(name: SfxName, secs = 2, chord: Chord = harmony): Promise<Float32Array> {
-  const off = new OfflineAudioContext(2, 44100 * secs, 44100), prevGraph = graph, prevHarmony = harmony;
-  harmony = chord;
-  try {
-    graph = buildGraph(off, off.destination);
-    SFX[name](off, 1, 0);
-  } finally {
-    graph = prevGraph;                                           // restore before awaiting so live sounds keep their graph
-    harmony = prevHarmony;
-  }
-  const buf = await off.startRendering();
-  return buf.getChannelData(0);
-}
-
-export const SFX_NAMES = Object.keys(SFX) as SfxName[];

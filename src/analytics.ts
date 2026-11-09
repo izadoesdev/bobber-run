@@ -31,6 +31,12 @@ type Events = {
   project_funded: { project: string; done: number };
   port_docked: { port: string; home: boolean };
   boat_sunk: { boat: string; tow_cost_bucket: string; storm: boolean };
+  pirate_sunk: { kind: string; tier: number; map: boolean };
+  sunk_by_pirates: { kind: string; boat: string; plundered: number };
+  cove_raided: { reward_bucket: string };
+  pirate_tribute: { kind: string; fish: number; coins_bucket: string };
+  pirate_boarded_you: { kind: string; fish: number; coins_bucket: string };
+  treasure_dug: { reward_bucket: string };
   quest_completed: { quest: string; index: number };
   finale_reached: { day: number };
   screen_opened: { screen: Screen };

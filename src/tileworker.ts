@@ -3,5 +3,5 @@ import { tileHeights } from './world';
 
 self.onmessage = (e: MessageEvent<{ tx: number; ty: number }>) => {
   const { tx, ty } = e.data, { h, land } = tileHeights(tx, ty);
-  (self as unknown as Worker).postMessage({ tx, ty, h, land }, [h.buffer]);
+  self.postMessage({ tx, ty, h, land }, { transfer: [h.buffer] });
 };

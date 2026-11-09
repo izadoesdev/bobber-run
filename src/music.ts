@@ -3,6 +3,7 @@
 // then the tune with more under it, then a high point) before it settles. Every piece is written fresh from a seed:
 // a style (texture, mode, tempo, progression), a key and its tunes, so no two plays are alike.
 // This file only composes (pure, testable); audio.ts plays the events on the audio clock.
+import { mulberry } from './noise';
 
 /** A note or chord change in a piece. `s` is semitones from C4; times and lengths are seconds from the piece's start. */
 export interface MusicEvent {
@@ -45,16 +46,6 @@ export const STYLES: Style[] = [
 // keys stay near C so every piece sits in the same comfortable register
 const KEYS = [0, 2, 5, 7, -3, -5];
 
-/** A small seeded random generator (mulberry32), so a seed always writes the same piece. */
-export function rng(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 // ---------- tunes ----------
 // A tune is four two-bar phrases on an eighth-note grid, pitched as scale steps above the key: a statement, its answer,
@@ -120,7 +111,7 @@ const nearestChordTone = (s: number, chord: number[]) => {
  * Write a piece. `night` picks from the night styles; `avoid` is the style just played, so the next one differs.
  */
 export function compose(seed: number, night: boolean, avoid?: string, tempo = 1): Piece {
-  const R = rng(seed), styles = STYLES.filter(s => (night ? s.night : s.day) && s.name !== avoid);
+  const R = mulberry(seed), styles = STYLES.filter(s => (night ? s.night : s.day) && s.name !== avoid);
   const st = pick(R, styles), key = pick(R, KEYS);
   const bpm = Math.round((st.bpm + (R() - 0.5) * 6) * tempo), beat = 60 / bpm, bar = beat * 4, eighth = beat / 2;
   const prog = R() < 0.3 ? [...st.prog.slice(2), ...st.prog.slice(0, 2)] : st.prog.map(c => [...c]);   // now and then it starts midway

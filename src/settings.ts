@@ -80,6 +80,9 @@ export const ROWS: SettingEntry[] = [
   { label: 'Interface while sailing', ...toggle('hud', 'Shown', 'Hidden'), help: 'Press H while sailing to hide the status panel, minimap, quest and hints, for screenshots or calm sailing. Messages and the fishing bars still show.' },
   { label: 'Top-right dial', ...toggle('minimap', 'Minimap', 'Compass'), help: 'A compass pointing to your next step and waypoint, or a small map of the sea around you. Either one opens the chart.' },
   { label: 'Objective marker', ...toggle('guide'), help: 'Shows where to go next: an arrow on screen and a marker on the compass, minimap and chart.' },
+  { head: 'Sailing' },
+  { label: 'Pirates', ...toggle('pirates'), help: 'Pirate ships sail out of their coves in the far waters. They hail you to heave to and pay tribute, and fight if you refuse. Off: the seas stay peaceful, and coves stand empty.' },
+  { label: 'Battle aids', ...toggle('aids'), help: 'Draws your broadside arcs on the water and rings where enemy shot will fall. Off: read the fight from the ships themselves, their flags, smoke and splashes.' },
   { head: 'Fishing' },
   { label: 'Strike timing', ...pick('strike', ['normal', 'relaxed', 'auto'], ['Normal', 'Relaxed', 'Automatic']), help: 'Relaxed gives you more time to strike. Automatic sets the hook for you.' },
   { label: 'Easy reel', ...toggle('reelAssist'), help: 'Reels by itself between surges and never snaps. Fights take longer, and catches top out at 2 stars.' },
@@ -96,6 +99,8 @@ export const ACTIONS: Action[] = [
   { id: 'cast', label: 'Cast, strike and reel', key: ' ' }, { id: 'use', label: 'Interact, dock, salvage, haul up treasure', key: 'e' },
   { id: 'target', label: 'Next fish or sea creature (gamepad R3)', key: 'q' },
   { id: 'bait', label: 'Switch bait', key: 'b' }, { id: 'chum', label: 'Throw chum', key: 'c' }, { id: 'pet', label: 'Pet the cat', key: 'p' },
+  { id: 'fire', label: 'Fire the broadside', key: 'r' }, { id: 'mortar', label: 'Fire the mortar', key: 't' }, { id: 'keg', label: 'Drop a powder keg', key: 'v' }, { id: 'launch', label: 'Fire a torpedo or missile, or launch a plane', key: 'y' }, { id: 'shot', label: 'Change shot', key: 'z' },
+  { id: 'special', label: 'Your boat\'s special: spinnaker, horn, sprint, ping, full throttle or helicopter', key: 'k' },
   { id: 'ship', label: 'Ship and hold', key: 'Tab' }, { id: 'chart', label: 'Sea chart', key: 'm' }, { id: 'log', label: 'Logbook', key: 'l' },
   { id: 'hud', label: 'Hide or show the interface', key: 'h' },
 ];

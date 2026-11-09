@@ -9,9 +9,9 @@ import { ONLINE } from '../online';
 import { sfx, soundscape, music } from '../audio';
 import { SET } from '../prefs';
 import { FUNNEL, hasOars } from '../models';
-import type { BaitChoice, Crate, Fish, Helper, Poi, School, TreasureMap, WeatherState, Wreck } from '../types';
+import type { BaitChoice, BoatDef, Crate, Fish, Helper, Poi, School, TreasureMap, WeatherState, Wreck } from '../types';
 import { G, hit, nearest } from './state';
-import { boatDef, boatSpeed, cap, catchNeed, dayNum, fishValue, hpMax, isNight, logged, netLvl, potsLvl, sailEfficiency, toWorld, windAngle } from './rules';
+import { boatDef, boatSpeed, cap, catchNeed, dayNum, fishValue, gearLvl, hpMax, isNight, logged, netLvl, offWind, potsLvl, SPIN, sailEfficiency, toWorld, windAngle } from './rules';
 import { addCoins, burst, celebrate, jitter, spawn, toast } from './feedback';
 import { checkGoals } from './goals';
 import { placeAtPort, portById, saveGame } from './save';
@@ -20,6 +20,11 @@ import { schoolActive, schoolDrawR, swimSchools, updateSchools } from './schools
 import { dock, keptBack, updateFleet } from './port';
 import { track } from '../analytics';
 import { dropCourse, steerCourse } from './autopilot';
+import { heliPort, heliReady, stepHeli } from './heli';
+import { SPECIAL, specialOf, specialReady, spinFlogging, stepSpecial, useSpecial } from './special';
+import { PIRATES, boardPrize, boarder, chaserTarget, coveToRaid, cycleShot, dropKeg, fireBroadside, fireLauncher, fireMortar, hailer, prizeAlongside, railsBearing, raidCove, launcher, launcherTarget, threat, turretOff, updatePirates } from './pirates';
+import { TURRET } from './arms';
+import { DIG_S, startDig, treasureReach, updateDig } from './treasure';
 import { tickWaypoint } from '../waypoint';
 import { biomeAt, type BiomeId } from '../biome';
 import { nearestEncounter, openEncounter } from './encounters';
@@ -32,7 +37,9 @@ function discover(p: Poi): void {
   const bounty = p.type === 'light' ? 15 : p.type === 'port' ? 10 : 0;
   if (bounty) addCoins(bounty);
   if (p.type === 'light') G.stats.lights++;
-  toast(`Added ${p.name} to your chart${bounty ? `  +$${bounty}` : ''}`, 'good', 'sailing'); sfx('discover'); saveGame();
+  if (p.type === 'cove') toast(`Added ${p.name} to your chart: a pirates' hideout. Beware their ships`, 'bad', 'sailing');
+  else toast(`Added ${p.name} to your chart${bounty ? `  +$${bounty}` : ''}`, 'good', 'sailing');
+  sfx('discover'); saveGame();
 }
 function salvage(p: Wreck): void {
   if (G.salvaged.has(p.id)) {                      // the diving bell: one more dive per wreck per day
@@ -66,7 +73,7 @@ function pickUp(c: Crate): void {
   burst('debris', c.x, c.y, 10, 30, 0.8);
 }
 
-export function petCat(): void {
+function petCat(): void {
   if (G.petT > G.t || !G.pet) return;
   G.petT = G.t + 1.4;
   sfx('purr');
@@ -140,6 +147,8 @@ export function update(dt: number): void {
   tickFeedback(dt);
   if (G.mode !== 'play') dropCourse();             // a course is only for open water: menus, port and sinking end it
   if (G.mode !== 'title') checkGoals();
+  updatePirates(dt);
+  stepHeli(dt); stepSpecial(dt);
   if (G.mode === 'sunk') {                          // towed home after a pause
     if ((G.sunkT += dt) > 3.4) { placeAtPort(portById(G.lastPort)); G.boat.hp = Math.round(hpMax() * 0.75); G.mode = 'play'; saveGame(); }
     return;
@@ -162,9 +171,14 @@ export function update(dt: number): void {
   scanSurroundings();
   G.prompt = promptFor(speed);
   handleActions(dt, speed);
+  updateDig(dt, speed);
   steerCourse();
   tickWaypoint();
-  boatEffects(dt, speed);
+  wakeAndSmoke(dt, G.boat, boatDef(), speed, !!G.throttle, ownFx);
+  if (SPECIAL.boostT > 0 && G.throttle && Math.random() < dt * 40) {     // the throttles wide open: a rooster tail of spray astern
+    const b = G.boat, [x, y] = toWorld(-boatDef().L - 2, jitter(2));
+    spawn({ kind: 'spout', x, y, z: 0.5, vx: -Math.cos(b.a) * 30 + jitter(6), vy: -Math.sin(b.a) * 30 + jitter(6), vz: 14 + Math.random() * 10, life: 0.5 + Math.random() * 0.3 });
+  }
   const pump = [0, 0, 5, 2.5, 1.2][G.up.hull];                  // iron plating and up carry a bilge pump
   if (pump && G.boat.hp < hpMax() && (G.bilgeT += dt) > pump) { G.bilgeT = 0; G.boat.hp++; }   // the pump patches the hull
   if ((G.saveT += dt) > 15) { G.saveT = 0; saveGame(); }
@@ -194,7 +208,7 @@ function scanSurroundings(): void {
   G.nearPort = null; G.nearWreck = null;
   for (const p of poisNear(b.x, b.y, 220, poiScratch)) {
     const d = Math.hypot(p.x - b.x, p.y - b.y);
-    const sight = (p.type === 'light' ? 140 : p.type === 'port' ? 150 : 100) * [1, 1.5, 2][G.up.spyglass];
+    const sight = (p.type === 'light' ? 140 : p.type === 'port' || p.type === 'cove' ? 150 : 100) * [1, 1.5, 2][G.up.spyglass];
     if (!G.found.has(p.id) && d < sight) discover(p);
     if (p.type === 'port' && Math.hypot(p.end.x - b.x, p.end.y - b.y) < 30 + bd.L) G.nearPort = p;
     if (p.type === 'wreck' && (!G.salvaged.has(p.id) || (G.up.bell > 0 && G.dives[p.id] !== dayNum())) && d < 30 + bd.L * 0.5) G.nearWreck = p;
@@ -204,7 +218,9 @@ function scanSurroundings(): void {
   for (const s of schoolsNear(b.x, b.y, 60, netScratch)) {          // a golden school glints the first time you come near
     if (s.gold && schoolActive(s) && !glinted.has(s.id) && Math.hypot(s.x - b.x, s.y - b.y) < 60) { glinted.add(s.id); sfx('glint'); }
   }
-  G.nearTreasure = G.maps.find(m => Math.hypot(m.x - b.x, m.y - b.y) < 16 + bd.L * 0.6) || null;
+  G.nearTreasure = G.maps.find(m => Math.hypot(m.x - b.x, m.y - b.y) < treasureReach(m, bd.L)) || null;
+  G.nearCove = coveToRaid();
+  G.nearPrize = prizeAlongside();
   for (const c of cratesNear(b.x, b.y, 120, crateScratch)) {
     if (c.taken) { if (G.t > c.respawn) c.taken = false; continue; }
     if (Math.hypot(c.x - b.x, c.y - b.y) < 8 + bd.B) pickUp(c);
@@ -235,17 +251,61 @@ function promptFor(speed: number): string | null {
     return null;
   }
   if (G.card) return null;
+  if (G.dig) return `Your hand is digging for the chest... ${Math.min(99, Math.round(G.dig.t / DIG_S * 100))}%. Stay close`;
   const isle = realmDockAt(G.boat.x, G.boat.y);
   let use: string | null = null;
-  if (G.nearPort) use = speed < 14 ? `[E] Dock at ${G.nearPort.name}` : 'Slow down to dock';
+  if (G.nearPort) use = speed < 14 ? `[E] Dock at ${G.nearPort.name}${G.nearPort.shipyard ? ' (shipyard)' : ''}` : 'Slow down to dock';
   else if (isle) use = speed < 14 ? `[E] Land at ${isle.name}` : 'Slow down to land';
+  else if (G.nearPrize) use = G.nearPrize.mood === 'surrender' ? `[E] Board ${G.nearPrize.name} and take her cargo` : `[E] Grapple ${G.nearPrize.name} and send the boarders over`;
+  else if (G.nearCove) use = speed < 14 ? `[E] Raid the pirates' stash at ${G.nearCove.name}` : 'Slow down to raid the stash';
+  else if (G.nearTreasure?.buried) use = speed < 10 ? '[E] Send a hand ashore to dig up the treasure' : 'Slow down off the beach to dig for the treasure';
   else if (G.nearTreasure) use = speed < 12 ? '[E] Haul up the treasure chest' : 'Slow down over the X to haul up the treasure';
   else if (G.nearWreck) use = speed < 12 ? `[E] Salvage the ${G.nearWreck.name.replace('Wreck of the ', '')}` : 'Slow down to salvage';
   else if (G.nearEncounter) use = speed < 12 ? `[E] ${G.nearEncounter.kind === 'prop' || G.nearEncounter.kind === 'habitat' || G.nearEncounter.kind === 'plankton' ? 'Inspect' : 'Visit'} ${G.nearEncounter.name}` : 'Slow down to interact';
+  const fight = fightLine();
+  if (fight) return [fight, use].filter(Boolean).join(' · ');
+  if (!use && heliReady() && G.hold.length >= cap() / 2) use = `[K] Fly the catch to ${heliPort().name} by helicopter`;
+  if (!use) use = spinnakerLine(speed);
   if (!G.nearSchool) return use;
   const species = SPECIES[G.nearSchool.sp], need = catchNeed(G.nearSchool.sp), list = castTargets();
   const cast = speed < 10 ? `[SPACE] Cast for ${species.name}${need ? `, ${need}` : ''}${list.length > 1 ? ' · [Q] Next creature' : ''}` : 'Stop to fish';
   return [use, cast].filter(Boolean).join(' · ');
+}
+
+/** When the spinnaker would help, or is holding her back. */
+function spinnakerLine(speed: number): string | null {
+  if (specialOf() !== 'spinnaker' || G.fish) return null;
+  const rel = offWind(G.boat.a);
+  if (spinFlogging(rel)) return '[K] Douse the spinnaker: the wind is too far forward for it';
+  return !SPECIAL.spinUp && SPECIAL.cool <= 0 && speed > 10 && rel < 1.2 && WX.wind <= SPIN.strain ? '[K] Hoist the spinnaker: the wind is behind you' : null;
+}
+
+/** The fight in a line, the way the gun crews would call it: which rail bears and whether it's loaded, or a ship's hail.
+ *  A sail still flying no colours gets no call: whether to fire on her first is yours to think of. */
+function fightLine(): string | null {
+  const line = threat() || hailer() ? gunLine() : null;
+  return PIRATES.me.wounds.burn > 0 ? [line, 'Ablaze! Stop to douse it'].filter(Boolean).join(' · ') : line;
+}
+function gunLine(): string | null {
+  if (boarder()) return 'Boarders! Fire into her, or sail hard to tear the grapples loose';
+  if (PIRATES.me.taking) return 'Your boarders are fighting for her deck. Hold her alongside: don\'t sail off';
+  const bears = railsBearing(), rails = PIRATES.me.rails, side = (r: number) => r ? 'starboard' : 'port', upper = (s: string) => s[0].toUpperCase() + s.slice(1);
+  const ready = [0, 1].find(r => bears[r] && rails[r] <= 0), laying = [0, 1].find(r => bears[r]);
+  const off = turretOff(), turret = off === null ? null : PIRATES.me.turret > 0 ? `Turrets loading, ${Math.ceil(PIRATES.me.turret)}s` : Math.abs(off) <= TURRET.lay ? '[R] Fire a salvo' : 'The turrets are training onto her...';
+  const l = launcher(), torp = l && PIRATES.me.loaded > 0 && launcherTarget(l.kind) ? `[Y] ${l.kind === 'torpedo' ? 'Fire a torpedo' : l.kind === 'air' ? 'Launch a plane' : 'Launch a missile'}` : null;
+  const chase = chaserTarget() && PIRATES.me.chaser <= 0 ? '[R] Fire the bow chaser' : turret ?? torp;
+  const guns = ready !== undefined ? `[R] Fire the ${side(ready)} broadside` : chase ?? (laying !== undefined ? `${upper(side(laying))} guns bear, still loading...` : null);
+  const h = hailer();
+  const armed = gearLvl('cannon') > 0 || boatDef().signature === 'turret' || !!l;
+  if (h) return [`${upper(h.name)} hails you${h.warned ? ', last warning' : ''}: stop to pay tribute, or ${armed ? 'fight' : 'run'}`, guns].filter(Boolean).join(' · ');
+  if (guns) return guns;
+  if (boatDef().signature === 'turret') return 'Bring her within the turrets\' reach';
+  if (l && !gearLvl('cannon')) return l.kind === 'air' && PIRATES.planes.length ? 'Your planes are after her. Keep your distance'
+    : PIRATES.me.loaded > 0 ? 'Bring her within reach' : `${l.kind === 'torpedo' ? 'Torpedo tubes' : l.kind === 'air' ? 'Planes' : 'Missile cells'} reloading. Keep your distance`;
+  const sp = specialOf(), run = sp === 'boost' ? 'Open the throttles' : sp === 'sprint' ? 'Pull together' : null;
+  if (!armed) return run && specialReady() ? `Pirates! [K] ${run} and run for it` : 'Pirates! Run for a harbour, or upwind where square sails can\'t follow';
+  const loading = rails.filter(r => r > 0).length;
+  return loading === 2 ? 'Both broadsides loading. Keep out of her arcs' : loading ? `${upper(side(rails[0] > 0 ? 1 : 0))} guns loaded. Bring her abeam` : 'Guns loaded. Bring her abeam';
 }
 
 const BAIT_ORDER: BaitChoice[] = ['none', 'shrimp', 'glow'];
@@ -257,12 +317,21 @@ function handleActions(dt: number, speed: number): void {
     const isle = realmDockAt(G.boat.x, G.boat.y);
     if (G.nearPort && speed < 14) dock(G.nearPort);
     else if (isle && speed < 14) { sfx('select'); landAtRealm(isle.key); }
-    else if (G.nearTreasure && speed < 12) haul(G.nearTreasure);
+    else if (G.nearPrize) boardPrize(G.nearPrize);
+    else if (G.nearCove && speed < 14) raidCove(G.nearCove);
+    else if (G.nearTreasure?.buried && speed < 10) startDig(G.nearTreasure);
+    else if (G.nearTreasure && !G.nearTreasure.buried && speed < 12) haul(G.nearTreasure);
     else if (G.nearWreck && speed < 12) salvage(G.nearWreck);
     else if (G.nearEncounter && speed < 12) openEncounter(G.nearEncounter);
   }
+  if (!f && hit('r', 'R')) fireBroadside();
+  if (!f && hit('t', 'T')) fireMortar();
+  if (!f && hit('y', 'Y')) fireLauncher();
+  if (!f && hit('v', 'V')) dropKeg();
+  if (!f && hit('k', 'K')) useSpecial();
+  if (hit('z', 'Z')) cycleShot();
   if (hit('u', 'U')) { G.musicOn = !G.musicOn; toast(G.musicOn ? 'Music on' : 'Music off'); }
-  if (!f && !G.card && hit(' ') && G.nearSchool && speed < 10) tryCast(G.nearSchool);
+  if (!f && hit(' ') && G.nearSchool && speed < 10) tryCast(G.nearSchool);
   if (!f && hit('q', 'Q')) { nextTarget(); G.nearSchool = nearestSchool(); G.prompt = promptFor(speed); }
   if (hit('c', 'C')) useChum();
   if (G.pet && hit('p', 'P') && !f) petCat();
@@ -274,30 +343,31 @@ function handleActions(dt: number, speed: number): void {
   }
 }
 
-/** Wake foam, funnel smoke and idle ripples around the boat. */
-function boatEffects(dt: number, speed: number): void {
-  const b = G.boat, bd = boatDef(), engine = bd.prop === 'ENGINE';
-  const c = Math.cos(b.a), s = Math.sin(b.a);
-  G.wakeAcc += speed * dt * (engine ? 1.1 : 0.6);
-  while (G.wakeAcc >= 1) {
-    G.wakeAcc -= 1;
+type Hull = { x: number; y: number; a: number; vx: number; vy: number };
+/** Wake foam and funnel smoke behind a boat; fx carries its wake and smoke timers between frames. */
+function wakeAndSmoke(dt: number, h: Hull, bd: BoatDef, speed: number, fast: boolean, fx: { acc: number; smoke: number }): void {
+  const engine = bd.prop === 'ENGINE', c = Math.cos(h.a), s = Math.sin(h.a);
+  fx.acc += speed * dt * (engine ? 1.1 : 0.6);
+  while (fx.acc >= 1) {
+    fx.acc -= 1;
     for (const side of [-1, 1]) {                    // bow waves peel off both sides
-      const [x, y] = toWorld(bd.L * 0.75, side * bd.B * 0.8);
+      const [x, y] = toWorld(bd.L * 0.75, side * bd.B * 0.8, h);
       spawn({ kind: 'dot', x, y, vx: -s * side * 7 - c * 3, vy: c * side * 7 - s * 3, life: 1.6 + Math.random() * 0.6 });
     }
-    const [x, y] = toWorld(-bd.L - 1, jitter(bd.B * 0.7));   // and churn behind the stern
+    const [x, y] = toWorld(-bd.L - 1, jitter(bd.B * 0.7), h);   // and churn behind the stern
     spawn({ kind: 'dot', x, y, vx: 0, vy: 0, life: engine ? 2.2 : 1.4, foam: engine });
   }
   const fn = FUNNEL[bd.id];                          // steam ships puff smoke, faster under way
-  if (fn && (G.smokeT -= dt) <= 0) {
-    G.smokeT = G.throttle ? 0.09 : 0.28;
-    const [x, y] = toWorld(fn[0], fn[1]);
+  if (fn && (fx.smoke -= dt) <= 0) {
+    fx.smoke = fast ? 0.09 : 0.28;
+    const [x, y] = toWorld(fn[0], fn[1], h);
     spawn({
-      kind: 'smoke', x, y, z: fn[2] + 1, vx: b.vx * 0.3 + jitter(3), vy: b.vy * 0.3 + jitter(3), vz: 9 + Math.random() * 5,
+      kind: 'smoke', x, y, z: fn[2] + 1, vx: h.vx * 0.3 + jitter(3), vy: h.vy * 0.3 + jitter(3), vz: 9 + Math.random() * 5,
       size: 2.2 + Math.random(), dark: bd.id === 'drifter' ? 0.55 : 0.15, life: 2.6 + Math.random() * 1.2,
     });
   }
 }
+const ownFx = { acc: 0, smoke: 0 };
 
 // ---------- other sailors' boats ----------
 // What makes their boats look sailed rather than slid: the same wake as yours (bow waves peeling off, churn behind),
@@ -310,28 +380,12 @@ function sailorEffects(dt: number): void {
   for (const sh of ONLINE.sailors) {
     let f = SAILOR_FX.get(sh.uid);
     if (!f) SAILOR_FX.set(sh.uid, f = { acc: 0, smoke: 0, heel: 0, phase: Math.random() });
-    const bd = BOATS.find(b => b.id === sh.id) ?? BOATS[0], engine = bd.prop === 'ENGINE', c = Math.cos(sh.a), sn = Math.sin(sh.a);
+    const bd = BOATS.find(b => b.id === sh.id) ?? BOATS[0], c = Math.cos(sh.a), sn = Math.sin(sh.a);
     const speed = Math.hypot(sh.vx, sh.vy), fwd = sh.vx * c + sh.vy * sn;
     f.heel += (Math.max(-0.1, Math.min(0.1, sh.w * fwd * 0.004)) - f.heel) * (1 - Math.exp(-3 * dt));
     if (hasOars(bd.id)) f.phase += dt * 0.75 * Math.min(1, speed / 18);   // a stroke a little over a second at a row
     if (Math.abs(sh.x - cx) > W || Math.abs(sh.y - cy) > H) continue;     // no wake to draw off screen
-    const at = (u: number, v: number): [number, number] => [sh.x + u * c - v * sn, sh.y + u * sn + v * c];
-    f.acc += speed * dt * (engine ? 1.1 : 0.6);
-    while (f.acc >= 1) {
-      f.acc -= 1;
-      for (const side of [-1, 1]) {
-        const [x, y] = at(bd.L * 0.75, side * bd.B * 0.8);
-        spawn({ kind: 'dot', x, y, vx: -sn * side * 7 - c * 3, vy: c * side * 7 - sn * 3, life: 1.6 + Math.random() * 0.6 });
-      }
-      const [x, y] = at(-bd.L - 1, jitter(bd.B * 0.7));
-      spawn({ kind: 'dot', x, y, vx: 0, vy: 0, life: engine ? 2.2 : 1.4, foam: engine });
-    }
-    const fn = FUNNEL[bd.id];
-    if (fn && (f.smoke -= dt) <= 0) {
-      f.smoke = speed > 20 ? 0.09 : 0.28;
-      const [x, y] = at(fn[0], fn[1]);
-      spawn({ kind: 'smoke', x, y, z: fn[2] + 1, vx: sh.vx * 0.3 + jitter(3), vy: sh.vy * 0.3 + jitter(3), vz: 9 + Math.random() * 5, size: 2.2 + Math.random(), dark: bd.id === 'drifter' ? 0.55 : 0.15, life: 2.6 + Math.random() * 1.2 });
-    }
+    wakeAndSmoke(dt, sh, bd, speed, speed > 20, f);
   }
   if (SAILOR_FX.size > ONLINE.sailors.length) for (const id of SAILOR_FX.keys()) if (!ONLINE.sailors.some(sh => sh.uid === id)) SAILOR_FX.delete(id);
 }
@@ -340,6 +394,8 @@ export function updateCamera(dt: number, bx: number, by: number): void {
   const b = G.boat, lookK = 1 - Math.exp(-2 * dt);
   G.look.x += (b.vx * 0.75 - G.look.x) * lookK;
   G.look.y += (b.vy * 0.75 - G.look.y) * lookK;
+  const reach = Math.hypot(G.look.x, G.look.y), most = 0.3 * Math.min(W, H);   // looking ahead, but never so far the boat leaves the view
+  if (reach > most) { G.look.x *= most / reach; G.look.y *= most / reach; }
   const tx = bx + G.look.x - W / 2, ty = by + G.look.y - H / 2, k = 1 - Math.exp(-8 * dt);
   G.cam.x += (tx - G.cam.x) * k;
   G.cam.y += (ty - G.cam.y) * k;

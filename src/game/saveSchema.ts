@@ -39,10 +39,10 @@ const upgradeLevels = v.pipe(mapOf(finite), v.transform(levels => Object.fromEnt
 
 const fish: Schema<Fish> = v.looseObject({ sp: speciesIndex, kg: nonnegative, value: nonnegative, trophy: v.boolean(), t: v.optional(v.number()), gold: v.optional(v.boolean()), variant: v.optional(v.string()), stars: v.optional(v.picklist([1, 2, 3] as const)), perfect: v.optional(v.literal(true)) });
 const logEntry: Schema<LogEntry> = v.looseObject({ n: v.number(), best: v.number(), trophy: v.optional(v.boolean()), at: v.optional(v.array(v.tuple([v.number(), v.number()]))), vars: v.optional(v.array(v.string())) });
-const stats = v.object({ caught: int(), sold: int(), upgrades: int(), lights: int(), contracts: int(), wrecks: int(), trophies: int(), night: int(), frenzy: int(), treasures: int(), storm: int() }) satisfies Schema<Stats>;
+const stats = v.object({ caught: int(), sold: int(), upgrades: int(), lights: int(), contracts: int(), wrecks: int(), trophies: int(), night: int(), frenzy: int(), treasures: int(), storm: int(), pirates: int(), coves: int(), dug: int() }) satisfies Schema<Stats>;
 const story: Schema<StoryState> = v.looseObject({ i: v.number(), base: stats, shown: v.boolean() });
 const contract: Schema<Contract> = v.looseObject({ id: v.string(), from: v.string(), to: v.string(), toName: v.string(), sp: speciesIndex, n: v.pipe(nonnegative, v.integer()), reward: nonnegative, day: v.optional(v.number()), bulk: v.optional(v.boolean()) });
-const treasure: Schema<TreasureMap> = v.looseObject({ id: v.string(), x: v.number(), y: v.number(), reward: v.number() });
+const treasure: Schema<TreasureMap> = v.looseObject({ id: v.string(), x: v.number(), y: v.number(), reward: v.number(), buried: v.optional(v.literal(true)) });
 const escapee: Schema<Escapee> = v.looseObject({ school: v.string(), x: finite, y: finite, sp: speciesIndex, kg: nonnegative, gold: v.optional(v.boolean()), day: v.number(), lost: v.number() });
 const packState = v.object({ i: v.pipe(v.number(), v.integer(), v.minValue(0)), n: nonnegative, started: v.boolean(),
   status: v.optional(v.picklist(['active', 'paused'])) }) satisfies Schema<PackState>;
@@ -65,11 +65,18 @@ export const saveSchema = v.object({
   stats: v.fallback(v.partial(stats), {}), story: v.fallback(v.nullable(story), null), gifts: mapOf(v.number()),
   pet: v.fallback(v.nullable(v.object({ name: v.string() }) satisfies Schema<Pet>), null), projects: listOf(v.picklist(PROJECT_IDS)),
   fleet: boatMapOf(fleetBoat), dives: mapOf(v.number()), visits: mapOf(v.pipe(nonnegative, v.integer())), goalsDone: listOf(v.number()), cheated: bool(),
-  maps: listOf(treasure), escaped: listOf(escapee), packs: mapOf(packState), regionsSeen: listOf(v.string()),
+  maps: listOf(treasure), raids: mapOf(v.number()), ammo: v.pipe(mapOf(nonnegative), v.transform(a => Object.fromEntries(Object.entries(a).filter(([k]) => k === 'chain' || k === 'grape' || k === 'fire').map(([k, n]) => [k, Math.trunc(n)])))), escaped: listOf(escapee), packs: mapOf(packState), regionsSeen: listOf(v.string()),
   explored: v.fallback(v.pipe(v.string(), v.maxLength(120_000)), ''), unlocked: listOf(v.string()), waypoint: v.fallback(v.nullable(point), null),
   gearOff: mapOf(v.literal(true)), zones: mapOf(v.literal(true)), docks: mapOf(v.number()), streak: v.pipe(int(), v.transform(n => Math.min(5, Math.max(0, n)))),
   musicOn: bool(true), offers: mapOf(v.array(contract)), active: listOf(contract), pity: int(), clock: v.optional(v.number()),
   treasury: v.pipe(num(), v.transform(n => Math.max(0, n))), realmRate: v.pipe(num(), v.transform(n => Math.max(0, n))), hulls: boatMapOf(v.pipe(v.number(), v.minValue(0), v.maxValue(1))), boatUp: boatMapOf(upgradeLevels),
 });
 export type ParsedSave = v.InferOutput<typeof saveSchema>;
-export const parseSave = (raw: unknown): ParsedSave => v.parse(saveSchema, raw && typeof raw === 'object' ? raw : {});
+/** Boats since folded into others (the canoe into the rowboat, the jet ski into the speedboat, the day cruiser into the
+ *  motor yacht, the steam frigate and ironclad into the dreadnought), and what they cost: a save that owned one gets it back. */
+const RETIRED: Record<string, number> = { canoe: 150, jetski: 1400, cruiser: 24000, frigate: 48000, ironclad: 90000 };
+export function parseSave(raw: unknown): ParsedSave {
+  const save = v.parse(saveSchema, raw && typeof raw === 'object' ? raw : {}), owned = raw && typeof raw === 'object' && 'owned' in raw ? raw.owned : null;
+  if (Array.isArray(owned)) save.coins += owned.reduce((n: number, id) => n + (RETIRED[String(id)] ?? 0), 0);
+  return save;
+}

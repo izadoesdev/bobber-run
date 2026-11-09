@@ -15,7 +15,7 @@ import { money } from '../../config';
 import { confirmed, have, type Rows } from './kit';
 import { chartable } from './market';
 
-export const chartedPorts = (except: string): Port[] => [...G.found].filter(id => id.startsWith('port:') && id !== except).map(portById);
+export const chartedPorts = (except?: string): Port[] => [...G.found].filter(id => id.startsWith('port:') && id !== except).map(portById);
 
 // ---------- dock hands ----------
 const HANDS = ['Tomas', 'Ada', 'Bram', 'Lio', 'Kesi', 'Moss', 'Pip', 'Rhea', 'Sol', 'Juno', 'Otto', 'Fen'];
@@ -117,11 +117,13 @@ function take(p: Port, c: Contract): void {
 /** The contracts section of the market: the dock hand, contracts to deliver or give up here, and today's offers. */
 export function contractItems(p: Port, items: Rows): void {
   const g = dockGrade(p.id), d = G.docks[p.id] ?? 0, next = GRADES[g];
+  const bonus = Math.round((gradeBonus(p.id) + streakBonus()) * 100);
   items.push({
-    kind: 'note', icon: 'anchor', label: `${dockHand(p)}, dock hand · Grade ${ROMAN[g - 1]}`, pips: [g, 5], ok: true, act: () => {},
-    sub: `${next !== undefined ? `${next - d} more ${next - d === 1 ? 'delivery' : 'deliveries'} here for Grade ${ROMAN[g]}: ${GRADE_GIFT[g].toLowerCase()}` : 'Your best friend on the coast'}`
+    kind: 'note', icon: 'anchor', label: `Dock hand ${dockHand(p)}: grade ${ROMAN[g - 1]}`, pips: [g, 5], ok: true, act: () => {},
+    sub: `${next !== undefined ? `Deliver ${next - d} more here for grade ${ROMAN[g]}: ${GRADE_GIFT[g].toLowerCase()}` : 'Your best friend on the coast'}`
       + `${G.streak ? `. Delivery streak ${G.streak}: +${G.streak * 5}%` : ''}`,
-    right: `+${Math.round((gradeBonus(p.id) + streakBonus()) * 100)}%`,
+    right: bonus ? `+${bonus}% pay` : '',
+    what: 'Every contract you deliver to this port wins its dock hand over a little more. Higher grades pay more for contracts here and bring gifts.',
   });
   for (const c of G.active) {
     const n = have(c.sp), name = SPECIES[c.sp].name, pay = money(contractPay(c));
@@ -144,7 +146,7 @@ export function contractItems(p: Port, items: Rows): void {
     const full = G.active.length >= contractSlots(), room = fits(c), name = SPECIES[c.sp].name, need = catchNeed(c.sp);
     items.push({
       kind: 'take', fish: c.sp, label: `${c.bulk ? 'Big order: ' : ''}${c.n} ${name}`, sub: `Bring them to ${c.toName}`, right: money(contractPay(c)), ok: !full && room,
-      why: full ? `You already have ${contractSlots()} contracts, the most you can take. A Quartermaster (Outfitter tab) lets you take more` : room ? '' : `Your hold has no room for these and your other contracts`,
+      why: full ? `You already have ${contractSlots()} contracts, the most you can take. A Quartermaster (Upgrades tab) lets you take more` : room ? '' : `Your hold has no room for these and your other contracts`,
       action: 'Take contract', act: () => take(p, c),
       what: `Catch ${c.n} ${name} (${SPECIES[c.sp].where.toLowerCase()}) and bring them to ${c.toName} to earn ${money(contractPay(c))}.`
         + `${need ? ` Landing them ${need}.` : ''} "Sell all" will keep the ${name} you need for it. You have ${G.active.length} of ${contractSlots()} contracts.`,
