@@ -26,6 +26,10 @@ export interface Settings {
   reelAssist: boolean; reelToggle: boolean;
   /** camera zoom chosen by the player; 1 = the default view for your ship */
   zoom: number;
+  /** pirate ships sail the far waters (game/pirates.ts); off keeps the seas peaceful */
+  pirates: boolean;
+  /** battle aids: your broadside arcs and where enemy shot will fall, drawn on the water */
+  aids: boolean;
   /** action id -> custom key */
   binds: Record<string, string>;
 }
@@ -33,7 +37,7 @@ export interface Settings {
 export const SET: Settings = {
   music: 6, sfx: 8, amb: 8, quality: 'auto', pixel: 'crisp', tilt: true, bloom: true, shake: true,
   ui: 1, font: 'harbour', contrast: false, calm: false, captions: false, guide: true, hud: true, minimap: false, chat: 'show',
-  strike: 'normal', reelAssist: false, reelToggle: false, zoom: 1, binds: {},
+  strike: 'normal', reelAssist: false, reelToggle: false, zoom: 1, pirates: true, aids: true, binds: {},
 };
 // storage may be unavailable (private mode) or hold junk; defaults stand in either case
 // First run: follow the system's reduced-motion preference until the player picks their own settings.

@@ -7,6 +7,7 @@ import { createNoise2D } from 'simplex-noise';
 import Alea from 'alea';
 import { clamp, smooth01 } from './config';
 import { hash01 } from './noise';
+import { HOME_ISLAND as HOME } from '../convex/islandRules';
 
 // latitude: home waters are temperate, the far north is cold, the far south warm
 export const warmth = (y: number): number => clamp((y - 1500) / 1000, 0, 1);
@@ -17,7 +18,6 @@ export interface BiomeMix { reef: number; kelp: number; volcanic: number; mangro
 export type BiomeId = 'home' | 'reef' | 'kelp' | 'volcanic' | 'mangrove' | 'warm' | 'cold' | 'open';
 
 const nBio = createNoise2D(Alea('bobber-run', 'biome'));
-const HOME = { x: 280, y: 280 };
 
 // ---------- regions ----------
 type Mixed = keyof BiomeMix;
@@ -191,6 +191,12 @@ export type ThemeId = 'home' | 'meadow' | 'pine' | 'blossom' | 'autumn' | 'birch
 type RGB = readonly [number, number, number];
 /** What grows or stands somewhere, with relative odds; kinds a mesh set lacks are swapped or skipped by the renderer. */
 export type Odds = readonly (readonly [string, number])[];
+/** A kind from weighted odds, by a roll r in [0, 1). */
+export function pickOdds<K>(L: readonly (readonly [K, number])[], r: number): K {
+  let t = 0; for (const [, w] of L) t += w;
+  let v = r * t; for (const [k, w] of L) { v -= w; if (v <= 0) return k; }
+  return L[0][0];
+}
 /** Ambient effects, each 0..1. */
 export interface Atmos { fog: number; haze: number; snow: number; ash: number; leaves: number; petals: number; spores: number; fireflies: number }
 export interface Theme {
@@ -327,6 +333,8 @@ export const THEMES: Record<ThemeId, Theme> = {
     land: [['shack', 2], ['log', 1]], landD: 0.2, sea: [['lilyPad', 3], ['log', 1]], seaD: 0.15, atmos: { fireflies: 1, haze: 0.3 } },
 };
 export const THEME_IDS = Object.keys(THEMES) as ThemeId[];
+/** Each theme's row (its index in THEME_IDS), as packed into the theme textures. */
+export const THEME_ROW: Record<string, number> = Object.fromEntries(THEME_IDS.map((t, i) => [t, i]));
 
 // Which themes may sit side by side: neighbouring regions blend through these (the next theme along the shortest path
 // from one region's theme toward the other's), so ice never meets sand and the ember isles meet only basalt, chalk or bog.

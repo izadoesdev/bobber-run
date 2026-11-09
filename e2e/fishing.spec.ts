@@ -30,12 +30,12 @@ test('every surge of a darting fish is announced about half a second before it l
   await sail(page);
   await page.evaluate(`(${hookFn})((sp) => sp.fight === 'darter' && sp.diff > 0.4 && sp.deck === 0)`);
   const r = await page.evaluate(() => {
-    const { G } = window.BR, w = window as any;
-    if (!w.hook().reeling) return null;
+    const { G } = window.BR;
+    if (!window.hook().reeling) return null;
     const f = G.fish, starts: number[] = [];
     let armed = (f.surge ?? 0) < 0.6, lastCue = 0, surges = 0, misses = 0;
     for (let t = 0; t < 40 * 60 && G.fish; t++) {
-      G.keys[' '] = !f.warn && f.tension < 0.55; w.step();
+      G.keys[' '] = !f.warn && f.tension < 0.55; window.step();
       if ((f.cue ?? 0) > lastCue + 0.2) starts.push(G.t);                 // a new announcement
       lastCue = f.cue ?? 0;
       const surge = f.surge ?? 0;
@@ -54,11 +54,11 @@ test('easy reel lands a fish with no input, never near snapping, for at most two
   await sail(page);
   await page.evaluate(`(${hookFn})((sp) => sp.diff > 0.6 && sp.deck === 0)`);
   const r = await page.evaluate(() => {
-    const { G, SET } = window.BR, w = window as any;
+    const { G, SET } = window.BR;
     SET.reelAssist = true;
-    if (!w.hook().reeling) return null;
+    if (!window.hook().reeling) return null;
     let maxT = 0;
-    for (let t = 0; t < 150 * 60 && G.fish; t++) { w.step(); if (G.fish) maxT = Math.max(maxT, G.fish.tension); }
+    for (let t = 0; t < 150 * 60 && G.fish; t++) { window.step(); if (G.fish) maxT = Math.max(maxT, G.fish.tension); }
     return { landed: !!G.card, stars: G.card?.stars, maxT };
   });
   expect(r).toMatchObject({ landed: true });
@@ -70,10 +70,10 @@ test('a golden school bites without nibbling first', async ({ page }) => {
   await sail(page);
   const id = await page.evaluate(`(${hookFn})((sp) => sp.deck === 0 && sp.fight !== 'steady')`);
   const nibbles = await page.evaluate((id) => {
-    const { G, schoolsNear, homePort } = window.BR, w = window as any, hp = homePort();
+    const { G, schoolsNear, homePort } = window.BR, hp = homePort();
     schoolsNear(hp.x, hp.y, 3500).find((q: { id: string }) => q.id === id).gold = true;
     const n: number[] = [];
-    for (let k = 0; k < 4; k++) { n.push(w.hook().nibbles); G.fish = null; }
+    for (let k = 0; k < 4; k++) { n.push(window.hook().nibbles); G.fish = null; }
     return n;
   }, id);
   expect(nibbles).toEqual([0, 0, 0, 0]);

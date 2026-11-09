@@ -12,6 +12,7 @@ import { SET } from '../prefs';
 import { netCatch } from '../net';
 import { track, bucket } from '../analytics';
 import type { BaitChoice, Escapee, FightStyle, Fish, FishLine, FishStock, School, Species, TreasureMap } from '../types';
+import { buriedMap } from './treasure';
 import { G, boatDist, hit, held, nearest } from './state';
 import { boatDef, canLand, cap, catchNeed, crewLvl, dayNum, deckLvl, env, harpoonLvl, isNight, lineMax, logged } from './rules';
 import { clamp, dirTo, wrapAngle } from '../config';
@@ -53,17 +54,21 @@ const learning = (): boolean => G.stats.caught < 3;
  * within seconds (no school in reach: at the pier, as before).
  */
 export function placeByStarterSchool(anchor?: { x: number; y: number }): void {
-  const hp = anchor ?? homePort(), b = G.boat, r = castRange() * 0.5;
+  const at = starterSpot(anchor);
+  if (at) Object.assign(G.boat, { x: at.x, y: at.y, px: at.x, py: at.y, a: at.a, vx: 0, vy: 0, w: 0 });
+  else placeAtPort(homePort());
+}
+/** Where placeByStarterSchool puts a new voyage's boat, heading at its school; null for the pier. */
+export function starterSpot(anchor?: { x: number; y: number }): { x: number; y: number; a: number } | null {
+  const hp = anchor ?? homePort(), r = castRange() * 0.5;
   const starter = (s: School): boolean => schoolActive(s) && !s.boss && SPECIES[s.sp].rod === 0 && !SPECIES[s.sp].legend;
   const near = [...schoolsNear(hp.x, hp.y, 700)].filter(starter).sort((p, q) => Math.hypot(p.x - hp.x, p.y - hp.y) - Math.hypot(q.x - hp.x, q.y - hp.y));
   for (const s of near) for (let k = 0; k < 8; k++) {
     const a = Math.atan2(hp.y - s.y, hp.x - s.x) + k * Math.PI / 4, x = s.x + Math.cos(a) * r, y = s.y + Math.sin(a) * r;
     if (heightAt(x, y) > -0.12) continue;                       // open water, clear of the shore
-    Object.assign(b, { x, y, px: x, py: y, a: Math.atan2(s.y - y, s.x - x), vx: 0, vy: 0, w: 0 });
-    return;
+    return { x, y, a: Math.atan2(s.y - y, s.x - x) };
   }
-  if (anchor) placeByStarterSchool();                            // nothing biting by the shared spot: start from home
-  else placeAtPort(homePort());
+  return anchor ? starterSpot() : null;                          // nothing biting by the shared spot: start from home
 }
 /**
  * The closest biting school within casting range that this rod and boat can land; failing that the closest at all, so
@@ -185,7 +190,8 @@ function castStage(f: FishLine): void {
   const baitMul = (f.bait === 'glow' && isNight() ? 0.5 : f.bait ? 0.75 : 1) * (fits ? 0.8 : wrong ? 1.15 : 1);
   f.wait = Math.max(0.4, 1 - 0.15 * G.dry) * (2.5 + Math.random() * 4.5) * (1 - 0.1 * rod) * (f.frenzy ? 0.4 : 1) * baitMul * biteMul() * (1 - 0.12 * G.up.tackle)
     * (isRunningNow(sp.id) ? 0.75 : 1)            // this week's running fish bite sooner
-    * (sp.role === 'bait' ? 0.7 : 1);             // a bait ball is quick to take a hook
+    * (sp.role === 'bait' ? 0.7 : 1)              // a bait ball is quick to take a hook
+    * (isNight() && boatDef().lights ? 0.6 : 1);  // fish gather to a motor yacht's underwater lights
   if (f.s.gold) f.wait *= 0.6;                                  // a golden school bites quickly, and never teases
   const teases = [...TEASES[sp.fight](), ...(wrong || !f.bait ? [0.6 + Math.random() * 0.5] : [])].sort((p, q) => q - p);
   f.teases = f.s.gold ? [] : teases.filter(before => before < f.wait - 0.3);
@@ -523,8 +529,9 @@ function recordCatch(spIdx: number, stock: FishStock, f: FishLine | null, method
 /** Sometimes a bottle comes up with the fish: a treasure map, a few coins, or bait. */
 function bottleBonus(sp: Species): string | null {
   if (Math.random() >= 0.12) return null;
-  const map = G.maps.length < 2 && Math.random() < 0.4 ? makeMap() : null;
-  if (map) { G.maps.push(map); return 'You also found a bottle with a treasure map. It is marked on your chart'; }
+  // a bottle's map: mostly a chest on the sea floor, sometimes one buried on a beach
+  const map = G.maps.length < 2 && Math.random() < 0.4 ? (Math.random() < 0.3 && buriedMap(220 + Math.random() * 200, G.boat)) || makeMap() : null;
+  if (map) { G.maps.push(map); return `You also found a bottle with a treasure map${map.buried ? ' to a chest buried on a beach' : ''}. It is marked on your chart`; }
   if (Math.random() < 0.6) {
     const c = 6 + Math.floor(Math.random() * (10 + sp.base * 0.4));
     addCoins(c);
@@ -577,7 +584,7 @@ export const endlessStock = (): FishStock => ({ stock: 99, max: 99 });
  * A deckhand sometimes lands a second, smaller fish from the school you just fished (about 60% of the value, never a
  * trophy). It leaves the last free slot for your own catch, takes from the school's stock, and skips legends.
  */
-export function bonusFromDeckhand(s: School): void {
+function bonusFromDeckhand(s: School): void {
   const chance = [0, 0.25, 0.4][crewLvl()];
   if (!chance || s.boss || SPECIES[s.sp].legend || s.stock <= 0 || cap() - G.hold.length < 2 || Math.random() > chance) return;
   landNetted(s.sp, s, 'DECKHAND');
@@ -605,17 +612,18 @@ function startFrenzy(s: School, seconds: number): void {
 // sunfish) boils at the surface for a few minutes; the game says where, the chart marks it, and the waypoint's dots
 // lead there. Like any frenzy, bites come fast and trophies are likelier.
 function deepBloom(): boolean {
-  const b = G.boat, cands = schoolsNear(b.x, b.y, 1200).filter(s => {
-    const d = boatDist(s);
-    return d > 400 && SPECIES[s.sp].deck >= 2 && activeAt(s.sp, env()) && canLand(s.sp) && frenzyOk(s);
-  });
-  if (!cands.length) return false;
-  const s = cands[Math.floor(Math.random() * cands.length)];
+  const b = G.boat, s = frenzyPick(1200, (s, d) => d > 400 && SPECIES[s.sp].deck >= 2);
+  if (!s) return false;
   startFrenzy(s, 120);
   if (!G.waypoint) setWaypoint(s.x, s.y);
   toast(`A deep bloom far out: ${SPECIES[s.sp].name} rising, ${Math.round(boatDist(s) / 10)} m ${dirTo(b.x, b.y, s.x, s.y)}`, 'good');
   sfx('gulls');
   return true;
+}
+/** A random school within `reach` that is biting, landable and free to frenzy, and passes `ok` (given its distance). */
+function frenzyPick(reach: number, ok: (s: School, d: number) => boolean): School | null {
+  const cands = schoolsNear(G.boat.x, G.boat.y, reach).filter(s => ok(s, boatDist(s)) && activeAt(s.sp, env()) && canLand(s.sp) && frenzyOk(s));
+  return cands.length ? cands[Math.floor(Math.random() * cands.length)] : null;
 }
 export function updateFrenzy(dt: number): void {
   if (WX.state === 'storm') G.nextFrenzy -= dt * 0.5;   // storms bring frenzies sooner
@@ -630,12 +638,8 @@ export function updateFrenzy(dt: number): void {
   }
   if (!G.frenzy && G.t > G.nextFrenzy && deckLvl() >= 2 && Math.random() < 0.5 && deepBloom()) return;
   if (!G.frenzy && G.t > G.nextFrenzy) {
-    const cands = schoolsNear(G.boat.x, G.boat.y, 420).filter(s => {
-      const d = boatDist(s);
-      return d > 120 && d < 420 && activeAt(s.sp, env()) && canLand(s.sp) && frenzyOk(s);
-    });
-    if (cands.length) {
-      const s = cands[Math.floor(Math.random() * cands.length)];
+    const s = frenzyPick(420, (_, d) => d > 120 && d < 420);
+    if (s) {
       startFrenzy(s, 40);
       toast(`Feeding frenzy! ${SPECIES[s.sp].name} are biting fast. Follow the gulls`, 'good');
       sfx('gulls');

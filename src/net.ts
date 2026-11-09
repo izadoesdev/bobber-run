@@ -12,10 +12,10 @@ import { celebrate } from './game/feedback';
 import { relayKeep, relayLive, relayBoats, relaySend, relayEmote, relayRenamed, relayClock, type RelayBoat } from './relay';
 
 import { FORCED_OFFLINE } from './offline';
-export { FORCED_OFFLINE };
+import { FUND_KEYS } from '../convex/limits';
 const URL: string | undefined = FORCED_OFFLINE ? undefined : import.meta.env.VITE_CONVEX_URL;
 const SAVE_KEY = 'bobber-run-save-v3';
-const FUND_KEY = 'grand-harbour';
+const [FUND_KEY] = FUND_KEYS;
 
 /** Just what this module needs from the game state. */
 interface Game { mode: string; boat: { x: number; y: number; a: number; vx: number; vy: number; w: number }; boatId: string; paint: string }

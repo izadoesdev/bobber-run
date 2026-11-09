@@ -11,12 +11,14 @@ import { realmWhileAway } from '../islands';
 import { parseSave, type ParsedSave } from './saveSchema';
 import { DAYLEN, cap, hpMax } from './rules';
 import { resetLife } from '../life';
+import { resetPirates } from './pirates';
+import { resetHeli } from './heli';
+import { resetSpecial } from './special';
 import { voyagePreview, type VoyagePreview } from './savePreview';
 
 const KEY = 'bobber-run-save-v3', OLD = 'bobber-run-save-v2';
 
 
-type SaveData = ParsedSave;
 /** The v2 save, migrated on first load. */
 interface OldSave {
   coins: number; earned: number; up?: { oars?: number; hull?: number; hold?: number; rod?: number };
@@ -28,11 +30,11 @@ export const SAVE_STATUS = { failed: false };
 export function saveGame(): boolean {
   try {
     const b = G.boat;
-    const data: SaveData = {
+    const data: ParsedSave = {
       savedAt: Date.now(), world: WORLD, coins: G.coins, earned: G.earned, up: G.up, hp: b.hp, hold: G.hold, log: G.log, boatId: G.boatId, owned: G.owned,
       bait: G.bait, baitSel: G.baitSel, paint: G.paint, paints: G.paints, found: [...G.found], salvaged: [...G.salvaged], lastPort: G.lastPort, x: b.x, y: b.y, a: b.a,
       stats: G.stats, story: G.story, gifts: G.gifts, pet: G.pet, projects: G.projects, fleet: G.fleet, dives: G.dives, visits: G.visits,
-      goalsDone: G.goalsDone, cheated: G.cheated, maps: G.maps, escaped: G.escaped, packs: G.packs, regionsSeen: G.regionsSeen, explored: G.explored, unlocked: G.unlocked, waypoint: G.waypoint, gearOff: G.gearOff, zones: G.zones, docks: G.docks, streak: G.streak, treasury: G.treasury, realmRate: G.realmRate, hulls: G.hulls, boatUp: G.boatUp, musicOn: G.musicOn, offers: G.offers, active: G.active, pity: G.pity, clock: G.clock,
+      goalsDone: G.goalsDone, cheated: G.cheated, maps: G.maps, raids: G.raids, ammo: G.ammo, escaped: G.escaped, packs: G.packs, regionsSeen: G.regionsSeen, explored: G.explored, unlocked: G.unlocked, waypoint: G.waypoint, gearOff: G.gearOff, zones: G.zones, docks: G.docks, streak: G.streak, treasury: G.treasury, realmRate: G.realmRate, hulls: G.hulls, boatUp: G.boatUp, musicOn: G.musicOn, offers: G.offers, active: G.active, pity: G.pity, clock: G.clock,
     };
     localStorage.setItem(KEY, JSON.stringify(data));
   } catch {
@@ -50,7 +52,7 @@ export function hasSave(): boolean {
 /** Where the saved boat lies, so its sea can be built before Continue is pressed; null without a save. */
 export function savedSpot(): Point | null {
   try {
-    const d = JSON.parse(localStorage.getItem(KEY) || 'null') as Partial<SaveData> | null;
+    const d = JSON.parse(localStorage.getItem(KEY) || 'null') as Partial<ParsedSave> | null;
     return d && Number.isFinite(d.x) && Number.isFinite(d.y) && (d.world ?? 1) === WORLD ? { x: d.x!, y: d.y! } : null;
   } catch { return null; }
 }
@@ -106,16 +108,17 @@ export function newGame(): void {
   const fresh: Partial<GameState> = {
     coins: 15, coinsShown: 15, earned: 0, paint: 'classic', paints: ['classic'], up: freshUpgrades(), bait: { shrimp: 3, glow: 0, chum: 1 }, baitSel: 'shrimp',
     hold: [], log: {}, found: new Set(), salvaged: new Set(), sat: {}, fish: null, parts: [], toasts: [], floaters: [], boatId: 'row', owned: ['row'],
-    stats: freshStats(), goalsDone: [], cheated: false, maps: [], escaped: [], packs: {}, regionsSeen: [], explored: '', unlocked: [], waypoint: null, gearOff: {}, zones: {}, docks: {}, streak: 0, treasury: 0, realmRate: 0, hulls: {}, boatUp: {}, offers: {}, active: [], pity: 0,
+    stats: freshStats(), goalsDone: [], cheated: false, maps: [], raids: {}, ammo: { chain: 0, grape: 0, fire: 0 }, escaped: [], packs: {}, regionsSeen: [], explored: '', unlocked: [], waypoint: null, gearOff: {}, zones: {}, docks: {}, streak: 0, treasury: 0, realmRate: 0, hulls: {}, boatUp: {}, offers: {}, active: [], pity: 0,
     clock: DAYLEN * 0.08, frenzy: null, nextFrenzy: 240, card: null, projects: [], fleet: {}, dives: {}, visits: {}, gifts: {}, pet: null, dry: 0, story: null, talk: null,
     lairTold: false, sunkT: 0, sunkMsg: '', throttle: 0, crashCd: 0, spookCd: 0, petCd: 0, petT: 0,
-    wakeAcc: 0, smokeT: 0, bilgeT: 0, saveT: 0, netT: 0, potT: 0,
-    prompt: null, nearPort: null, nearWreck: null, nearSchool: null, aim: null, nearTreasure: null, nearEncounter: null, encounter: null,
+    bilgeT: 0, saveT: 0, netT: 0, potT: 0,
+    prompt: null, nearPort: null, nearWreck: null, nearSchool: null, aim: null, nearTreasure: null, nearEncounter: null, nearCove: null, nearPrize: null, dig: null, encounter: null,
     captions: [], hookT: -1e9, catchAnim: null, bought: null, confirm: null, myEmote: null, shake: 0, shakeX: 0, shakeY: 0,
     menu: { tab: 0, sel: 0, port: null }, map: { x: 0, y: 0, zoom: 1 },
   };
   Object.assign(G, fresh);
   resetLife();
+  resetPirates(); resetHeli(); resetSpecial();
   const home = homePort();
   G.lastPort = home.id;
   G.found.add(home.id);
@@ -129,7 +132,7 @@ export function newGame(): void {
  * that points at a place goes: charted ports, wrecks and dives, contracts, treasure maps, the waypoint, catch spots,
  * per-port records. Fleet boats come home to Alderhaven with their earnings; the boat starts there too.
  */
-function forNewWorld(d: Partial<SaveData>): Partial<SaveData> {
+function forNewWorld(d: Partial<ParsedSave>): Partial<ParsedSave> {
   const home = homePort();
   const log = Object.fromEntries(Object.entries(d.log || {}).map(([k, e]) => { const { at: _, ...rest } = e; return [k, rest]; }));
   const fleet = Object.fromEntries(Object.entries(d.fleet || {}).map(([k, f]) => [k, { ...f, port: home.id, portName: home.name }]));
@@ -140,7 +143,7 @@ function forNewWorld(d: Partial<SaveData>): Partial<SaveData> {
 }
 
 /** Read a v2 save into the v3 shape (only what v2 had). */
-function migrateOld(o: OldSave): Partial<SaveData> {
+function migrateOld(o: OldSave): Partial<ParsedSave> {
   const log = Object.fromEntries(Object.entries(o.log || {}).filter(([k]) => SP[k] !== undefined).map(([k, n]) => [k, { n, best: 0 }]));
   return {
     coins: o.coins, earned: o.earned, up: { ...freshUpgrades(), prop: o.up?.oars || 0, hull: o.up?.hull || 0, hold: o.up?.hold || 0, rod: o.up?.rod || 0 },
@@ -151,7 +154,7 @@ const readJson = <T,>(key: string): T | null => JSON.parse(localStorage.getItem(
 
 export function loadGame(): void {
   try {
-    let d = readJson<Partial<SaveData>>(KEY);
+    let d = readJson<Partial<ParsedSave>>(KEY);
     newGame();
     if (!d) {
       const o = readJson<OldSave>(OLD);
@@ -165,7 +168,7 @@ export function loadGame(): void {
       coins: s.coins, coinsShown: s.coins, earned: s.earned, up: { ...G.up, ...s.up }, hold: s.hold, log: s.log, boatId: s.boatId, owned: s.owned,
       bait: { ...G.bait, ...s.bait }, baitSel: s.baitSel, paint: s.paint, paints: s.paints, found: new Set(s.found), salvaged: new Set(s.salvaged),
       lastPort: s.lastPort || G.lastPort, stats: { ...G.stats, ...s.stats }, story: s.story, gifts: s.gifts, pet: s.pet, projects: s.projects,
-      fleet: s.fleet, dives: s.dives, visits: s.visits, goalsDone: s.goalsDone, cheated: s.cheated, maps: s.maps, escaped: s.escaped, packs: s.packs, regionsSeen: s.regionsSeen, explored: s.explored, unlocked: s.unlocked, gearOff: s.gearOff, zones: s.zones,
+      fleet: s.fleet, dives: s.dives, visits: s.visits, goalsDone: s.goalsDone, cheated: s.cheated, maps: s.maps, raids: s.raids, ammo: { ...G.ammo, ...s.ammo }, escaped: s.escaped, packs: s.packs, regionsSeen: s.regionsSeen, explored: s.explored, unlocked: s.unlocked, gearOff: s.gearOff, zones: s.zones,
       docks: s.docks, streak: s.streak, treasury: s.treasury, realmRate: s.realmRate, hulls: s.hulls, boatUp: s.boatUp, waypoint: s.waypoint, musicOn: s.musicOn, offers: s.offers, active: s.active, pity: s.pity, clock: s.clock ?? G.clock,
     };
     Object.assign(G, loaded);
@@ -181,8 +184,8 @@ export function loadGame(): void {
     G.boat.hp = clamp(s.hp ?? hpMax(), 1, hpMax());
     // older saves stored destination names in capitals, and could ask for more fish than the hold carries
     for (const c of [...G.active, ...Object.values(G.offers).flat()]) if (c && c.to) { c.toName = portById(c.to).name; c.n = Math.min(c.n, cap()); }
-    // the coastline can change between versions: a treasure that now lies under land moves out to open water
-    G.maps = G.maps.map(m => ({ ...m, ...nearestWater(m.x, m.y, -0.2) }));
+    // the coastline can change between versions: a sunken treasure that now lies under land moves out to open water
+    G.maps = G.maps.map(m => m.buried ? m : { ...m, ...nearestWater(m.x, m.y, -0.2) });
     const { x, y, a } = s;
     if (x !== undefined && y !== undefined && Number.isFinite(x) && Number.isFinite(y) && hAt(x, y) < -0.05) {
       Object.assign(G.boat, { x, y, a, px: x, py: y, pa: a });

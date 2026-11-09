@@ -1,8 +1,8 @@
 // The port screen: tabbed shop lists on wood, the selected item's details on parchment.
-import { G, portItems, portTabs, projDone, setTab, leavePort, equipment, fishValue, priceAt, catchNeed } from '../game';
+import { G, portItems, portTabs, projDone, setTab, leavePort, equipment, fishValue, priceAt, catchNeed, nearestYard, type PortTab } from '../game';
 import { boatDef, boatStats, builtIn, upgradeStat } from '../game/rules';
 import { saleBonus, sailorsNear } from '../game/port';
-import { SPECIES } from '../econ';
+import { BOAT_PARTS, SPECIES } from '../econ';
 import { NET } from '../net';
 import { CREW_RANGE } from '../online';
 import { WX } from '../weather';
@@ -11,14 +11,10 @@ import type { Fit } from '../models';
 import { BoatPortrait } from './boats';
 import { drawChart } from './chart';
 import { Canvas, Cell, Fish, Hint, HullStat, Icon, Key, Pips, WX_ICON, boatThumb, cap1, clockText, flashing } from './parts';
-import { money } from '../config';
+import { dirTo, money } from '../config';
 import { today, FEATURED_PRICE } from '../today';
 
-const GREET = [
-  'The harbourmaster tips his cap.', 'Gulls squabble over the pilings.', 'The smell of tar and salt hangs in the air.',
-  'A fiddle plays somewhere on the quay.', 'Nets dry on every rail.', 'The fishwife sizes up your catch.',
-];
-// a stable greeting per port
+// a stable number per port and day, for the rumour
 function hashStr(s: string): number {
   let h = 7;
   for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) | 0;
@@ -40,7 +36,7 @@ function Row({ it, i }: { it: PortRow; i: number }) {
   return (
     <Cell cls={'item' + (it.ok ? '' : ' off') + (flashing(it.key) ? ' flash' : '')} sel={G.menu.sel === i} onClick={onClick}>
       <RowVisual it={it} />
-      <div class="grow"><div>{it.label}</div>{it.pips ? <Pips n={it.pips[0]} of={it.pips[1]} /> : it.sub && <div class="sub">{it.sub}</div>}</div>
+      <div class="grow"><div>{it.label}</div>{it.pips ? <div class="meta"><Pips n={it.pips[0]} of={it.pips[1]} />{it.sub && <span class="sub">{it.sub}</span>}</div> : it.sub && <div class="sub">{it.sub}</div>}</div>
       <span class={'price' + (it.cost != null && G.coins < it.cost ? ' short' : '')}>{it.right}</span>
     </Cell>
   );
@@ -77,7 +73,7 @@ function SellDetail({ p }: { p: PortT }) {
       {bonus.crew > 0
         ? <p class="small good">Crew bonus +{Math.round(bonus.crew * 100)}%: {sailors} sailor{sailors === 1 ? '' : 's'} nearby</p>
         : NET.on && <p class="small muted">Crew bonus: +5% per sailor within {CREW_RANGE / 10} m, up to +15%.</p>}
-      <p class="small muted">Prices are per fish. The % compares this port's price with the usual price. Each fish you sell here lowers the price of that kind by 7% for a few minutes.</p>
+      <p class="small muted">Price per fish. The % is against the usual price; each one you sell here knocks that kind down 7% for a few minutes.</p>
       {best.length > 0 && <p class="muted">This port pays well for {best.map(o => o.s.name).join(', ')}.</p>}
     </div>
   );
@@ -137,13 +133,15 @@ const STAT_ROWS: [string, (s: ReturnType<typeof boatStats>) => number, (v: numbe
 ];
 const GEAR_NAMES: [keyof BoatDef, string][] = [['net', 'net'], ['sonar', 'sonar'], ['crew', 'deckhand'], ['keel', 'keel'], ['harpoon', 'harpoon']];
 // a boat against the one you sail now, both with your upgrades fitted
+/** Text as a sentence: a full stop at the end unless it already ends in one. */
+const sentence = (s?: string | null): string => !s || /[.!?]$/.test(s) ? s ?? '' : s + '.';
 function BoatCompare({ b }: { b: BoatDef }) {
   const cur = boatDef(), mine = boatStats(cur), it = boatStats(b), same = cur.id === b.id;
   const gear = GEAR_NAMES.filter(([k]) => (b[k] as number | undefined ?? 0) > 0).map(([k, n]) => `level ${b[k]} ${n}`);
   const giants = SPECIES.filter(s => s.deck > 0 && s.deck <= (b.deck ?? 0)).map(s => s.name);   // sea giants this deck can land
   return (
     <>
-      <p>{b.what}.</p>
+      <p>{sentence(b.what)}</p>
       <div class="ledger">
         {STAT_ROWS.map(([n, get, fmt, rel]) => (
           <div class="row"><span class="caps grow">{n}</span>
@@ -167,7 +165,7 @@ function UpgradeDetail({ k, lvl, max, next }: { k: UpgradeKey; lvl: number; max:
       </div>
       {next && <p><span class="caps">Next</span> {k === 'rod' ? `Level ${lvl + 2} rod. New fish: ${SPECIES.filter(s => s.rod === lvl + 1 && s.w > 0).map(s => s.name).join(', ')}` : next}.</p>}
       {b > lvl && <p class="warn small">Your {boatDef().name} already has level {b} built in, so levels up to {b} only help on boats without it.</p>}
-      {k === 'prop' && <p class="muted small">100% is a plain rowboat. Speed upgrades stay with this boat.</p>}
+      {BOAT_PARTS.includes(k) && <p class="muted small">{k === 'prop' ? '100% is a plain rowboat. Speed upgrades stay with this boat.' : `Fitted to your ${boatDef().name}, so it stays with this boat.`}</p>}
     </>
   );
 }
@@ -188,16 +186,16 @@ function DetailBody({ it }: { it: PortRow }) {
     case 'supply': case 'ferry':
       return (
         <>
-          <p>{it.what}.</p><p class="muted">{it.sub}.</p>
+          <p>{sentence(it.what)}</p><p class="muted">{sentence(it.sub)}</p>
           {it.repeat && <p class="muted small">Hold the button down to keep buying.</p>}
         </>
       );
-    case 'rest': case 'paint': case 'fleet': case 'collect': case 'fund': case 'take': case 'contract':
+    case 'rest': case 'rumour': case 'paint': case 'fleet': case 'collect': case 'fund': case 'take': case 'contract':
       return <p>{it.what}</p>;
     case 'deliver':
-      return <><p>{it.sub}.</p>{it.what && <p class="muted">{it.what}</p>}</>;
+      return <><p>{sentence(it.sub)}</p>{it.what && <p class="muted">{it.what}</p>}</>;
     case 'note':
-      return <p>{it.sub}.</p>;
+      return <><p>{sentence(it.sub)}</p>{it.what && <p class="muted">{it.what}</p>}</>;
     case 'island':
       return <><p>{it.sub}.</p><p class="muted">{it.right === 'Yours' ? 'Open it to build on it, rename it, change its flag or link, or release it.' : it.right === 'Held' ? 'Open it to see who rules it and what they have built.' : 'Open it to name it, pick a flag and buy it with your coins.'}</p></>;
     default:
@@ -214,6 +212,7 @@ function Detail({ p, it }: { p: PortT; it: PortRow | null }) {
       <h2>{it.kind === 'take' ? `Contract: ${it.label}` : it.label}</h2>
       {it.kind === 'sell' ? <SellDetail p={p} /> : <div class="d-body"><DetailBody it={it} /></div>}
       <div class="d-foot">
+        {!it.ok && it.why && !finished && <p class="why">{it.why}</p>}
         {it.cost != null && <span class={'price big' + (G.coins < it.cost ? ' short' : '')}>{money(it.cost)}</span>}
         {it.action && !finished && (
           <button data-track={`port-${it.kind}`} class="btn primary" disabled={!it.ok} onClick={() => it.act()}>
@@ -221,7 +220,6 @@ function Detail({ p, it }: { p: PortT; it: PortRow | null }) {
           </button>
         )}
       </div>
-      {!it.ok && it.why && !finished && <p class="why">{it.why}</p>}
     </aside>
   );
 }
@@ -269,17 +267,32 @@ function Board({ p }: { p: PortT }) {
   );
 }
 
+const TAB: Record<PortTab, [string, string]> = {
+  MARKET: ['Market', 'coin'], OUTFITTER: ['Upgrades', 'repair'], SHIPYARD: ['Shipyard', 'hull'], FLEET: ['Fleet', 'net'],
+  FERRY: ['Ferry', 'map'], ISLANDS: ['Islands', 'anchor'], HARBOUR: ['Harbour', 'bell'],
+};
+/** What this harbour has, in one line: a shipyard or where the nearest one is. */
+function Services({ p }: { p: PortT }) {
+  if (p.shipyard) return <div class="sub services"><span class="yard">Shipyard</span> · boats and paint sold here</div>;
+  const q = nearestYard(p);
+  return <div class="sub services">No shipyard · nearest is {q.name}, {Math.round(Math.hypot(q.x - p.x, q.y - p.y) / 10)} m {dirTo(p.x, p.y, q.x, q.y)}</div>;
+}
+
 export function Port({ p }: { p: PortT }) {
   const tabs = portTabs(p), items = portItems(p), cur = items[G.menu.sel], it = isRow(cur) ? cur : null;
   return (
     <div class="screen port panel rivets">
       <header class="head">
-        <div><h1>{p.name}</h1><div class="sub">{GREET[hashStr(p.id) % GREET.length]}</div></div>
-        <div class="row"><Forecast /><Icon k="coin" size="l" /><span class="coins big">{money(G.coinsShown)}</span></div>
+        <div><h1>{p.name}</h1><Services p={p} /></div>
+        <div class="row"><Forecast /><span class="purse"><Icon k="coin" /><span class="coins">{money(G.coinsShown)}</span></span></div>
       </header>
       <nav class="tabs">
         <Key k="q" pad="LB" />
-        {tabs.map((t, i) => <button data-track={`port-tab-${t}`} class={'tab' + (i === G.menu.tab ? ' on' : '')} onClick={() => setTab(i)}><span class="tnum">{i + 1}</span>{t}</button>)}
+        {tabs.map((t, i) => (
+          <button data-track={`port-tab-${t}`} class={'tab' + (i === G.menu.tab ? ' on' : '') + (t === 'SHIPYARD' && !p.shipyard ? ' none' : '')} onClick={() => setTab(i)}>
+            <Icon k={TAB[t][1]} size="s" />{TAB[t][0]}<span class="tnum">{i + 1}</span>
+          </button>
+        ))}
         <Key k="e" pad="RB" />
       </nav>
       {G.menu.tab === 0 && <Board p={p} />}

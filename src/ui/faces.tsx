@@ -5,6 +5,7 @@
 // in three frames, so a portrait blinks now and then and moves its mouth while a line is new.
 import Alea from 'alea';
 import { Vox, mat, RGB, EMISSIVE } from '../voxel';
+import { fnv1a } from '../noise';
 import { M } from '../models';
 import { PEOPLE } from '../story';
 
@@ -35,11 +36,9 @@ export interface Look {
   hue: number;
 }
 
-function hashStr(s: string): number { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return h >>> 0; }
-
 /** The look for someone, from their name and role: the role sets age and dress, the seed the rest. */
 function lookFor(name: string, role: string, seed = name + '|' + role): Look {
-  const r = Alea(hashStr(seed)), pick = <T,>(a: readonly T[]): T => a[Math.floor(r() * a.length)], chance = (p: number) => r() < p;
+  const r = Alea(fnv1a(seed)), pick = <T,>(a: readonly T[]): T => a[Math.floor(r() * a.length)], chance = (p: number) => r() < p;
   const t = (name + ' ' + role).toLowerCase(), has = (re: RegExp) => re.test(t);
   const young = has(/\b(kid|boy|girl|nephew|niece|grandson|granddaughter|apprentice|young|lamp boy)\b/) || has(/great-grand/);
   const old = !young && has(/\b(old|gran|grandmother|grandfather|elder|storyteller)\b/);
@@ -75,7 +74,7 @@ function lookFor(name: string, role: string, seed = name + '|' + role): Look {
 
 const H0 = 6, H1 = 12;                 // the head: 7 wide (-3..3), from z 6 to 12; the face looks south (+v)
 /** Builds the bust for a look; frame 0 is the face at rest, 1 has the eyes shut, 2 the mouth open. */
-export function bust(L: Look, frame: 0 | 1 | 2): Vox {
+function bust(L: Look, frame: 0 | 1 | 2): Vox {
   const V = new Vox(-7, 7, -6, 6, 19);
   if (L.parrot) return parrot(V, frame);
   const skin = SKIN[L.skin], hair = HAIR[L.hair];
@@ -214,7 +213,7 @@ function frontURL(V: Vox): string {
 
 const urls = new Map<string, string>();
 /** The three frames of a portrait, as data URLs (made once). */
-function faceFrames(L: Look, key: string): [string, string, string] {
+export function faceFrames(L: Look, key: string): [string, string, string] {
   return [0, 1, 2].map(f => { const k = key + '#' + f; let u = urls.get(k); if (!u) urls.set(k, u = frontURL(bust(L, f as 0 | 1 | 2))); return u; }) as [string, string, string];
 }
 
@@ -239,7 +238,7 @@ export function lookOf(name: string, role: string, who?: string): [Look, string]
  */
 export function Face({ name, role, who, size = 'm', talking = false, line }: { name: string; role: string; who?: string; size?: 's' | 'm' | 'l'; talking?: boolean; line?: string }) {
   const [L, key] = lookOf(name, role, who);
-  const [rest, blink, talk] = faceFrames(L, key), delay = -(hashStr(key) % 4000) / 1000;
+  const [rest, blink, talk] = faceFrames(L, key), delay = -(fnv1a(key) % 4000) / 1000;
   return (
     <span class={'face face-' + size} style={{ '--hue': L.hue } as Record<string, number>} aria-hidden="true">
       <img src={rest} alt="" />

@@ -16,7 +16,8 @@ import { advanceDive } from './diving';
 /** Only an engine at a fair clip, passing almost over the fish, scares them. Sails and oars never do. */
 const SCARE = { speed: 38, dist: 24 };
 /** A scattered school regroups after SCATTER_S; a third scare before the first is half forgotten makes it dive for DIVE_S. */
-export const SCATTER_S = 5, DIVE_S = 40;
+export const SCATTER_S = 5;
+const DIVE_S = 40;
 const DIVE_HEAT = 2.5, HEAT_FADE_S = 60;
 /** One fish returns to a fished school this often (the Old One takes much longer). */
 const REFILL_S = 35, BOSS_REFILL_S = 1200;

@@ -26,6 +26,12 @@ export function hash(x: number, y: number, s = 0): number {
   return (h ^ (h >>> 16)) >>> 0;
 }
 export const hash01 = (x: number, y: number, s?: number): number => hash(x, y, s) / 4294967296;
+/** A string's stable 32-bit hash (FNV-1a). */
+export function fnv1a(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
 
 /** Small seeded PRNG returning floats in [0, 1). */
 export function mulberry(a: number): () => number {

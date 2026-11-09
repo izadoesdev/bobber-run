@@ -8,7 +8,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc -p convex --noEmit",
     "test": "bun test tests",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "bench": "bun scripts/bench.ts"
   },
   "dependencies": {
     "@auth/core": "^0.41.1",

@@ -31,3 +31,24 @@ test('the outfitter sells an upgrade and the shipyard a boat', async ({ page }) 
   await page.evaluate(() => { const { G, GAME } = window.BR; GAME.portItems(G.menu.port).find((i: { boat?: { id: string }; paint?: unknown }) => i.boat?.id === 'row' && !i.paint)?.act(); });
   expect(await page.evaluate(() => [window.BR.G.boatId, window.BR.G.boat.hp, window.BR.G.up.hold])).toEqual(['row', 30, 1]);
 });
+test('a port without a shipyard says so and marks the nearest one', async ({ page }) => {
+  await sail(page);
+  const yard = await page.evaluate(() => {
+    const { G, GAME, homePort, poisNear } = window.BR, h = homePort();
+    const ports = poisNear(h.x, h.y, 9000).filter((q: { type: string }) => q.type === 'port');
+    for (const q of ports) G.found.add(q.id);
+    const p = ports.find((q: { shipyard: boolean }) => !q.shipyard);
+    GAME.placeAtPort(p); GAME.dock(p);
+    GAME.setTab(GAME.portTabs(p).indexOf('SHIPYARD'));
+    const row = GAME.portItems(p).find((r: { kind: string }) => r.kind === 'note');
+    const d = (q: { x: number; y: number }) => Math.hypot(q.x - p.x, q.y - p.y);
+    const nearest = ports.filter((q: { shipyard: boolean; id: string }) => q.shipyard && q.id !== p.id).sort((a: { x: number; y: number }, b: { x: number; y: number }) => d(a) - d(b))[0];
+    row.act();
+    return { label: row.label, name: nearest.name, at: G.waypoint && Math.hypot(G.waypoint.x - nearest.dock.x, G.waypoint.y - nearest.dock.y), side: nearest.yardSide };
+  });
+  expect(yard.label).toBe(`Nearest shipyard: ${yard.name}`);
+  expect(yard.at).toBe(0);
+  expect([1, -1]).toContain(yard.side);                                         // shipyards build their floating dock beside the pier
+  await expect(page.locator('.port .services')).toContainText(`No shipyard · nearest is ${yard.name}`);
+  await expect(page.locator('.tab.none')).toHaveText(/Shipyard/);
+});

@@ -85,7 +85,7 @@ export function initInput(): void {
 }
 
 // ---------- gamepad ----------
-// stick/d-pad steer, A cast/confirm, B back, X dock, Y chart, LB log, RB bait, triggers row;
+// stick/d-pad steer, A cast/confirm, B back, X dock, Y chart, LB log, RB bait, L3 cannons, R3 next target, triggers row;
 // in port the shoulder buttons switch tabs instead
 const padPrev: Record<string, boolean> = {};
 export function pollPad(): void {
@@ -94,7 +94,7 @@ export function pollPad(): void {
   const state: Record<string, boolean> = {
     ArrowLeft: ax < -0.4 || btn(14), ArrowRight: ax > 0.4 || btn(15), ArrowUp: ay < -0.4 || btn(12) || btn(7), ArrowDown: ay > 0.4 || btn(13) || btn(6),
     ' ': btn(0), Escape: btn(1), e: !port && btn(2), m: btn(3), l: !port && btn(4), b: !port && btn(5),
-    PageUp: port && btn(4), PageDown: port && btn(5), Tab: btn(8), Pause: btn(9), q: !port && btn(11),
+    PageUp: port && btn(4), PageDown: port && btn(5), Tab: btn(8), Pause: btn(9), q: !port && btn(11), r: !port && btn(10),
   };
   for (const [k, down] of Object.entries(state)) {
     if (down && !padPrev[k]) { G.pressed.add(k); G.pad = true; unlockAudio(); if (TAKES_HELM.has(k)) dropCourse(); }

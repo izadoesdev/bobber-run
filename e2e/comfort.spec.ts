@@ -125,7 +125,7 @@ test('a fishing pause explains quitting and keeps the line when saving fails @bo
   const before = await pausedLine(page);
   await page.evaluate(() => {
     const original = Storage.prototype.setItem;
-    (window as any).__restoreStorage = () => { Storage.prototype.setItem = original; };
+    window.__restoreStorage = () => { Storage.prototype.setItem = original; };
     Storage.prototype.setItem = function (key, value) {
       if (key === 'bobber-run-save-v3') throw new DOMException('Full', 'QuotaExceededError');
       original.call(this, key, value);
@@ -142,7 +142,7 @@ test('a fishing pause explains quitting and keeps the line when saving fails @bo
     return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('button') === e;
   })).toBe(true);
   await page.screenshot({ path: test.info().outputPath('fishing-save-failure.png'), animations: 'disabled' });
-  await page.evaluate(() => (window as any).__restoreStorage());
+  await page.evaluate(() => window.__restoreStorage());
   if (info.project.name === 'phone') await quit.tap(); else await quit.click();
   await expect.poll(() => page.evaluate(() => window.BR.G.mode)).toBe('title');
   expect(await page.evaluate(() => window.BR.G.fish)).toBeNull();

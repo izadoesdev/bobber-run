@@ -5,7 +5,7 @@ import { hex } from './config';
 
 export type RGB = [number, number, number];
 /** a material's three tones: shadow, mid, lit */
-export type Ramp = [RGB, RGB, RGB];
+type Ramp = [RGB, RGB, RGB];
 export type Vec3 = [number, number, number];
 
 /** Material id -> its ramp. Id 0 means "empty", so slot 0 is a placeholder that is never drawn. */

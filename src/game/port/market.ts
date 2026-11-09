@@ -65,23 +65,25 @@ export function saleValue(p: Port, all = false): { tot: number; n: number; kept:
 }
 /** A full hold where every fish is kept back would leave nothing to sell and no room to fish, so Sell all can sell those too. */
 const stuck = (n: number): boolean => n === 0 && G.hold.length >= cap();
-export function sell(p: Port): void {
+/** Sell the catch at `p`. `via` tells how it got there when you didn't sail it in (the superyacht's helicopter). */
+export function sell(p: Port, via = ''): void {
   let all = false, { tot, n } = saleValue(p);
+  const again = via ? 'Send the helicopter again' : 'Press Sell all again';
   if (stuck(n)) {
-    if (!confirmed('sell-kept', 'All your fish are kept for a contract or a harbour project. Press Sell all again to sell them anyway')) return;
+    if (!confirmed('sell-kept', `All your fish are kept for a contract or a harbour project. ${again} to sell them anyway`)) return;
     all = true; ({ tot, n } = saleValue(p, true));
   }
   if (!n) { sfx('deny'); return; }
   const keep = all ? new Set<Fish>() : reserved().all, sat = G.sat[p.id] || (G.sat[p.id] = {});
   const legend = G.hold.find(f => !keep.has(f) && SPECIES[f.sp].legend);
-  if (legend && !confirmed('sell-legend', `You have a legendary fish (${SPECIES[legend.sp].name}). Press Sell all again to sell it too`)) return;
+  if (legend && !confirmed('sell-legend', `You have a legendary fish (${SPECIES[legend.sp].name}). ${again} to sell it too`)) return;
   for (const f of G.hold) if (!keep.has(f)) sat[f.sp] = (sat[f.sp] || 0) + 1;
   G.hold = G.hold.filter(f => keep.has(f));
   addCoins(tot); G.stats.sold++; packSell(tot);
   track('catch_sold', { fish: n, value_bucket: bucket(tot), port: p.name, sold_kept: all });
   sfx('coin'); setTimeout(() => sfx('coin', 0.7), 90);
   if (G.mode === 'port' && G.menu.port?.id === p.id) G.menu.sale = { count: n, coins: tot };
-  else toast(`Sold ${n} fish for $${tot}`, 'good');
+  else toast(`Sold ${n} fish ${via ? via + ' ' : ''}for $${tot}`, 'good');
   saveGame();
 }
 

@@ -5,7 +5,7 @@ test('a prolonged graphics reset freezes gameplay and removes its recovery contr
   await page.evaluate(() => {
     const gl = (document.getElementById('screen') as HTMLCanvasElement).getContext('webgl2')!;
     const ext = gl.getExtension('WEBGL_lose_context')!;
-    (window as any).__restoreGraphics = () => ext.restoreContext(); // getExtension returns null while the context is lost
+    window.__restoreGraphics = () => ext.restoreContext(); // getExtension returns null while the context is lost
     ext.loseContext();
   });
   await expect(page.locator('#gl-reset')).toBeVisible({ timeout: 10_000 });
@@ -14,7 +14,7 @@ test('a prolonged graphics reset freezes gameplay and removes its recovery contr
   const clock = await page.evaluate(() => window.BR.G.t);
   await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 300)));
   expect(await page.evaluate(() => window.BR.G.t)).toBe(clock);
-  await page.evaluate(() => (window as any).__restoreGraphics());
+  await page.evaluate(() => window.__restoreGraphics());
   await expect(page.locator('#gl-reset')).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => window.BR.G.t)).toBeGreaterThan(clock);
 });

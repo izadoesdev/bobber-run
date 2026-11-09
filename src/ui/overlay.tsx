@@ -1,16 +1,18 @@
 import type { JSX } from 'preact';
 import { G, schoolActive } from '../game';
 import { SPECIES } from '../econ';
-import { schoolsNear } from '../world';
+import { poisNear, schoolsNear } from '../world';
 import { SET } from '../settings';
 import { EMOTES } from '../net';
+import { KINDS, PIRATES, cannonTarget, flagOf, hailer, lengthOf, threat } from '../game/pirates';
+import { pirateStatus } from './combat';
 import { ONLINE } from '../online';
 import { dismissSpeech, speech, voyage } from '../story';
 import { markerTarget, type Step } from '../game/guide';
 import { waypointRoute } from '../waypoint';
 import { coursePath } from '../game/autopilot';
 import { regionAt } from '../biome';
-import { newWaters, regionAbout } from '../game/regions';
+import { lockedAt, newWaters, regionAbout } from '../game/regions';
 import { IslandSigns } from './island';
 import { Face } from './faces';
 import { BaitTag, Fish, Icon, Key, edgeFade, forTouch, keyed, pin, viewPct } from './parts';
@@ -183,6 +185,12 @@ function worldLabels(): JSX.Element[] {
     const [x, y] = viewPct(s.x, s.y - 6), a = edgeFade(x, y, 4, 96, 30, 92) * Math.min(1, (120 - Math.hypot(s.x - G.boat.x, s.y - G.boat.y)) / 30);
     if (a > 0) labels.push(<div class="label-world bare" key={'f' + s.id} style={{ ...pin(x, y), opacity: 0.7 * a }} title={SPECIES[s.sp].name}><Fish sp={s.sp} size="s" /></div>);
   }
+  // harbours name themselves as you come near, and a shipyard says so: from the water one pier looks much like another
+  for (const p of poisNear(G.boat.x, G.boat.y, 300)) {   // over the pier's end, clear of the top HUD
+    if (p.type !== 'port' || lockedAt(p.x, p.y)) continue;
+    const [x, y] = viewPct(p.dock.x, p.dock.y - 16), a = edgeFade(x, y, 6, 94, 22, 92) * Math.min(1, (260 - Math.hypot(p.dock.x - G.boat.x, p.dock.y - G.boat.y)) / 40);
+    if (a > 0) labels.push(<div class={'label-world chip port-sign' + (p.shipyard ? ' yard' : '')} key={'h' + p.id} style={{ ...pin(x, y), opacity: a }}>{p.name}{p.shipyard && <span class="tag">Shipyard</span>}</div>);
+  }
   // other sailors: a name tag, plus a speech bubble for a few seconds after they greet or chat (the newer wins)
   const now = Date.now(), fresh = (at: number) => now - at < 4500, said = SET.chat === 'off' ? new Map<string, { text: string; at: number }>() : ONLINE.chat;
   for (const s of ONLINE.sailors) {
@@ -194,6 +202,21 @@ function worldLabels(): JSX.Element[] {
     else if (s.emote != null && fresh(s.emoteAt)) {
       labels.push(<div class="bubble" key={'b' + s.uid} style={pin(x, y - 5)}>{EMOTES[s.emote]}</div>);
     }
+  }
+  // pirate ships: once she's shown her colours, her name and her condition as a lookout calls it (a ship shadowing you
+  // under no colours is just a sail)
+  const aim = cannonTarget();
+  for (const p of PIRATES.ships) {
+    const near = Math.hypot(p.x - G.boat.x, p.y - G.boat.y) < 320;
+    if (flagOf(p) < 0 && p.role !== 'fireship') continue;                // a sail under no colours is just a sail (a fire ship is plain to see)
+    if (!(p === aim || p.mood === 'surrender' || (p.mood === 'hail' && p.parley > 0) || ((p.mood === 'engage' || p.mood === 'chase' || p.mood === 'flee') && near))) continue;
+    const [x, y] = viewPct(p.x, p.y - lengthOf(p) * 0.8 - 8), a = edgeFade(x, y, 2, 98, 6, 96, 3);
+    if (!a) continue;
+    labels.push(
+      <div class={'label-world chip pirate' + (p === aim ? ' aimed' : '')} key={'p' + p.id} style={{ ...pin(x, y), opacity: a }}>
+        {p.role === 'fireship' ? 'Fire ship' : p.name}{p.role !== 'fireship' && <span class="pclass">{KINDS[p.kind].name}</span>}{pirateStatus(p) && <span class="pstatus">{pirateStatus(p)}</span>}
+      </div>,
+    );
   }
   const mine = said.get('me'), [mx, my] = viewPct(G.boat.x, G.boat.y - 24);
   const emoteAt = G.myEmote ? now - (G.t - G.myEmote.t) * 1000 : -Infinity;   // game time to wall-clock time
@@ -224,7 +247,7 @@ function FirstHint() {
 // what you can do right here (cast, dock, salvage) as a small label under the boat instead of a panel; the
 // fishing prompts stay at the bottom, where a warning has to be loud
 function BoatPrompt() {
-  if (!G.stats.caught && !G.nearEncounter && !G.nearPort && !G.nearWreck && !G.nearTreasure) return <FirstHint />;
+  if (!G.stats.caught && !G.nearEncounter && !G.nearPort && !G.nearWreck && !G.nearTreasure && !threat() && !hailer()) return <FirstHint />;
   if (!G.prompt || G.fish || G.card || G.mode !== 'play') return null;
   const [x, y] = viewPct(G.boat.x, G.boat.y + 16);
   return <div class="prompt-world" style={pin(x, y)}>{keyed(G.prompt)}{G.nearSchool && <BaitTag />}</div>;

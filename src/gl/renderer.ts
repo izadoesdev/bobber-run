@@ -1,26 +1,31 @@
 // WebGL2 renderer: one fragment shader draws terrain and water from the heightfield; boats, landmarks, trees and sea
 // life are lit voxel meshes; shadows go along the sun into a world-aligned buffer, wakes into a foam buffer the water
 // reads; then HDR post (bloom, tilt-shift, grading, vignette, grain, rain).
-import { W, H, clamp, lerp, frac, smooth01 } from '../config';
+import { W, H, clamp, lerp, frac, smooth01, wrapAngle } from '../config';
 import { SAILOR_FX } from '../game/sailing';
 import { ONLINE, type Sailor } from '../online';
 import { SET, type Quality, type PixelStyle } from '../prefs';
 import { wantTiles } from '../tilepool';
-import { TS, TN, getTile, hasTile, hAt, poisNear, schoolsNear, cratesNear, claimableNear, realmPlots, heightAt, hotspotsNear, regionSites, type HeightTile, type Hotspot, type RegionSite } from '../world';
+import { TS, TN, tileSpots, getTile, hasTile, hAt, poisNear, schoolsNear, cratesNear, claimableNear, realmPlots, heightAt, hotspotsNear, regionSites, type HeightTile, type Hotspot, type RegionSite } from '../world';
 import { hash01 } from '../noise';
 import { SPECIES, BOATS } from '../econ';
-import { biomeMix, coldness, warmth, themeHold, themeAt, THEMES, THEME_IDS, type Atmos, type Odds, type Theme, type ThemeHold } from '../biome';
+import { biomeMix, coldness, warmth, themeHold, themeAt, pickOdds, THEMES, THEME_IDS, THEME_ROW, type Atmos, type Odds, type Theme, type ThemeHold } from '../biome';
 import { schoolLook } from '../species';
 import { SCATTER_S, attackK, schoolDrawR, schoolShown } from '../game/schools';
 import { divePose } from '../game/diving';
 import { LAMP_Z, landmarkKind, onGrounds } from '../landmarks';
-import { G, darkness, lightR, schoolActive, isNight, dayFrac, equipment, windAngle, boatDef } from '../game';
+import { G, darkness, lampR, lightR, schoolActive, isNight, dayFrac, equipment, windAngle, boatDef, hpMax } from '../game';
 import { WX, atmosAt } from '../weather';
 import { seaPropsNear, type SeaProp, type SeaPropKind } from '../seaprops';
 import { seaPropGathered } from '../game/encounters';
 import { creatureShown } from '../game/wildlife';
+import { KINDS as SHIP_KINDS, PIRATES, flagOf, lengthOf, type Pirate } from '../game/pirates';
+import { HELI, HELI_STATE } from '../game/heli';
+import type { ShipLook } from '../pirateships';
 import { LIFE, type Whale, type Giant } from '../life';
-import { hasOars, oarGeom, BOAT_MODELS, NP, SHIPPED, PLAIN, lookSeed, lookCoat, type Fit } from '../models';
+import { hasOars, oarGeom, BOAT_MODELS, NP, SHIPPED, PLAIN, SPINNAKER, lookSeed, lookCoat, type Fit } from '../models';
+import { SPECIAL, pingShown, spinFlogging } from '../game/special';
+import { RIG, offWind } from '../game/rules';
 import { NET } from '../net';
 import { ISLANDS, islandColour } from '../islands';
 import { program, texture, target, msTarget, free, type Program, type Target, type MsTarget } from './glutil';
@@ -301,7 +306,7 @@ const bmS = [0, 0, 0, 0];
 // ---------- island themes: which island's theme holds each biome-grid point, and how strongly ----------
 // Per point: theme row (THEME_IDS index), weight 0..1, the island's shade 0..1. Weights blend between points; the
 // row and shade come from the nearest point (where the row changes the weight is ~0, see themeHold).
-const NTH = 3, tq = [0, 0, 0], TROW: Record<string, number> = Object.fromEntries(THEME_IDS.map((t, i) => [t, i]));
+const NTH = 3, tq = [0, 0, 0];
 const themeGrids = new WeakMap<HeightTile, Float32Array>(), holdS: ThemeHold = { theme: 'home', w: 0, jitter: 0 };
 const ISLAND_REACH = 460;                        // claimableNear radius that finds every island whose theme can reach a tile
 function themeGrid(t: HeightTile): Float32Array {
@@ -312,7 +317,7 @@ function themeGrid(t: HeightTile): Float32Array {
   for (let j = 0; j < BN; j++) for (let i = 0; i < BN; i++) {
     themeHold(t.tx * TS + i * BG, t.ty * TS + j * BG, islands, holdS);
     const o = (j * BN + i) * NTH;
-    g[o] = TROW[holdS.theme]; g[o + 1] = holdS.w; g[o + 2] = holdS.jitter;
+    g[o] = THEME_ROW[holdS.theme]; g[o + 1] = holdS.w; g[o + 2] = holdS.jitter;
   }
   themeGrids.set(t, g);
   return g;
@@ -340,15 +345,7 @@ function paletteTexture(): WebGLTexture {
   return t;
 }
 
-// ---------- per-tile scenery: one candidate spot per GS x GS cell, hashed into place, cached with the tile ----------
-// fn gets the spot, its cell, and the tile's height there; spots that land outside the tile belong to its neighbour
-function tileSpots(t: HeightTile, GS: number, salt: number, fn: (px: number, py: number, gx: number, gy: number, h: number) => void): void {
-  const x0 = t.tx * TS, y0 = t.ty * TS;
-  for (let gy = Math.floor(y0 / GS); gy <= Math.floor((y0 + TS - 1) / GS); gy++) for (let gx = Math.floor(x0 / GS); gx <= Math.floor((x0 + TS - 1) / GS); gx++) {
-    const px = gx * GS + Math.floor(hash01(gx, gy, salt) * GS), py = gy * GS + Math.floor(hash01(gx, gy, salt + 1) * GS);
-    if (px >= x0 && px < x0 + TS && py >= y0 && py < y0 + TS) fn(px, py, gx, gy, t.h[(py - y0 + 1) * TN + px - x0 + 1]);
-  }
-}
+// ---------- per-tile scenery (tileSpots places one candidate per cell, cached with the tile) ----------
 /** Calls fn for every height tile overlapping world rect [x0, x1] x [y0, y1]. */
 function eachTile(x0: number, y0: number, x1: number, y1: number, fn: (tx: number, ty: number) => boolean | void): void {
   for (let ty = Math.floor(y0 / TS); ty <= Math.floor(y1 / TS); ty++) for (let tx = Math.floor(x0 / TS); tx <= Math.floor(x1 / TS); tx++) if (fn(tx, ty) === false) return;
@@ -357,7 +354,6 @@ function eachTile(x0: number, y0: number, x1: number, y1: number, fn: (tx: numbe
 // ---------- trees ----------
 const KINDS = MS.TREE_KINDS;
 const KI: Record<string, number> = Object.fromEntries(KINDS.map((k, i) => [k, i]));
-const pickOdds = (L: Odds, r: number): string => { let t = 0; for (const [, w] of L) t += w; let v = r * t; for (const [k, w] of L) { v -= w; if (v <= 0) return k; } return L[0][0]; };
 const TOP: Odds = [['rock', 2], ['boulders', 1]];
 const TROPICAL = new Set(['palm', 'fern', 'mangrove', 'bamboo', 'cactus']);
 /** Groves and clearings: a slow lattice noise scaling tree density, ~0.15 in a clearing to ~2.4 in a thick grove. */
@@ -482,7 +478,6 @@ const BED_VOLC: Pick = [['basalt', 6], ['pebble', 4], ['urchin', 2], ['vent', 1]
 const BED_HOME: Pick = [['pebble', 4], ['starOrange', 2], ['shell', 3], ['seagrass', 4], ['clam', 1]];
 const BED_MANG: Pick = [['roots', 5], ['oyster', 3], ['leaves', 4], ['seagrass', 1]];
 const BED_ICE: Pick = [['pebble', 5], ['urchin', 3], ['shell', 2], ['kelp', 1]];   // grey and dark, nothing tropical
-const pick = (L: Pick, r: number): MS.BedKind => { let t = 0; for (const [, w] of L) t += w; let v = r * t; for (const [k, w] of L) { v -= w; if (v <= 0) return k; } return L[0][0]; };
 const bedProps = new WeakMap<HeightTile, Float32Array>();
 const BED_STRIDE = 7;                            // x, y, kind, scale, yaw, z, clear
 // one candidate per 5x5 cell in the shallows (the seabed shows through clear water there), denser on reefs and kelp
@@ -508,7 +503,7 @@ function tileBed(t: HeightTile): Float32Array {
     else if (top < 0.25) { list = BED_HOME; odds = 0.07; clear = 0.4; }
     else return;                                                    // a border: bare sand between the two
     if (r > odds * (1 - smooth01((depth - 0.2) / 0.1) * 0.7)) return;     // thinning out toward the deep edge
-    let kind = pick(list, rk);
+    let kind = pickOdds(list, rk);
     if ((kind === 'kelpTall' || kind === 'vent') && depth < 0.08) kind = list === BED_KELP ? 'kelp' : 'basalt';
     L.push(px + 0.5, py + 0.5, BI[kind], 0.75 + hash01(gx, gy, 66) * 0.45, hash01(gx, gy, 67) * 6.283, -1.4 - depth * 16, clear);
   });
@@ -961,7 +956,7 @@ const vents: number[] = [], glowProps: number[] = [];
 const PROP_GLOW: Partial<Record<string, readonly number[]>> = { crystal: [0.45, 0.9, 1.0], steamVent: [1.0, 0.5, 0.2] };
 
 // the rod and fishing line, in world space (scratch, rebuilt each frame)
-const ROD_RGB = [94, 68, 48], LINE_RGB = [236, 232, 220];
+const ROD_RGB = [94, 68, 48], LINE_RGB = [236, 232, 220], SLING_RGB = [60, 48, 36];
 const hand = [0, 0, 0], tip = [0, 0, 0], bob = [0, 0, 0], linePrev = [0, 0, 0], lineNext = [0, 0, 0];
 function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void {
   POOLS[0].forEach(resetPool); POOLS[1].forEach(resetPool);
@@ -1001,7 +996,7 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
     }
   });
   // and in the sea (seaprops.ts): ice and flotsam ride the swell in place, rock and bone stand still
-  for (const p of seaPropsNear(cx, cy + 15, Math.max(W, H) / 2 + 45, seaScratch, true)) {
+  for (const p of seaPropsNear(cx, cy + 15, W / 2 + 45, seaScratch, true, H / 2 + 45)) {
     if (p.x < camX - 30 || p.x > camX + W + 30 || p.y < camY - 12 || p.y > camY + H + 60 || (sites.length && onSite(p.x, p.y))) continue;
     if (seaPropGathered(p)) continue;
     const ice = ICE_MESH[p.kind], afloat = !!ice || FLOATS.has(p.kind), ph = p.yaw;
@@ -1016,12 +1011,17 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
   for (const p of pois) {
     const k = landmarkKind(p);
     if (p.type === 'light') inst(MS.lighthouseMesh(k), p.x, p.y);
-    else if (p.type === 'port') inst(MS.harbourMesh(k), p.x, p.y, p.ang);
+    else if (p.type === 'port') { inst(MS.harbourMesh(k), p.x, p.y, p.ang); if (p.yardSide) inst(MS.yardMesh(p.yardSide), p.x, p.y, p.ang); }
+    else if (p.type === 'cove') inst(MS.coveMesh(k), p.x, p.y, p.ang);
     else inst(MS.wreckMesh(k), p.x, p.y, p.dir / 16 * Math.PI * 2, 1, -0.6);
   }
   drawOwned();
   for (const c of cratesNear(cx, cy, viewReach(30), sceneCrates)) if (!c.taken) inst(MS.crateMesh(), c.x, c.y, c.ph, 1, -1.3 + Math.sin(G.t * 2 + c.ph) * 0.35, Math.sin(G.t * 1.3 + c.ph) * 0.1);
-  for (const m of G.maps) if (Math.abs(m.x - cx) < W && Math.abs(m.y - cy) < H) inst(MS.buoyMesh(), m.x, m.y, 0, 1, -1.2 + Math.sin(G.t * 2 + m.x) * 0.3, Math.sin(G.t * 1.7) * 0.08);
+  for (const m of G.maps) if (Math.abs(m.x - cx) < W && Math.abs(m.y - cy) < H) {
+    if (m.buried) inst(MS.buriedXMesh(), m.x, m.y, 0.2, 1, 0, 0, 0, true);
+    else inst(MS.buoyMesh(), m.x, m.y, 0, 1, -1.2 + Math.sin(G.t * 2 + m.x) * 0.3, Math.sin(G.t * 1.7) * 0.08);
+  }
+  drawPirates(cx, cy);
   // fish schools swim under the surface; at night glowing fish and the ones in your light show clearly, others as dim shapes nearby
   const night = isNight(), lr = lightR() + 14;
   schoolFx.length = 0;
@@ -1080,6 +1080,50 @@ function buildScene(bs: BoatPose, pois: Poi[], camX: number, camY: number): void
   }
   drawPlayerBoat(bs);
 }
+// ---------- pirates (game/pirates.ts): their ships, cannonballs in flight, and loot floating where a ship went down ----------
+/** How battered something is from its wounds, 0..2: torn rigging, and hull left (as a share of the whole). */
+const tornOf = (sails: number): number => sails < 0.25 ? 0 : sails < 0.6 ? 1 : 2;
+const scorchOf = (hull: number): number => hull > 0.6 ? 0 : hull > 0.3 ? 1 : 2;
+/** A pirate ship's look now (pirateships.ts): her colours, the flag she's flying, her damage, and white once she has struck. */
+const shipLook = (p: Pirate): ShipLook => ({
+  kind: SHIP_KINDS[p.kind].hull, scheme: p.role === 'fireship' ? 4 : p.scheme, flag: flagOf(p), torn: p.role === 'fireship' ? 2 : tornOf(p.wounds.sails),
+  scorch: p.role === 'fireship' ? (p.lit >= 0 ? 2 : 1) : scorchOf(Math.max(0, p.hp) / p.max),   // a fire ship: a tarred, ragged hulk
+  dismasted: SHIP_KINDS[p.kind].hull !== 'sloop' && (p.hp < p.max * 0.18 || p.mood === 'sinking'), white: p.mood === 'surrender' || p.mood === 'struck',
+});
+function drawPirates(cx: number, cy: number): void {
+  const mx = W / 2 + 60, my = H / 2 + 60;
+  for (const p of PIRATES.ships) {
+    if (!near(p, cx, cy, mx + 40, my + 40)) continue;
+    // a big ship rides the swell slower; going down she settles by the stern and lists, slowly at first
+    const big = lengthOf(p) / 20, ph = (p.x + p.y) * 0.003, sw = (1 + WX.wind * 1.6) / big, sink = p.sinkT * p.sinkT * 0.35;
+    const bz = Math.sin(G.t * 1.5 / Math.sqrt(big) + ph) * (0.2 + WX.wind * 0.45) - 0.4 - sink * 2.2;
+    const pitch = Math.sin(G.t * 1.1 / Math.sqrt(big) + ph) * 0.025 * sw - sink * 0.09, roll = Math.sin(G.t * 1.3 / Math.sqrt(big) + ph + 1) * 0.035 * sw + p.heel + sink * 0.16 * (p.side || 1);
+    inst(MS.pirateMesh(shipLook(p)), p.x, p.y, p.a, 1, bz, pitch, roll);
+  }
+  for (const b of PIRATES.balls) {
+    if (!near(b, cx, cy, mx, my)) continue;
+    if (b.splash) inst(MS.cannonballMesh(), b.x, b.y, 0, 1.8, b.z);                  // a mortar shell
+    else if (b.shot === 'fire') inst(MS.fireballMesh(), b.x, b.y, 0, 1, b.z, 0, 0, true, 1, 1.6);
+    else if (b.shot === 'grape') inst(MS.cannonballMesh(), b.x, b.y, 0, 0.5, b.z, 0, 0, true);
+    else if (b.shot === 'chain') {                                                    // two balls spinning on their chain
+      const sp = Math.hypot(b.vx, b.vy) || 1, ph = b.t * 14, ox = -b.vy / sp * Math.cos(ph) * 2, oy = b.vx / sp * Math.cos(ph) * 2;
+      inst(MS.cannonballMesh(), b.x + ox, b.y + oy, 0, 0.8, b.z); inst(MS.cannonballMesh(), b.x - ox, b.y - oy, 0, 0.8, b.z);
+    } else inst(MS.cannonballMesh(), b.x, b.y, 0, 1, b.z);
+  }
+  for (const m of PIRATES.missiles) if (near(m, cx, cy, mx, my)) inst(MS.missileMesh(), m.x, m.y, m.a, 1.4, 7, 0, 0, false, 1, 1.6);
+  for (const pl of PIRATES.planes) if (near(pl, cx, cy, mx + 40, my + 40)) inst(MS.planeMesh(), pl.x, pl.y, pl.a, 1.3, pl.z, 0, pl.bank, false, 1, 1.4);
+  const fl = HELI_STATE.flight;                                                      // the superyacht's helicopter aloft, nose down
+  if (fl && near(fl, cx, cy, mx + 40, my + 40)) {
+    inst(MS.heliMesh(), fl.x, fl.y, fl.a, HELI.scale, fl.z, 0.12, fl.bank); inst(MS.rotorMesh(), fl.x, fl.y, G.t * 13, HELI.scale, fl.z + 5 * HELI.scale);
+    if (!fl.back && fl.z > 8) {                                                       // the catch slung beneath her on the way out
+      const sway = Math.sin(G.t * 2.3) * 0.08;
+      inst(MS.crateMesh(), fl.x, fl.y, fl.a, 0.8, fl.z - 6, sway, sway * 0.6);
+      MS.dynBox([fl.x, fl.y, fl.z - 2.4], [fl.x, fl.y, fl.z + 0.5], 0.3, SLING_RGB);
+    }
+  }
+  for (const k of PIRATES.kegs) if (near(k, cx, cy, mx, my)) inst(MS.kegMesh(), k.x, k.y, k.ph, 1, -1.2 + Math.sin(G.t * 2.2 + k.ph) * 0.3, Math.sin(G.t * 1.4 + k.ph) * 0.12, 0, true, 1, 0.6 + 0.4 * Math.sin(G.t * 18 + k.ph));
+  for (const l of PIRATES.loot) if (near(l, cx, cy, mx, my)) inst(MS.lootMesh(), l.x, l.y, l.ph, 1, -1.4 + Math.sin(G.t * 2 + l.ph) * 0.35, Math.sin(G.t * 1.3 + l.ph) * 0.1, 0, true);
+}
 // boat-local [u, v, z] -> world, for the boat pose set in drawPlayerBoat
 let b3x = 0, b3y = 0, b3c = 1, b3s = 0, b3z = 0;
 function W3(q: readonly number[], out: number[]): number[] {
@@ -1090,6 +1134,7 @@ function W3(q: readonly number[], out: number[]): number[] {
 function drawPlayerBoat(bs: BoatPose): void {
   const eq: Fit = equipment(), wob = 1 + WX.wind * 2.2;
   eq.look = myLook();
+  eq.torn = tornOf(PIRATES.me.wounds.sails); eq.scorch = scorchOf(G.boat.hp / hpMax());   // battle damage shows
   const b = G.boat, chop = Math.min(1, Math.hypot(b.vx, b.vy) / 50);      // under way the hull slaps through the chop
   let bz = Math.sin(G.t * 1.6) * (0.2 + WX.wind * 0.45) + Math.sin(G.t * 6.1) * chop * 0.2 - 0.4;
   let roll = Math.sin(G.t * 1.3 + 1) * 0.035 * wob + b.heel.x;
@@ -1097,6 +1142,22 @@ function drawPlayerBoat(bs: BoatPose): void {
   const pitch = Math.sin(G.t * 1.1) * 0.025 * wob + Math.sin(G.t * 4.7 + 2) * chop * 0.012 + b.trim.x;
   inst(MS.boatMesh(G.boatId, eq), bs.x, bs.y, bs.a, 1, bz, pitch, roll);
   b3x = bs.x; b3y = bs.y; b3c = Math.cos(bs.a); b3s = Math.sin(bs.a); b3z = bz;
+  if (boatDef().special === 'heli' && !HELI_STATE.flight) {                                         // the helicopter on her pad
+    const q = W3(HELI.pad, W3a);
+    inst(MS.heliMesh(), q[0], q[1], bs.a, HELI.scale, q[2], pitch, roll); inst(MS.rotorMesh(), q[0], q[1], bs.a + 0.4, HELI.scale, q[2] + 5 * HELI.scale, pitch, roll);
+  }
+  const rig = SPINNAKER[G.boatId];
+  if (rig && RIG.spin > 0) {                                                      // the spinnaker, swung out to leeward
+    const flog = spinFlogging(offWind(bs.a)), set = 1 - (1 - RIG.spin) ** 2, q = W3([rig.u, 0, rig.z], W3a);
+    const yaw = bs.a + clamp(wrapAngle(windAngle() - bs.a) * 0.35, -0.5, 0.5) + (flog ? Math.sin(G.t * 17) * 0.1 : 0);
+    const size = (0.3 + 0.7 * set) * (flog ? 0.82 + Math.sin(G.t * 23) * 0.05 : 1 + Math.sin(G.t * 2.6) * 0.02);   // collapsing and filling as it flogs
+    inst(MS.spinnakerMesh(G.boatId), q[0], q[1], yaw, size, q[2], pitch, roll);
+  }
+  const blown = G.t - SPECIAL.blownT;
+  if (rig && blown < 1.6) {                                                           // a blown-out spinnaker tumbling away downwind
+    const w = windAngle(), q = W3([rig.u, 0, rig.z], W3a), d = blown * 45;
+    inst(MS.spinnakerMesh(G.boatId), q[0] + Math.cos(w) * d, q[1] + Math.sin(w) * d, SPECIAL.blownA + blown * 3, 1 - blown / 1.6 * 0.6, q[2] + blown * 12, blown * 1.5, blown * 0.8);
+  }
   if (hasOars(G.boatId)) {
     const stow = G.fish || G.mode !== 'play';
     const g = oarsFor(stow ? SHIPPED : strokePose(G.boat.phaseL), eq.prop, stow ? SHIPPED : strokePose(G.boat.phaseR), lookCoat(eq.look));
@@ -1196,7 +1257,7 @@ const LT = {
   nl: 0, nb: 0,
 };
 type Lights = typeof LT;
-const AMBER = [1.0, 0.62, 0.26], PORT_LAMP = [1.0, 0.58, 0.24], LIGHTHOUSE_LAMP = [1.0, 0.72, 0.38], FRENZY_GLOW = [1.0, 0.9, 0.6];
+const AMBER = [1.0, 0.62, 0.26], YACHT_LIGHT = [0.3, 0.85, 1.0], FIRE_GLOW = [1.0, 0.45, 0.12], PORT_LAMP = [1.0, 0.58, 0.24], LIGHTHOUSE_LAMP = [1.0, 0.72, 0.38], FRENZY_GLOW = [1.0, 0.9, 0.6];
 const EEL_GLOW = [0.35, 0.7, 1.0], SEA_GLOW = [0.3, 0.95, 0.95];
 // Lights and beams are gathered as candidates, then the ones nearest the middle of the view are kept up to the
 // shader's limit. When there are more lights than that (a busy coast zoomed out), the kept ones dim over the last
@@ -1247,11 +1308,16 @@ function lightsFor(bs: BoatPose, pois: Poi[], dk: number): Lights {
   LT.L.fill(0); LT.LC.fill(0); LT.LZ.fill(7); LT.B.fill(0); LT.BZ.fill(0); LT.nl = 0; LT.nb = 0;
   nLight = 0; nBeam = 0; viewX = G.cam.x + W / 2; viewY = G.cam.y + H / 2;
   // warm amber (#ffb860) pools; the shader's falloff is soft, so radii run large
-  addLight(bs.x, bs.y, lightR() * 1.6, 0.8 * dk, AMBER);
+  addLight(bs.x, bs.y, lampR() * 1.6, 0.8 * dk, AMBER);
+  if (boatDef().lights) for (const u of [-0.6, 0.5]) {                                // a motor yacht's underwater lights, low in the water
+    const L = boatDef().L, c = Math.cos(bs.a), s = Math.sin(bs.a);
+    addLight(bs.x + c * u * L, bs.y + s * u * L, 70, 0.75 * dk, YACHT_LIGHT, 0);
+  }
   for (const p of pois) {
     if (p.type === 'port') { addLight(p.end.x, p.end.y, 58, 0.7 * dk, AMBER, 9); addLight(p.x, p.y, 40, 0.6 * dk, PORT_LAMP, 9); }
+    else if (p.type === 'cove') addLight(p.x + Math.cos(p.ang) - Math.sin(p.ang) * 4, p.y + Math.sin(p.ang) + Math.cos(p.ang) * 4, 46, 0.65 * dk, AMBER, 3);   // the campfire
     else if (p.type === 'light') {
-      const lz = LAMP_Z[landmarkKind(p)] ?? 31;          // the lantern room of this lighthouse design
+      const lz = LAMP_Z[landmarkKind(p)];          // the lantern room of this lighthouse design
       addLight(p.x, p.y, 54, 0.8 * dk, LIGHTHOUSE_LAMP, lz);
       addBeam(p.x, p.y, G.t * 0.5 + p.beam, 150, lz);
     }
@@ -1260,11 +1326,16 @@ function lightsFor(bs: BoatPose, pois: Poi[], dk: number): Lights {
   for (const o of owned) {
     addLight(o.x + 17, o.y + 8, 42, 0.7 * dk, LIGHTHOUSE_LAMP, MS.POLE - 8); addLight(o.x - 13, o.y + 1, 22, 0.4 * dk, PORT_LAMP, 4);
     for (const b of o.built) {                                // an owner's lighthouse sweeps the sea like any other; the dock's lamp
-      if (b.kind === 'lighthouse') { addLight(b.x, b.y, 54, 0.8 * dk, LIGHTHOUSE_LAMP, LAMP_Z[0] ?? 31); addBeam(b.x, b.y, G.t * 0.5 + b.x * 0.01, 150, LAMP_Z[0] ?? 31); }
+      if (b.kind === 'lighthouse') { addLight(b.x, b.y, 54, 0.8 * dk, LIGHTHOUSE_LAMP, LAMP_Z[0]); addBeam(b.x, b.y, G.t * 0.5 + b.x * 0.01, 150, LAMP_Z[0]); }
       else if (b.kind === 'dock') addLight(b.x + Math.cos(b.a) * 26, b.y + Math.sin(b.a) * 26, 30, 0.6 * dk, AMBER, 6);
     }
   }
   if (G.frenzy) addLight(G.frenzy.s.x, G.frenzy.s.y, 20, 0.25, FRENZY_GLOW);
+  for (const p of PIRATES.ships) if (near(p, viewX, viewY, W / 2 + 60, H / 2 + 60)) {      // stern lanterns, and a burning ship's blaze
+    addLight(p.x - Math.cos(p.a) * lengthOf(p), p.y - Math.sin(p.a) * lengthOf(p), 34, 0.55 * dk, AMBER, 9);
+    if (p.wounds.burn > 0) addLight(p.x, p.y, 60, 0.4 + 0.5 * dk, FIRE_GLOW, 6);
+  }
+  if (PIRATES.me.wounds.burn > 0) addLight(bs.x, bs.y, 60, 0.4 + 0.5 * dk, FIRE_GLOW, 6);
   for (const p of sites) {                                  // village windows, and each legend's own glow
     const s = p.site;
     if (s.kind === 'village') { addLight(p.x, p.y, 56, 0.7 * dk, PORT_LAMP, 7); addLight(p.x + Math.cos(s.a) * 18, p.y + Math.sin(s.a) * 18, 30, 0.5 * dk, AMBER, 5); }
@@ -1396,6 +1467,7 @@ function point(x: number, y: number, z: number, sz: number, r: number, g: number
 }
 const nearSchools: School[] = [], lightSchools: School[] = [];
 let blendN = 0, glowN = 0;                                  // blended points first, then additive glow
+const PING_PULSE = 1.8;                                     // seconds a sonar ping's ring of light takes to spread out and fade
 function partPoints(): void {
   pN = 0;
   for (const p of G.parts) {
@@ -1451,6 +1523,11 @@ function partPoints(): void {
     const k = clamp(p.life / p.max, 0, 1);
     point(p.x, p.y, p.z || 0, p.size || 1.2, 0.35, 1.5, 1.3, k, 2);
   }
+  const ping = pingShown();
+  if (ping && ping.age < PING_PULSE) {                       // a sonar ping: a ring of light spreading through the water
+    const k = ping.age / PING_PULSE, R = 8 + (1 - (1 - k) ** 2) * 170, n = Math.min(160, 24 + Math.round(R));
+    for (let j = 0; j < n; j++) { const a = j / n * Math.PI * 2; point(ping.x + Math.cos(a) * R, ping.y + Math.sin(a) * R, 0.2, 3, 0.5, 1.8, 2.2, 1 - k, 2); }
+  }
   for (let i = 0; i < schoolFx.length; i += 3) if (schoolFx[i + 2] === FX_GLOW) {   // glowing fish light the water around them
     point(schoolFx[i], schoolFx[i + 1], -0.5, 3.2, 1.6, 1.4, 0.7, 0.35 + 0.15 * Math.sin(G.t * 3 + i), 2);
   }
@@ -1464,7 +1541,10 @@ export function tilesAround(cx: number, cy: number): [number, number][] {
   eachTile(cx - mx, cy - my, cx + mx, cy + my, (tx, ty) => { L.push([tx, ty, ((tx + 0.5) * TS - cx) ** 2 + ((ty + 0.5) * TS - cy) ** 2]); });
   return L.sort((a, b) => a[2] - b[2]).map(([tx, ty]) => [tx, ty]);
 }
-/** Missing tiles go to the tile workers (or are built here, within the budget, without them); trees are planted here. */
+/**
+ * Missing tiles go to the tile workers (or are built here, within the budget, without them); trees are planted here
+ * once a tile's neighbours are in too (planting looks a little past the edge, which would build them here).
+ */
 export function prefetch(budgetMs = 4): void {
   const t0 = performance.now(), near = tilesAround(G.cam.x + W / 2, G.cam.y + H / 2), missing = near.filter(([tx, ty]) => !hasTile(tx, ty));
   const workers = missing.length > 0 && wantTiles(missing);
@@ -1472,8 +1552,12 @@ export function prefetch(budgetMs = 4): void {
     if (performance.now() - t0 > budgetMs) return;
     if (!hasTile(tx, ty)) { if (!workers) getTile(tx, ty); continue; }
     const t = getTile(tx, ty);
-    if (t.land && !t.trees) tileTrees(t);
+    if (t.land && !t.trees && neighboursIn(tx, ty)) tileTrees(t);
   }
+}
+function neighboursIn(tx: number, ty: number): boolean {
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (!hasTile(tx + dx, ty + dy)) return false;
+  return true;
 }
 
 // ---------- frame ----------

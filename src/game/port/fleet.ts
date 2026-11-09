@@ -4,16 +4,18 @@
 import { BOATS, FLEET_PER_MIN, FLEET_HOLD_MIN } from '../../econ';
 import { sfx } from '../../audio';
 import { track, bucket } from '../../analytics';
-import type { BoatDef, BoatId, Port } from '../../types';
+import type { BoatDef, Port } from '../../types';
 import { G } from '../state';
+import { boatDef } from '../rules';
 import { addCoins, toast } from '../feedback';
 import { saveGame } from '../save';
 import { money } from '../../config';
 import { deny, header, type Rows } from './kit';
 
-const fleetPerMin = (bd: BoatDef): number => FLEET_PER_MIN[bd.id];
+/** A fleet boat's rate, half as much again while you sail the flagship at their head. */
+const fleetPerMin = (bd: BoatDef): number => Math.round(FLEET_PER_MIN[bd.id] * (1 + (boatDef().command ?? 0)));
 const fleetCap = (bd: BoatDef): number => fleetPerMin(bd) * FLEET_HOLD_MIN;
-export const fleetTotal = (): number => Object.values(G.fleet).reduce((a, f) => a + Math.floor(f.earned), 0);
+const fleetTotal = (): number => Object.values(G.fleet).reduce((a, f) => a + Math.floor(f.earned), 0);
 /** Add `seconds` of fishing to every fleet boat (each stops at its hold cap); returns the whole coins it added. */
 function accrue(seconds: number): number {
   let added = 0;
@@ -59,9 +61,9 @@ export function toggleFleet(p: Port, bd: BoatDef): void {
 export function fleetItems(p: Port, items: Rows): void {
   header(items, 'EARNINGS');
   const n = fleetTotal(), out = Object.keys(G.fleet).length;
-  const perMin = Object.keys(G.fleet).reduce((a, id) => a + FLEET_PER_MIN[id as BoatId], 0);
+  const perMin = BOATS.filter(bd => G.fleet[bd.id]).reduce((a, bd) => a + fleetPerMin(bd), 0), led = boatDef().command;
   items.push({
-    kind: 'collect', icon: 'coin', label: 'Collect fleet earnings', sub: out ? `${out} boat${out > 1 ? 's' : ''} out, ${money(perMin)} a minute in all` : 'No boats out yet', right: n ? '+' + money(n) : '',
+    kind: 'collect', icon: 'coin', label: 'Collect fleet earnings', sub: out ? `${out} boat${out > 1 ? 's' : ''} out, ${money(perMin)} a minute in all${led ? `, +${Math.round(led * 100)}% led by your ${boatDef().name}` : ''}` : 'No boats out yet', right: n ? '+' + money(n) : '',
     ok: n > 0, why: out ? 'Nothing to collect yet. Fleet boats only earn while you are at sea' : 'Send out a spare boat first (listed below)', action: 'Collect', act: collectFleet,
     what: `Boats you own but are not sailing can fish for you. Each earns a set amount every minute you spend at sea or away from the game (not in port or menus) and holds up to ${FLEET_HOLD_MIN} minutes of catch until you collect it at any port.`,
   });

@@ -21,7 +21,7 @@ export interface SeaEncounter {
 }
 interface Supplies { coins?: number; shrimp?: number; glow?: number; heal?: number }
 interface PropUse extends Supplies { name: string; about: string; action: string; remove?: true }
-export const PROP_USES: Record<SeaPropKind, PropUse> = {
+const PROP_USES: Record<SeaPropKind, PropUse> = {
   log: { name: 'Driftwood', about: 'Sound timber can patch your hull instead of going to waste.', action: 'Recover timber', heal: 14, coins: 4, remove: true },
   weedMat: { name: 'Floating seaweed', about: 'Small shrimp shelter in the weed. Gather them for your next cast.', action: 'Gather shrimp', shrimp: 3, remove: true },
   lilyPad: { name: 'Water lilies', about: 'Bait hides beneath these floating leaves.', action: 'Gather bait', shrimp: 2, remove: true },
@@ -50,7 +50,7 @@ const HABITATS: Record<string, string> = {
   reef: 'Coral reef', kelp: 'Kelp beds', volcanic: 'Volcanic shallows', mangrove: 'Mangrove roots', cold: 'Northern shallows', warm: 'Warm shallows', home: 'Coastal shallows', open: 'Coastal shallows',
 };
 
-export const propEncounterId = (prop: Pick<SeaProp, 'kind' | 'x' | 'y'>): string => `prop:${prop.kind}:${prop.x},${prop.y}`;
+const propEncounterId = (prop: Pick<SeaProp, 'kind' | 'x' | 'y'>): string => `prop:${prop.kind}:${prop.x},${prop.y}`;
 export const seaPropGathered = (prop: SeaProp): boolean => !!PROP_USES[prop.kind].remove && G.visits[propEncounterId(prop)] !== undefined;
 
 /** Query the actual world objects, so input never invents an interaction at a decorative lookalike. */

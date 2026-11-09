@@ -11,6 +11,7 @@ import { SailorCard } from './sailorcard';
 import { render } from 'preact';
 import { G } from '../game';
 import { Hud, Toasts } from './hud';
+import { Combat } from './combat';
 import { Port } from './port';
 import { AdminChip, AdminPanel } from './admin';
 import { Chart, Journal, Logbook, Ship } from './screens';
@@ -36,6 +37,7 @@ function App() {
   return (
     <div class="app">
       {m === 'title' && <Title />}
+      {m === 'play' && <Combat />}
       {(m === 'play' || m === 'sunk') && <Hud />}
       {m === 'play' && <><Chat /><SailorCard /></>}
       {m === 'port' && G.menu.port && <Port p={G.menu.port} />}

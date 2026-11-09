@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
-import { compose, restAfter, rng, STYLES } from '../src/music';
+import { compose, restAfter, STYLES } from '../src/music';
+import { mulberry } from '../src/noise';
 
 // The music is written fresh each time from a seed: the same seed is the same piece, other seeds are other pieces,
 // and every piece stays quiet, in key and in a comfortable range.
@@ -44,6 +45,6 @@ test('pieces run one to four minutes, never crowd, start with an intro and end o
   }
 });
 test('between pieces the sea gets twenty to forty-five seconds of quiet', () => {
-  const R = rng(7);
+  const R = mulberry(7);
   for (let i = 0; i < 200; i++) { const r = restAfter(R); expect(r).toBeGreaterThanOrEqual(20); expect(r).toBeLessThanOrEqual(45); }
 });

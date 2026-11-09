@@ -5,20 +5,20 @@ import { W, H, STEP, setView } from './config';
 import * as GAME from './game';
 import { guide } from './game/guide';
 import * as MODELS from './models';
-import * as NETAPI from './net';
 import { SPECIES } from './econ';
-import { TUNE, G, physicsStep, update, updateCamera, refreshSolids, newGame, saveGame, savedSpot, toast } from './game';
+import { G, physicsStep, update, updateCamera, refreshSolids, newGame, saveGame, savedSpot, hasSave, toast } from './game';
+import { starterSpot } from './game/fishing';
 import { initRender, render, R, prefetch, boatRenderState, tilesAround, graphicsReady } from './gl/renderer';
 import { warmTiles } from './tilepool';
-import { tickIslands, REALM, ISLANDS } from './islands';
+import { tickIslands, REALM } from './islands';
 import { openIsland } from './ui/island';
 import { initUI, drawUI } from './ui/index';
 import { SET, applySettings } from './settings';
 import { updateStory, speech } from './story';
 import { initNet, netTick, NET } from './net';
 import { ONLINE } from './online';
-import { renderOffline, renderMusicOffline, SFX_NAMES } from './audio';
-import { homePort, schoolsNear, poisNear, hAt, LAIR, BOSS, trimWorld, worldCaches, regionSites, nearestWater } from './world';
+import { renderMusicOffline } from './audio';
+import { homePort, schoolsNear, poisNear, hAt, trimWorld, worldCaches, regionSites, nearestWater } from './world';
 import { encountersNear, performEncounterAction, openEncounter, seaPropGathered } from './game/encounters';
 import { seaPropsNear } from './seaprops';
 import { wildlifeStocks } from './game/wildlife';
@@ -29,9 +29,14 @@ import { menuInput } from './menus';
 import { initAnalytics, trackFailure } from './analytics';
 import { initTelemetry, watchGame } from './telemetry';
 import { forceName } from './ui/menus';
-import { applySharedCatch, tickVisit } from './share';
+import { applySharedCatch, tickVisit, SHARED } from './share';
 import { tickPacks, packJournal, packCatch } from './content/engine';
 import { tickExplore } from './game/explore';
+import { HELI_STATE, flyCatch } from './game/heli';
+import { SPECIAL } from './game/special';
+import { RIG, windAngle } from './game/rules';
+import { PIRATES, spawnPirate, fireBroadside, fireMortar, fireLauncher, dropKeg, cycleShot, boardPrize, cannonTarget, stashOpen, raidCove, fleetOf, KINDS } from './game/pirates';
+import { buriedMap, beachSpot } from './game/treasure';
 import { biomeAt } from './biome';
 import { zoneStats } from './ui/chart';
 import { baseScale, targetScale, easeScale, shipZoom } from './camera';
@@ -156,14 +161,18 @@ addEventListener('beforeunload', () => { if (G.mode !== 'title') saveGame(); });
 // debug and test hooks: the e2e suite (e2e/) drives the game through these
 declare global { interface Window { BR: Record<string, unknown> } }
 window.BR = {
-  NET, NETAPI, ONLINE, render, SET, apply: () => { applySettings(); fit(); }, AUDIO: { renderOffline, renderMusicOffline, SFX_NAMES },
-  WX, setWeather, LIFE, LAIR, BOSS, MODELS, GAME, TUNE, G, guide, tick, sim: (dt: number) => { noRender = true; tick(dt); noRender = false; },
+  NET, ONLINE, render, SET, apply: () => { applySettings(); fit(); }, AUDIO: { renderMusicOffline },
+  WX, setWeather, LIFE, MODELS, GAME, G, guide, tick, sim: (dt: number) => { noRender = true; tick(dt); noRender = false; },
   homePort, schoolsNear, poisNear, hAt, SPECIES, R, worldCaches, speech, CONTENT: { packJournal, packCatch, biomeAt }, ZONES: zoneStats,
-  REALM, ISLANDS, openIsland,
+  REALM, openIsland,
   SEA: { encountersNear, performEncounterAction, openEncounter, seaPropGathered, seaPropsNear, regionSites, nearestWater, wildlifeStocks, summonSeaLife },
+  HELI: { state: HELI_STATE, flyCatch },
+  SPECIAL: { state: SPECIAL, rig: RIG, windAngle },
+  PIRATES: { state: PIRATES, spawnPirate, fireBroadside, fireMortar, fireLauncher, dropKeg, cycleShot, boardPrize, cannonTarget, stashOpen, raidCove, buriedMap, beachSpot, fleetOf, KINDS },
 };
-// the first frame needs the sea round the harbour: the tile workers build it in parallel while the page settles,
-// rather than the first frame building it all on the main thread (two seconds on a phone); a saved boat's sea next,
-// for Continue
-const home = tilesAround(G.cam.x + W / 2, G.cam.y + H / 2), spot = savedSpot();
-void warmTiles([...home, ...(spot ? tilesAround(spot.x, spot.y) : [])], home.length, 4000).then(() => requestAnimationFrame(frame));
+// the first frame needs the sea it shows: the tile workers build it in parallel while the page settles, rather than
+// the first frame building it all on the main thread (two seconds on a phone). A first visit skips the title and
+// starts by a biting school (menus.ts), so its sea; otherwise the harbour behind the title, and the saved boat's sea
+// next, for Continue
+const start = hasSave() ? null : starterSpot(SHARED?.at), first = start ? tilesAround(start.x, start.y) : tilesAround(G.cam.x + W / 2, G.cam.y + H / 2), spot = savedSpot();
+void warmTiles([...first, ...(spot ? tilesAround(spot.x, spot.y) : [])], first.length, 4000).then(() => requestAnimationFrame(frame));

@@ -39,7 +39,7 @@ export const SHARED: SharedCatch | null = read();
 let applied = false;
 /**
  * Once the voyage is under way: point a waypoint at the shared spot and say whose catch it was. (A first-time visitor
- * already starts near it; see main.ts.) Called every frame until it has run.
+ * already starts near it; see startVoyage in menus.ts.) Called every frame until it has run.
  */
 export function applySharedCatch(): void {
   if (applied || !SHARED || G.mode !== 'play') return;

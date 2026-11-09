@@ -13,7 +13,7 @@ import { heightAt, poisNear } from '../world';
 import { SPECIES, livesAt } from '../species';
 import { seen } from './explore';
 import { tier, needFor, storyAt, regionOpen, lockedAt } from './open';
-export { tier, regionOpenId, regionOpen, lockedAt, openKey } from './open';
+export { regionOpenId, regionOpen, lockedAt, openKey } from './open';
 
 /** What opens region r, in a few words, or null if it's open. */
 export function opensAfter(r: Region): string | null {
