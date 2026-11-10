@@ -69,11 +69,11 @@ export const pruneWeeks = internalMutation({
   },
 });
 
-/** Sailors online right now, as the relay last reported (0 if it hasn't for a minute). No sign-in needed. */
+/** Sailors online right now, as sea.sweep last counted them every 15 s (0 if it hasn't for two). No sign-in needed. */
 export const online = query({
   args: {},
   handler: async (ctx): Promise<{ total: number }> => {
     const m = await ctx.db.query('meta').withIndex('by_key', q => q.eq('key', 'online')).unique();
-    return { total: m && Date.now() - m.at < 60_000 ? m.value : 0 };
+    return { total: m && Date.now() - m.at < 120_000 ? m.value : 0 };
   },
 });

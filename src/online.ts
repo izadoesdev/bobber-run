@@ -7,9 +7,9 @@ export interface Sailor {
   w: number;
   online: true; emote: number | null; emoteAt: number;
 }
-/** A chat line as everyone sees it (already filtered by the relay). `id` is the sailor's uid, or 'me'. */
+/** A chat line as everyone sees it (already filtered by the server). `id` is the sailor's uid, or 'me'. */
 export interface ChatLine { id: string; name: string; text: string; at: number; admin?: boolean }
-/** Everyone else in the world for the map, about once a second from the relay. */
+/** Everyone else in the world for the map, a few seconds stale (sea.everyone). */
 interface FarSailor { uid: string; name: string; x: number; y: number }
 export const ONLINE: { sailors: Sailor[]; chat: Map<string, { text: string; at: number }>; log: ChatLine[]; note: string | null; roster: string[]; total: number; far: FarSailor[] } = {
   sailors: [], chat: new Map(), log: [], note: null, roster: [], total: 0, far: [],
@@ -31,7 +31,7 @@ export function heard(line: ChatLine): void {
   ONLINE.log = [...ONLINE.log.slice(-49), line];
   if (line.id === 'sys') return;
   const now = Date.now();
-  for (const [id, c] of ONLINE.chat) if (now - c.at > 60_000) ONLINE.chat.delete(id);   // relay ids change on every reconnect
+  for (const [id, c] of ONLINE.chat) if (now - c.at > 60_000) ONLINE.chat.delete(id);   // a boat's id changes each time it sets sail again
   ONLINE.chat.set(line.id, { text: line.text, at: now });
 }
 

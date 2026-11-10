@@ -4,8 +4,9 @@
 // word so milder words are masked with # the way Roblox does, instead of dropping the message. If Jev is slow or
 // unreachable, a small local filter masks the obvious cases instead.
 import { RegExpMatcher, englishDataset, englishRecommendedTransformers } from 'obscenity';
+import { envVar } from './lib';
 
-const KEY = process.env.AI_GATEWAY_API_KEY;
+const KEY = () => envVar('AI_GATEWAY_API_KEY');
 const ENDPOINT = 'https://ai-gateway.vercel.sh/v1/evaluate', MODEL = 'typesafe-ai/jev-1.14.0';
 // a little more relaxed than Roblox's under-13 filter: mild words and friendly teasing pass, but personal info and
 // moving off the game are still caught early
@@ -26,11 +27,11 @@ type Verdict = { text: string; filtered: boolean; whole: boolean; source: 'jev' 
 
 type Answers = Record<string, { type: string; probability: number }>;
 async function ask(state: Record<string, unknown>, questions: Record<string, { type: 'boolean'; instructions: string }>): Promise<Answers | null> {
-  if (!KEY) return null;
+  const key = KEY(); if (!key) return null;
   try {
     const r = await fetch(ENDPOINT, {
       method: 'POST', signal: AbortSignal.timeout(TIMEOUT_MS),
-      headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: MODEL, state, questions }),
     });
     if (!r.ok) return null;

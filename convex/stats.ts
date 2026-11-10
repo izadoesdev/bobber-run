@@ -1,8 +1,7 @@
 import { v } from 'convex/values';
-import { query, mutation, internalMutation, httpAction, type MutationCtx } from './_generated/server';
+import { query, mutation, internalMutation, type MutationCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
-import { internal } from './_generated/api';
-import { authUserId, requireUser, trusted, isFromRelay, userIdByEmail } from './lib';
+import { authUserId, requireUser, trusted, userIdByEmail } from './lib';
 import { GUEST_TRUST_MS, MAX_KG } from './limits';
 
 // Per-player totals for the leaderboards. Species logged and the heaviest fish come from records.submit (the server
@@ -81,18 +80,4 @@ export const backfill = internalMutation({
     for (const [userId, e] of per) { const s = await statsOf(ctx, userId); await ctx.db.patch(s._id, e); }
     return per.size;
   },
-});
-
-// how many sailors the relay says are online (it reports every 15 s)
-export const setOnline = internalMutation({
-  args: { online: v.number() },
-  handler: async (ctx, { online }) => {
-    const m = await ctx.db.query('meta').withIndex('by_key', q => q.eq('key', 'online')).unique();
-    if (m) await ctx.db.patch(m._id, { value: online, at: Date.now() }); else await ctx.db.insert('meta', { key: 'online', value: online, at: Date.now() });
-  },
-});
-export const onlineFromRelay = httpAction(async (ctx, req) => {
-  if (!isFromRelay(req)) return new Response('forbidden', { status: 403 });
-  try { await ctx.runMutation(internal.stats.setOnline, await req.json()); } catch { return new Response('bad', { status: 400 }); }
-  return new Response('ok');
 });

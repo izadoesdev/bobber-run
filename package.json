@@ -17,6 +17,7 @@
     "@databuddy/sdk": "^3.2.1",
     "alea": "^1.0.1",
     "convex": "^1.48.0",
+    "obscenity": "^0.4.6",
     "preact": "^11.0.1",
     "simplex-noise": "^4.0.3",
     "valibot": "^1.5.0"

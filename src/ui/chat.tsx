@@ -1,14 +1,13 @@
 // Chat and the online dock, bottom left. Collapsed, the newest few lines float up and fade within seconds, under
 // one small dock: who's online, a Chat button and, for guests, Sign in. Press / (or the button) to open the full log
 // with an input; Esc, the close button or clicking away shuts it. Settings > Chat messages can keep the log out of
-// sight (bubbles over boats only) or turn chat off. The relay filters every line before anyone sees it, so blocked
+// sight (bubbles over boats only) or turn chat off. The server filters every line before anyone sees it, so blocked
 // words arrive as ###. Click a name in the open log to mute that sailor on this device.
 import '../../styles/chat.css';
 import { G } from '../game';
 import { SET } from '../prefs';
 import { ONLINE, toggleMute, type ChatLine } from '../online';
-import { relayChat, relayLive } from '../relay';
-import { NET } from '../net';
+import { NET, sayChat } from '../net';
 import { track } from '../analytics';
 import { AccountCta } from './menus';
 
@@ -35,7 +34,7 @@ const closeChat = () => { open = false; };
 
 function send(): void {
   const text = draft.trim().slice(0, MAX_LEN);
-  if (text && relayLive()) { relayChat(text); track('chat_sent', { length_bucket: text.length < 20 ? 'short' : text.length < 60 ? 'medium' : 'long' }); }
+  if (text && NET.status === 'online') { void sayChat(text); track('chat_sent', { length_bucket: text.length < 20 ? 'short' : text.length < 60 ? 'medium' : 'long' }); }
   draft = ''; open = false;
 }
 
@@ -81,7 +80,7 @@ function followLog(el: HTMLDivElement | null): void {
 
 export function Chat() {
   if (G.mode !== 'play' || !NET.on) return null;
-  const now = Date.now(), live = relayLive() && canChat();
+  const now = Date.now(), live = NET.status === 'online' && canChat();
   // collapsed: the last few lines while they're fresh, fading out; nothing at all with the log hidden
   const recent = open || SET.chat !== 'show' ? [] : ONLINE.log.filter(l => now - l.at < FADE_MS).slice(-3);
   return (
@@ -94,19 +93,19 @@ export function Chat() {
             {NET.profile?.chosen && <button data-track="chat-invite" class="btn small-btn" onPointerDown={e => e.preventDefault()} onClick={invite}>Invite</button>}
             <button data-track="chat-close" class="chat-x" aria-label="Close chat" onPointerDown={e => e.preventDefault()} onClick={closeChat}>×</button>
           </header>
-          <div class="chat-log" ref={el => followLog(el)}>{ONLINE.log.slice(-12).map(l => <Line key={`${l.id}${l.at}`} l={l} live />)}</div>
+          <div class="chat-log" ref={el => followLog(el)}>{ONLINE.log.slice(-12).map(l => <Line key={`${l.id}${l.at}${l.text}`} l={l} live />)}</div>
           {ONLINE.note && <p class="chat-note" onClick={() => { ONLINE.note = null; }}>{ONLINE.note}</p>}
-          {relayLive()
+          {live
             ? <input class="chat-input" maxlength={MAX_LEN} value={draft} placeholder="Say something. Enter sends, Esc closes"
                 ref={el => { if (el && focusNext) { focusNext = false; el.focus(); } }}
                 onInput={e => { draft = e.currentTarget.value; }}
                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); send(); } else if (e.key === 'Escape') closeChat(); }}
                 onBlur={closeChat} />
-            : <p class="chat-note">Chat needs the realtime server, which isn't connected right now</p>}
+            : <p class="chat-note">Chat needs a connection, which isn't there right now</p>}
         </div>
       ) : (
         <div class="chat-float" aria-live="polite">
-          {recent.map(l => <div class="fade" key={`${l.id}${l.at}`} style={{ opacity: Math.min(1, (FADE_MS - (now - l.at)) / 1500) }}><Line l={l} live={false} /></div>)}
+          {recent.map(l => <div class="fade" key={`${l.id}${l.at}${l.text}`} style={{ opacity: Math.min(1, (FADE_MS - (now - l.at)) / 1500) }}><Line l={l} live={false} /></div>)}
           {ONLINE.note && <p class="chat-note" onClick={() => { ONLINE.note = null; }}>{ONLINE.note}</p>}
         </div>
       )}

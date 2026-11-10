@@ -1,8 +1,9 @@
 # Runbook: move a production deployment to Convex Auth v2
 
 Written for an agent to follow, one section at a time. It takes a deployment from Convex Auth v1 to the v2 code
-(commit `7b15f15` or later). The backend, the relay (`server/`) and the web client each change how they sign in or
-check tokens, so all three must ship in the same sitting. Players see a few minutes of failed sign-ins in between.
+(commit `7b15f15` or later). The backend and the web client both change how they sign in, so they must ship in the
+same sitting. Players see a few minutes of failed sign-ins in between. The same release retires the realtime relay
+(`server/`, on Railway): boat positions, chat and the online list all go through Convex now.
 Afterwards everyone is signed out once, new passwords need at least 10 characters, and every account keeps its user id
 (and with it its save, records and islands).
 
@@ -43,6 +44,8 @@ Each check must pass before you go on.
    bunx convex function-spec | grep -c legacySignIn   # 0: still on v1. 1 or more: backend already on v2
    bunx convex env list --names-only
    ```
+   - `AI_GATEWAY_API_KEY` should be in the list: chat is now filtered on Convex (it used to be on the relay). If it's
+     missing, tell the person: chat still works, but only the local word filter runs until they set it.
    - On v1 with no `AUTH_PRIVATE_KEY`/`AUTH_JWKS`: start at section 1.
    - Backend already on v2: skip sections 2–3. Run section 4's check and continue from there.
 
@@ -108,10 +111,11 @@ Old accounts whose emails differ only by letter case can't all be reserved. The 
 (`legacy account of user … not reserved`), and those players can't move. Ask the person to look for that line in the
 dashboard logs.
 
-## 5. Deploy the relay and the web client `PERSON`
+## 5. Deploy the web client and stop the relay `PERSON`
 
-They're hosted outside this repo (Railway, or `deploy/Dockerfile`), so the person deploys them. Neither needs new env
-vars; the relay now fetches keys from `<CONVEX_SITE_URL>/auth/.well-known/jwks.json`. Wait until they say both are live.
+The client is hosted outside this repo (Railway, or `deploy/Dockerfile`), so the person deploys it. It needs no new
+env vars. Once it's live, they stop the relay service on Railway: nothing talks to it any more. Wait until they say
+both are done.
 
 ## 6. Verify `READ-ONLY`
 
@@ -123,7 +127,8 @@ curl -fsS "$SITE/auth/.well-known/jwks.json" | grep -c '"kty"'   # must be 1 or 
 Then ask the person to check in the live game (an agent must not create accounts or type passwords into production):
 - Playing as a guest works, and so does creating a new account.
 - An old account signs in with its old password (it moves over at that point), then again with no extra step.
-- Sailing with a second player works. If it doesn't, the relay is still on the old build.
+- Sailing with a second player works: each sees the other's boat, chat lines arrive both ways, and the chat header
+  lists both names.
 
 ## 7. Clean up later `LOCAL`, then a pull request
 
@@ -139,11 +144,12 @@ Once the ones left are accounts nobody will come back for, on a new branch, dele
 `src/net.ts`. Run typecheck and tests, then open a pull request. Deploying it is section 3 again.
 
 Clearing v1's leftover tables (`authSessions`, `authRefreshTokens`, `authVerificationCodes`, `authVerifiers`,
-`authRateLimits`) and env vars (`JWT_PRIVATE_KEY`, `JWKS`) is for the person to do in the dashboard. It's what makes
+`authRateLimits`) and env vars (`JWT_PRIVATE_KEY`, `JWKS`, and the relay's `RELAY_SECRET`) is for the person to do in
+the dashboard. It's what makes
 rollback impossible.
 
 ## Rollback `PERSON ONLY`
 
-An agent never does this. Rolling back means redeploying `ea68123` to all three parts, and it loses data: every
+An agent never does this. Rolling back means redeploying `ea68123` to the backend and the client and starting the relay again, and it loses data: every
 account that moved has had its v1 row deleted, so those players can't sign in on v1 again. Getting them back in
 takes the backup from section 1. Roll back only if a problem shows up before many people have signed in.

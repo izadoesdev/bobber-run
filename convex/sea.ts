@@ -2,11 +2,25 @@ import { v } from 'convex/values';
 import { query, mutation, internalMutation } from './_generated/server';
 import { authUserId, requireUser, profileOf, cellOf, finite } from './lib';
 import { touchIslands } from './islands';
-import { NEAR_MAX, MOVE_MIN_MS, EMOTE_MIN_MS } from './limits';
+import { NEAR_MAX, MOVE_MIN_MS, EMOTE_MIN_MS, ABOARD_MAX } from './limits';
+import type { MutationCtx } from './_generated/server';
+import type { Id } from './_generated/dataModel';
 
-// The Convex fallback for boat positions when the realtime relay (server/) is down, plus coast news.
+// Boat positions, who is sailing, and coast news.
 // Everyone sails one shared sea, sea 0; the sea field stays on rows and cell keys so the world could be split again.
-const ACTIVE_MS = 60_000;
+// a boat unheard for ACTIVE_MS is swept (crons.ts); still boats report every 10 s and aboard rows every 20 s at worst
+const ACTIVE_MS = 30_000, ABOARD_MS = 15_000, ABOARD_MOVE = 300;
+/** Keep a sailor's aboard row (the roster and the map) roughly current, without rewriting it on every move. */
+async function stayAboard(ctx: MutationCtx, row: { userId: Id<'users'>; sea: number; name: string; x: number; y: number }, pos: Id<'positions'>, now: number) {
+  const a = await ctx.db.query('aboard').withIndex('by_user', q => q.eq('userId', row.userId)).unique();
+  const next = { userId: row.userId, pos, sea: row.sea, name: row.name, x: row.x, y: row.y, at: now };
+  if (!a) await ctx.db.insert('aboard', next);
+  else if (now - a.at > ABOARD_MS || Math.hypot(a.x - row.x, a.y - row.y) > ABOARD_MOVE || a.name !== row.name || a.pos !== pos || a.sea !== row.sea) await ctx.db.replace(a._id, next);
+}
+async function goAshore(ctx: MutationCtx, userId: Id<'users'>) {
+  const p = await ctx.db.query('positions').withIndex('by_user', q => q.eq('userId', userId)).unique(); if (p) await ctx.db.delete(p._id);
+  const a = await ctx.db.query('aboard').withIndex('by_user', q => q.eq('userId', userId)).unique(); if (a) await ctx.db.delete(a._id);
+}
 export const join = mutation({
   args: {},
   handler: async ctx => {
@@ -27,7 +41,9 @@ export const move = mutation({
     const p = await ctx.db.query('positions').withIndex('by_user', q => q.eq('userId', userId)).unique();
     if (p && now - p.at < MOVE_MIN_MS) return;                               // too fast: drop it
     const row = { userId, sea, cell: cellOf(sea, x, y), x, y, a, vx, vy, w, boat, paint, name: prof?.name ?? 'Sailor', at: now, emote: p?.emote, emoteAt: p?.emoteAt };
-    if (p) await ctx.db.replace(p._id, row); else await ctx.db.insert('positions', row);
+    const pos = p ? p._id : await ctx.db.insert('positions', row);
+    if (p) await ctx.db.replace(p._id, row);
+    await stayAboard(ctx, row, pos, now);
   },
 });
 // a preset greeting shown over your boat for a few seconds
@@ -45,7 +61,7 @@ export const leave = mutation({
   args: {},
   handler: async ctx => {
     const userId = await authUserId(ctx); if (!userId) return;
-    const p = await ctx.db.query('positions').withIndex('by_user', q => q.eq('userId', userId)).unique(); if (p) await ctx.db.delete(p._id);
+    await goAshore(ctx, userId);
   },
 });
 // signed-in sailors only see their own sea; ids are position rows, not account ids
@@ -64,6 +80,17 @@ export const near = query({
     return out;
   },
 });
+/** Everyone sailing your sea, for the roster and the map (positions are a few seconds stale; uid matches sea.near's id). */
+export const everyone = query({
+  args: {},
+  returns: v.array(v.object({ uid: v.string(), name: v.string(), x: v.number(), y: v.number(), me: v.boolean() })),
+  handler: async ctx => {
+    const userId = await authUserId(ctx); if (!userId) return [];
+    const sea = (await profileOf(ctx, userId))?.sea ?? 0;
+    return (await ctx.db.query('aboard').withIndex('by_sea_at', q => q.eq('sea', sea)).take(ABOARD_MAX))
+      .map(a => ({ uid: a.pos, name: a.name, x: Math.round(a.x), y: Math.round(a.y), me: a.userId === userId }));
+  },
+});
 // coastwide news since a time the client picks (queries can't read the clock reactively)
 export const news = query({
   args: { since: v.number() },
@@ -74,7 +101,12 @@ export const sweep = internalMutation({
   args: {},
   handler: async ctx => {
     const now = Date.now();
-    for (const p of await ctx.db.query('positions').withIndex('by_sea_at', q => q.eq('sea', 0).lt('at', now - ACTIVE_MS)).take(100)) await ctx.db.delete(p._id);
+    for (const p of await ctx.db.query('positions').withIndex('by_sea_at', q => q.eq('sea', 0).lt('at', now - ACTIVE_MS)).take(100)) await goAshore(ctx, p.userId);
+    for (const a of await ctx.db.query('aboard').withIndex('by_sea_at', q => q.eq('sea', 0).lt('at', now - ACTIVE_MS)).take(100)) await ctx.db.delete(a._id);
+    // how many are sailing, for the title screen (leaderboard.online); shortcut: counts at most 1000, use @convex-dev/aggregate past that
+    const online = (await ctx.db.query('aboard').withIndex('by_sea_at', q => q.eq('sea', 0)).take(1000)).length;
+    const m = await ctx.db.query('meta').withIndex('by_key', q => q.eq('key', 'online')).unique();
+    if (m) await ctx.db.patch(m._id, { value: online, at: now }); else await ctx.db.insert('meta', { key: 'online', value: online, at: now });
     for (const e of await ctx.db.query('events').withIndex('by_at', q => q.lt('at', now - 86_400_000)).take(200)) await ctx.db.delete(e._id);
   },
 });

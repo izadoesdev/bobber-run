@@ -9,7 +9,6 @@ RUN bun install --frozen-lockfile
 COPY . .
 # the public endpoints baked into the client; the defaults are production
 ARG VITE_CONVEX_URL=https://strong-magpie-681.convex.cloud
-ARG VITE_RELAY_URL=wss://relay-production-a8ce.up.railway.app
 RUN bun run build
 
 FROM caddy:2-alpine

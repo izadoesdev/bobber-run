@@ -1,5 +1,5 @@
 // The admin panel: for accounts the server says are admins (NET.profile.admin), opened with F9 or the shield chip.
-// Find sailors (online ones from the relay, and any captain by name once the server search is there) and sail or
+// Find sailors (online ones from sea.everyone, and any captain by name once the server search is there) and sail or
 // jump to them; teleport to coordinates, a region, a village or legend, home, or wherever you click on the chart;
 // and fun: weather, time of day, a frenzy, a golden school, lifting the fog, opening every region. Moving about and
 // the weather leave a save as it is; anything that hands out coins, gear or fish goes through the cheat console's
@@ -48,7 +48,7 @@ export function teleport(x: number, y: number, why = ''): void {
 
 const ago = (t: number): string => { const m = Math.max(0, (Date.now() - t) / 60000); return m < 1 ? 'just now' : m < 60 ? `${Math.round(m)} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
 const away = (x: number, y: number): string => `${Math.round(Math.hypot(x - G.boat.x, y - G.boat.y) / 10)} m`;
-/** Every sailor the relay has told us about, nearest first. */
+/** Every sailor the server has told us about, nearest first. */
 function sailors(): { uid: string; name: string; x: number; y: number }[] {
   const byUid = new Map<string, { uid: string; name: string; x: number; y: number }>();
   for (const f of ONLINE.far) byUid.set(f.uid, f);

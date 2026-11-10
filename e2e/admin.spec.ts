@@ -1,6 +1,6 @@
 import { test, expect, sail } from './fixtures';
 
-// The admin panel: only an account the server calls an admin gets it (F9 or the chip); it finds the sailors the relay
+// The admin panel: only an account the server calls an admin gets it (F9 or the chip); it finds the sailors the server
 // reports and jumps next to one, onto open water, with that region opened so rough water doesn't push the boat back.
 test('only admins get the panel, and it finds a sailor and jumps to them', async ({ page }) => {
   await sail(page);

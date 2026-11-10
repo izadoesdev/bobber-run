@@ -3,7 +3,7 @@
 import { h, render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { ConvexReactClient, useConvexAuth } from 'convex/react';
-import { ConvexAuthProvider, useAuthActions, useAuthToken } from '@convex-dev/auth/react';
+import { ConvexAuthProvider, useAuthActions } from '@convex-dev/auth/react';
 import { useSignInAnonymously } from '@convex-dev/auth/methods/anonymous/react';
 import { useSignInWithUsernamePassword, useSignUpWithUsernamePassword } from '@convex-dev/auth/methods/username-password/react';
 import { api } from '../convex/_generated/api';
@@ -11,11 +11,11 @@ import { NET, bridge } from './net';
 
 // Signs in as a guest when nobody is signed in (never during an account switch) and tracks the session.
 function Bridge() {
-  const { signOut } = useAuthActions(), { isLoading, isAuthenticated } = useConvexAuth(), token = useAuthToken();
+  const { signOut } = useAuthActions(), { isLoading, isAuthenticated } = useConvexAuth();
   const guest = useSignInAnonymously(api.auth), { signIn } = useSignInWithUsernamePassword(api.auth), { signUp } = useSignUpWithUsernamePassword(api.auth);
   const [wake, setWake] = useState(0);
   const wakeUp = () => setWake(n => n + 1);
-  bridge.connected({ signIn, signUp, signOut }, isAuthenticated ? token : null, wakeUp);
+  bridge.connected({ signIn, signUp, signOut }, wakeUp);
   useEffect(() => {
     if (isLoading || isAuthenticated || !bridge.mayStartGuest()) return;
     bridge.guestStarting(true); NET.status = 'connecting';

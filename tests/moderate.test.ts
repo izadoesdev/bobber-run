@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
-import { local } from '../server/moderate';
+import { local } from '../convex/moderate';
 
-// The relay's fallback filter, used when Jev can't answer: what other sailors see.
+// The chat filter's local fallback, used when Jev can't answer: what other sailors see.
 test('profanity through leetspeak, symbols and look-alike letters is masked word by word', () => {
   expect(local('fvck1ng hell').text).toBe('####### hell');
   expect(local('ʃṳ𝒸𝗄 off').text.startsWith('#')).toBe(true);

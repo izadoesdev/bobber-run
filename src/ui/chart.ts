@@ -560,7 +560,7 @@ function drawWaypoint(ctx: Ctx, w: number, h: number, S: Project, [x, y]: [numbe
   }
 }
 
-/** Every other sailor we know about: the nearby ones we draw on the water, plus the far ones the relay reports for the chart. */
+/** Every other sailor we know about: the nearby ones we draw on the water, plus the far ones sea.everyone reports for the chart. */
 type Mark = { uid: string; name: string; x: number; y: number; paint?: string };
 function sailorMarks(): Mark[] {
   const near = new Set(ONLINE.sailors.map(s => s.uid));

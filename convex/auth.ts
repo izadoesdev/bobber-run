@@ -5,7 +5,7 @@ import { components, internal } from './_generated/api';
 
 // Everyone starts as an anonymous guest; a guest can sign up with email and password to keep their save.
 // The email is the username: the username component compares them without case, so "Ana@x.com" and "ana@x.com" are the same account.
-// An hour, not v2's default minute: every refresh re-authenticates the connection, and the relay is handed each new token.
+// An hour, not v2's default minute: every refresh re-authenticates the connection.
 const auth = setupConvexAuth({ component: components.auth, accessTokenTtlSeconds: 3600 });
 export const { signOut, refreshSession, isAuthenticated } = auth;
 

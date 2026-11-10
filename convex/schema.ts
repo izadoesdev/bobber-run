@@ -28,9 +28,13 @@ export default defineSchema({
     boat: v.string(), paint: v.string(), name: v.string(), at: v.number(),
     emote: v.optional(v.number()), emoteAt: v.optional(v.number()) })
     .index('by_cell', ['cell']).index('by_user', ['userId']).index('by_sea_at', ['sea', 'at']),
+  // who is sailing, for the roster and the map: a position row's name and rough whereabouts, rewritten only every
+  // ABOARD_MS or ABOARD_MOVE so reading the whole sea doesn't re-run on every boat's every move. pos: that row
+  aboard: defineTable({ userId: v.id('users'), pos: v.id('positions'), sea: v.number(), name: v.string(), x: v.number(), y: v.number(), at: v.number() })
+    .index('by_user', ['userId']).index('by_sea_at', ['sea', 'at']),
   // coastwide news: legendary catches and new world records
   events: defineTable({ kind: v.string(), name: v.string(), text: v.string(), at: v.number() }).index('by_at', ['at']),
-  // every chat line, kept permanently (written only by the relay): typed text, what others saw, and who said it
+  // every chat line, kept permanently (written only by chat.send): typed text, what others saw, and who said it
   chats: defineTable({ userId: v.string(), name: v.string(), sea: v.number(), text: v.string(), shown: v.string(), filtered: v.boolean(), whole: v.boolean(), source: v.string(), at: v.number() })
     .index('by_at', ['at']).index('by_user', ['userId', 'at']),
   // leaderboard totals per player (species and heaviest from records.submit; caught and earned reported, capped); spent
@@ -43,6 +47,6 @@ export default defineSchema({
     buildings: v.optional(v.array(v.string())), claimedAt: v.number(), updatedAt: v.number(), seenAt: v.number(), url: v.optional(v.string()), linkFails: v.optional(v.number()) })
     .index('by_key', ['key']).index('by_owner', ['ownerId']).index('by_seen', ['seenAt']),
   islandReports: defineTable({ key: v.string(), userId: v.id('users'), name: v.string(), logo: v.optional(v.id('_storage')), at: v.number() }).index('by_key_user', ['key', 'userId']),
-  // small server-wide values (the relay's online count)
+  // small server-wide values (how many sailors are online, from sea.sweep)
   meta: defineTable({ key: v.string(), value: v.number(), at: v.number() }).index('by_key', ['key']),
 });
