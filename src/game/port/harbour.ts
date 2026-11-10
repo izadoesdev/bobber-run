@@ -10,6 +10,7 @@ import { dayNum, fishValue, hpMax, projDone } from '../rules';
 import { addCoins, celebrate, markBought, toast } from '../feedback';
 import { saveGame } from '../save';
 import { money } from '../../config';
+import { FUND_DAILY } from '../../../convex/limits';
 import { deny, header, short, spend, type Rows } from './kit';
 
 // ---------- projects ----------
@@ -52,7 +53,6 @@ function fundProject(pr: Project): void {
 }
 
 // ---------- the coastwide fund ----------
-const FUND_DAILY = 50_000;   // the server's daily cap per sailor (convex/limits.ts)
 let giving = false;          // one gift in flight at a time, so a held button can't spend twice
 async function giveToFund(amt: number): Promise<void> {
   if (giving || G.coins < amt || !NET.authed || G.cheated) { deny(); return; }
@@ -73,7 +73,7 @@ export function harbourItems(items: Rows): void {
     const why = done ? 'Finished' : !cur ? `Finish "${next?.name}" first` : st.have < st.want ? `Bring ${st.label} (you have ${st.have})` : short(pr.cost);
     items.push({
       kind: 'project', key: pr.id, pr, st, icon: done ? 'star' : cur ? 'repair' : 'map', label: pr.name, sub: done ? pr.gives : `${money(pr.cost)} and ${st.label}`,
-      cost: done ? null : pr.cost, right: done ? 'Done' : cur ? `${st.have}/${st.want}` : 'Later', ok: !done && cur && st.have >= st.want && G.coins >= pr.cost,
+      cost: done || !cur ? null : pr.cost, right: done ? 'Done' : cur ? `${st.have}/${st.want}` : 'Later', ok: !done && cur && st.have >= st.want && G.coins >= pr.cost,
       why, action: 'Fund project', act: () => cur && !done ? fundProject(pr) : deny(), what: pr.what,
     });
   }

@@ -1,5 +1,5 @@
 import { clamp, dirTo, money } from '../config';
-import { G, logged, cap, boatDef, equipment, fishValue, speedMul, deckLvl, deckBoat, ownedLvl, smallFry, releaseSmallFry, toggleHelper, SMALL_FRY, buyFishChart, fishChartPrice, chartable } from '../game';
+import { G, logged, cap, boatDef, equipment, fishValue, speedMul, deckLvl, deckBoat, gearLvl, smallFry, releaseSmallFry, toggleHelper, SMALL_FRY, buyFishChart, fishChartPrice, chartable } from '../game';
 import { track } from '../analytics';
 import { isRunningNow } from '../tides';
 import { SPECIES, UPGRADES, PAINTS, SUPPLIES, fmtKg } from '../econ';
@@ -11,7 +11,8 @@ import { setWaypoint, clearWaypoint, sailToWaypoint, waypointMetres } from '../w
 import { openIsland } from './island';
 import { NET } from '../net';
 import { QUESTS, CHAPTERS, PEOPLE, currentQuest, questProgress, story } from '../story';
-import { guide, guideOn, stepLine } from '../game/guide';
+import { guide, stepLine } from '../game/guide';
+import { SET } from '../prefs';
 import { openChart, closeChart } from '../game/chart';
 import { chartPerks } from '../game/rules';
 import { GRADES, grade } from '../game/mastery';
@@ -32,7 +33,7 @@ let drag: [number, number] | null = null, moved = 0;
 let tip: { x: number; y: number; cx: number; cy: number; w: number; h: number; until: number } | null = null;   // pointer in wrap and canvas CSS px
 const LEGEND: [Legend, ComponentChildren][] = [
   ['you', <><i class="lg you" />You</>], ['target', <><i class="lg target" />Next step</>], ['waypoint', <><i class="wp-glyph" />Your waypoint</>],
-  ['port', <><i class="lg port" />Port</>], ['light', <><i class="lg light" />Lighthouse</>], ['wreck', <><i class="lg wreck" />Wreck</>],
+  ['port', <><i class="lg port" />Port</>], ['shipyard', <><i class="lg yard" />Shipyard</>], ['light', <><i class="lg light" />Lighthouse</>], ['wreck', <><i class="lg wreck" />Wreck</>], ['cove', <><i class="lg cove" />Pirate cove</>], ['pirate', <><i class="lg pirate" />Pirate ship</>],
   ['treasure', <><i class="lg treasure" />Treasure</>], ['escaped', <><i class="lg escaped" />Got away</>], ['frenzy', <><Icon k="star" size="s" />Feeding frenzy</>], ['school', <><i class="lg school" />Fish</>],
   ['sailor', <><i class="lg sailor" />Sailors</>], ['owned', <><i class="lg owned" />Claimed island</>], ['island', <><i class="lg island" />Island for sale</>], ['uncharted', <><i class="lg unknown" />Uncharted</>],
 ];
@@ -42,7 +43,7 @@ function pointAt(e: PointerEvent): void {
 }
 export function Chart() {
   const m = G.map, base = m.zoom === 1 ? 2.2 : 4.6;           // world units per CSS pixel
-  const step = guide(), on = guideOn(), target = on ? step.at ?? null : null;
+  const step = guide(), on = SET.guide, target = on ? step.at ?? null : null;
   const draw: DrawFn = (ctx, w, h, dpr) => {
     // the region card, in canvas pixels, so region names don't sit under it
     const card = document.querySelector('.region-card')?.getBoundingClientRect(), cv = ctx.canvas.getBoundingClientRect();
@@ -277,7 +278,7 @@ export function Ship() {
   for (const c of G.active) need.set(c.sp, (need.get(c.sp) || 0) + c.n);
   const fitted = (Object.keys(UPGRADES) as UpgradeKey[]).filter(k => G.up[k] > 0);
   // helpers you own (or your boat carries) can be switched off without selling them
-  const helpers = ([['deckhand', 'Deckhand', 'Sometimes lands a second, smaller fish from the same school'], ['net', 'Drift net', 'Catches small fish while you drift slowly over them'], ['pots', 'Crab pots', 'Haul a crab into your hold now and then']] as const).filter(([k]) => ownedLvl(k) > 0);
+  const helpers = ([['deckhand', 'Deckhand', 'Sometimes lands a second, smaller fish from the same school'], ['net', 'Drift net', 'Catches small fish while you drift slowly over them'], ['pots', 'Crab pots', 'Haul a crab into your hold now and then']] as const).filter(([k]) => gearLvl(k) > 0);
   const fry = smallFry().length;
   return (
     <div class="screen panel rivets">
@@ -321,7 +322,7 @@ export function Ship() {
         <div class="col side">
           <div class="list-head caps">Upgrades</div>
           {fitted.map(k => <Item k={k} name={UPGRADES[k].name(bd)} sub={UPGRADES[k].lv[G.up[k] - 1]}><Pips n={G.up[k]} of={UPGRADES[k].costs.length} /></Item>)}
-          {!fitted.length && <p class="muted">No upgrades yet. Buy them in the Outfitter tab at any port.</p>}
+          {!fitted.length && <p class="muted">No upgrades yet. Buy them in the Upgrades tab at any port.</p>}
           {helpers.length > 0 && <>
             <div class="list-head caps">Helpers</div>
             {helpers.map(([k, name, what]) => (

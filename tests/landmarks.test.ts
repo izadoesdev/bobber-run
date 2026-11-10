@@ -1,5 +1,5 @@
 // Saves, contracts and island purchases point at landmarks by id and at islands by cell, so within one world layout
-// these never change: every port, lighthouse and wreck within 7 cells of home keeps its id, name and spot, and every
+// these never change: every port, lighthouse, wreck and pirate cove within 7 cells of home keeps its id, name and spot, and every
 // claimable island its centre; and piers reach water, lights stand on land, wrecks lie in the sea. Changing the world
 // on purpose means bumping WORLD in world.ts (older saves then forget places) and re-recording the fixture with it.
 import { describe, expect, test } from 'bun:test';

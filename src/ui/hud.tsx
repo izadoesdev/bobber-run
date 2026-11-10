@@ -8,11 +8,12 @@ import { WX } from '../weather';
 import { SET } from '../settings';
 import { savePrefs } from '../prefs';
 import { currentQuest, questProgress } from '../story';
-import { guide, guideOn, stepLine, tip, whereText, type Step } from '../game/guide';
+import { guide, stepLine, tip, whereText, type Step } from '../game/guide';
 import type { CatchCard as CatchCardState, FishLine, Point, Toast } from '../types';
 import { drawChart, nearestUncharted, terrainCache } from './chart';
 import { fishIcon } from './icons';
 import { SeaLayer } from './overlay';
+import { GunDeck } from './combat';
 import { ShareButton, ShareChip } from './share';
 import { clearWaypoint, sailToWaypoint, waypointMetres } from '../waypoint';
 import { courseTarget } from '../game/autopilot';
@@ -103,7 +104,7 @@ const miniSpan = (): number => clamp(Math.max(W, H) * 3, 1000, 4200);
 const miniTerrain = terrainCache();
 /** The dial top right: the compass, or the minimap if the player chose it; both open the chart. */
 function Minimap({ step }: { step: Step }) {
-  const un = G.up.sextant > 0 ? nearestUncharted() : null, target = guideOn() ? step.at ?? null : null;
+  const un = G.up.sextant > 0 ? nearestUncharted() : null, target = SET.guide ? step.at ?? null : null;
   const draw: DrawFn = (ctx, w, h, dpr) => {
     const b = G.boat;
     drawChart(ctx, w, h, b.x, b.y, miniSpan() / w, { dpr, budget: 4, target, round: true, waypoint: G.waypoint, keep: miniTerrain });
@@ -360,6 +361,7 @@ export function Hud() {
         <EasyReelOffer />
       </div>
       <Minimap step={step} />
+      <GunDeck />
       <Fishing />
       {G.stats.caught === 1 && sailing && <div class="hints">
         <Hint k="Tab" pad="View">Ship</Hint><Hint k="m" pad="Y">Chart</Hint><Hint k="l" pad="LB">Log</Hint>

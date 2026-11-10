@@ -231,8 +231,7 @@ function gatherSolids(from: Point): Solids {
       const k = pack(i, j); let l = out.get(k); if (!l) out.set(k, l = []); l.push(o);
     }
   };
-  for (const p of poisNear(from.x, from.y, SOLID_REACH)) {
-    const so = p.solid;
+  for (const p of poisNear(from.x, from.y, SOLID_REACH)) for (const so of [p.solid, p.type === 'port' ? p.yardSolid : undefined]) {
     if (so?.kind === 'circ') add({ x: so.x, y: so.y, r: so.r }, so.x, so.y, so.x, so.y);
     else if (so) add({ ax: so.ax, ay: so.ay, bx: so.bx, by: so.by, r: so.r }, Math.min(so.ax, so.bx), Math.min(so.ay, so.by), Math.max(so.ax, so.bx), Math.max(so.ay, so.by));
   }

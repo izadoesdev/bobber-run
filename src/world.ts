@@ -1,9 +1,9 @@
 // Infinite world: island archipelago heightfield, cached height tiles, points of interest,
 // fish schools and floating crates. Everything is deterministic from the seed.
-import { nA, nB, nC, fbm, hash, hash01, mulberry } from './noise';
+import { nA, nB, nC, fbm, hash, hash01, mulberry, fnv1a } from './noise';
 import { pickSpecies, SP, SPECIES } from './econ';
 import { HABITAT, livesAt, schoolLook } from './species';
-import type { Point, Poi, Port, Wreck, School, Crate } from './types';
+import type { Point, Poi, Port, Wreck, Cove, School, Crate } from './types';
 import { createNoise2D } from 'simplex-noise';
 import Alea from 'alea';
 import { biomeAt, biomeMix, coldness, setBiomeAnchor, type BiomeId } from './biome';
@@ -142,23 +142,48 @@ function shoreAt(S: number[], a: number): number {
   return k;
 }
 const LIFT = 0.14;                             // relief starts this far above the sea, so beaches stay low and sandy
-// the islands of the 3 x 3 cells round cell (ci, cj), in the order heightAt reads them (row by row): neighbouring
-// points almost always share a cell, so the last list is kept rather than looking up nine cells per point
+// the islands of the 3 x 3 cells round cell (ci, cj) that can reach into it, in the order heightAt reads them (row
+// by row); the rest could never pass its first test. Neighbouring points almost always share a cell, so the last
+// list is kept at hand as well.
+const nearLists = new Map<number, Island[]>();
 let nearCi = NaN, nearCj = NaN, nearList: Island[] = [];
 function islandsNear(ci: number, cj: number): Island[] {
   if (ci === nearCi && cj === nearCj) return nearList;
-  const L: Island[] = [];
-  for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) for (const is of cellIslands(ci + di, cj + dj)) L.push(is);
+  const k = key(ci, cj);
+  let L = nearLists.get(k);
+  if (!L) {
+    L = [];
+    const x0 = ci * CELL, y0 = cj * CELL;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) for (const is of cellIslands(ci + di, cj + dj)) {
+      const T = is.islet ? null : coastTable(is), reach = Math.sqrt(T ? is.reach2 : 2.3) * is.R + 1;   // a unit to spare for rounding
+      const dx = Math.max(0, x0 - is.x, is.x - x0 - CELL), dy = Math.max(0, y0 - is.y, is.y - y0 - CELL);
+      if (dx * dx + dy * dy <= reach * reach) L.push(is);
+    }
+    nearLists.set(k, L);
+  }
   nearCi = ci; nearCj = cj;
   return nearList = L;
 }
 
 /** Terrain height: < 0 is water (deeper = more negative), > 0 is land. */
 export function heightAt(x: number, y: number): number {
+  const e = coastHeight(x, y);
+  if (e > SEA_TOP) return e;                                       // the sea floor can't be higher: skip its noise
+  const sea = -0.5 + 0.1 * nC(x * 0.0016, y * 0.0016);
+  return e > sea ? e : sea;
+}
+/** The sea floor never rises above this (its noise stays within -1..1). */
+const SEA_TOP = -0.4;
+/** Whether (x, y) is too shallow for a school: heightAt(x, y) > SWIM_WATER, without the sea floor (always deeper). */
+const shallowAt = (x: number, y: number): boolean => coastHeight(x, y, SWIM_WATER) > SWIM_WATER;
+/**
+ * The height the islands near (x, y) give it, or -Infinity where none reaches. Given `above`, it may stop as soon as
+ * whether the height is above that is settled, returning -Infinity or Infinity instead.
+ */
+function coastHeight(x: number, y: number, above = NaN): number {
   // domain-warp the lookup so coastlines wander
   const wx = x + 36 * nB(x * 0.0042, y * 0.0042), wy = y + 36 * nB(x * 0.0042 + 31.7, y * 0.0042 - 12.3);
   const ci = Math.floor(wx / CELL), cj = Math.floor(wy / CELL);
-  let h = -0.5 + 0.1 * nC(x * 0.0016, y * 0.0016);
   let shape: number | null = null, best = -9, top: Island | null = null, topD = 0;
   const near = islandsNear(ci, cj);
   for (let q = 0; q < near.length; q++) {
@@ -173,22 +198,27 @@ export function heightAt(x: number, y: number): number {
     const base = 1 - d * d, e = base > 0 ? is.peak * Math.pow(base, 1.4) : is.peak * base;
     if (e > best) { best = e; top = is; topD = d; }
   }
-  if (best > -9) {
-    let e = best;
-    if (e > -0.25) { const k = Math.min(1, (e + 0.25) / 0.5); e += 0.15 * k * fbm(nC, x * 0.022, y * 0.022, 3); }
-    if (e > LIFT && top) {
-      relief(top);
-      const up = smooth01((e - LIFT) / 0.35);              // 0 at the foothills, 1 well inland
-      const rugged = up * top.mtn * (1 - 0.8 * top.volc);              // a volcano is a smooth cone, not a ridge
-      if (rugged > 0.01) e += rugged * 0.75 * ridged(x, y);
-      if (top.volc > 0) {                                     // a cone, and a crater at its top
-        const cone = Math.max(0, 1 - topD / 0.55);
-        e += top.volc * up * (0.9 * cone * cone - 0.55 * smooth01((0.12 - topD) / 0.07));
-      }
-    }
-    if (e > h) h = e;
+  if (best === -9) return -Infinity;
+  let e = best;
+  if (e > -0.25) {
+    const k = Math.min(1, (e + 0.25) / 0.5), most = 0.15 * k;
+    // the detail moves the height by at most `most` (fbm stays within one octave's -1..1): wholly to one side of
+    // `above`, and short of the relief that starts at LIFT, it can't change the answer
+    if (e + most <= above) return -Infinity;
+    if (e - most > above && e + most <= LIFT) return Infinity;
+    e += most * fbm(nC, x * 0.022, y * 0.022, 3);
   }
-  return h;
+  if (e > LIFT && top) {
+    relief(top);
+    const up = smooth01((e - LIFT) / 0.35);              // 0 at the foothills, 1 well inland
+    const rugged = up * top.mtn * (1 - 0.8 * top.volc);              // a volcano is a smooth cone, not a ridge
+    if (rugged > 0.01) e += rugged * 0.75 * ridged(x, y);
+    if (top.volc > 0) {                                     // a cone, and a crater at its top
+      const cone = Math.max(0, 1 - topD / 0.55);
+      e += top.volc * up * (0.9 * cone * cone - 0.55 * smooth01((0.12 - topD) / 0.07));
+    }
+  }
+  return e;
 }
 
 // ---------- cached height tiles ----------
@@ -202,6 +232,15 @@ export interface HeightTile {
   land: boolean;
   /** tree instances cached by the renderer: [x, y, kind, scale, yaw, shade] per tree */
   trees?: number[];
+}
+/** Per-tile scenery: one candidate spot per GS x GS cell, hashed into place. fn gets spots inside the tile, their cell, and
+ * the tile's height there; spots that land outside the tile belong to its neighbour. */
+export function tileSpots(t: HeightTile, GS: number, salt: number, fn: (px: number, py: number, gx: number, gy: number, h: number) => void): void {
+  const x0 = t.tx * TS, y0 = t.ty * TS;
+  for (let gy = Math.floor(y0 / GS); gy <= Math.floor((y0 + TS - 1) / GS); gy++) for (let gx = Math.floor(x0 / GS); gx <= Math.floor((x0 + TS - 1) / GS); gx++) {
+    const px = gx * GS + Math.floor(hash01(gx, gy, salt) * GS), py = gy * GS + Math.floor(hash01(gx, gy, salt + 1) * GS);
+    if (px >= x0 && px < x0 + TS && py >= y0 && py < y0 + TS) fn(px, py, gx, gy, t.h[(py - y0 + 1) * TN + px - x0 + 1]);
+  }
 }
 const tiles = new Map<number, HeightTile>();
 /** What tile (tx, ty) is made of: its heights and whether it has land (built here, or by a tile worker: tilepool.ts). */
@@ -275,7 +314,6 @@ function openWater(p: Point, a: number): boolean {
 }
 /** How many species existed when port prices were first drawn; never change this. */
 const LEGACY_SPECIES = 43;
-const idSalt = (id: string): number => { let h = 2166136261; for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619); return h >>> 0; };
 function makePort(i: number, j: number, home: boolean, r: Rng, s: Point, di: number, a: number): Port {
   const c = Math.cos(a), sn = Math.sin(a);
   const ax = s.x - c * 3, ay = s.y - sn * 3;
@@ -285,10 +323,15 @@ function makePort(i: number, j: number, home: boolean, r: Rng, s: Point, di: num
   const mult: Record<number, number> = {};
   for (let k = 0; k < LEGACY_SPECIES; k++) mult[k] = 0.75 + pr() * 0.7;
   const shipyard = home || pr() < 0.45;
-  for (let k = LEGACY_SPECIES; k < SPECIES.length; k++) mult[k] = 0.75 + hash01(i, j, idSalt(SPECIES[k].id)) * 0.7;
+  for (let k = LEGACY_SPECIES; k < SPECIES.length; k++) mult[k] = 0.75 + hash01(i, j, fnv1a(SPECIES[k].id)) * 0.7;
+  // a shipyard's floating dock goes on whichever side of the pier has more open water (only a yard pays for the scan)
+  const wet = (side: number): number => [14, 22, 30].reduce((n, u) => n + [12, 17, 22].filter(v => heightAt(ax + u * c - v * side * sn, ay + u * sn + v * side * c) < -0.05).length, 0);
+  const sd = shipyard && wet(-1) > wet(1) ? -1 : 1, at = (u: number): [number, number] => [ax + u * c - 16 * sd * sn, ay + u * sn + 16 * sd * c];
+  const [yax, yay] = at(16), [ybx, yby] = at(30);
   return {
     id: `port:${i},${j}`, type: 'port', name: home ? 'Alderhaven' : placeName(r), x: ax, y: ay, dir: di, ang: a,
     end: { x: ax + c * 26, y: ay + sn * 26 }, dock: { x: ax + c * 44, y: ay + sn * 44 }, mult, shipyard,
+    ...(shipyard ? { yardSide: sd, yardSolid: { kind: 'seg' as const, ax: yax, ay: yay, bx: ybx, by: yby, r: 7.5 } } : {}),
     solid: { kind: 'seg', ax, ay, bx: ax + c * 27, by: ay + sn * 27, r: 3.5 },
   };
 }
@@ -328,7 +371,34 @@ function landmarks(i: number, j: number): Poi[] {
     const w = placeWreck(i, j, r, main, out);
     if (w) out.push(w);
   }
+  const cove = main && !home && !out.some(p => p.type === 'port') ? placeCove(i, j, main, out) : null;
+  if (cove) out.push(cove);
   return out;
+}
+// ---------- pirate coves ----------
+/** Pirates keep to the far waters: no cove nearer Alderhaven than this, and more of them the further out. */
+export const PIRATE_FROM = 2000;
+const COVE_NAMES = ['Skull', 'Blackwater', 'Cutlass', 'Gallows', 'Rumrunner', 'Corsair', 'Bonefire', 'Smuggler', 'Powder', 'Crossbones', 'Saltgrave', 'Hangman'];
+const COVE_KINDS = ['Cove', 'Hollow', 'Den', 'Hideout', 'Landing', 'Haven'];
+/**
+ * A pirates' hideout on a portless island far from home, in its deepest bay where it has one: the camp ashore, and
+ * an anchorage out in the bay. Drawn from its own seed, so the cell's other landmarks stay where they always were.
+ */
+function placeCove(i: number, j: number, main: Island, pois: readonly Poi[]): Cove | null {
+  const dist = Math.hypot(main.x - HOME_ISLAND.x, main.y - HOME_ISLAND.y);
+  if (dist < PIRATE_FROM || main.R < 60) return null;
+  const r = mulberry(hash(i, j, 313));
+  if (r() > 0.12 + 0.12 * smooth01((dist - PIRATE_FROM) / 6000)) return null;
+  const a0 = coveHeadings(main)[0] ?? r() * Math.PI * 2;
+  for (let q = 0; q < DIRS; q++) {
+    const a = a0 + (q % 2 ? 1 : -1) * Math.ceil(q / 2) * Math.PI * 2 / DIRS, s = shoreAlong(main, a);
+    if (!s || !openWater(s, a)) continue;
+    const c = Math.cos(a), sn = Math.sin(a), x = s.x - c * 10, y = s.y - sn * 10, anchor = { x: s.x + c * 46, y: s.y + sn * 46 };
+    if (heightAt(x, y) < 0.03 || heightAt(anchor.x, anchor.y) > -0.12) continue;
+    if (pois.some(p => Math.hypot(p.x - x, p.y - y) < 70)) continue;
+    return { id: `cove:${i},${j}`, type: 'cove', name: COVE_NAMES[Math.floor(r() * COVE_NAMES.length)] + ' ' + COVE_KINDS[Math.floor(r() * COVE_KINDS.length)], x, y, ang: a, anchor };
+  }
+  return null;
 }
 // a wreck in shallow water off the main island (or anywhere in an empty cell), away from ports
 function placeWreck(i: number, j: number, r: Rng, main: Island | undefined, pois: Poi[]): Wreck | null {
@@ -355,7 +425,7 @@ function placeWreck(i: number, j: number, r: Rng, main: Island | undefined, pois
 function openSpot(x: number, y: number, a0: number, dists: number[], sp: number, taken: readonly School[] = []): Point | null {
   for (const d of dists) for (let q = 0; q < 16; q++) {
     const a = a0 + q / 16 * Math.PI * 2, sx = x + Math.cos(a) * d, sy = y + Math.sin(a) * d;
-    if (!landPull(sx, sy, schoolReach(sp)) && !crowded(sx, sy, sp, taken)) return { x: sx, y: sy };
+    if (!shallowsNear(sx, sy, schoolReach(sp)) && !crowded(sx, sy, sp, taken)) return { x: sx, y: sy };
   }
   return null;
 }
@@ -374,7 +444,6 @@ export function cellPois(i: number, j: number): Poi[] {
   if (!L) { L = lightSchools(landmarks(i, j), i, j); poiCells.set(k, L); }
   return L;
 }
-/** points of interest within a square of half-size rad around (x, y); fills and returns `out` if given */
 /** The landmarks within rad of (x, y); `skipCell` leaves out whole cells (never generating them), e.g. closed waters. */
 export function poisNear(x: number, y: number, rad: number, out: Poi[] = [], skipCell?: (i: number, j: number) => boolean): Poi[] {
   out.length = 0;
@@ -430,19 +499,30 @@ const schoolReach = (sp: number): number => schoolLook(sp).radius + SWIM.wander 
 /** Closest two schools may be: their reaches plus clear water between (at least ~50 for the smallest). */
 const schoolGap = (a: number, b: number): number => schoolReach(a) + schoolReach(b) + 14;
 const FC = 300;                                // fish cell size
-interface FishCell { schools: School[]; crates: Crate[] }
+interface FishCell { crates: Crate[] }
 const fishCells = new Map<number, FishCell>();
 function makeSchool(id: string, x: number, y: number, sp: number, r: Rng, stock?: number): School {
   return { id, x, y, sp, stock: stock ?? 2 + Math.floor(r() * 3), max: stock ?? 3, respawn: 0, ph: r() * 6.28 };
 }
+// a school's swim area is sampled at these fractions of its reach, along `dirs` headings
+const PULL_F = [0.35, 0.7, 1];
 // the summed directions from (x, y), out to `reach`, where the water is too shallow for a school; null if none
 function landPull(x: number, y: number, reach: number, dirs = 24): Point | null {
-  let dx = 0, dy = 0, hit = heightAt(x, y) > SWIM_WATER;
+  let dx = 0, dy = 0, hit = shallowAt(x, y);
   for (let k = 0; k < dirs; k++) {
     const a = k / dirs * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
-    for (const f of [0.35, 0.7, 1]) if (heightAt(x + c * reach * f, y + s * reach * f) > SWIM_WATER) { dx += c; dy += s; hit = true; }
+    for (const f of PULL_F) if (shallowAt(x + c * reach * f, y + s * reach * f)) { dx += c; dy += s; hit = true; }
   }
   return hit ? { x: dx, y: dy } : null;
+}
+/** Whether landPull would find shallows: the same samples, stopping at the first. */
+function shallowsNear(x: number, y: number, reach: number, dirs = 24): boolean {
+  if (shallowAt(x, y)) return true;
+  for (let k = 0; k < dirs; k++) {
+    const a = k / dirs * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
+    for (const f of PULL_F) if (shallowAt(x + c * reach * f, y + s * reach * f)) return true;
+  }
+  return false;
 }
 /** Nudge a school's home away from the shore until its whole swim area is open water; null if there's no room. */
 function settle(x: number, y: number, reach: number, box: readonly number[]): Point | null {
@@ -461,12 +541,12 @@ function crowded(x: number, y: number, sp: number, others: readonly School[]): b
   return false;
 }
 function genFishCell(i: number, j: number): FishCell {
-  const r = mulberry(hash(i, j, 31)), schools: School[] = [], crates: Crate[] = [];
+  const r = mulberry(hash(i, j, 31)), crates: Crate[] = [];
   if (r() < 0.65) {
     const x = (i + 0.1 + 0.8 * r()) * FC, y = (j + 0.1 + 0.8 * r()) * FC;
     if (heightAt(x, y) < -0.06) crates.push({ id: `c:${i},${j}`, x, y, value: 3 + Math.floor(r() * 7), taken: false, respawn: 0, ph: r() * 6.28 });
   }
-  return { schools, crates };
+  return { crates };
 }
 function fishCell(i: number, j: number): FishCell {
   const k = key(i, j);
@@ -569,7 +649,7 @@ function driftFits(sl: HotSlot, e: number): boolean {
     const h = sl.homes[m];
     if (!h || q.stock <= 0) return true;
     const x = h.x + sl.dx * e, y = h.y + sl.dy * e, hab = HABITAT[SPECIES[q.sp].id];
-    return !landPull(x, y, schoolReach(q.sp), 12) && (m > 0 || livesAt(q.sp, x, y, heightAt(x, y))) && (!hab || biomeMix(x, y)[hab] >= 0.4);
+    return !shallowsNear(x, y, schoolReach(q.sp), 12) && (m > 0 || livesAt(q.sp, x, y, heightAt(x, y))) && (!hab || biomeMix(x, y)[hab] >= 0.4);
   });
 }
 function hotCell(i: number, j: number): HotSlot[] {
@@ -714,8 +794,8 @@ export function cratesNear(x: number, y: number, rad: number, out: Crate[] = [])
 
 // ---------- keeping the caches bounded ----------
 // Everything above regenerates identically from the seed, so data far from the view is dropped and rebuilt on the
-// way back. Fish cells and landmarks only go while untouched (every school full, every crate in place): a fished-out
-// school or a taken crate keeps its state until it has refilled.
+// way back. Landmarks and hotspots only go while every school is full, fish cells while every crate is in place: a
+// fished-out school or a taken crate keeps its state until it has refilled.
 const full = (s: School | undefined) => !s || s.stock >= s.max;
 /** whether cache key k's square (side `size`) lies more than `keep` from (x, y) */
 function far(k: number, size: number, x: number, y: number, keep: number): boolean {
@@ -727,13 +807,10 @@ export function trimWorld(x: number, y: number, view: number): void {
   const keepTiles = view / 2 + 3 * TS;            // the renderer's prefetch reaches 1.5 tiles past the view; keep 1.5 more for turning back
   for (const k of tiles.keys()) if (far(k, TS, x, y, keepTiles)) tiles.delete(k);
   for (const k of cells.keys()) if (far(k, CELL, x, y, 4000)) cells.delete(k);
+  for (const k of nearLists.keys()) if (far(k, CELL, x, y, 4000)) nearLists.delete(k);
   for (const [k, L] of poiCells) if (far(k, CELL, x, y, 4000) && L.every(p => full(p.school))) poiCells.delete(k);
   for (const [k, c] of hotCells) if (far(k, HC, x, y, 1500) && c.every(sl => sl.spot.schools.every(full))) hotCells.delete(k);
-  for (const [k, c] of fishCells) {
-    if (!far(k, FC, x, y, 1500)) continue;
-    if (c.schools.every(full) && c.crates.every(cr => !cr.taken)) fishCells.delete(k);
-    else for (const s of c.schools) s.swim = undefined;     // kept for its state; its fish respawn on the way back
-  }
+  for (const [k, c] of fishCells) if (far(k, FC, x, y, 1500) && c.crates.every(cr => !cr.taken)) fishCells.delete(k);
 }
 // ---------- claimable islands ----------
 /** The main island of a cell: the unit players can claim and name (islets ride along), Alderhaven's included. */

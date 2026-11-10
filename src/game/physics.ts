@@ -11,9 +11,11 @@ import type { Poi, Solid, Sway } from '../types';
 import { seaPropsNear, type SeaProp, type SeaPropKind } from '../seaprops';
 const ICE_KINDS = new Set<SeaPropKind>(['floeS', 'floeM', 'floeL', 'berg', 'iceberg']);
 import { G, inp } from './state';
+import { boostMul } from './special';
 import { boatDef, chartPerks, hpMax, keelLvl, speedMul, sailEfficiency, windAngle, toWorld } from './rules';
 import { spawn, toast, jitter, burst } from './feedback';
 import { cancelFishing, hitstop, towStretch } from './fishing';
+import { rigFactor } from './pirates';               // pirates imports physics too; both only call across inside functions
 import { lockPush } from './regions';
 
 // the hull outline as 18 points on an ellipse, slightly blunter at the stern
@@ -39,10 +41,10 @@ const propSolid = (p: SeaProp): Solid => {
   if (!so) propSolids.set(p, so = { kind: 'circ', x: p.x, y: p.y, r: p.r });
   return so;
 };
-/** The piers, wrecks and solid sea props (icebergs, floes, sea stacks, whale bones, basalt) within `rad` of the boat, into `out`. */
+/** The piers, shipyard docks, wrecks and solid sea props (icebergs, floes, sea stacks, whale bones, basalt) within `rad` of the boat, into `out`. */
 export function solidsNear(rad: number, out: Solid[]): void {
   out.length = 0;
-  for (const p of poisNear(G.boat.x, G.boat.y, rad, nearPois)) if (p.solid) out.push(p.solid);
+  for (const p of poisNear(G.boat.x, G.boat.y, rad, nearPois)) { if (p.solid) out.push(p.solid); if (p.type === 'port' && p.yardSolid) out.push(p.yardSolid); }
   const breaker = !!boatDef().ice;                         // an icebreaker's bow parts ice instead of stopping on it
   for (const p of seaPropsNear(G.boat.x, G.boat.y, rad, nearProps)) if (!(breaker && ICE_KINDS.has(p.kind))) out.push(propSolid(p));
 }
@@ -74,13 +76,13 @@ function landContact(px: number, py: number, rx: number, ry: number): Contact | 
   const l = Math.hypot(rx, ry) || 1;
   return { nx: -rx / l, ny: -ry / l, pen: 0.5 };                                    // flat ground: push back towards the centre
 }
+interface Hit { px: number; py: number; c: Contact }
+/** The hull outline in world space, rewritten each contact iteration. */
+const hullWorld: [number, number][] = Array.from({ length: 18 }, () => [0, 0]);
 /**
  * The point of hull edge (ax, ay)-(bx, by) closest to a pier's core segment (or a wreck's centre), and its contact.
  * Piers are tested against edges, not hull points: on a long hull the points are wider apart than a pier end.
  */
-interface Hit { px: number; py: number; c: Contact }
-/** The hull outline in world space, rewritten each contact iteration. */
-const hullWorld: [number, number][] = Array.from({ length: 18 }, () => [0, 0]);
 function edgeContact(so: Solid, ax: number, ay: number, bx: number, by: number): Hit | null {
   const [cx, cy, dx, dy] = so.kind === 'circ' ? [so.x, so.y, 0, 0] : [so.ax, so.ay, so.bx - so.ax, so.by - so.ay];
   const ex = bx - ax, ey = by - ay, wx = ax - cx, wy = ay - cy;
@@ -196,8 +198,8 @@ export function physicsStep(dt: number): void {
   const vf0 = vf, shallow = clamp((hBil(b.x, b.y) + 0.1) / 0.09, 0, 1), k = 0.6 * bd.accel;
   vf *= Math.exp(-(k + 2.2 * shallow + 0.12 * Math.abs(b.w)) * dt);
   vs *= Math.exp(-(3.2 + 3 * shallow) * dt);
-  let push = 20 * speedMul() * bd.accel * (1 + chartPerks().speed);   // a well-charted coast is a faster one
-  if (bd.prop === 'SAIL') push *= sailEfficiency() * (1 + 0.3 * WX.wind);
+  let push = 20 * speedMul() * bd.accel * (1 + chartPerks().speed) * rigFactor() * boostMul();   // a well-charted coast is a faster one, torn rigging slower
+  if (bd.prop === 'SAIL') push *= sailEfficiency() * (1 + (bd.gale ? 0.8 : 0.3) * WX.wind);   // a catamaran flies a hull in a blow
   vf += b.thr * push * (b.thr < 0 ? 0.45 : 1) * dt;
   // a rudder needs water flowing past it, so ships barely turn from a standstill; oars can spin a rowboat in place
   const still = rowing ? 0.7 : 0.4, steerage = still + (1 - still) * smooth01(Math.abs(vf) / 22);
@@ -246,7 +248,7 @@ function swing(s: Sway, target: number, hz: number, dt: number): void {
  */
 function swayHull(dt: number, heft: number, vf: number, accel: number): void {
   const b = G.boat, bd = boatDef();
-  const sails = bd.prop === 'SAIL' ? Math.sin(windAngle() - b.a) * WX.wind * Math.max(0, b.thr) * 0.12 : 0;
+  const sails = bd.prop === 'SAIL' ? Math.sin(windAngle() - b.a) * WX.wind * Math.max(0, b.thr) * (bd.gale ? 0.24 : 0.12) : 0;   // a catamaran lifts a hull
   const heel = clamp(b.w * vf * 0.004, -0.1, 0.1) - sails;
   const trim = clamp(accel * 0.0025, -0.05, 0.06) + (bd.prop === 'ENGINE' ? Math.min(1, Math.abs(vf) / 60) * 0.035 : 0);
   swing(b.heel, heel / Math.sqrt(heft), 0.55 / heft, dt);
@@ -257,7 +259,7 @@ function swayHull(dt: number, heft: number, vf: number, accel: number): void {
 // (and the other way round); rowing ahead while turning works the outer oar harder.
 function rowOars(dt: number, thr: number, rev: number, steer: number): void {
   const b = G.boat;
-  const pace = 0.75 * (0.85 + 0.15 * speedMul()), back = rev && !thr;
+  const pace = 0.75 * (0.85 + 0.15 * speedMul()) * boostMul(), back = rev && !thr;   // a sprint: quicker strokes
   const rate = (side: number): number => {
     const outer = steer && side === -steer;
     if (back) return -0.7;
@@ -277,11 +279,12 @@ function rowOars(dt: number, thr: number, rev: number, steer: number): void {
   }
 }
 
-export function sink(): void {
+/** The boat goes down: a tug tows it to the last port for a small fee. `lost` says what went with it (pirates' plunder). */
+export function sink(lost?: string): void {
   G.mode = 'sunk'; G.sunkT = 0; sfx('sink');
   const fee = Math.min(G.coins, 5 + Math.min(40, Math.round(G.coins * 0.04)));   // a small tow fee; the catch is kept
-  G.coins -= fee; G.fish = null;
+  G.coins -= fee; G.fish = null; G.dig = null;
   track('boat_sunk', { boat: G.boatId, tow_cost_bucket: bucket(fee), storm: WX.state === 'storm' });
-  G.sunkMsg = `A tug towed you back to the last port you visited. You kept your fish${fee ? `, and the tow cost $${fee}` : ''}`;
+  G.sunkMsg = `A tug towed you back to the last port you visited. ${lost ?? 'You kept your fish'}${fee ? `, and the tow cost $${fee}` : ''}`;
   burst('debris', G.boat.x, G.boat.y, 30, 40, () => 2 + Math.random() * 2);
 }

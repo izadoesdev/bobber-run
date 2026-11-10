@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { parseSave } from '../src/game/saveSchema';
+import { parseSave, retiredBoatRefund } from '../src/game/saveSchema';
 import { BOATS, PROJECTS, SPECIES, UPGRADES } from '../src/econ';
 
 // Saves load leniently: wrong types fall back, bad entries drop, good ones survive untouched.
@@ -42,6 +42,11 @@ test('removed branded boats cannot survive in ownership, fleet income or per-boa
     expect(saved.hulls[boatId]).toBeUndefined();
     expect(saved.boatUp[boatId]).toBeUndefined();
   }
+});
+test('a boat since folded into another is refunded: its price is back in the purse, and it is gone', () => {
+  const raw = { ...good, boatId: 'cruiser', owned: ['row', 'skiff', 'canoe', 'cruiser', 'constructor'] };
+  expect(parseSave(raw)).toMatchObject({ boatId: 'row', owned: ['row', 'skiff'], coins: good.coins });
+  expect(retiredBoatRefund(raw)).toBe(150 + 24000);                 // inherited names like "constructor" pay nothing
 });
 test('malformed fish indexes and non-finite fish values are dropped before they can crash a screen', () => {
   const valid = { sp: 0, kg: 1, value: 10, trophy: false };

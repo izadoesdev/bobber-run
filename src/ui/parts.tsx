@@ -10,7 +10,6 @@ import { icon, fishIcon } from './icons';
 import { SET } from '../prefs';
 import { fitSprite, opaqueBounds, type SpriteBounds } from './sprite';
 
-/** World position -> percent of the view, for things pinned over the canvas. */
 /** The bait on the hook and the chum aboard, with their keys: shown by a school before the cast and on the fishing dial. */
 export function BaitTag() {
   const bait = G.baitSel, chum = G.bait.chum || 0;
@@ -21,6 +20,7 @@ export function BaitTag() {
     </span>
   );
 }
+/** World position -> percent of the view, for things pinned over the canvas. */
 export const viewPct = (x: number, y: number): [number, number] => [(x - G.cam.x) / W * 100, (y - G.cam.y) / H * 100];
 // the UI's size in CSS pixels, kept by a ResizeObserver so reading it every frame costs nothing
 const uiSize = { w: 0, h: 0 };

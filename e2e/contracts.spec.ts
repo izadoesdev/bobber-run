@@ -90,9 +90,9 @@ test('contracts pay far more with a big boat, refresh each day, and lean to your
 test('delivering raises the dock hand through grades II to V, each with its gift', async ({ page }) => {
   await atMarket(page);
   await page.evaluate(() => { const { G } = window.BR; G.up.rod = 2; G.up.hold = 4; G.owned = ['row', 'skiff', 'launch', 'trawler']; G.boatId = 'trawler'; G.up.quarter = 0; });
-  const hand = await page.evaluate(() => { const r = window.BR.GAME.portItems(window.BR.homePort()).find((r: Row) => /dock hand/.test(r.label ?? '')); return [r.label, r.sub]; });
-  expect(hand[0]).toMatch(/Grade I$/);
-  expect(hand[1]).toMatch(/2 more deliveries here for Grade II/);
+  const hand = await page.evaluate(() => { const r = window.BR.GAME.portItems(window.BR.homePort()).find((r: Row) => /dock hand/i.test(r.label ?? '')); return [r.label, r.sub]; });
+  expect(hand[0]).toMatch(/grade I$/);
+  expect(hand[1]).toMatch(/Deliver 2 more here for grade II/);
   const deliver = (n: number) => page.evaluate(n => {
     const { G, GAME, SPECIES, homePort } = window.BR, hp = homePort(), sp = SPECIES.findIndex((s: { id: string }) => s.id === 'perch');
     for (let i = 0; i < n; i++) {

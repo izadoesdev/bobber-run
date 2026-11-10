@@ -2,41 +2,46 @@
 import type { BaitKind, BoatDef, BoatId, Paint, Project, Supply, Upgrade, UpgradeCategory, UpgradeKey } from './types';
 
 export { SPECIES, SP, pickSpecies, activeAt, fmtKg } from './species';
-export { warmth, coldness } from './biome';
 
 export const BOATS: BoatDef[] = [
   { id: 'row',     name: 'Rowboat',      cost: 0,    speed: 1.0,  accel: 1.0, turn: 1.0,  hold: 4,  hp: 100, L: 13.5, B: 5.8, prop: 'OARS',   sonar: 0, net: 0, what: 'Quiet oars give you 60% more time for a perfect strike' },
-  { id: 'canoe',   name: 'Canoe',        cost: 150,  speed: 1.2,  accel: 1.25, turn: 1.35, hold: 3, hp: 70,  L: 12,   B: 3.2, prop: 'OARS',   sonar: 0, net: 0, what: 'Light and silent: turns on the spot, and a paddle gives you time for a perfect strike' },
   { id: 'skiff',   name: 'Sail Skiff',   cost: 450,  speed: 1.45, accel: 0.9, turn: 0.95, hold: 7,  hp: 140, L: 16.5, B: 6.4, prop: 'SAIL',   sonar: 0, net: 0, what: 'Sails: fastest when the wind blows from the side' },
   { id: 'boatdev', name: 'boat.dev Sloop', cost: 900, speed: 1.7, accel: 1.15, turn: 1.15, hold: 8, hp: 150, L: 15, B: 5.5, prop: 'SAIL', sonar: 1, net: 0, what: 'The boat from boat.dev: cheap, quick under sail, and sonar built in. The most boat for the coin' },
-  { id: 'jetski',  name: 'Jet Ski',      cost: 1400, speed: 2.35, accel: 2.4, turn: 1.7,  hold: 2,  hp: 70,  L: 8,    B: 3,   prop: 'ENGINE', sonar: 0, net: 0, what: 'The quickest way to see the coast, with room for two fish. Fish hate it' },
   { id: 'launch',  name: 'Motor Launch', cost: 1800, speed: 1.95, accel: 1.5, turn: 1.05, hold: 10, hp: 210, L: 17.5, B: 7,   prop: 'ENGINE', sonar: 0, net: 0, what: 'Engine: fast in any direction, but speeding near fish scares them away' },
   { id: 'trawler', name: 'Trawler',      cost: 5000, speed: 2.15, accel: 0.8, turn: 0.75, hold: 18, hp: 360, L: 23,   B: 9,   prop: 'ENGINE', sonar: 1, net: 3, deck: 1, what: 'A sturdy engine boat, big enough to land sea giants', req: 'pier' },
-  { id: 'speedboat', name: 'Speedboat',  cost: 7500, speed: 2.75, accel: 2.0, turn: 1.15, hold: 9,  hp: 240, L: 15,   B: 5.5, prop: 'ENGINE', sonar: 0, net: 0, what: 'Twin outboards: crosses the sea in no time, but carries little', req: 'pier' },
-  { id: 'catamaran', name: 'Catamaran',  cost: 11000, speed: 2.55, accel: 1.1, turn: 0.9, hold: 16, hp: 320, L: 20,   B: 9,   prop: 'SAIL',   sonar: 0, net: 0, keel: 1, what: 'Two hulls: fast under sail and steady in a gale', req: 'pier' },
+  { id: 'speedboat', name: 'Speedboat',  cost: 7500, speed: 2.75, accel: 2.0, turn: 1.15, hold: 9,  hp: 240, L: 15,   B: 5.5, prop: 'ENGINE', sonar: 0, net: 0, special: 'boost', what: 'Twin outboards: crosses the sea in no time, but carries little. Press K to open the throttles wide for a burst of speed, to outrun anything afloat', req: 'pier' },
+  { id: 'catamaran', name: 'Catamaran',  cost: 11000, speed: 2.55, accel: 1.1, turn: 0.9, hold: 16, hp: 320, L: 20,   B: 9,   prop: 'SAIL',   sonar: 0, net: 0, keel: 1, gale: true, what: 'Two light hulls that fly in a blow: the harder the wind, the faster she goes, and in a storm she outruns every other sail. Steady in a gale besides', req: 'pier' },
   // the big ships: unlocked by restoring Alderhaven's harbour, not by money alone
-  { id: 'schooner', name: 'Schooner',     cost: 15000, speed: 2.4, accel: 0.85, turn: 0.62, hold: 26, hp: 520, L: 32, B: 10, prop: 'SAIL', sonar: 1, net: 0, crew: 1, deck: 1, what: 'Two masts: the fastest ship when the wind blows from the side', req: 'drydock' },
-  { id: 'cruiser',  name: 'Day Cruiser',   cost: 24000, speed: 2.45, accel: 1.4, turn: 0.9, hold: 14, hp: 420, L: 22, B: 7.5, prop: 'ENGINE', sonar: 1, net: 0, luxury: 0.1, what: 'A small yacht: guests aboard make every catch you sell worth 10% more', req: 'drydock' },
+  { id: 'schooner', name: 'Schooner',     cost: 15000, speed: 2.4, accel: 0.85, turn: 0.62, hold: 26, hp: 520, L: 32, B: 10, prop: 'SAIL', sonar: 1, net: 0, crew: 1, deck: 1, reach: true, what: 'Two masts and a gaff rig that loves a reach: with the wind on her beam she is the fastest ship afloat, even past the racing yacht', req: 'drydock' },
   { id: 'drifter',  name: 'Steam Drifter', cost: 25000, speed: 2.3, accel: 0.7, turn: 0.62, hold: 34, hp: 700, L: 36, B: 11, prop: 'ENGINE', sonar: 2, net: 3, keel: 1, deck: 1, what: 'Steam power that rides out the worst storms', req: 'drydock' },
-  { id: 'research', name: 'Research Vessel', cost: 32000, speed: 2.2, accel: 0.9, turn: 0.75, hold: 22, hp: 560, L: 28, B: 9, prop: 'ENGINE', sonar: 3, net: 0, deck: 1, what: 'The best sonar afloat: every school by species, and legendary fish starred on the chart', req: 'drydock' },
-  { id: 'flagship', name: 'Flagship',      cost: 50000, speed: 2.6, accel: 0.75, turn: 0.62, hold: 50, hp: 1000, L: 46, B: 14, prop: 'ENGINE', sonar: 3, net: 3, keel: 2, crew: 2, harpoon: 1, deck: 2, what: 'The finest working ship afloat, fully crewed, with a deck for the very largest fish', req: 'lights' },
+  { id: 'research', name: 'Research Vessel', cost: 32000, speed: 2.2, accel: 0.9, turn: 0.75, hold: 22, hp: 560, L: 28, B: 9, prop: 'ENGINE', sonar: 3, net: 0, deck: 1, special: 'ping', what: 'The best sonar afloat: every school by species, and legendary fish starred on the chart. Press K for a long-range ping that charts every school for 150 m round her and names the nearest', req: 'drydock' },
+  { id: 'flagship', name: 'Flagship',      cost: 50000, speed: 2.6, accel: 0.75, turn: 0.62, hold: 50, hp: 1000, L: 46, B: 14, prop: 'ENGINE', sonar: 3, net: 3, keel: 2, crew: 2, harpoon: 1, deck: 2, command: 0.5, what: 'The finest working ship afloat, fully crewed, with a deck for the very largest fish. She leads your fleet: while you sail her, every boat fishing for you brings in half as much again', req: 'lights' },
   { id: 'icebreaker', name: 'Icebreaker',  cost: 70000, speed: 2.0, accel: 0.6, turn: 0.55, hold: 36, hp: 1500, L: 34, B: 11.5, prop: 'ENGINE', sonar: 2, net: 0, keel: 2, deck: 2, ice: true, what: 'A reinforced bow: ice floes and bergs part for it, and the far north opens up', req: 'lights' },
-  { id: 'yacht',    name: 'Sailing Yacht', cost: 85000, speed: 2.85, accel: 0.95, turn: 0.7, hold: 24, hp: 700, L: 30, B: 8, prop: 'SAIL', sonar: 1, net: 0, crew: 1, luxury: 0.15, what: 'A racing yacht with a teak deck: the fastest sail afloat, and catches sell for 15% more', req: 'lights' },
+  { id: 'yacht',    name: 'Sailing Yacht', cost: 85000, speed: 2.85, accel: 0.95, turn: 0.7, hold: 24, hp: 700, L: 30, B: 8, prop: 'SAIL', sonar: 1, net: 0, crew: 1, luxury: 0.15, point: true, what: 'A racing yacht with a teak deck: the fastest sail downwind, she points higher into the wind than any other, and catches sell for 15% more', req: 'lights' },
+  // fighting ships: guns built in, crews drilled to reload fast, tough hulls and small holds
+  { id: 'cutter', name: 'Revenue Cutter', cost: 3200, speed: 1.85, accel: 1.2, turn: 1.15, hold: 6, hp: 300, L: 17, B: 6.2, prop: 'SAIL', sonar: 0, net: 0, point: true, arms: { cannon: 1, swivel: 1 }, gunnery: 0.8, signature: 'chaser', what: 'A fast fore-and-aft cutter built to chase smugglers: a long bow chaser that fires dead ahead as you run a pirate down, a broadside gun and a swivel, and she points high into the wind' },
+  { id: 'patrol', name: 'Coast Guard Cutter', cost: 16000, speed: 2.3, accel: 1.1, turn: 0.85, hold: 10, hp: 720, L: 26, B: 7.5, prop: 'ENGINE', sonar: 1, net: 0, crew: 1, arms: { cannon: 2, swivel: 1, kegs: 1 }, gunnery: 0.75, marque: 0.5, signature: 'boarders', what: 'A fast white patrol cutter with a boarding team: lay her alongside a beaten pirate to grapple and take her, and half again the bounty on every pirate. Deck guns, a swivel and kegs', req: 'drydock' },
+  { id: 'gunboat', name: 'Rocket Gunboat', cost: 26000, speed: 2.2, accel: 1.0, turn: 0.8, hold: 8, hp: 850, L: 22, B: 7, prop: 'ENGINE', sonar: 1, net: 0, crew: 1, arms: { cannon: 1, swivel: 1, mortar: 2 }, gunnery: 0.8, marque: 0.25, signature: 'barrage', what: 'A steel gunboat with two rocket racks: each salvo is a barrage of three rockets walked along a ship\'s course, so turning won\'t save her. A light gun and a swivel besides', req: 'drydock' },
+  { id: 'dreadnought', name: 'Dreadnought', cost: 110000, speed: 2.3, accel: 0.6, turn: 0.5, hold: 18, hp: 3200, L: 46, B: 11, prop: 'ENGINE', sonar: 2, net: 0, crew: 3, keel: 2, arms: { swivel: 2, ram: 1 }, armour: 0.4, gunnery: 0.7, marque: 0.25, signature: 'turret', what: 'A steel battleship: three big-gun turrets that train onto a pirate on any bearing and fire together, armour that turns 40% of every hit (and won\'t burn), and a ram bow. A beaten pirate who takes a salvo strikes her colours rather than fight on', req: 'lights' },
+  { id: 'destroyer', name: 'Destroyer', cost: 180000, speed: 2.8, accel: 1.3, turn: 0.95, hold: 8, hp: 1100, L: 32, B: 6.5, prop: 'ENGINE', sonar: 2, net: 0, crew: 2, keel: 1, arms: { cannon: 1, swivel: 2 }, gunnery: 0.6, marque: 0.25, signature: 'torpedo', what: 'A lean steel torpedo-boat destroyer, the fastest warship afloat: torpedoes from her bow tubes run straight and slow under the water and hit like nothing else, angling a little to meet a ship you point her at. Quick-firing guns besides', req: 'grand' },
+  { id: 'missile', name: 'Missile Cruiser', cost: 320000, speed: 2.6, accel: 1.0, turn: 0.75, hold: 14, hp: 2600, L: 40, B: 9, prop: 'ENGINE', sonar: 3, net: 0, crew: 3, keel: 2, arms: { swivel: 2 }, armour: 0.25, gunnery: 0.6, marque: 0.25, signature: 'missile', what: 'The most advanced warship afloat: guided missiles leap from her deck and home on a pirate wherever she is, whatever she does, and armour besides', req: 'grand' },
+  { id: 'carrier', name: 'Aircraft Carrier', cost: 480000, speed: 2.45, accel: 0.6, turn: 0.45, hold: 16, hp: 3600, L: 58, B: 13, prop: 'ENGINE', sonar: 3, net: 0, crew: 3, keel: 2, arms: { swivel: 2 }, armour: 0.2, gunnery: 0.7, marque: 0.25, signature: 'air', what: 'A flat-top with an air wing of three jets: launch one and it flies off to the nearest pirate up to 110 m away, far past any gun, over land or sea, bombs her pass after pass, then comes home to land and rearm. Only light guns besides: keep your distance and let the planes fight', req: 'grand' },
   // the yachts of a kingdom
-  { id: 'motoryacht', name: 'Motor Yacht', cost: 160000, speed: 2.7, accel: 1.0, turn: 0.65, hold: 34, hp: 1000, L: 38, B: 11, prop: 'ENGINE', sonar: 2, net: 0, crew: 2, deck: 1, luxury: 0.25, what: 'Three decks of glass and teak: catches sell for 25% more', req: 'lights' },
-  { id: 'superyacht', name: 'Superyacht', cost: 650000, speed: 2.85, accel: 0.9, turn: 0.6, hold: 50, hp: 1800, L: 52, B: 13, prop: 'ENGINE', sonar: 3, net: 0, keel: 2, crew: 2, harpoon: 1, deck: 2, luxury: 0.4, what: 'The jewel of a kingdom, with a pool and a helipad: catches sell for 40% more', req: 'grand' },
+  { id: 'motoryacht', name: 'Motor Yacht', cost: 60000, speed: 2.7, accel: 1.0, turn: 0.65, hold: 34, hp: 1000, L: 38, B: 11, prop: 'ENGINE', sonar: 2, net: 0, crew: 2, deck: 1, luxury: 0.2, lights: true, what: 'Three decks of glass and teak, and guests aboard: catches sell for 20% more. Underwater lights glow round her hull at night, showing the fish far round her, and fish in their light bite sooner', req: 'drydock' },
+  { id: 'superyacht', name: 'Superyacht', cost: 650000, speed: 2.85, accel: 0.9, turn: 0.6, hold: 50, hp: 1800, L: 52, B: 13, prop: 'ENGINE', sonar: 3, net: 0, keel: 2, crew: 2, harpoon: 1, deck: 2, luxury: 0.4, special: 'heli', what: 'The jewel of a kingdom, with a pool and her own helicopter: at sea it flies your catch to the nearest charted harbour and sells it there, so you can fish on without putting in, and catches sell for 40% more', req: 'grand' },
+  { id: 'liner', name: 'Ocean Liner', cost: 1500000, speed: 2.9, accel: 0.55, turn: 0.4, hold: 64, hp: 2600, L: 70, B: 15, prop: 'ENGINE', sonar: 3, net: 0, keel: 2, crew: 2, harpoon: 1, deck: 2, luxury: 0.5, fares: 1.5, what: 'A cruise liner of a dozen decks, with pools, a water slide and a thousand guests: passengers board at every harbour and pay their fare when you dock at another one at least 50 m away (the further, the more), and her dining rooms pay half again for every catch you sell', req: 'grand' },
 ];
 /** What a spare boat brings in per minute while you sail another one (the Fleet Office), and how many minutes it can hold. */
 export const FLEET_PER_MIN: Record<BoatId, number> = {
-  row: 8, canoe: 6, skiff: 18, boatdev: 25, jetski: 12, launch: 35, trawler: 70, speedboat: 50, catamaran: 85, schooner: 110, cruiser: 120, drifter: 160, research: 150,
-  flagship: 240, icebreaker: 210, yacht: 220, motoryacht: 300, superyacht: 520,
+  row: 8, skiff: 18, boatdev: 25, launch: 35, trawler: 70, speedboat: 50, catamaran: 85, schooner: 110, drifter: 160, research: 150,
+  flagship: 240, icebreaker: 210, yacht: 220, motoryacht: 300, superyacht: 520, liner: 800, cutter: 22, patrol: 90, gunboat: 80, dreadnought: 220, destroyer: 240, missile: 300, carrier: 340,
 };
 export const FLEET_HOLD_MIN = 10;
 /**
  * Upgrades fitted to a boat rather than carried by you: each boat keeps its own levels of these, and a new boat comes
  * bare. Your fishing gear and crew (rod, reel, line, tackle, spyglass, sextant, deckhand, cook) go with you to any boat.
  */
-export const BOAT_PARTS: readonly UpgradeKey[] = ['prop', 'hull', 'hold', 'bilge', 'anchor', 'net', 'ice', 'sonar', 'lantern', 'radio', 'quarter', 'pots', 'keel', 'harpoon', 'bell'];
+export const BOAT_PARTS: readonly UpgradeKey[] = ['prop', 'hull', 'hold', 'bilge', 'anchor', 'net', 'ice', 'sonar', 'lantern', 'radio', 'quarter', 'pots', 'keel', 'harpoon', 'bell', 'cannon', 'swivel', 'mortar', 'kegs', 'ram'];
 // Restoring Alderhaven: the long goal. Each project takes coins and donated fish, unlocks something, and the last one ends the story.
 // need: { any: n } fish of any kind; { kinds: n } different species; { trophy: n } trophy fish; { sp: id, n } a particular species
 export const PROJECTS: Project[] = [
@@ -75,16 +80,22 @@ export const UPGRADES: Record<UpgradeKey, Upgrade> = {
   keel:     { name: () => 'Storm Keel', cat: 'VESSEL', req: 'drydock', costs: [2000, 10000], lv: ['Hold position in rough water: storm and far-cold fish (Thunder Eel, Oarfish, Crystal Squid) will bite, and gusts push you half as hard', 'Storms cannot push you at all, and +25% hull'] },
   harpoon:  { name: () => 'Harpoon Gun', cat: 'TACKLE', req: 'drydock', costs: [3000, 14000], lv: ['Land ocean giants and legends 25% faster; they pull 12% less', 'Land them 50% faster; they pull 24% less'] },
   bell:     { name: () => 'Diving Bell', cat: 'NAVIGATION', req: 'drydock', costs: [2500, 12000], lv: ['Dive on each salvaged wreck once a day for another 60% of its loot', 'Daily dives bring up 120% of the loot'] },
+  // arms, for the pirates of the far waters (game/arms.ts, game/pirates.ts)
+  cannon:   { name: () => 'Broadside Guns', cat: 'ARMS', costs: [450, 2200, 9000], lv: ['A gun on each rail: R fires the side facing a pirate, if she\'s in its arc abeam. Each side reloads on its own', 'Two guns a side, harder hitting, quicker to reload', 'Three heavy guns a side with a longer reach'] },
+  swivel:   { name: () => 'Bow Swivel', cat: 'ARMS', costs: [600, 3000], lv: ['A swivel gun on the bow that fires by itself at any pirate ahead of you', 'Harder hitting, faster, with a wider arc and reach'] },
+  mortar:   { name: () => 'Mortar', cat: 'ARMS', costs: [2500, 9000], lv: ['T lobs a shell onto the nearest pirate 120 to 300 away, over anything between: a big splash, and it sets her alight. Slow to reload', 'Heavier shells, a wider burst, a longer reach and a quicker reload'] },
+  kegs:     { name: () => 'Powder Kegs', cat: 'ARMS', costs: [700, 3200], lv: ['V rolls a powder keg off the stern: it floats and blows up any pirate that comes close. Carry 2', 'Carry 4, made up faster, with a bigger blast'] },
+  ram:      { name: () => 'Iron Ram', cat: 'ARMS', costs: [1500], lv: ['An iron prow: running into a pirate does her 2.5 times the damage, and you far less'] },
 };
-/** Every upgrade key, in shop order. */
 /** Upgrades no longer sold: kept in the table so old saves still read, but out of the shop and the goals. Bilge
  *  pumps are part of Plating now (game/save.ts refunds what they cost). */
 const RETIRED = new Set<string>(['bilge']);
+/** Every upgrade key, in shop order. */
 export const UPGRADE_KEYS = (Object.keys(UPGRADES) as UpgradeKey[]).filter(k => !RETIRED.has(k));
 /** What a retired upgrade's levels cost, refunded once to saves that bought them. */
 export const retiredRefund = (up: Partial<Record<UpgradeKey, number>>): number =>
   [...RETIRED].reduce((t, k) => t + UPGRADES[k as UpgradeKey].costs.slice(0, up[k as UpgradeKey] || 0).reduce((a, c) => a + c, 0), 0);
-export const UP_CATS: UpgradeCategory[] = ['VESSEL', 'TACKLE', 'NAVIGATION', 'CREW'];
+export const UP_CATS: UpgradeCategory[] = ['VESSEL', 'TACKLE', 'NAVIGATION', 'CREW', 'ARMS'];
 export const BAIT_KINDS: BaitKind[] = ['shrimp', 'glow', 'chum'];
 export const SUPPLIES: Record<BaitKind, Supply> = {
   shrimp: { name: 'Shrimp Bait', n: 5, cost: 25, what: 'One per cast: bites come 25% sooner and trophy chance +5%' },
@@ -101,4 +112,5 @@ export const PAINTS: Paint[] = [
   { id: 'pearl', name: 'Pearl', cost: 0, earn: 'Catch 5 different kinds of variant', ramp: ['#b8b4ac', '#dcd8cf', '#f4f1ea'] },
   { id: 'trophyred', name: 'Trophy Red', cost: 0, earn: 'Land a trophy of 10 different species', ramp: ['#5e1f1a', '#8f2c22', '#c0493a'] },
   { id: 'kingfisher', name: 'Kingfisher', cost: 0, earn: 'Reach Gold mastery (100 catches) with 10 species', ramp: ['#1d4f6e', '#2f86a8', '#e08a3c'] },
+  { id: 'blacksails', name: 'Black Sails', cost: 0, earn: 'Sink 5 pirate ships', ramp: ['#16161a', '#26262c', '#3a3a42'] },
 ];

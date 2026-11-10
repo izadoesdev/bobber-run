@@ -1,17 +1,17 @@
 // Ports: one row of tabs, each a single list grouped under section headers. Every row says what it costs, whether it
 // can be bought, and if not, why. This file holds the tabs, the inn, the ferry, the islands list, docking and the
 // menu's keys; the market, contracts, shop, fleet office and harbour live beside it.
-import { homePort, claimableNear, claimableAt } from '../../world';
+import { homePort, claimableNear, claimableAt, poisNear } from '../../world';
 import { ISLANDS, REALM, realmTitle, watchExtra, islandPrice } from '../../islands';
 import { SPECIES } from '../../econ';
 import { sfx } from '../../audio';
 import { NET } from '../../net';
 import { track, bucket } from '../../analytics';
-import type { Point, Port, PortItem, PortRow } from '../../types';
+import type { Cove, Point, Port, PortItem, PortRow } from '../../types';
 import { G, hit } from '../state';
-import { DAYLEN, dayFrac, projDone } from '../rules';
-import { celebrate, toast } from '../feedback';
-import { placeAtPort, saveGame } from '../save';
+import { atClock, boatDef, dayFrac, projDone } from '../rules';
+import { addCoins, celebrate, toast } from '../feedback';
+import { placeAtPort, portById, saveGame } from '../save';
 import { dirTo, money } from '../../config';
 import { deny, have, header, short, spend, type Rows } from './kit';
 import { repairItem, saleValue, sell, sellItems } from './market';
@@ -19,18 +19,21 @@ import { chartedPorts, contractItems } from './contracts';
 import { outfitterItems, shipyardItems, supplyItems } from './shop';
 import { fleetItems } from './fleet';
 import { harbourGift, harbourItems } from './harbour';
+import { coveWord } from '../pirates';
 
+export { sell, saleValue } from './market';
 export { priceAt, keptBack, saleBonus, sailorsNear, buyFishChart, fishChartPrice, chartable } from './market';
-export { dockGrade } from './contracts';
-export { fleetTotal, updateFleet } from './fleet';
+export { dockGrade, chartedPorts } from './contracts';
+export { updateFleet } from './fleet';
 export { needStatus, nextProject } from './harbour';
+export { nearestYard } from './shop';
 
 // ---------- the inn ----------
 const isDaytime = (c: number): boolean => c > 0.04 && c < 0.58;
 /** Skip ahead to dusk, or to morning. */
 function rest(): void {
-  const c = dayFrac(), base = Math.floor(G.clock / DAYLEN) * DAYLEN, day = isDaytime(c);
-  G.clock = day ? base + 0.6 * DAYLEN : base + (c >= 0.58 ? DAYLEN : 0) + 0.06 * DAYLEN;
+  const day = isDaytime(dayFrac());
+  atClock(day ? 0.6 : 0.06);
   sfx('select'); toast(day ? 'You rest at the inn until dusk' : 'You sleep at the inn until morning'); saveGame();
 }
 function innItem(items: Rows): void {
@@ -42,7 +45,39 @@ function innItem(items: Rows): void {
   });
 }
 
+/** What a round costs, and how far the sailors' talk of pirate coves reaches. */
+const ROUND = 20, HEARSAY = 4500;
+/** Word on the quay: buy the sailors a round and hear of the nearest pirate cove you haven't charted: where it lies,
+ *  the ships it keeps, and whether they'll take a tribute or give no quarter. It goes on your chart. */
+function rumourItem(p: Port, items: Rows): void {
+  const coves = poisNear(p.x, p.y, HEARSAY).filter((q): q is Cove => q.type === 'cove').sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y));
+  const c = coves.find(q => !G.found.has(q.id));
+  if (!c) {
+    items.push({ kind: 'note', icon: 'anchor', label: 'Word on the quay', sub: coves.length ? 'The sailors here know no pirate cove you haven\'t charted' : 'The sailors here say these are quiet waters, no pirates for leagues', ok: false, why: 'Nothing new to hear', act: deny });
+    return;
+  }
+  const where = `${Math.round(Math.hypot(c.x - p.x, c.y - p.y) / 10)} m ${dirTo(p.x, p.y, c.x, c.y)}`, word = coveWord(c);
+  items.push({
+    kind: 'rumour', icon: 'lantern', label: 'Word on the quay', sub: 'Buy the sailors a round and hear where pirates lie', right: money(ROUND), ok: G.coins >= ROUND, why: short(ROUND),
+    action: 'Buy a round', what: 'Sailors talk over a drink: where a pirate cove lies, the ships it keeps, and whether its captains take a tribute or give no quarter. It goes on your chart.',
+    act: () => {
+      if (!spend(ROUND)) return;
+      G.found.add(c.id);
+      sfx('select');
+      toast(`"${c.name}, ${where}. They keep ${word.fleet}${word.quiet ? ', lying quiet since it was raided' : ''}. ${word.merciless ? 'One of them gives no quarter: run or fight.' : 'Heave to when they hail and they\'ll take a tribute and let you pass.'}" Marked on your chart`, 'info');
+      saveGame();
+    },
+  });
+}
+
 // ---------- the ferry ----------
+/** The least distance between harbours that earns a liner's passengers' fares. */
+export const FARE_MIN = 500;
+/** What a liner's passengers pay for a voyage between harbours a and b: nothing for a short hop, or aboard any other boat. */
+export const fareBetween = (a: Point, b: Point): number => {
+  const d = Math.hypot(a.x - b.x, a.y - b.y), rate = boatDef().fares ?? 0;
+  return d < FARE_MIN ? 0 : Math.round(d * rate);
+};
 const ferryCost = (a: Point, b: Point): number => 8 + Math.round(Math.hypot(a.x - b.x, a.y - b.y) / 28);
 function ferry(from: Port, to: Port): void {
   const cost = ferryCost(from, to);
@@ -59,9 +94,9 @@ function ferryItems(p: Port, items: Rows): void {
   const ports = chartedPorts(p.id).sort((a, b) => dist(a) - dist(b)).slice(0, 8);
   if (!ports.length) items.push({ kind: 'note', icon: 'map', label: 'No routes yet', sub: 'Find other ports to open ferry routes', ok: false, why: 'Sail out and discover another port first', act: deny });
   for (const q of ports) {
-    const cost = ferryCost(p, q);
+    const cost = ferryCost(p, q), fare = fareBetween(p, q);
     items.push({
-      kind: 'ferry', q, icon: 'map', label: q.name, sub: `${Math.round(dist(q) / 10)} m away`, cost, right: money(cost), ok: G.coins >= cost, why: short(cost),
+      kind: 'ferry', q, icon: 'map', label: q.name, sub: `${Math.round(dist(q) / 10)} m ${dirTo(p.x, p.y, q.x, q.y)}${q.shipyard ? ' · shipyard' : ''}${fare ? ` · sail there for ${money(fare)} in fares` : ''}`, cost, right: money(cost), ok: G.coins >= cost, why: short(cost),
       action: 'Travel', act: () => ferry(p, q), what: 'Travel there at once instead of sailing. The time of day still moves on as if you had sailed.',
     });
   }
@@ -91,9 +126,9 @@ function islandItems(p: Port, items: Rows): void {
 }
 
 // ---------- the menu ----------
-type PortTab = 'MARKET' | 'OUTFITTER' | 'SHIPYARD' | 'FLEET' | 'FERRY' | 'ISLANDS' | 'HARBOUR';
+export type PortTab = 'MARKET' | 'OUTFITTER' | 'SHIPYARD' | 'FLEET' | 'FERRY' | 'ISLANDS' | 'HARBOUR';
 export function portTabs(p: Port): PortTab[] {
-  return ['MARKET', 'OUTFITTER', ...(p.shipyard ? ['SHIPYARD' as const] : []), ...(projDone('market') ? ['FLEET' as const] : []),
+  return ['MARKET', 'OUTFITTER', 'SHIPYARD', ...(projDone('market') ? ['FLEET' as const] : []),
     'FERRY', ...(NET.on ? ['ISLANDS' as const] : []), ...(p.id === homePort().id ? ['HARBOUR' as const] : [])];
 }
 function marketItems(p: Port, items: Rows): void {
@@ -106,6 +141,7 @@ function marketItems(p: Port, items: Rows): void {
   contractItems(p, items);
   header(items, 'INN');
   innItem(items);
+  rumourItem(p, items);
   header(items, 'SUPPLIES');
   repairItem(items);
   supplyItems(items);
@@ -124,9 +160,11 @@ const selectable = (it: PortItem): it is PortRow => it.kind !== 'header';
 
 // ---------- docking ----------
 export function dock(p: Port): void {
+  const from = G.lastPort && G.lastPort !== p.id ? portById(G.lastPort) : null, fare = from ? fareBetween(from, p) : 0;
   G.mode = 'port';
   G.menu = { tab: 0, sel: 1, port: p };
   G.lastPort = p.id; G.fish = null;
+  if (from && fare > 0) { addCoins(fare); toast(`Your passengers go ashore at ${p.name} from ${from.name}: fares of ${money(fare)}`, 'good'); }
   const b = G.boat;
   b.vx = b.vy = b.w = b.helm = b.thr = 0;
   sfx('dock');

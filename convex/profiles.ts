@@ -42,7 +42,7 @@ export const setName = action({
     if (!checked.ok) return checked;
     if (await ctx.runQuery(internal.profiles.renamedRecently, { userId })) return TOO_SOON;   // before asking Jev, which costs money
     if (!await jevAllowsName(checked.name)) return { ok: false, why: "That name isn't allowed. Try another" };
-    return ctx.runMutation(internal.profiles.applyName, { userId, name: checked.name, auto: !!auto });
+    return ctx.runMutation(internal.profiles.applyName, { userId, name: checked.name, auto: false });
   },
 });
 /**

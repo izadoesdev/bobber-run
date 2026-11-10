@@ -3,11 +3,11 @@ import type { Page } from '@playwright/test';
 
 // toasts last a few seconds, so record every line the UI shows from the first frame and check the record instead
 const recordLines = (page: Page) => page.addInitScript(() => {
-  const seen: string[] = ((window as unknown as { __lines: string[] }).__lines = []);
+  const seen: string[] = (window.__lines = []);
   new MutationObserver(() => { const t = document.getElementById('ui')?.textContent ?? ''; if (t && seen.at(-1) !== t) seen.push(t); })
     .observe(document, { subtree: true, childList: true, characterData: true });
 });
-const shown = (page: Page) => page.evaluate(() => (window as unknown as { __lines: string[] }).__lines.join(' | '));
+const shown = (page: Page) => page.evaluate(() => window.__lines.join(' | '));
 /** Open a link as a returning player (a save on this device), who gets a waypoint rather than a start by the spot. */
 async function asReturning(page: Page, query: string): Promise<void> {
   await sail(page);

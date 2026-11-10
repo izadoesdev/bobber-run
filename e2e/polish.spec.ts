@@ -70,7 +70,7 @@ test('a failed save is visible, save and quit stays open, and retry clears the w
   await sail(page);
   await page.evaluate(() => {
     const original = Storage.prototype.setItem;
-    (window as any).__restoreStorage = () => { Storage.prototype.setItem = original; };
+    window.__restoreStorage = () => { Storage.prototype.setItem = original; };
     Storage.prototype.setItem = function (key, value) { if (key === 'bobber-run-save-v3') throw new DOMException('Full', 'QuotaExceededError'); original.call(this, key, value); };
     const { G } = window.BR; G.mode = 'pause';
   });
@@ -78,7 +78,7 @@ test('a failed save is visible, save and quit stays open, and retry clears the w
   await expect(page.getByRole('status').filter({ hasText: 'Progress is not being saved' })).toBeVisible();
   expect(await page.evaluate(() => window.BR.G.mode)).toBe('pause');
   await page.screenshot({ path: test.info().outputPath('save-failure.png'), animations: 'disabled' });
-  await page.evaluate(() => (window as any).__restoreStorage());
+  await page.evaluate(() => window.__restoreStorage());
   await page.getByRole('button', { name: 'Retry save' }).click();
   await expect(page.locator('.save-warning')).toHaveCount(0);
   expect(await page.evaluate(() => !!localStorage.getItem('bobber-run-save-v3'))).toBe(true);

@@ -37,7 +37,7 @@ export interface QuestDef {
   intro: string[];
   outro: string[];
 }
-export interface Character { id: string; name: string; role: string }
+interface Character { id: string; name: string; role: string }
 export interface Pack {
   id: string;
   name: string;

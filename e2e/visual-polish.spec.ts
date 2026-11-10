@@ -96,8 +96,9 @@ test('portrait shipyard and journal keep their controls inside the viewport @pho
   await detail.scrollIntoViewIfNeeded();
   expect((await detail.boundingBox())!.height).toBeGreaterThan(60);
   await expect(detail).toContainText('Quiet oars');
-  const action = page.getByRole('button', { name: /Sail this boat/i });
+  const action = page.locator('.detail .d-foot');                     // the boat you sail says so in place of a button
   await action.scrollIntoViewIfNeeded();
+  await expect(action).toContainText('You are sailing this boat');
   await expect(action).toBeInViewport({ ratio: 1 });
   await page.screenshot({ path: test.info().outputPath('portrait-shipyard-detail.png'), animations: 'disabled' });
   await page.getByRole('button', { name: /Leave port/i }).tap();

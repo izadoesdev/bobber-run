@@ -223,6 +223,45 @@ h2, .title { font-size: var(--fs-xl); }
 #ui.hc .boat-portrait figcaption { color: #000; }
 @media (max-height: 500px) { html.touch #ui .detail .boat-portrait { display: none; } }
 .preview.chart { aspect-ratio: 1.2; filter: sepia(0.3); }
+/* the port: a compact frame so the list and its details carry the screen; what the harbour has sits under its name */
+.port.screen { padding: 0.75em 1em 0.65em; }
+.port .head { align-items: center; margin-bottom: 0.45em; }
+.port .head h1 { font-size: 1.7em; }
+.port .services { font-size: var(--fs-s); margin-top: 0.1em; }
+.port .services .yard { color: var(--gold); font-weight: 700; }
+.purse { display: inline-flex; align-items: center; gap: 0.3em; }
+.port .head .coins { font-size: 1.45em; }
+.port .tabs { gap: 0.2em; margin: 0 0 0.5em; padding-bottom: 0; border-bottom: 0.12em solid #c9a24a; flex-wrap: wrap; }
+.port .tab { gap: 0.35em; padding: 0.3em 0.7em 0.25em; font-size: 0.9em; letter-spacing: 0.01em; }
+.port .tab .icon { filter: none; }
+.port .tab .tnum { margin-left: 0.15em; }
+.port .tab.none:not(.on) { opacity: 0.5; text-decoration: line-through; text-decoration-thickness: 0.06em; }
+.port .list { padding: 0.25em; gap: 0.05em; }
+.port .list-head { font-size: 0.72em; padding: 0.9em 0.55em 0.2em; }
+.port .list-head:first-child { padding-top: 0.35em; }
+.port .item { padding: 0.25em 0.5em; gap: 0.55em; }
+.port .item > .icon { width: 1.65em; height: 1.65em; }
+.port .item .sub { font-size: 0.82em; line-height: 1.3; }
+.port .item .meta { display: flex; align-items: center; flex-wrap: wrap; gap: 0.15em 0.6em; }
+.port .item .meta .pips { margin-top: 0; }
+.port .item .price { font-size: 1.02em; }
+.port .item .boat-thumb { width: 3.4em; height: 2.4em; }
+.port .detail { flex-basis: 19em; padding: 0.8em; gap: 0.45em; }
+.port .detail h2 { font-size: 1.35em; }
+.port .detail .boat-portrait figcaption { padding: 0.35em 0.6em; }
+.port .d-foot { flex-wrap: wrap; padding-top: 0.45em; }
+.port .detail .boat-portrait .preview { aspect-ratio: 2.7; }
+.port .d-foot .why { flex: 1 0 100%; margin: 0; }
+.port .price.big { font-size: 1.35em; }
+.port .d-icon { padding: 0.1em 0; } .port .d-icon .icon.xl { width: 4em; height: 4em; }
+/* phones held upright: one scrolling row of tabs, and the list takes the room the details leave */
+@media (orientation: portrait) {
+  html.touch #ui .port .tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  html.touch #ui .port .tab { flex: none; padding-inline: 0.6em; }
+  html.touch #ui .port .head .row { gap: 0.5em; }
+  html.touch #ui .port .body > .list { flex: 1 0 13em; }
+  html.touch #ui .port .d-icon { display: none; }
+}
 .stat { display: grid; grid-template-columns: 4.6em 1fr 4.6em; align-items: center; gap: 0.5em; margin: 0.15em 0; }
 .hold-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.35em; align-content: start; }
 .fcard { padding: 0.35em 1.2em 0.55em 0.4em; border-radius: var(--r); background: rgba(0,0,0,0.25); border: 0.12em solid #3a2a1c; display: flex; gap: 0.5em; align-items: center; position: relative; min-height: 3.8em; }
@@ -253,9 +292,12 @@ h2, .title { font-size: var(--fs-xl); }
 .legend { display: flex; gap: 1em; font-size: var(--fs-s); flex-wrap: wrap; align-items: center; }
 .legend span { display: inline-flex; align-items: center; gap: 0.35em; }
 .lg { display: inline-block; width: 0.75em; height: 0.75em; box-shadow: 0 0 0 0.1em #1b2a33; }
-.lg.port { background: #f0cf6a; border-radius: 50%; width: 0.85em; height: 0.85em; } .lg.light { width: 0.4em; height: 0.9em; background: linear-gradient(#efe9dc 40%, #c0493a 40% 60%, #efe9dc 60%); } .lg.unknown { background: none; box-shadow: inset 0 0 0 0.12em #8a949c; border-radius: 50%; width: 0.6em; height: 0.6em; }
+.lg.port { background: #f0cf6a; border-radius: 50%; width: 0.85em; height: 0.85em; }
+.lg.yard { width: 0.85em; height: 0.85em; border-radius: 0.1em; background: linear-gradient(#f2c230 0 0) 50% 18% / 70% 22% no-repeat, linear-gradient(#f2c230 0 0) 22% 80% / 16% 62% no-repeat, linear-gradient(#f2c230 0 0) 78% 80% / 16% 62% no-repeat, #1b2a33; } .lg.light { width: 0.4em; height: 0.9em; background: linear-gradient(#efe9dc 40%, #c0493a 40% 60%, #efe9dc 60%); } .lg.unknown { background: none; box-shadow: inset 0 0 0 0.12em #8a949c; border-radius: 50%; width: 0.6em; height: 0.6em; }
 .lg.wreck, .lg.treasure { box-shadow: none; background: linear-gradient(45deg, transparent 42%, currentColor 42% 58%, transparent 58%), linear-gradient(-45deg, transparent 42%, currentColor 42% 58%, transparent 58%); }
 .lg.wreck { color: #a87a3a; } .lg.treasure { color: #c0493a; }
+.lg.cove { background: radial-gradient(circle at 55% 40%, #efe9dc 0 18%, #26262c 20%); }
+.lg.pirate { width: 0.6em; height: 0.6em; background: #c0493a; transform: rotate(45deg); }
 .lg.you { width: 0; height: 0; box-shadow: none; border: 0.4em solid transparent; border-left: 0.75em solid #ff9a6b; border-right: 0; filter: drop-shadow(0 0 0.08em #1b2a33); }
 .lg.target { background: none; border: 0.18em solid #f0cf6a; border-radius: 50%; box-shadow: 0 0 0 0.08em #1b2a33; }
 .lg.school, .lg.sailor { border-radius: 50%; width: 0.5em; height: 0.5em; background: #b4d0d8; } .lg.sailor { width: 0.6em; height: 0.6em; background: #e6efec; }
@@ -367,7 +409,12 @@ html.touch .chart-ctl .btn[aria-label] { display: none; }   /* the touch layer h
 #ui input { pointer-events: auto; font: inherit; color: var(--text); background: var(--well); border: 0.1em solid var(--edge); border-radius: var(--r); padding: 0.3em 0.5em; min-width: 0; flex: 1; }
 #ui input:focus { outline: 0.12em solid var(--focus); }
 .label-world.sailor { color: var(--sea); border-color: rgba(143,184,216,0.6); }
+.label-world.pirate { color: #f4d8cf; border-color: rgba(192,73,58,0.75); display: flex; flex-direction: column; align-items: center; gap: 0.15em; }
+.label-world.pirate.aimed { border-color: #f0cf6a; box-shadow: 0 0 0 0.1em rgba(240,207,106,0.5); }
 .label-world.bare { padding: 0; opacity: 0.7; pointer-events: none; filter: drop-shadow(0 0.1em 0 #000a); }
+.label-world.port-sign { pointer-events: none; display: flex; align-items: center; gap: 0.4em; }
+.label-world.port-sign.yard { border-color: #f2c230; }
+.label-world.port-sign .tag { font-size: 0.75em; font-weight: 700; letter-spacing: 0.04em; color: #1b2a33; background: #f2c230; border-radius: 0.2em; padding: 0.05em 0.35em; }
 
 .account-box { margin: 0.6em 0; padding: 0.7em; background: rgba(10,6,3,0.3); border-radius: var(--r); }
 .seg-pick { display: flex; gap: 0.3em; margin-bottom: 0.6em; }   /* the menus' segmented control (not the HUD bar's .seg) */
@@ -450,7 +497,7 @@ html.touch #ui .screen.flush .foot { padding-right: 76px; }
 
 /* phones held upright: side-by-side panels stack, and the action buttons sit above the bar */
 @media (orientation: portrait) {
-  html.touch .tact { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 66px); }
+  html.touch .tact { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 66px); max-width: calc(100vw - 20px); flex-wrap: wrap-reverse; justify-content: flex-end; }   /* a fight's extra buttons stack upward */
   html.touch #ui .fishdial { bottom: 250px; } html.touch #ui .fishtip { bottom: calc(250px + 9.6em); } html.touch #ui .captions-stack { bottom: calc(250px + 11.8em); }
   html.touch #ui .chat-float .fade:not(:last-child) { display: none; }
   html.touch #ui .toasts { top: 32%; }
@@ -672,3 +719,41 @@ html.touch .admin-chip-open { bottom: auto; top: 50%; }
   .encounter .foot { flex-wrap: wrap; }
   .encounter-action { gap: 0.6em; }
 }
+
+/* battle aids (ui/combat.tsx): broadside arcs and impact rings over the sea, when the setting is on */
+.combat-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.combat-svg .arc { stroke-width: 1.2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.combat-svg .arc.loaded { fill: none; stroke: rgba(240,248,250,0.35); }
+.combat-svg .arc.ready { fill: rgba(240,207,106,0.12); stroke: rgba(240,207,106,0.95); }
+.combat-svg .impact { fill: rgba(224,74,58,0.12); stroke: rgba(224,74,58,0.85); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.combat-svg .impact.shell { fill: rgba(224,74,58,0.2); stroke-width: 1.8; }
+.combat-svg .impact.closing { fill: none; stroke: rgba(255,214,190,0.9); }
+.combat-svg .mark { fill: none; stroke: rgba(240,207,106,0.9); stroke-width: 1.4; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.combat-svg .mark.dim { stroke: rgba(240,207,106,0.35); }
+.label-world.pirate .pstatus { font-size: 0.8em; color: #ffb38a; }
+.label-world.pirate .pclass { font-size: 0.75em; color: #c9b8a8; letter-spacing: 0.04em; }
+/* the lookout's call over your boat: what the ships are doing, said once */
+.crew-call { position: absolute; transform: translate(-50%, -100%); max-width: 26em; white-space: normal; text-align: center; font-style: italic; font-size: var(--fs-s); color: #fff6dc; text-shadow: 0 0.08em 0 #000, 0 0 0.45em #000d; pointer-events: none; animation: region-in 0.25s ease-out; transition: opacity 0.4s; }
+.crew-call::before { content: '\201C'; } .crew-call::after { content: '\201D'; }
+.crew-call.urgent { color: #ffd2a8; font-weight: 700; }
+.crew-call.out { opacity: 0; }
+.combat-svg .rope { stroke: #c9a46a; stroke-width: 1.4; vector-effect: non-scaling-stroke; stroke-dasharray: 2 1.5; }
+/* ships after you out of sight: a pip at the edge pointing her way, in her flag's colour, with how far */
+.threat-pip { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; font-size: 0.7em; color: #f6eedc; text-shadow: 0 0.08em 0 #000; pointer-events: none; }
+.threat-pip svg { width: 1.9em; height: 1.9em; filter: drop-shadow(0 0.1em 0.1em #0009); }
+/* your guns while a fight is on, under the status bar */
+/* the gun deck: in a fight, each weapon you fire, its key, what it would do now and its reload (ui/combat.tsx) */
+.gundeck { position: absolute; left: 50%; bottom: 0.8em; transform: translateX(-50%); display: flex; align-items: center; gap: 0.35em; pointer-events: auto; font-size: var(--fs-s); z-index: 5; }
+.gun { display: grid; grid-template-columns: auto auto; column-gap: 0.4em; align-items: center; min-width: 6.2em; padding: 0.3em 0.55em 0.35em; background: var(--chip); border: 1px solid rgba(174,143,92,0.4); border-radius: var(--r); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.gun .key { grid-row: span 2; margin: 0; }
+.gun .gn { font-size: 0.8em; opacity: 0.75; line-height: 1.1; }
+.gun .gnow { font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.gun .gbar { grid-column: span 2; display: block; height: 0.2em; margin-top: 0.3em; background: #1b2a33; border-radius: 0.1em; overflow: hidden; }
+.gun .gbar b { display: block; height: 100%; background: #e6efec; }
+.gun.hot { border-color: var(--gold); color: var(--gold); } .gun.hot .gbar b { background: var(--gold); }
+.gun-help { display: grid; place-items: center; width: 1.8em; height: 1.8em; padding: 0; border-radius: 50%; background: var(--chip); border: 1px solid rgba(174,143,92,0.4); font-weight: 700; cursor: pointer; }
+.gun-help.open { border-color: var(--sea); }
+.gun-notes { position: absolute; left: 50%; bottom: 4.6em; transform: translateX(-50%); width: min(34em, 94vw); max-height: 50vh; overflow: auto; padding: 0.6em 0.8em; background: var(--chip); border: 1px solid rgba(174,143,92,0.55); border-radius: var(--r); pointer-events: auto; font-size: var(--fs-s); line-height: 1.4; z-index: 6; }
+.gun-notes ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4em; }
+.touch .gundeck, .touch .gun-notes { display: none; }
+.calm .crew-call { animation: none; }

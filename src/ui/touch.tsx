@@ -4,7 +4,7 @@
 // Lives in its own layer over the stage, rendered once per animation frame.
 import { render, type ComponentChildren } from 'preact';
 import { W, H } from '../config';
-import { G } from '../game';
+import { G, boatDef, gearLvl } from '../game';
 import { courseTarget, dropCourse, setCourse } from '../game/autopilot';
 import { stepZoom } from '../camera';
 import { SET } from '../prefs';
@@ -14,7 +14,11 @@ import { BOATS, SPECIES } from '../econ';
 import { castPoint, castTargets } from '../game/fishing';
 import { encountersNear, openEncounter } from '../game/encounters';
 import { realmDockAt } from '../islands';
+import { PIRATES, cannonTarget, chaserTarget, crewReload, hailer, launcher, mortarTarget, railsBearing, threat, turretOff } from '../game/pirates';
+import { SHOTS, TURRET, type BoughtShot } from '../game/arms';
 import { toast } from '../game/feedback';
+import { heliReady } from '../game/heli';
+import { SPECIAL, specialOf, type Special } from '../game/special';
 import { unlockAudio } from '../audio';
 import { Icon, Fish, viewPct } from './parts';
 
@@ -174,7 +178,9 @@ function useAction(): { label: string; icon: string } | null {
   if (G.fish || G.card) return null;
   if (G.nearPort) return { label: 'Dock', icon: 'anchor' };
   if (realmDockAt(G.boat.x, G.boat.y)) return { label: 'Land', icon: 'anchor' };
-  if (G.nearTreasure) return { label: 'Haul up', icon: 'map' };
+  if (G.nearPrize) return { label: G.nearPrize.mood === 'surrender' ? 'Board' : 'Grapple', icon: 'skull' };   // same order as E
+  if (G.nearCove) return { label: 'Raid', icon: 'skull' };
+  if (G.nearTreasure) return G.nearTreasure.buried ? (G.dig ? null : { label: 'Dig', icon: 'map' }) : { label: 'Haul up', icon: 'map' };
   if (G.nearWreck) return { label: 'Salvage', icon: 'coin' };
   if (G.nearEncounter) return { label: ['prop', 'habitat', 'plankton'].includes(G.nearEncounter.kind) ? 'Inspect' : 'Visit', icon: 'map' };
   return null;
@@ -191,6 +197,24 @@ function Controls() {
   return null;
 }
 
+/** A fight is on: a ship after you or hailing you, or one (fleeing ones too) in your guns' arc. */
+const fighting = (): boolean => !!(threat() || hailer() || cannonTarget() || chaserTarget());
+/** In a fight: the broadside (lit when a pirate is in a loaded rail's arc), the mortar, a keg, and the shot being loaded. */
+function ArmsButtons() {
+  const me = PIRATES.me, bearing = railsBearing(), off = turretOff(), turret = boatDef().signature === 'turret', l = launcher();
+  const ready = [0, 1].some(r => me.rails[r] <= 0 && bearing[r]) || (!!chaserTarget() && me.chaser <= 0) || (off !== null && me.turret <= 0 && Math.abs(off) <= TURRET.lay);
+  const wait = turret ? me.turret : Math.min(...[0, 1].filter(r => bearing[r]).map(r => me.rails[r]));   // seconds till a gun bearing on her is loaded
+  const aiming = turret ? off !== null : bearing.some(Boolean);
+  return (
+    <>
+      {gearLvl('cannon') > 0 && <Btn k="z" label={SHOTS[me.shot].name.split(' ')[0]} badge={me.shot === 'round' ? undefined : G.ammo[me.shot as BoughtShot]}><Icon k={me.shot === 'round' ? 'cannon' : me.shot + 'shot'} /></Btn>}
+      {gearLvl('kegs') > 0 && <Btn k="v" label="Keg" off={me.kegs <= 0} badge={me.kegs}><Icon k="kegs" /></Btn>}
+      {l && <Btn k="y" label={me.loaded > 0 ? l.kind === 'torpedo' ? 'Torpedo' : l.kind === 'air' ? 'Launch' : 'Missile' : `${Math.ceil(l.reload * crewReload() - me.tubeT)}s`} off={me.loaded <= 0} badge={me.loaded}><Icon k={l.kind === 'air' ? 'plane' : 'torpedo'} /></Btn>}
+      {gearLvl('mortar') > 0 && <Btn k="t" label={me.mortar > 0 ? `${Math.ceil(me.mortar)}s` : 'Mortar'} off={me.mortar > 0 || !mortarTarget()}><Icon k="mortar" /></Btn>}
+      {(gearLvl('cannon') > 0 || turret) && <Btn k="r" label={ready ? 'Fire' : aiming && wait > 0 ? `${Math.ceil(wait)}s` : turret ? (off === null ? 'Closer' : 'Training') : 'Abeam!'} cls={'fire' + (ready ? ' pulse' : '')} off={!ready}><Icon k="cannon" /></Btn>}
+    </>
+  );
+}
 function PlayControls() {
   const main = mainAction(), use = useAction(), bait = G.baitSel;
   return (
@@ -209,9 +233,23 @@ function PlayControls() {
         {NET.authed && ONLINE.sailors.length > 0 && <Btn k="g" label="Greet"><span class="tglyph text">Hi</span></Btn>}
         {G.pet && !G.fish && <Btn k="p" label="Pet"><span class="cat-dot" /></Btn>}
         {!G.fish && !G.card && castTargets().length > 1 && <Btn k="q" label="Next fish"><Icon k="rod" /></Btn>}
+        <SpecialBtn />
         {use && <Btn k="e" label={use.label} cls="use" off={!offered('E')}><Icon k={use.icon} /></Btn>}
+        {!G.fish && fighting() && <ArmsButtons />}
         <Btn k=" " label={main.label} cls={'main' + (G.stats.caught === 0 && !G.fish && !main.off ? ' pulse' : '')} off={main.off}><Icon k={main.icon} /></Btn>
       </div>
     </>
   );
+}
+
+const SPECIAL_BTN: Record<Exclude<Special, 'heli'>, [string, string]> = { boost: ['Boost', 'boost'], sprint: ['Sprint', 'boost'], ping: ['Ping', 'sonar'], horn: ['Horn', 'horn'], spinnaker: ['Spinnaker', 'spinnaker'] };
+/** The boat's special on K: the helicopter while there's a catch to fly, else whatever her rig or her build gives her. */
+function SpecialBtn() {
+  const sp = specialOf();
+  if (G.fish || G.card || (sp === 'sprint' && G.stats.caught < 3)) return null;   // the first voyage keeps its bar to fishing
+  if (sp === 'horn' && fighting()) return null;                          // the fight's buttons need the room
+  if (sp === 'heli') return heliReady() ? <Btn k="k" label="Heli" badge={G.hold.length}><Icon k="heli" /></Btn> : null;
+  const [name, icon] = SPECIAL_BTN[sp], wait = SPECIAL.cool > 0 && sp !== 'horn';
+  const label = wait ? `${Math.ceil(SPECIAL.cool)}s` : sp === 'spinnaker' && SPECIAL.spinUp ? 'Douse' : name;
+  return <Btn k="k" label={label} off={wait}><Icon k={icon} /></Btn>;
 }

@@ -55,7 +55,7 @@ function flowers(V: Vox, u0: number, u1: number, v: number, z: number): void {
   for (let u = u0; u <= u1; u++) { V.set(u, v, z, M.plank2); V.set(u, v, z + 1, (u & 1) ? L.flower : L.flower2); }
 }
 /** A rough outcrop of rock centred on (cu, cv), mossy on top. */
-export function rocks(V: Vox, cu: number, cv: number, r: number, zmax: number, seed: number): void {
+function rocks(V: Vox, cu: number, cv: number, r: number, zmax: number, seed: number): void {
   for (let u = cu - r - 1; u <= cu + r + 1; u++) for (let v = cv - r - 1; v <= cv + r + 1; v++) {
     const d = Math.hypot(u - cu, v - cv) / (r * (0.75 + 0.5 * h(u, v, seed)));
     if (d > 1) continue;
@@ -178,6 +178,39 @@ function harbourStilts(): Vox {
   return P.finalize();
 }
 export const HARBOURS: (() => Vox)[] = [harbourVillage, harbourQuay, harbourStilts];
+/**
+ * A shipyard's floating dock beside the pier, on side `sd` (+1 or -1 along v): a hull half-built on keel blocks
+ * between two pontoon walls, under a tall yellow gantry crane, so a harbour with a shipyard reads as one from the sea.
+ */
+export function harbourYard(sd: 1 | -1): Vox {
+  const P = new Vox(12, 34, sd > 0 ? 3 : -25, sd > 0 ? 25 : -3, 20), v = (n: number): number => n * sd;
+  const box = (u0: number, u1: number, a: number, b: number, z0: number, z1: number, m: number): void => P.box(u0, u1, Math.min(v(a), v(b)), Math.max(v(a), v(b)), z0, z1, m);
+  // the pontoon: a floor awash and two walls, rust-red below, grey above, with a walkway from the pier
+  box(13, 33, 9, 23, 0, 0, L.rust); box(13, 33, 9, 10, 1, 4, M.ironp); box(13, 33, 22, 23, 1, 4, M.ironp);
+  box(13, 33, 9, 10, 1, 1, L.rust); box(13, 33, 22, 23, 1, 1, L.rust);
+  box(14, 15, 3, 8, 3, 3, M.plank2);
+  // keel blocks, and the hull on them: red bottom, white topsides, bare ribs at the bow still waiting for planks
+  for (let u = 16; u <= 30; u += 3) box(u, u, 15, 17, 1, 1, M.post);
+  for (let u = 15; u <= 31; u++) {
+    const t = (u - 15) / 16, hw = t > 0.8 ? Math.round(3 * (1 - t) / 0.2) : 3, open = u >= 27;
+    for (let dv = -hw; dv <= hw; dv++) {
+      const side = Math.abs(dv) === hw;
+      P.set(u, v(16 + dv), 2, M.bottom);
+      if (side || u === 15) for (let z = 3; z <= 6; z++) if (!open || u % 2 === 1) P.set(u, v(16 + dv), z, z < 4 ? M.bottom : z === 6 ? M.gun : M.white);
+    }
+    if (open && u % 2 === 1) box(u, u, 16 - hw, 16 + hw, 6, 6, M.plank);   // the ribs' tops
+  }
+  box(16, 26, 14, 18, 3, 3, M.plank2);
+  // the gantry: four legs on the walls, beams across and along, a trolley with its hook down to the hull
+  for (const u of [14, 31]) for (const w of [9, 23]) box(u, u + 1, w, w, 5, 17, M.flag);
+  for (const w of [9, 23]) box(14, 32, w, w, 17, 18, M.flag);
+  for (const u of [14, 31]) box(u, u + 1, 9, 23, 18, 18, M.flag);
+  for (let u = 15; u <= 30; u += 3) for (const w of [9, 23]) P.set(u, v(w), 16, L.rust);
+  box(21, 23, 15, 17, 17, 18, M.iron); box(22, 22, 16, 16, 9, 16, M.rope); box(21, 23, 16, 16, 8, 8, M.iron);
+  // a few stacks of timber and plate on the walls
+  box(17, 20, 22, 23, 5, 6, M.plank); box(25, 27, 9, 10, 5, 5, M.steel);
+  return P.finalize();
+}
 
 // ---------- lighthouses ----------
 const LR = 16, LZ = 42;
@@ -299,16 +332,80 @@ function wreckSteamer(): Vox {
 }
 export const WRECKS: (() => Vox)[] = [wreckSloop, wreckSteamer];
 
+// ---------- pirate coves ----------
+// A pirates' hideout faces its bay along +u: a rough jetty out to u = 26 (world.ts moors their ships further out, at 56),
+// the camp inland. Both designs fly the Jolly Roger from a tall pole.
+function jolly(V: Vox, u: number, v: number, z: number, tall: number): void {
+  V.box(u, u, v, v, z, z + tall, M.post);
+  for (let a = 1; a <= 7; a++) for (let b = 0; b < 5; b++) V.set(u + a, v, z + tall - 5 + b, M.sailblk);
+  for (const [a, b] of [[3, 3], [4, 3], [5, 3], [3, 2], [5, 2], [4, 1], [2, 0], [6, 0], [2, 4], [6, 4]]) V.set(u + a, v, z + tall - 5 + b, M.bone);
+}
+function roughJetty(V: Vox, u0: number, u1: number): void {
+  for (let u = u0; u <= u1; u++) for (let v = -2; v <= 2; v++) if (h(u, v, 91) > 0.12) V.set(u, v, 1, (u + v) % 3 ? M.plank2 : M.plank);
+  for (let u = u0 + 1; u <= u1; u += 4) for (const v of [-2, 2]) V.box(u, u, v, v, 0, 2, M.post);
+}
+/** Shacks of driftwood behind a palisade of sharpened stakes, a lookout tower, a campfire and plunder piled about. */
+function coveCamp(): Vox {
+  const V = new Vox(-26, 28, -22, 22, 24);
+  roughJetty(V, 4, 26);
+  for (let k = 0; k <= 22; k++) {                                    // the palisade, a half ring round the back of the camp
+    const a = Math.PI * (0.55 + 0.9 * k / 22), u = Math.round(-2 + Math.cos(a) * 19), v = Math.round(Math.sin(a) * 19);
+    const top = 4 + (k % 2);
+    V.box(u, u, v, v, 0, top, M.post); V.set(u, v, top + 1, M.plank2);
+  }
+  for (const [u0, v0, roof] of [[-10, -11, L.thatch], [-12, 5, L.thatchD]] as const) {   // two shacks, patched with sailcloth
+    walls(V, u0, u0 + 7, v0, v0 + 5, 1, 4, M.plank2, M.post);
+    V.box(u0 + 7, u0 + 7, v0 + 2, v0 + 3, 1, 3, M.door);
+    gable(V, u0 - 1, u0 + 8, v0 - 1, v0 + 6, 5, roof, roof === L.thatch ? L.thatchD : L.thatch);
+    V.box(u0 + 2, u0 + 4, v0 - 1, v0 - 1, 6, 7, M.sail);
+  }
+  V.box(-18, -18, -2, -2, 0, 12, M.post); V.box(-14, -14, -2, -2, 0, 12, M.post);   // the lookout tower
+  V.box(-18, -18, 2, 2, 0, 12, M.post); V.box(-14, -14, 2, 2, 0, 12, M.post);
+  V.box(-19, -13, -3, 3, 12, 12, M.plank);
+  for (let u = -19; u <= -13; u++) for (const v of [-3, 3]) V.set(u, v, 13, M.post);
+  jolly(V, -16, 0, 13, 9);
+  for (let a = 0; a < 8; a++) V.set(Math.round(1 + Math.cos(a * Math.PI / 4) * 2), Math.round(4 + Math.sin(a * Math.PI / 4) * 2), 1, M.stone);   // the campfire
+  V.box(1, 1, 4, 4, 1, 2, L.lit); V.set(0, 4, 1, L.lit); V.set(2, 4, 1, L.lit);
+  barrel(V, -3, -6, 1); barrel(V, -1, -7, 1); barrel(V, 3, 8, 1); crate(V, 5, -6, 1, 3); crate(V, -4, 9, 1);
+  V.box(-6, -4, -1, 0, 1, 2, M.crate); V.box(-6, -4, -1, 0, 2, 2, M.gilt);            // an open chest, coins on top
+  return V.finalize();
+}
+/** A squat stone blockhouse with a gun run out over the bay, its walls patched with timber, a flag tower behind. */
+function coveFort(): Vox {
+  const V = new Vox(-26, 28, -22, 22, 26);
+  roughJetty(V, 6, 26);
+  V.box(-12, 2, -9, 9, 1, 7, L.stone2);
+  V.box(-11, 1, -8, 8, 1, 7, 0);                                      // hollow inside, only the shell shows
+  for (let u = -12; u <= 2; u++) for (const v of [-9, 9]) if (u % 2 === 0) V.set(u, v, 8, L.stone2);   // battlements
+  for (let v = -9; v <= 9; v++) for (const u of [-12, 2]) if (v % 2 === 0) V.set(u, v, 8, L.stone2);
+  for (let u = -11; u <= 1; u++) for (let v = -8; v <= 8; v++) V.set(u, v, 7, M.plank2);
+  for (const [u, v] of [[-6, 9], [-12, 3], [2, -4]]) V.box(u, u + 1, v, v, 2, 5, M.plank);   // timber patches
+  V.box(2, 2, -1, 1, 1, 3, M.door);
+  for (const v of [-5, 5]) { V.box(1, 1, v, v, 4, 4, M.gun); for (let k = 2; k <= 5; k++) V.set(k, v, 5, M.iron); }   // guns over the bay
+  V.box(-9, -6, -3, 0, 8, 15, L.stone2); V.box(-10, -5, -4, 1, 16, 16, L.stone2);
+  jolly(V, -8, -2, 17, 8);
+  barrel(V, 5, 7, 1); barrel(V, 7, 7, 1); barrel(V, 5, -9, 1); crate(V, 7, -10, 1, 3);
+  return V.finalize();
+}
+export const COVES: (() => Vox)[] = [coveCamp, coveFort];
+/** The red X a treasure map marks on a beach, laid in the sand. */
+export function buriedX(): Vox {
+  const V = new Vox(-4, 4, -4, 4, 1);
+  for (let k = -4; k <= 4; k++) for (const w of [0, 1]) { V.set(k, Math.max(-4, Math.min(4, k + w)), 0, M.redp); V.set(k, Math.max(-4, Math.min(4, -k + w)), 0, M.redp); }
+  return V.finalize();
+}
+
 /** Which design a landmark gets: Alderhaven keeps the fishing village; elsewhere it follows the place's position. */
 export function landmarkKind(p: Poi): number {
   if (p.type === 'port') return p.id === 'port:0,0' ? 0 : Math.floor(hash01(Math.round(p.x), Math.round(p.y), 61) * HARBOURS.length);
-  return Math.floor(hash01(Math.round(p.x), Math.round(p.y), 61) * (p.type === 'light' ? LIGHTHOUSES : WRECKS).length);
+  return Math.floor(hash01(Math.round(p.x), Math.round(p.y), 61) * (p.type === 'light' ? LIGHTHOUSES : p.type === 'cove' ? COVES : WRECKS).length);
 }
 /** Whether (x, y) is on a landmark's grounds, where no tree may grow: a harbour's buildings inland of its pier, a lighthouse's rock. */
 export function onGrounds(pois: readonly Poi[], x: number, y: number): boolean {
   for (const q of pois) {
     if (q.type === 'light') { if (Math.hypot(x - q.x, y - q.y) < 17) return true; }
     else if (q.type === 'port' && (Math.hypot(x - q.x, y - q.y) < 13 || Math.hypot(x - (q.x - Math.cos(q.ang) * 12), y - (q.y - Math.sin(q.ang) * 12)) < 21)) return true;
+    else if (q.type === 'cove' && Math.hypot(x - (q.x - Math.cos(q.ang) * 4), y - (q.y - Math.sin(q.ang) * 4)) < 24) return true;
   }
   return false;
 }

@@ -1,6 +1,7 @@
 // Icons rendered from tiny voxel models with the same renderer as the world, cached as data URLs.
 import { Vox, mat, renderVox } from '../voxel';
 import { M } from '../models';
+import { planeVox } from '../pirateships';
 import { SPECIES } from '../econ';
 import { FISH_T, markAt } from '../fishart';
 import { hash01 } from '../noise';
@@ -366,6 +367,100 @@ const BUILD: Record<string, () => Vox> = {
   tobias: () => bust(M.coat, M.coat, M.coat, true),
   wren: () => bust(M.gun, M.white, M.white),
   nell: () => bust(M.stone, M.white, null),
+  cannon: () => {                                       // a cannon on its wooden carriage, muzzle up and to the right
+    const V = new Vox(-7, 7, -3, 3, 8);
+    V.box(-5, 2, -2, 2, 0, 2, M.gun); V.box(-4, 1, -3, 3, 0, 0, M.post);
+    for (let k = 0; k <= 9; k++) { const u = -5 + k, z = 3 + Math.floor(k * 0.4); V.box(u, u, -1, 1, z, z + 1, M.iron); }
+    V.box(5, 5, -1, 1, 7, 7, M.ironp);
+    for (const v of [-3, 3]) { V.box(-4, -3, v, v, 0, 1, M.plank2); V.box(0, 1, v, v, 0, 1, M.plank2); }
+    return V;
+  },
+  swivel: () => {                                       // a swivel gun on its post
+    const V = new Vox(-6, 6, -2, 2, 9);
+    V.box(0, 0, -1, 1, 0, 5, M.post); V.box(-1, 1, -1, 1, 5, 5, M.iron);
+    for (let k = 0; k < 8; k++) V.box(-3 + k, -3 + k, 0, 0, 6 + Math.floor(k * 0.3), 6 + Math.floor(k * 0.3), M.iron);
+    return V;
+  },
+  mortar: () => {                                       // a squat mortar, mouth up, on a timber bed
+    const V = new Vox(-5, 5, -5, 5, 8);
+    V.box(-5, 5, -4, 4, 0, 1, M.gun);
+    for (let z = 2; z <= 7; z++) for (let u = -4; u <= 4; u++) for (let v = -4; v <= 4; v++) {
+      const d = Math.hypot(u, v), r = z < 6 ? 3.8 : 4.3;
+      if (d <= r && (d > r - 1.3 || z < 4)) V.set(u, v, z, z === 7 ? M.ironp : M.iron);
+    }
+    return V;
+  },
+  torpedo: () => {                                      // a torpedo: a long steel cigar, a red warhead, fins and a screw
+    const V = new Vox(-8, 8, -2, 2, 5);
+    for (let u = -6; u <= 6; u++) for (let v = -1; v <= 1; v++) for (let z = 1; z <= 3; z++) if (Math.abs(v) + Math.abs(z - 2) <= 1 + (Math.abs(u) < 5 ? 1 : 0)) V.set(u, v, z, u >= 5 ? M.redp : M.steel);
+    V.set(7, 0, 2, M.redp); V.box(-7, -7, -2, 2, 2, 2, M.iron); V.box(-7, -7, 0, 0, 0, 4, M.iron); V.set(-8, 0, 2, M.gilt);
+    return V;
+  },
+  plane: planeVox,                                      // a carrier's jet
+  heli: () => {                                         // a superyacht's helicopter from above, white to read on a dark button
+    const V = new Vox(-9, 7, -7, 7, 3);                 // to u = 7, where the rotor's far tips reach
+    for (let u = -2; u <= 4; u++) for (let v = -2; v <= 2; v++) if (Math.hypot((u - 1) / 3.5, v / 2.5) <= 1) V.box(u, u, v, v, 0, 1, u >= 3 ? M.window : M.white);
+    V.box(-8, -3, 0, 0, 1, 1, M.white); V.box(-9, -9, -2, 2, 1, 1, M.gilt);                 // tail boom and tailplane
+    for (let k = -6; k <= 6; k++) { V.set(1 + k, k, 2, M.stone); V.set(1 + k, -k, 2, M.stone); }   // the rotor, light on a dark button
+    return V;
+  },
+  boost: () => {                                        // full throttle: a lightning bolt
+    const V = new Vox(-4, 4, -1, 1, 9);
+    ['....##', '...##.', '..##..', '.#####', '...##.', '..##..', '.##...', '##....'].forEach((row, i) => [...row].forEach((c, j) => { if (c === '#') V.box(j - 3, j - 3, 0, 0, 8 - i, 8 - i, M.lamp); }));
+    return V;
+  },
+  spinnaker: () => {                                    // a spinnaker filling, face on: a striped balloon of sail
+    const V = new Vox(-5, 5, -1, 1, 11), bands = [M.sailred, M.sailred, M.white, M.white, X.blue, X.blue, M.white, M.white, M.sailred, M.sailred, M.sailred];
+    for (let z = 0; z <= 10; z++) {
+      const w = Math.round(5 * Math.sin(Math.PI * (0.18 + 0.72 * (1 - z / 10))) * (z === 0 ? 0.85 : 1));
+      V.box(-w, w, 0, 0, z, z, bands[z]);
+    }
+    return V;
+  },
+  horn: () => {                                         // a ship's horn, face on: a brass trumpet flaring to the right
+    const V = new Vox(-5, 5, -1, 1, 7);
+    ['.........#', '.......###', '##########', '##########', '.......###', '.........#'].forEach((row, i) => [...row].forEach((c, j) => { if (c === '#') V.box(j - 5, j - 5, 0, 0, 6 - i, 6 - i, X.brass); }));
+    return V;
+  },
+  kegs: () => {                                         // a powder keg, its fuse alight
+    const V = new Vox(-4, 4, -4, 4, 10);
+    for (let z = 0; z <= 7; z++) for (let u = -4; u <= 4; u++) for (let v = -4; v <= 4; v++) {
+      const r = 3.2 + (z > 1 && z < 6 ? 0.7 : 0);
+      if (Math.hypot(u, v) <= r) V.set(u, v, z, z === 2 || z === 5 ? M.band : M.crate);
+    }
+    V.box(0, 0, 0, 0, 8, 8, M.rope); V.set(0, 0, 9, M.lamp);
+    return V;
+  },
+  ram: () => {                                          // an iron ram on a bow
+    const V = new Vox(-7, 7, -3, 3, 6);
+    V.box(-7, 0, -3, 3, 0, 4, M.plank);
+    for (let k = 0; k < 7; k++) { const w = Math.max(0, 2 - Math.floor(k / 2)); V.box(k, k, -w, w, 1, 2, M.iron); }
+    return V;
+  },
+  chainshot: () => {                                    // two balls joined by a chain
+    const V = new Vox(-7, 7, -3, 3, 6);
+    for (const c of [-4, 4]) disc(V, c, 0, 0, 4, 2.6, M.iron);
+    V.line([-2, 0, 2], [2, 0, 3], M.ironp);
+    return V;
+  },
+  grapeshot: () => {                                    // a bag of small shot spilling
+    const V = new Vox(-6, 6, -6, 6, 5);
+    for (const [u, v, z] of [[0, 0, 0], [2, 1, 0], [-2, 1, 0], [1, -2, 0], [-1, -1, 1], [1, 1, 1], [3, -1, 0], [-3, -1, 0], [0, 2, 1], [0, 0, 2]]) V.box(u, u + 1, v, v + 1, z, z + 1, M.iron);
+    return V;
+  },
+  fireshot: () => {                                     // a red-hot ball trailing flame
+    const V = new Vox(-6, 6, -4, 4, 8);
+    disc(V, 2, 0, 0, 5, 3, M.redp);
+    for (const [u, z] of [[-1, 3], [-2, 4], [-3, 3], [-4, 5], [-2, 6]]) V.set(u, 0, z, M.lamp);
+    return V;
+  },
+  skull: () => {                                        // the Jolly Roger's skull and crossed bones
+    const V = new Vox(-6, 6, -1, 1, 12);
+    for (let k = -5; k <= 5; k++) { V.set(k, 0, 1 + Math.round((k + 5) * 0.9), M.bone); V.set(k, 0, 10 - Math.round((k + 5) * 0.9), M.bone); }
+    V.box(-3, 3, -1, 1, 4, 9, M.bone); V.box(-2, 2, -1, 1, 3, 3, M.bone);
+    V.box(-2, -1, -1, -1, 6, 7, M.iron); V.box(1, 2, -1, -1, 6, 7, M.iron); V.set(0, -1, 5, M.iron);
+    return V;
+  },
   map: () => {
     const V = new Vox(-6, 6, -4, 4, 4);
     V.box(-5, 5, -3, 3, 0, 0, X.paper);
@@ -379,8 +474,8 @@ const BUILD: Record<string, () => Vox> = {
 // every icon is rendered once and kept as a data URL
 const cache = new Map<string, string>();
 const memo = (key: string, make: () => string): string => { let url = cache.get(key); if (url === undefined) cache.set(key, url = make()); return url; };
-// portraits are drawn face-on; everything else at a three-quarter turn
-const FACE_ON = new Set(['maren', 'ida', 'tobias', 'wren', 'nell']);
+// portraits and side-on drawings are drawn face-on; everything else at a three-quarter turn
+const FACE_ON = new Set(['maren', 'ida', 'tobias', 'wren', 'nell', 'boost', 'spinnaker', 'horn']);
 
 // render, then crop to the drawn pixels so icons fill their boxes
 function toURL(V: Vox, angle = -0.55): string {

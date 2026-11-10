@@ -2,8 +2,8 @@
 // and each island theme's sea props (sea stacks, whale bones, basalt, flotsam, steam vents). Pure and deterministic, so
 // the renderer draws them and the game's physics can collide with the solid ones. Nothing solid goes in a strait, near
 // a harbour or lighthouse, or by a village's jetty, and ice keeps to clusters near cold coasts: open channels stay clear.
-import { TS, TN, getTile, hAt, claimableNear, poisNear, regionSites, type HeightTile } from './world';
-import { biomeMix, coldness, themeHold, THEMES, type Odds, type ThemeHold } from './biome';
+import { TS, tileSpots, getTile, hAt, claimableNear, poisNear, regionSites, type HeightTile } from './world';
+import { biomeMix, coldness, themeHold, pickOdds, THEMES, type Odds, type ThemeHold } from './biome';
 import { hash01 } from './noise';
 import { smooth01 } from './config';
 import type { Poi } from './types';
@@ -50,15 +50,6 @@ function cluster(x: number, y: number): number {
 /** Whether ice may sit here: in a cluster, by (not on) a cold coast, and out of straits. */
 const iceSpot = (x: number, y: number): boolean => cluster(x, y) > 0.55 && !landWithin(x, y, 14) && landWithin(x, y, 80) && !inStrait(x, y, 90);
 
-// one candidate per GS x GS cell, hashed into place; fn gets spots inside the tile with their height
-function spots(t: HeightTile, GS: number, salt: number, fn: (px: number, py: number, gx: number, gy: number, h: number) => void): void {
-  const x0 = t.tx * TS, y0 = t.ty * TS;
-  for (let gy = Math.floor(y0 / GS); gy <= Math.floor((y0 + TS - 1) / GS); gy++) for (let gx = Math.floor(x0 / GS); gx <= Math.floor((x0 + TS - 1) / GS); gx++) {
-    const px = gx * GS + Math.floor(hash01(gx, gy, salt) * GS), py = gy * GS + Math.floor(hash01(gx, gy, salt + 1) * GS);
-    if (px >= x0 && px < x0 + TS && py >= y0 && py < y0 + TS) fn(px, py, gx, gy, t.h[(py - y0 + 1) * TN + px - x0 + 1]);
-  }
-}
-const pick = (L: Odds, r: number): string => { let t = 0; for (const [, w] of L) t += w; let v = r * t; for (const [k, w] of L) { v -= w; if (v <= 0) return k; } return L[0][0]; };
 const cache = new WeakMap<HeightTile, SeaProp[]>(), hold: ThemeHold = { theme: 'home', w: 0, jitter: 0 }, poiScratch: Poi[] = [];
 
 function tileSea(t: HeightTile): SeaProp[] {
@@ -77,7 +68,7 @@ function tileSea(t: HeightTile): SeaProp[] {
     return true;
   };
   // floes and small bergs: rafts of sea ice, more the colder it is
-  if (coldness(t.ty * TS + TS) > 0.05) spots(t, 22, 81, (px, py, gx, gy, h) => {
+  if (coldness(t.ty * TS + TS) > 0.05) tileSpots(t, 22, 81, (px, py, gx, gy, h) => {
     const cd = coldness(py);
     if (-h < 0.06 || cd < 0.4 || hash01(gx, gy, 83) > 0.35 * smooth01((cd - 0.4) / 0.4)) return;
     const bm = biomeMix(px, py);
@@ -86,7 +77,7 @@ function tileSea(t: HeightTile): SeaProp[] {
     add(rk < 0.15 ? 'berg' : rk < 0.5 ? 'floeS' : rk < 0.8 ? 'floeM' : 'floeL', px, py, hash01(gx, gy, 85), hash01(gx, gy, 86));
   });
   // each island theme's sea props, and the open sea's flotsam on kelp coasts and in the mangroves
-  spots(t, 18, 141, (px, py, gx, gy, h) => {
+  tileSpots(t, 18, 141, (px, py, gx, gy, h) => {
     const depth = -h;
     if (depth < 0.01 || depth > 0.6) return;
     themeHold(px, py, islands, hold);
@@ -97,7 +88,7 @@ function tileSea(t: HeightTile): SeaProp[] {
       if (bm.kelp > 0.5) { list = KELP_SEA; odds = 0.06; } else if (bm.mangrove > 0.5) { list = MANGROVE_SEA; odds = 0.15; } else return;
     }
     if (!list.length || hash01(gx, gy, 142) > odds) return;
-    const kind = pick(list, hash01(gx, gy, 143)) as SeaPropKind, berth = BERTH[kind] ?? 'float';
+    const kind = pickOdds(list, hash01(gx, gy, 143)) as SeaPropKind, berth = BERTH[kind] ?? 'float';
     if (berth === 'float' && depth > 0.3) return;
     if (berth === 'shore' && (depth > 0.12 || !landWithin(px, py, 10) || inStrait(px, py, 40))) return;
     if (berth === 'off' && (depth < 0.04 || depth > 0.3 || !landWithin(px, py, 30) || inStrait(px, py, 70))) return;
@@ -109,12 +100,12 @@ function tileSea(t: HeightTile): SeaProp[] {
 }
 
 /**
- * The sea props within the square of half-size rad around (x, y), filling `out` (the entries are shared: don't change
+ * The sea props within rad of (x, y) across and radY up and down, filling `out` (the entries are shared: don't change
  * them). Only the solid ones (r > 0), unless `all`: the renderer asks for all, physics for the solid ones.
  */
-export function seaPropsNear(x: number, y: number, rad: number, out: SeaProp[] = [], all = false): SeaProp[] {
+export function seaPropsNear(x: number, y: number, rad: number, out: SeaProp[] = [], all = false, radY = rad): SeaProp[] {
   out.length = 0;
-  for (let ty = Math.floor((y - rad) / TS); ty <= Math.floor((y + rad) / TS); ty++) for (let tx = Math.floor((x - rad) / TS); tx <= Math.floor((x + rad) / TS); tx++)
-    for (const p of tileSea(getTile(tx, ty))) if ((all || p.r > 0) && Math.abs(p.x - x) < rad && Math.abs(p.y - y) < rad) out.push(p);
+  for (let ty = Math.floor((y - radY) / TS); ty <= Math.floor((y + radY) / TS); ty++) for (let tx = Math.floor((x - rad) / TS); tx <= Math.floor((x + rad) / TS); tx++)
+    for (const p of tileSea(getTile(tx, ty))) if ((all || p.r > 0) && Math.abs(p.x - x) < rad && Math.abs(p.y - y) < radY) out.push(p);
   return out;
 }

@@ -1,9 +1,10 @@
 // Voxel models -> GPU meshes (flat-shaded cubes with per-vertex ambient occlusion), plus procedural
 // trees, fish, sea life and a per-frame builder for thin dynamic parts (oars, rod, fishing line).
 import { Vox, RGB, EMISSIVE, mat, type Vec3 } from '../voxel';
-import { M, decorate, eqSig, CRATE, type Fit } from '../models';
-import { HARBOURS, LIGHTHOUSES, WRECKS, cottage, L as LK, gable, walls, barrel, crate, basket, lampPost, coil, netRack, skiff } from '../landmarks';
+import { M, decorate, eqSig, heliVox, rotorVox, spinnakerVox, SPINNAKER, CRATE, type Fit } from '../models';
+import { HARBOURS, harbourYard, LIGHTHOUSES, WRECKS, COVES, buriedX, cottage, L as LK, gable, walls, barrel, crate, basket, lampPost, coil, netRack, skiff } from '../landmarks';
 import { SPECIES } from '../econ';
+import { lookKey, pirateVox, planeVox, type ShipLook } from '../pirateships';
 import { schoolLook } from '../species';
 import { FISH_T, markAt } from '../fishart';
 import { hash01 } from '../noise';
@@ -109,15 +110,17 @@ const boatCache = new Map<string, Mesh>();      // signature -> mesh, most recen
 // the player's boat plus other players' boats nearby (up to 12 shown, each with its own look), with room to spare
 // so a full harbour never rebuilds meshes every frame
 export function boatMesh(id: BoatId, eq: Fit): Mesh {
-  const sig = eqSig(id, eq);
-  let m = boatCache.get(sig);
-  if (m) { boatCache.delete(sig); boatCache.set(sig, m); return m; }
-  const g = voxGeometry(decorate(id, eq));
-  m = upload(g.verts, g.idx);
-  boatCache.set(sig, m);
-  while (boatCache.size > 24) {
-    const [k, old] = boatCache.entries().next().value!;
-    gl.deleteBuffer(old.vbo); gl.deleteBuffer(old.ibo); gl.deleteVertexArray(old.vao); boatCache.delete(k);
+  return recentMesh(boatCache, eqSig(id, eq), 24, () => decorate(id, eq));
+}
+/** The mesh for `key` from a most-recently-used cache, built on a miss; past `max` the oldest are freed. */
+function recentMesh(cache: Map<string, Mesh>, key: string, max: number, build: () => Vox): Mesh {
+  let m = cache.get(key);
+  if (m) { cache.delete(key); cache.set(key, m); return m; }
+  const g = voxGeometry(build());
+  cache.set(key, m = upload(g.verts, g.idx));
+  while (cache.size > max) {
+    const [k, old] = cache.entries().next().value!;
+    gl.deleteBuffer(old.vbo); gl.deleteBuffer(old.ibo); gl.deleteVertexArray(old.vao); cache.delete(k);
   }
   return m;
 }
@@ -136,8 +139,47 @@ function lazy(key: string, build: () => Vox, dz = 0): () => Mesh {
 }
 export const lighthouseMesh = family((k: number) => 'lighthouse' + k, k => LIGHTHOUSES[k]);
 export const harbourMesh = family((k: number) => 'harbour' + k, k => HARBOURS[k]);
+export const yardMesh = family((sd: 1 | -1) => 'yard' + sd, sd => () => harbourYard(sd));
 export const wreckMesh = family((k: number) => 'wreck' + k, k => WRECKS[k]);
 export const crateMesh = lazy('crate', () => CRATE);
+export const coveMesh = family((k: number) => 'cove' + k, k => COVES[k]);
+export const buriedXMesh = lazy('buriedX', buriedX);
+const pirateCache = new Map<string, Mesh>();
+/** A pirate ship's mesh for her look (pirateships.ts), from a most-recently-used cache: a new colour, flag or wound builds anew. */
+export const pirateMesh = (look: ShipLook): Mesh => recentMesh(pirateCache, lookKey(look), 24, () => pirateVox(look));
+export const cannonballMesh = lazy('cannonball', () => { const V = new Vox(-1, 0, -1, 0, 2); V.box(-1, 0, -1, 0, 0, 1, M.iron); return V.finalize(); });
+/** Heated shot, glowing as it flies. */
+export const fireballMesh = lazy('fireball', () => { const V = new Vox(-1, 0, -1, 0, 2); V.box(-1, 0, -1, 0, 0, 1, M.lamp); return V.finalize(); });
+/** A jet of a carrier's air wing, aloft. */
+export const planeMesh = lazy('plane', () => planeVox().finalize());
+/** The superyacht's helicopter and its rotor (models.ts). */
+export const heliMesh = lazy('heli', () => heliVox().finalize());
+export const rotorMesh = lazy('rotor', () => rotorVox().finalize());
+/** A boat's spinnaker, sized to her rig (models.ts SPINNAKER). */
+export const spinnakerMesh = family((id: BoatId) => 'spinnaker-' + id, id => () => { const r = SPINNAKER[id]!; return spinnakerVox(r.top - r.z, r.bow - r.u).finalize(); });
+/** A guided missile in flight: a white body, a red nose, fins and its motor's glow. */
+export const missileMesh = lazy('missile', () => {
+  const V = new Vox(-4, 4, -1, 1, 3);
+  V.box(-3, 2, 0, 0, 1, 1, M.white); V.set(3, 0, 1, M.redp); V.set(-4, 0, 1, M.lamp);
+  for (const v of [-1, 1]) V.set(-3, v, 1, M.iron);
+  V.set(-3, 0, 0, M.iron); V.set(-3, 0, 2, M.iron);
+  return V.finalize();
+});
+/** A powder keg afloat, its fuse alight. */
+export const kegMesh = lazy('keg', () => {
+  const V = new Vox(-2, 2, -2, 2, 6);
+  for (let z = 0; z <= 4; z++) for (let u = -2; u <= 2; u++) for (let v = -2; v <= 2; v++) if (Math.hypot(u, v) <= (z > 0 && z < 4 ? 2.3 : 1.8)) V.set(u, v, z, z === 1 || z === 3 ? M.band : M.crate);
+  V.set(0, 0, 5, M.lamp);
+  return V.finalize();
+});
+/** A sea chest bobbing in the water: the pirates' loot. */
+export const lootMesh = lazy('loot', () => {
+  const V = new Vox(-3, 3, -2, 2, 5);
+  V.box(-3, 3, -2, 2, 0, 3, M.crate); V.box(-3, 3, -2, 2, 4, 4, M.plank);
+  for (const u of [-2, 2]) V.box(u, u, -2, 2, 0, 4, M.gilt);
+  V.set(0, -2, 2, M.gilt); V.set(0, 2, 2, M.gilt);
+  return V.finalize();
+});
 
 // ---------- procedural voxel trees ----------
 const TM = {
@@ -509,7 +551,7 @@ function berg(): Vox {
   }
   return V.finalize();
 }
-export const ICE_KINDS = ['floeS', 'floeM', 'floeL', 'berg'] as const;
+const ICE_KINDS = ['floeS', 'floeM', 'floeL', 'berg'] as const;
 export type IceKind = typeof ICE_KINDS[number];
 const ICE_BUILD: Record<IceKind, () => Vox> = { floeS: () => floe(3, 1), floeM: () => floe(5, 2), floeL: () => floe(7.5, 3), berg };
 export const iceMesh = family<IceKind>(k => 'ice:' + k, k => ICE_BUILD[k], 0, true);
@@ -1467,7 +1509,6 @@ export const leviMesh = lazy('levi', () => { const V = new Vox(-22, 22, -8, 8, 7
 export const bobberMesh = lazy('bobber', () => { const V = new Vox(-1, 1, -1, 1, 4); V.box(-1, 1, -1, 1, 0, 0, M.white); V.box(-1, 1, -1, 1, 1, 1, M.redp); V.set(0, 0, 2, M.redp); V.set(0, 0, 3, M.iron); return V.finalize(); });
 export const buoyMesh = lazy('buoy', () => { const V = new Vox(-2, 3, -2, 2, 10); V.box(-1, 1, -1, 1, 0, 1, M.redp); V.box(-1, 1, -1, 1, 2, 2, M.white); V.box(0, 0, 0, 0, 3, 8, M.iron); V.box(1, 2, 0, 0, 7, 8, M.redp); V.set(0, 0, 9, M.lamp); return V.finalize(); });
 
-/** After a lost WebGL context is restored: forget every mesh (their buffers died with the context); each rebuilds on next use. */
 // ---------- owned islands: the owner's flag on a tall pole, a cottage roofed in the island's colour, bunting ----------
 /** Height of the flag's top edge; the pole's gilt cap and lamp sit just above it. */
 export const POLE = 47;
@@ -1600,36 +1641,30 @@ const flagCache = new Map<string, Mesh>();
  * where the logo is clear), or a plain pennant in that colour while there is none; edged gilt on your own island.
  */
 export function flagMesh(sig: string, c: string, logo: Uint8ClampedArray | null, mine: boolean): Mesh {
-  let m = flagCache.get(sig);
-  if (m) { flagCache.delete(sig); flagCache.set(sig, m); return m; }
-  const V = new Vox(0, 35, 0, 0, POLE + 1), field = toneOf(c), edge = mine ? M.gilt : M.iron;
-  if (logo) {
-    for (let u = 1; u <= 34; u++) for (let z = POLE - 33; z <= POLE; z++) V.set(u, 0, z, u === 1 || u === 34 || z === POLE - 33 || z === POLE ? edge : field);
-    for (let py = 0; py < 32; py++) for (let px = 0; px < 32; px++) {
-      const o = (py * 32 + px) * 4;
-      if (logo[o + 3] < 128) continue;
-      const q = (k: number) => (logo[o + k] >> 4) * 17;                  // 16 levels a channel keeps the materials few
-      V.set(px + 2, 0, POLE - 1 - py, toneOf(toHex([q(0), q(1), q(2)])));
+  return recentMesh(flagCache, sig, 16, () => {
+    const V = new Vox(0, 35, 0, 0, POLE + 1), field = toneOf(c), edge = mine ? M.gilt : M.iron;
+    if (logo) {
+      for (let u = 1; u <= 34; u++) for (let z = POLE - 33; z <= POLE; z++) V.set(u, 0, z, u === 1 || u === 34 || z === POLE - 33 || z === POLE ? edge : field);
+      for (let py = 0; py < 32; py++) for (let px = 0; px < 32; px++) {
+        const o = (py * 32 + px) * 4;
+        if (logo[o + 3] < 128) continue;
+        const q = (k: number) => (logo[o + k] >> 4) * 17;                  // 16 levels a channel keeps the materials few
+        V.set(px + 2, 0, POLE - 1 - py, toneOf(toHex([q(0), q(1), q(2)])));
+      }
+    } else {
+      const L = 28, mid = POLE - 8;
+      for (let u = 1; u <= L; u++) {
+        const hh = Math.round(8 * (1 - (u - 1) / L));
+        for (let z = mid - hh; z <= mid + hh; z++) V.set(u, 0, z, u === 1 || Math.abs(z - mid) >= hh ? edge : field);
+      }
     }
-  } else {
-    const L = 28, mid = POLE - 8;
-    for (let u = 1; u <= L; u++) {
-      const hh = Math.round(8 * (1 - (u - 1) / L));
-      for (let z = mid - hh; z <= mid + hh; z++) V.set(u, 0, z, u === 1 || Math.abs(z - mid) >= hh ? edge : field);
-    }
-  }
-  const g = voxGeometry(V.finalize());
-  m = upload(g.verts, g.idx);
-  flagCache.set(sig, m);
-  while (flagCache.size > 16) {
-    const [k, old] = flagCache.entries().next().value!;
-    gl.deleteBuffer(old.vbo); gl.deleteBuffer(old.ibo); gl.deleteVertexArray(old.vao); flagCache.delete(k);
-  }
-  return m;
+    return V.finalize();
+  });
 }
 
+/** After a lost WebGL context is restored: forget every mesh (their buffers died with the context); each rebuilds on next use. */
 export function reset(): void {
-  gen++; cache.clear(); boatCache.clear(); flagCache.clear(); dyn = null; dynReady = false;
+  gen++; cache.clear(); boatCache.clear(); flagCache.clear(); pirateCache.clear(); dyn = null; dynReady = false;
   for (const memo of families) memo.clear();
 }
 

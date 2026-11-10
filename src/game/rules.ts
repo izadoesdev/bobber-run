@@ -1,4 +1,5 @@
 // Derived stats: what the current boat and upgrades add up to, the day clock and the wind.
+import { BROADSIDE, KEGS, MORTAR, SWIVEL } from './arms';
 import { nA } from '../noise';
 import { WX } from '../weather';
 import { SPECIES, BOATS, UPGRADE_STEP } from '../econ';
@@ -48,7 +49,8 @@ export function chartPerks(): { speed: number; hold: number } {
 export const cap = (): number => boatStats().hold;
 export const hpMax = (): number => boatStats().hp;
 // gear a ship carries built in counts like the upgrade
-const gearLvl = (k: UpgradeKey): number => Math.max(G.up[k], builtIn(k));
+/** The level of gear you own or your boat carries (a helper counts whether or not it is switched on). */
+export const gearLvl = (k: UpgradeKey): number => Math.max(G.up[k], builtIn(k));
 /** A helper's level, or 0 while the player has it switched off. */
 const helperLvl = (k: Helper): number => G.gearOff[k] ? 0 : gearLvl(k);
 export const crewLvl = (): number => helperLvl('deckhand');
@@ -57,11 +59,12 @@ export const harpoonLvl = (): number => gearLvl('harpoon');
 export const sonarLvl = (): number => gearLvl('sonar');
 export const netLvl = (): number => helperLvl('net');
 export const potsLvl = (): number => helperLvl('pots');
-/** The level of a helper you own or your boat carries, whether or not it is switched on. */
-export const ownedLvl = (k: Helper): number => gearLvl(k);
 export const projDone = (id: ProjectId): boolean => G.projects.includes(id);
 export const speedMul = (): number => boatStats().speed;
-export const lightR = (): number => 21 + 19 * G.up.lantern;
+/** How far the lantern's warm pool reaches. */
+export const lampR = (): number => 21 + 19 * G.up.lantern;
+/** How far round the boat fish show at night: the lantern, or a motor yacht's underwater lights. */
+export const lightR = (): number => lampR() + (boatDef().lights ? 45 : 0);
 export const lineMax = (): number => 1 + LINE_STEP * G.up.line;
 export const contractSlots = (): number => 3 + G.up.quarter;
 // fish never spoil; the ice box keeps them prime and worth a little more. Today's featured fish sell double, and
@@ -74,7 +77,10 @@ export const logged = (): number => SPECIES.filter(s => G.log[s.id]).length;
 // Effects that live in fishing/sailing code are quoted from there: reel, tackle, net, pots, radio, deckhand, harpoon, bell.
 const BUILT_IN: Partial<Record<UpgradeKey, 'sonar' | 'net' | 'crew' | 'keel' | 'harpoon'>> = { sonar: 'sonar', net: 'net', deckhand: 'crew', keel: 'keel', harpoon: 'harpoon' };
 /** The level of gear the current boat carries for upgrade `k` without buying it. */
-export const builtIn = (k: UpgradeKey): number => { const b = BUILT_IN[k]; return b ? boatDef()[b] ?? 0 : 0; };
+export const builtIn = (k: UpgradeKey): number => {
+  if (k === 'cannon' || k === 'swivel' || k === 'mortar' || k === 'kegs' || k === 'ram') return boatDef().arms?.[k] ?? 0;   // a warship's guns
+  const b = BUILT_IN[k]; return b ? boatDef()[b] ?? 0 : 0;
+};
 const pct = (n: number): string => `${Math.round(n * 100)}%`;
 const UPGRADE_STAT: Record<UpgradeKey, [string, (l: number) => string]> = {
   prop: ['Top speed', l => pct(boatDef().speed * (1 + PROP_STEP * l))],
@@ -100,6 +106,11 @@ const UPGRADE_STAT: Record<UpgradeKey, [string, (l: number) => string]> = {
   keel: ['Storm push', l => pct([1, 0.5, 0][l])],
   harpoon: ['Landing giants', l => `${pct(1 + 0.25 * l)} speed`],
   bell: ['Daily wreck dive', l => ['none', '60% of the loot', '120% of the loot'][l]],
+  cannon: ['Broadside', l => { const c = BROADSIDE[l]; return c ? `${c.guns} × ${c.dmg} a side, ${c.reload} s to reload` : 'none'; }],
+  swivel: ['Bow swivel', l => { const c = SWIVEL[l]; return c ? `${c.dmg} damage every ${c.reload} s` : 'none'; }],
+  mortar: ['Mortar', l => { const c = MORTAR[l]; return c ? `${c.dmg} damage, ${c.min} to ${c.range} away` : 'none'; }],
+  kegs: ['Powder kegs', l => { const c = KEGS[l]; return c ? `${c.carry} aboard, ${c.dmg} damage` : 'none'; }],
+  ram: ['Ramming', l => l ? '2.5 times the damage' : 'normal'],
 };
 /** The stat upgrade `k` changes and its value at level `l` (gear built into the current boat counts as a floor). */
 export function upgradeStat(k: UpgradeKey, l: number): [string, string] {
@@ -115,7 +126,7 @@ export function equipment(): Fit {
     net: u.net, radio: u.radio, anchor: u.anchor, hold: u.hold, pile: Math.min(3, Math.ceil(G.hold.length / 3)),
     deckhand: crewLvl(), cook: u.cook, quarter: u.quarter, bilge: Math.max(0, Math.min(2, u.hull - 1)),   // plating's pump
     reel: u.reel, pet: G.pet ? 1 : 0,
-    pots: u.pots, harpoon: harpoonLvl(), bell: u.bell,
+    pots: u.pots, harpoon: harpoonLvl(), bell: u.bell, cannon: u.cannon, swivel: u.swivel, mortar: u.mortar, kegs: u.kegs, ram: u.ram, jolly: 0,
   };
 }
 
@@ -123,6 +134,11 @@ export function equipment(): Fit {
 /** Seconds of game clock per day. */
 export const DAYLEN = 480;
 export const dayFrac = (): number => frac(G.clock / DAYLEN);
+/** Move the clock forward to `f` of a day (today if still ahead, else tomorrow). */
+export function atClock(f: number): void {
+  const base = Math.floor(G.clock / DAYLEN) * DAYLEN;
+  G.clock = base + (f > (G.clock - base) / DAYLEN ? 0 : DAYLEN) + f * DAYLEN;
+}
 export const dayNum = (): number => Math.floor(G.clock / DAYLEN) + 1;
 /** 0 by day, ramping to 1 through dusk and back down before dawn. */
 export function darkness(): number {
@@ -139,11 +155,31 @@ export function env(): Env {
 }
 
 // ---------- wind and sails ----------
+/**
+ * The spinnaker every sail carries (hoisted and doused on the special key, game/special.ts): seconds to set it, how
+ * much it adds running dead before the wind, the angle off the wind past which it collapses, how much it then holds
+ * her back, the wind it strains in, how long it lasts straining before it blows out, and how long the crew take to
+ * bend on a new one.
+ */
+export const SPIN = { hoist: 1.2, pull: 0.65, flog: 2.0, back: 0.3, strain: 0.7, blowS: 8, mend: 40 };
+/** How far her spinnaker is set, 0..1. */
+export const RIG = { spin: 0 };
 export const windAngle = (): number => 0.9 + 2.2 * nA(G.clock * 0.0015, 7.3);
-/** Sail push at the boat's heading: best across the wind, weak dead into it. */
-export function sailEfficiency(): number {
-  const rel = Math.abs(((G.boat.a - windAngle()) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI);
+/** How far heading `a` is off the wind's eye, 0 (dead downwind) .. PI (dead into it). */
+export const offWind = (a: number): number => Math.abs(((a - windAngle()) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI);
+/** Sail push at heading `a` for any rig: best across the wind, weak dead into it. */
+export function windEfficiency(a: number): number {
+  const rel = offWind(a);
   return rel < Math.PI / 2 ? 1 + 0.2 * Math.sin(rel) : 0.35 + 0.85 * Math.cos(rel - Math.PI / 2);
+}
+/** Your own sails' push at heading `a`: a schooner's gaff rig pulls harder still right abeam, and a weatherly rig
+ *  (racing yacht, cutter) close-hauled, from just forward of the beam to twenty degrees off the wind's eye. A
+ *  spinnaker, as far as it's set, pulls hard running before the wind, less on a reach, and close-hauled it collapses
+ *  and flogs, holding her back. */
+export function sailEfficiency(a = G.boat.a): number {
+  const bd = boatDef(), rel = offWind(a);
+  return windEfficiency(a) + (bd.reach ? 0.35 * Math.max(0, Math.cos(2 * (rel - Math.PI / 2))) : 0) + (bd.point ? 0.4 * Math.max(0, 1 - Math.abs(rel - 2.2) / 0.6) : 0)
+    + RIG.spin * (rel < SPIN.flog ? SPIN.pull * Math.cos(rel * Math.PI / 2 / SPIN.flog) : -SPIN.back * Math.min(1, (rel - SPIN.flog) / 0.4));
 }
 
 // ---------- boat frame ----------

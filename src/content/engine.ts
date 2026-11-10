@@ -6,6 +6,7 @@ import { biomeAt } from '../biome';
 import { WX } from '../weather';
 import { regionSite } from '../world';
 import { SPECIES } from '../species';
+import { BAIT_KINDS } from '../econ';
 import type { Fish } from '../types';
 import { PACKS } from './packs';
 import type { Objective, Pack, PackState, PackStatus, QuestDef } from './types';
@@ -14,7 +15,7 @@ export interface PackLine { name: string; role: string; text: string }
 
 const stateOf = (pack: Pack): PackState => G.packs[pack.id] ?? { i: 0, n: 0, started: false };
 
-export function packStatus(pack: Pack): PackStatus {
+function packStatus(pack: Pack): PackStatus {
   const state = stateOf(pack);
   if (state.i >= pack.quests.length) return 'done';
   return state.status ?? (state.started || state.i > 0 ? 'active' : 'available');
@@ -42,7 +43,7 @@ export function packLines(pack: Pack, quest: QuestDef, lines: string[]): PackLin
   });
 }
 
-export function progress(quest: QuestDef, state: PackState): [number, number] {
+function progress(quest: QuestDef, state: PackState): [number, number] {
   const objective = quest.obj;
   if ('catch' in objective) return [Math.min(state.n, objective.catch), objective.catch];
   if ('sell' in objective) return [Math.min(state.n, objective.sell), objective.sell];
@@ -119,7 +120,7 @@ export function tickPacks(dt: number): void {
     const [have, want] = progress(quest, state);
     if (have < want) continue;
     if (quest.reward.coins) addCoins(quest.reward.coins);
-    for (const [bait, amount] of Object.entries(quest.reward.bait ?? {})) G.bait[bait as keyof typeof G.bait] = (G.bait[bait as keyof typeof G.bait] || 0) + (amount ?? 0);
+    for (const k of BAIT_KINDS) G.bait[k] += quest.reward.bait?.[k] ?? 0;
     state.i++;
     state.n = 0;
     state.started = state.i < pack.quests.length;

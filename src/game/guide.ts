@@ -10,14 +10,12 @@ import { currentQuest, type Quest } from '../story';
 import type { BoatDef, Poi, Point, Port, Project, ProjectId, School, UpgradeKey } from '../types';
 import { G, boatDist, nearest } from './state';
 import { boatDef, canLand, cap, deckLvl, hpMax, isNight, dayFrac, DAYLEN, keelLvl, logged, projDone } from './rules';
-import { needStatus, nextProject } from './port';
+import { chartedPorts, needStatus, nextProject } from './port';
 import { castRange } from './fishing';
-import { portById } from './save';
 import { schoolActive, schoolShown } from './schools';
 import { dirTo, money } from '../config';
+import { specialOf } from './special';
 
-/** Whether the objective marker is on (the `guide` setting). */
-export const guideOn = (): boolean => SET.guide;
 
 export interface Step {
   /** what to do, short and in sentence case */
@@ -31,7 +29,6 @@ export interface Step {
 }
 
 // ---------- places ----------
-const chartedPorts = (): Port[] => [...G.found].filter(id => id.startsWith('port:')).map(portById);
 /** The nearest charted port. */
 const nearestPort = (): Port => nearest(chartedPorts().filter(p => !lockedAt(p.x, p.y))) || homePort();
 const SEARCH = 2600;
@@ -218,17 +215,24 @@ export function stepLine(s: Step = guide()): string {
 }
 /** Whether the marker should show: on, a place to show, not fishing, not already there. */
 export function markerTarget(s: Step = guide()): Point | null {
-  if (!guideOn() || !s.at || G.fish || G.card || G.mode !== 'play') return null;
+  if (!SET.guide || !s.at || G.fish || G.card || G.mode !== 'play') return null;
   return boatDist(s.at) < s.near ? null : s.at;
 }
 
 // ---------- first-session tips ----------
 const TIP_KEY = 'bobber-run-tips';
-type TipId = 'hull' | 'night';
+type TipId = 'hull' | 'night' | 'boost' | 'heli' | 'lights' | 'spinnaker' | 'ping' | 'sprint' | 'horn';
 // only what no prompt or toast already says: the cast and dock prompts teach fishing and selling, and the weather
 // and a full hold get their own toasts
 const TIPS: { id: TipId; text: string; when: () => boolean }[] = [
   { id: 'hull', text: 'Rocks scrape your hull. Any port can repair it', when: () => G.boat.hp < hpMax() * 0.6 },
+  { id: 'boost', text: 'Press K (or tap Boost) to open the throttles wide for a burst of speed. Then the engines need to cool', when: () => specialOf() === 'boost' },
+  { id: 'heli', text: 'Press K (or tap Heli) and the helicopter flies your catch to the nearest harbour and sells it there', when: () => specialOf() === 'heli' && G.hold.length > 0 },
+  { id: 'spinnaker', text: 'Press K (or tap Spinnaker) to hoist a spinnaker when the wind is behind you. Douse it before you turn upwind, or in a gale', when: () => specialOf() === 'spinnaker' && G.stats.caught > 0 },
+  { id: 'ping', text: 'Press K (or tap Ping) to send a sonar ping: every school for 150 m shows on your chart, and you hear what\'s nearest', when: () => specialOf() === 'ping' },
+  { id: 'sprint', text: 'Press K (or tap Sprint) and the crew pull hard for a few seconds', when: () => specialOf() === 'sprint' && G.stats.caught >= 3 },
+  { id: 'horn', text: 'Press K (or tap Horn) to sound your horn. Dolphins sometimes come to see', when: () => specialOf() === 'horn' },
+  { id: 'lights', text: 'Your underwater lights are on. Fish in their glow bite sooner', when: () => !!boatDef().lights && isNight() },
   { id: 'night', text: 'Night fish are out. Glow lures bite twice as fast', when: () => isNight() },
 ];
 const TIP_S = 9, TIP_GAP = 14;

@@ -68,8 +68,8 @@ export interface Species {
 
 /** Gear that catches on its own, and can be switched off. */
 export type Helper = 'deckhand' | 'net' | 'pots';
-export type BoatId = 'row' | 'canoe' | 'skiff' | 'boatdev' | 'jetski' | 'launch' | 'trawler' | 'speedboat' | 'catamaran' | 'schooner' | 'cruiser' | 'drifter' | 'research'
-  | 'flagship' | 'icebreaker' | 'yacht' | 'motoryacht' | 'superyacht';
+export type BoatId = 'row' | 'skiff' | 'boatdev' | 'launch' | 'trawler' | 'speedboat' | 'catamaran' | 'schooner' | 'drifter' | 'research'
+  | 'flagship' | 'icebreaker' | 'yacht' | 'motoryacht' | 'superyacht' | 'cutter' | 'patrol' | 'gunboat' | 'dreadnought' | 'destroyer' | 'missile' | 'carrier' | 'liner';
 type Propulsion = 'OARS' | 'SAIL' | 'ENGINE';
 export interface BoatDef {
   id: BoatId;
@@ -95,8 +95,36 @@ export interface BoatDef {
   deck?: number;
   /** yachts: guests aboard pay this much more for every catch you sell (0.1 = 10%) */
   luxury?: number;
+  /** passengers aboard: a fare of this many coins a world unit sailed between harbours (game/port/index.ts) */
+  fares?: number;
+  /**
+   * what the special key does on her, when it isn't what her rig gives every boat of her kind (game/special.ts): a
+   * helicopter that flies the catch to market, throttles that open wide, or a long-range sonar ping
+   */
+  special?: 'heli' | 'boost' | 'ping';
+  /** a light, wide hull that flies in a blow: strong wind drives her far harder than other sails (game/physics.ts) */
+  gale?: true;
+  /** a reaching rig: with the wind on her beam her sails pull far harder than any other's (game/rules.ts sailEfficiency) */
+  reach?: true;
+  /** a weatherly rig: she sails closer to the wind than other sails, pulling hard close-hauled (game/rules.ts sailEfficiency) */
+  point?: true;
+  /** leads the fleet: while you sail her, every fleet boat fishes this much harder (game/port/fleet.ts) */
+  command?: number;
+  /** underwater lights: at night they light the sea far round her, and fish in them bite sooner */
+  lights?: true;
   /** a reinforced bow: ice floes and bergs part for it instead of stopping it */
   ice?: true;
+  /** warships: weapons built in (counted like the matching Arms upgrade), how long her trained gun crews take to
+   *  reload (times the usual), and prize money on every pirate taken, sunk or raided (0.5 = half again) */
+  arms?: Partial<Record<'cannon' | 'swivel' | 'mortar' | 'kegs' | 'ram', number>>;
+  gunnery?: number;
+  marque?: number;
+  /** her own way of fighting (game/pirates.ts): a long bow chaser, boarders to take a beaten pirate, a rocket barrage
+   *  walked along a ship's course, big-gun turrets that fire on any bearing and make a beaten pirate strike, torpedoes,
+   *  guided missiles, or an air wing that bombs pirates far beyond gun range */
+  signature?: 'chaser' | 'boarders' | 'barrage' | 'turret' | 'torpedo' | 'missile' | 'air';
+  /** iron plating: the share of every hit it turns, and fire shot can't set her alight */
+  armour?: number;
   what: string;
   /** project that unlocks it at the shipyard */
   req?: ProjectId;
@@ -110,8 +138,8 @@ export interface Project { id: ProjectId; name: string; cost: number; need: Proj
 export type UpgradeKey =
   | 'prop' | 'hull' | 'hold' | 'bilge' | 'anchor' | 'net' | 'rod' | 'reel' | 'line' | 'tackle' | 'ice'
   | 'sonar' | 'lantern' | 'spyglass' | 'sextant' | 'radio' | 'deckhand' | 'cook' | 'quarter'
-  | 'pots' | 'keel' | 'harpoon' | 'bell';
-export type UpgradeCategory = 'VESSEL' | 'TACKLE' | 'NAVIGATION' | 'CREW';
+  | 'pots' | 'keel' | 'harpoon' | 'bell' | 'cannon' | 'swivel' | 'mortar' | 'kegs' | 'ram';
+export type UpgradeCategory = 'VESSEL' | 'TACKLE' | 'NAVIGATION' | 'CREW' | 'ARMS';
 export interface Upgrade {
   /** display name; the propulsion upgrade is named after the current boat's drive */
   name: (b: BoatDef) => string;
@@ -162,16 +190,22 @@ export interface Port extends PoiBase {
   /** price multiplier by species index */
   mult: Record<number, number>;
   shipyard: boolean;
+  /** which side of the pier the shipyard's floating dock lies (harbour v, toward open water); set with a shipyard */
+  yardSide?: 1 | -1;
   solid: SegmentSolid;
+  /** the shipyard's floating dock, solid like the pier */
+  yardSolid?: SegmentSolid;
 }
-export interface Lighthouse extends PoiBase { type: 'light'; beam: number; solid?: undefined }
+interface Lighthouse extends PoiBase { type: 'light'; beam: number; solid?: undefined }
 export interface Wreck extends PoiBase { type: 'wreck'; dir: number; loot: number; solid: CircleSolid }
-export type Poi = Port | Lighthouse | Wreck;
+/** A pirates' hideout in a bay: its ships ride at `anchor` and put out from there; `ang` faces out of the bay. */
+export interface Cove extends PoiBase { type: 'cove'; ang: number; anchor: Point; solid?: undefined }
+export type Poi = Port | Lighthouse | Wreck | Cove;
 
 export interface Crate { id: string; x: number; y: number; value: number; taken: boolean; respawn: number; ph: number }
 
 // ---------- state pieces ----------
-export interface Boat {
+interface Boat {
   x: number; y: number;
   /** heading (radians, 0 = +x) and angular velocity */
   a: number; w: number;
@@ -315,7 +349,8 @@ export interface Contract {
   /** a big order: many of a common fish, for a big hold (from a Grade IV dock hand) */
   bulk?: boolean;
 }
-export interface TreasureMap { id: string; x: number; y: number; reward: number }
+/** A treasure map's X: a chest on the sea floor to haul up, or `buried` ashore on a beach, to dig up. */
+export interface TreasureMap { id: string; x: number; y: number; reward: number; buried?: true }
 export interface LogEntry {
   n: number; best: number; trophy?: boolean;
   /** where you've caught it: up to 6 spots (rounded world positions), newest first, at least 150 units apart */
@@ -332,6 +367,8 @@ export interface Pet { name: string }
 export interface Stats {
   caught: number; sold: number; upgrades: number; lights: number; contracts: number;
   wrecks: number; trophies: number; night: number; frenzy: number; treasures: number; storm: number;
+  /** pirate ships sunk, pirate coves raided, buried chests dug up */
+  pirates: number; coves: number; dug: number;
 }
 
 export type Speaker = 'maren' | 'ida' | 'tobias' | 'wren' | 'nell';
@@ -361,7 +398,7 @@ export interface NetForm {
 export interface NeedStatus { have: number; want: number; label: string; pick: Fish[]; sp?: number }
 type PortItemKind =
   | 'sell' | 'sale' | 'deliver' | 'take' | 'rest' | 'repair' | 'supply' | 'upgrade' | 'boat' | 'paint'
-  | 'collect' | 'fleet' | 'note' | 'project' | 'fund' | 'ferry' | 'contract' | 'island';
+  | 'collect' | 'fleet' | 'note' | 'project' | 'fund' | 'ferry' | 'contract' | 'island' | 'rumour';
 interface PortHeader { kind: 'header'; label: string }
 export interface PortRow {
   kind: PortItemKind;
@@ -424,6 +461,10 @@ interface Progress {
   visits: Record<string, number>;
   goalsDone: number[];
   maps: TreasureMap[];
+  /** cove id -> game day its stash was raided (its ships stay away a while) */
+  raids: Record<string, number>;
+  /** special shot aboard, in volleys (game/arms.ts): chain, grape and fire */
+  ammo: Record<import('./game/arms').BoughtShot, number>;
   /** fish that broke your line and are still out there */
   escaped: Escapee[];
   /** progress through each content pack (src/content), and the regions sailed into so far (packs can open on one) */
@@ -481,7 +522,7 @@ interface Voyage {
 /** Countdowns and accumulators for periodic effects. */
 interface Timers {
   crashCd: number; spookCd: number; petCd: number; petT: number;
-  wakeAcc: number; smokeT: number; bilgeT: number;
+  bilgeT: number;
   saveT: number; netT: number; potT: number;
 }
 
@@ -527,6 +568,12 @@ interface Surroundings {
   aim: string | null;
   nearTreasure: TreasureMap | null;
   nearEncounter: import('./game/encounters').SeaEncounter | null;
+  /** a pirate cove whose stash is open to raid (its ships are all sunk) */
+  nearCove: Cove | null;
+  /** a pirate ship that struck her colours, alongside to board */
+  nearPrize: import('./game/pirates').Pirate | null;
+  /** a hand ashore digging for buried treasure: the map, and seconds dug so far */
+  dig: { m: TreasureMap; t: number } | null;
 }
 
 /** Menu cursors and where each screen returns to. */

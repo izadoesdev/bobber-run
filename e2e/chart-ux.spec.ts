@@ -73,15 +73,19 @@ test('dragging pans without a waypoint; C and the buttons recentre and zoom; the
   await expect.poll(legend).toContain('Treasure');
 });
 
-test('an island on the chart opens its card, and its waypoint brings you back to the chart', async ({ page }) => {
+test('islands are never for sale offline; online one opens its card, and its waypoint brings you back to the chart', async ({ page }) => {
   await openChart(page);
   await page.evaluate(() => { const { G, sim } = window.BR, b = { x: G.boat.x, y: G.boat.y }; G.mode = 'play';   // see the sea round about first
     for (const [dx, dy] of [[-500, -300], [500, -300], [-500, 300], [500, 300], [0, 0]]) { G.boat.x = b.x + dx; G.boat.y = b.y + dy; sim(0.3); }
     G.mode = 'map'; });
   // the nearest island to the boat that isn't Alderhaven, found through the chart's own hit test
   const box = (await page.locator('.chartwrap canvas').boundingBox())!;
+  const spots = [[0.25, 0.3], [0.75, 0.3], [0.25, 0.75], [0.75, 0.75], [0.5, 0.15], [0.5, 0.85], [0.15, 0.5], [0.85, 0.5]];
+  // offline nobody can buy an island, so the chart never offers one
+  for (const [fx, fy] of spots) { await page.mouse.move(box.x + box.width * fx, box.y + box.height * fy); await page.waitForTimeout(60); expect(await tip(page)).not.toMatch(/for sale/i); }
+  await page.evaluate(() => { window.BR.NET.on = true; });
   let opened = false;
-  for (const [fx, fy] of [[0.25, 0.3], [0.75, 0.3], [0.25, 0.75], [0.75, 0.75], [0.5, 0.15], [0.5, 0.85], [0.15, 0.5], [0.85, 0.5]]) {
+  for (const [fx, fy] of spots) {
     await page.mouse.move(box.x + box.width * fx, box.y + box.height * fy);
     await page.waitForTimeout(100);
     if (!/view|buy/i.test(await tip(page))) continue;
@@ -214,7 +218,7 @@ test('the minimap keeps its colours and charted sea after the chart was open, fr
   });
   // round the boat on the minimap: the share of pixels showing the wrong texture (black, or the fog's red) and fog
   await page.evaluate(() => {
-    (window as unknown as { miniRead: () => { wrong: number; paper: number } }).miniRead = () => {
+    window.miniRead = () => {
       const c = document.querySelector('.mini canvas') as HTMLCanvasElement, d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data, r = (c.width / 2 - 4) * 0.3;
       let k = 0, wrong = 0, paper = 0;
       for (let y = 0; y < c.height; y += 6) for (let x = 0; x < c.width; x += 6) {
@@ -227,11 +231,11 @@ test('the minimap keeps its colours and charted sea after the chart was open, fr
     };
   });
   type Read = { wrong: number; paper: number };
-  await expect.poll(() => page.evaluate(() => (window as unknown as { miniRead: () => Read }).miniRead().paper), { timeout: 20_000 }).toBeLessThan(0.2);
+  await expect.poll(() => page.evaluate(() => window.miniRead().paper), { timeout: 20_000 }).toBeLessThan(0.2);
   // then sail on a little each frame, slower than the boat reveals sea round it, so every reveal uploads new fog
   // while the sea round the boat stays charted; every frame is read
   const worst = await page.evaluate(() => new Promise<Read>(done => {
-    const { G } = window.BR, read = (window as unknown as { miniRead: () => Read }).miniRead;
+    const { G } = window.BR, read = window.miniRead;
     let n = 0, wrong = 0, paper = 0;
     const tick = () => {
       G.boat.x += 4; G.boat.px = G.boat.x;
