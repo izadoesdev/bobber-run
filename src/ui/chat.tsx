@@ -10,8 +10,9 @@ import { ONLINE, toggleMute, type ChatLine } from '../online';
 import { NET, sayChat } from '../net';
 import { track } from '../analytics';
 import { AccountCta } from './menus';
+import { CHAT_MAX } from '../../convex/limits';
 
-const FADE_MS = 9_000, MAX_LEN = 120;
+const FADE_MS = 9_000, MAX_LEN = CHAT_MAX;
 let open = false, draft = '', focusNext = false;
 
 const canChat = () => G.mode === 'play' && NET.authed;

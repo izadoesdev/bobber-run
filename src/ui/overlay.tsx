@@ -16,6 +16,7 @@ import { lockedAt, newWaters, regionAbout } from '../game/regions';
 import { IslandSigns } from './island';
 import { Face } from './faces';
 import { BaitTag, Fish, Icon, Key, edgeFade, forTouch, keyed, pin, viewPct } from './parts';
+import { CHAT_MAX } from '../../convex/limits';
 
 export function SeaLayer({ step, wp }: { step: Step; wp: Step | null }) {
   return (
@@ -166,7 +167,7 @@ function RouteDots() {
 }
 
 // chat lines over boats: each sailor's latest filtered message (uid 'me' is ours), shown for 6 s, then fading
-const CHAT_MS = 6500, CHAT_MAX = 120;
+const CHAT_MS = 6500;
 function ChatBubble({ text, at, x, y, mine }: { text: string; at: number; x: number; y: number; mine?: boolean }) {
   const age = Date.now() - at, fade = Math.min(1, Math.max(0, (CHAT_MS - age) / 500));
   return (

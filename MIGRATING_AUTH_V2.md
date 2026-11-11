@@ -13,9 +13,9 @@ to do about them before the migration counts as done.
 
 ## Rules for the agent
 
-- **Each section is marked** `READ-ONLY` (run it freely), `LOCAL` (writes only on this machine) or `PROD WRITE`
-  (changes production). Before every `PROD WRITE` section, show the person the exact command and wait for a clear yes.
-  One yes covers one section.
+- **Each section is marked** `READ-ONLY` (run it freely), `LOCAL` (writes only on this machine), `PROD WRITE`
+  (changes production) or `PERSON` (the person does it; you wait until they say it's done). Before every `PROD WRITE`
+  section, show the person the exact command and wait for a clear yes. One yes covers one section.
 - **Stop at the first failed check.** Report what you ran and its output, and do nothing else. Don't retry with other
   flags, don't skip ahead, and never roll back on your own.
 - **The deploy key comes from the person.** They export `CONVEX_DEPLOY_KEY` in the shell themselves. Never ask for it

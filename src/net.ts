@@ -326,6 +326,8 @@ const snaps = new Map<string, Snap[]>();
 // next report has nearly always arrived, judged from how late reports have been arriving, and it speeds up or slows
 // down by a few percent to keep there, so the timeline never jumps.
 const SEND_MOVING_S = 0.5, SEND_STILL_S = 10, COAST_MS = 1500, SNAP_DIST = 200;
+/** The watched cells reach up to 1131 from the boat (the far corner of a diagonal cell) and roster positions lag by up to 300 (convex/sea.ts ABOARD_MOVE); the rest is margin. */
+const COMPANY_DIST = 1700;
 const WINDOW_MS = 5000;
 /** The least of the values seen in the last WINDOW_MS (a sliding minimum). */
 class LeastLately {
@@ -403,7 +405,10 @@ export function netTick(dt: number) {
   sendT += dt;
   const now = Date.now(), moved = !lastSent || Math.hypot(b.x - lastSent.x, b.y - lastSent.y) > 0.5 || Math.abs(b.a - lastSent.a) > 0.03;
   // twice a second while moving, every 10 s when still
-  watch<Raw[]>('sailors', api.sea.near, { cells: cellsAround(NET.profile.sea, b.x, b.y) }, list => { raw = list; });
+  // Only watch the cells around us while the roster says someone else is within reach. sea.near reads our own boat's cell, so
+  // alone it would re-run on each of our own moves: half of a solo sailor's function calls, for an empty answer.
+  if (ONLINE.far.some(f => Math.hypot(f.x - b.x, f.y - b.y) < COMPANY_DIST)) watch<Raw[]>('sailors', api.sea.near, { cells: cellsAround(NET.profile.sea, b.x, b.y) }, list => { raw = list; });
+  else if (watches.sailors) { unwatch('sailors'); raw = []; }
   for (const r of raw) serverLag.add(now, now - r.at);         // no server clock of its own: its stamps bound it
   if (G.mode === 'play' && !inFlight && ((moved && sendT > SEND_MOVING_S) || sendT > SEND_STILL_S)) {
     sendT = 0; inFlight = true; lastSent = state;
