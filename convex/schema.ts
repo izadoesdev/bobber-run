@@ -36,7 +36,7 @@ export default defineSchema({
   events: defineTable({ kind: v.string(), name: v.string(), text: v.string(), at: v.number() }).index('by_at', ['at']),
   // every chat line, kept permanently (written only by chat.send): typed text, what others saw, and who said it
   chats: defineTable({ userId: v.string(), name: v.string(), sea: v.number(), text: v.string(), shown: v.string(), filtered: v.boolean(), whole: v.boolean(), source: v.string(), at: v.number() })
-    .index('by_at', ['at']).index('by_user', ['userId', 'at']),
+    .index('by_at', ['at']).index('by_sea_at', ['sea', 'at']).index('by_user', ['userId', 'at']),
   // leaderboard totals per player (species and heaviest from records.submit; caught and earned reported, capped); spent
   // is what islands and their buildings have cost, paid from earned
   stats: defineTable({ userId: v.id('users'), caught: v.number(), earned: v.number(), spent: v.optional(v.number()), species: v.number(), heaviest: v.number(), heaviestSp: v.string(), at: v.number() })

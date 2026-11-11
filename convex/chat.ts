@@ -60,7 +60,7 @@ export const recent = query({
   handler: async (ctx, { since }) => {
     const userId = await authUserId(ctx); if (!userId) return [];
     const sea = (await profileOf(ctx, userId))?.sea ?? 0;
-    const rows = (await ctx.db.query('chats').withIndex('by_at', q => q.gt('at', since)).order('desc').take(RECENT)).filter(r => r.sea === sea).reverse();
+    const rows = (await ctx.db.query('chats').withIndex('by_sea_at', q => q.eq('sea', sea).gt('at', since)).order('desc').take(RECENT)).reverse();
     return Promise.all(rows.map(async r => {
       const speaker = ctx.db.normalizeId('users', r.userId);
       const boat = speaker && speaker !== userId ? await ctx.db.query('positions').withIndex('by_user', q => q.eq('userId', speaker)).unique() : null;
