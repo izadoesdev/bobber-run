@@ -94,9 +94,10 @@ Then ask the person to check in the live game with two browsers:
 - Chat lines arrive both ways, and the chat header lists both names.
 - Closing one tab makes that boat and name disappear from the other within a couple of seconds.
 
-After they have sailed for a minute, the online count is being kept:
+The online count is being kept. It is recounted once a minute, so run this after they have sailed for a minute, while
+they are still sailing:
 ```bash
-bunx convex run leaderboard:online   # must print a number of 1 or more while someone is sailing
+bunx convex run leaderboard:online | grep -c '"total": [1-9]'   # must print 1 (the command prints {"total": N})
 ```
 
 ## 4. Clean up `PROD WRITE`, and the rest for the `PERSON`
