@@ -3,7 +3,7 @@ import { query, mutation, action, internalAction, internalMutation, internalQuer
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { getAuthUserId } from '@convex-dev/auth/server';
-import { requireUser, nameOf } from './lib';
+import { authUserId, requireUser, nameOf } from './lib';
 import { jevYes } from './jev';
 import { cleanName } from './names';
 import { jevAllowsName, isAdminUser } from './profiles';
@@ -33,7 +33,7 @@ async function titleFor(ctx: QueryCtx | MutationCtx, userId: Id<'users'>): Promi
 export const near = query({
   args: { keys: v.array(v.string()) },
   handler: async (ctx, { keys }) => {
-    const me = await getAuthUserId(ctx), out = [], titles = new Map<Id<'users'>, string | null>();
+    const me = await authUserId(ctx), out = [], titles = new Map<Id<'users'>, string | null>();
     for (const key of keys.slice(0, 150)) {
       const isl = await byKey(ctx, key);
       if (!isl) continue;
@@ -49,7 +49,7 @@ export const near = query({
 export const mine = query({
   args: {},
   handler: async ctx => {
-    const me = await getAuthUserId(ctx);
+    const me = await authUserId(ctx);
     if (!me) return [];
     return (await islandsOf(ctx, me)).map(i => ({ key: i.key, name: i.name, price: i.price, buildings: i.buildings ?? [] }));
   },
@@ -82,7 +82,7 @@ export const accountOf = internalQuery({
   args: { userId: v.id('users') },
   handler: async (ctx, { userId }) => {
     const u = await ctx.db.get(userId);
-    return { guest: !u || !!u.isAnonymous, admin: await isAdminUser(ctx, userId), email: u?.email ?? null };
+    return { guest: !u || !!u.isAnonymous, admin: await isAdminUser(ctx, userId) };
   },
 });
 

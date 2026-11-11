@@ -214,11 +214,13 @@ export function Online() {
   const submit = async (e: TargetedSubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     const data = new FormData(e.currentTarget), email = String(data.get('email') ?? ''), pass = String(data.get('password') ?? '');
+    if (email !== f.email) f.needNew = false;                // a password manager changed the email without an input event
     f.email = email; f.pass = pass;
+    const fresh = f.needNew && f.mode === 'signIn' ? String(data.get('new-password') ?? '') : undefined;
     say(f.mode === 'signUp' ? 'Making your account...' : 'Signing in...');
-    const r = await account(f.mode, email.trim(), pass);
-    if (!r.ok) { say(r.why, true); return; }
-    f.pass = ''; G.netMsg = null;
+    const r = await account(f.mode, email.trim(), pass, fresh);
+    if (!r.ok) { if (r.needNew) f.needNew = true; say(r.why, true); return; }
+    f.pass = ''; f.needNew = false; G.netMsg = null;
     enterGame(!!r.loaded);
     if (r.msg) toast(r.msg, 'good');                    // the screen closes, so say how it went out on the water
   };
@@ -251,13 +253,13 @@ export function Online() {
         <form class="account-box" onSubmit={submit}>
           <div class="seg-pick">
             {([['signUp', 'sign-up', 'Make an account'], ['signIn', 'sign-in', 'I have an account']] as const).map(([mode, id, label]) => (
-              <button data-track={`mode-${id}`} type="button" class={'seg-btn' + (f.mode === mode ? ' on' : '')} onClick={() => { f.mode = mode; G.netMsg = null; }}>{label}</button>
+              <button data-track={`mode-${id}`} type="button" class={'seg-btn' + (f.mode === mode ? ' on' : '')} onClick={() => { f.mode = mode; f.needNew = false; G.netMsg = null; }}>{label}</button>
             ))}
           </div>
           <div class="form-grid">
             <label class="caps" for="net-email">Email</label>
             <input id="net-email" name="email" ref={focusOnce} type="email" autocomplete="username" value={f.email}
-              onInput={e => { f.email = e.currentTarget.value; }} />
+              onInput={e => { f.email = e.currentTarget.value; f.needNew = false; }} />   {/* a new password was asked of the other account */}
             <label class="caps" for="net-pass">Password</label>
             <span class="row">
               {/* the cast: Preact's per-type input typings can't express a type that toggles on one element */}
@@ -265,7 +267,11 @@ export function Online() {
                 onInput={e => { f.pass = e.currentTarget.value; }} />
               <button data-track="password-show" type="button" class="btn small-btn" onClick={() => { f.show = !f.show; }} aria-label={f.show ? 'Hide password' : 'Show password'}>{f.show ? 'Hide' : 'Show'}</button>
             </span>
-            <span /><span class="muted small">{f.mode === 'signUp' ? 'At least 8 characters. Your current progress moves to the new account.' : 'Signing in loads the save stored on that account.'}</span>
+            {f.needNew && f.mode === 'signIn' && <>
+              <label class="caps" for="net-new-pass">New password</label>
+              <input id="net-new-pass" name="new-password" type={(f.show ? 'text' : 'password') as 'text'} autocomplete="new-password" />
+            </>}
+            <span /><span class="muted small">{f.mode === 'signUp' ? 'At least 10 characters. Your current progress moves to the new account.' : 'Signing in loads the save stored on that account.'}</span>
             <span /><button data-track="account-submit" type="submit" class="btn primary" disabled={NET.busy}>{NET.busy ? 'Working...' : f.mode === 'signUp' ? 'Make account' : 'Sign in'}</button>
           </div>
         </form>

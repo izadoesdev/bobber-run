@@ -1,18 +1,18 @@
-import { convexAuth } from '@convex-dev/auth/server';
-import { Anonymous } from '@convex-dev/auth/providers/Anonymous';
-import { Password } from '@convex-dev/auth/providers/Password';
-import { limits } from './lib';
+import { setupConvexAuth } from '@convex-dev/auth/server';
+import { setupAnonymous } from '@convex-dev/auth/methods/anonymous/server';
+import { setupUsernamePassword } from '@convex-dev/auth/methods/username-password/server';
+import { components, internal } from './_generated/api';
 
 // Everyone starts as an anonymous guest; a guest can sign up with email and password to keep their save.
-// Emails are stored and looked up in lower case, so "Ana@x.com" and "ana@x.com" are the same account.
-const EmailPassword = Password({ profile: params => ({ email: String(params.email ?? '').trim().toLowerCase() }) });
-export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
-  providers: [Anonymous, EmailPassword],
-  callbacks: {
-    // guests cost nothing to make, so cap how many the whole coast can create per window; throwing rolls the sign-up back
-    async afterUserCreatedOrUpdated(ctx, { existingUserId, provider }) {
-      if (existingUserId || provider.id !== 'anonymous') return;
-      if (!(await limits.limit(ctx, 'guests')).ok) throw new Error('The server is busy. Try again in a few minutes');
-    },
-  },
-});
+// The email is the username: the username component compares them without case, so "Ana@x.com" and "ana@x.com" are the same account.
+// An hour, not v2's default minute: every refresh re-authenticates the connection.
+const auth = setupConvexAuth({ component: components.auth, accessTokenTtlSeconds: 3600 });
+export const { signOut, refreshSession, isAuthenticated } = auth;
+
+export const { signInAnonymously } = setupAnonymous(auth, { component: components.authAnonymous })
+  .attachUserCallbacks({ createUser: internal.users.createGuest });
+
+export const { signUpWithUsernamePassword, signInWithUsernamePassword } = setupUsernamePassword(auth, {
+  component: components.authPassword,
+  usernameComponent: components.authUsername,
+}).attachUserCallbacks({ createUser: internal.users.createAccount });

@@ -1,8 +1,7 @@
 import { v } from 'convex/values';
 import { query, mutation, internalMutation, type MutationCtx } from './_generated/server';
 import type { Doc } from './_generated/dataModel';
-import { getAuthUserId } from '@convex-dev/auth/server';
-import { requireUser } from './lib';
+import { authUserId, requireUser, userIdByEmail } from './lib';
 import { isAdminEmail } from './profiles';
 import { SAVE_MIN_MS, MAX_SAVE_CHARS } from './limits';
 
@@ -10,7 +9,7 @@ import { SAVE_MIN_MS, MAX_SAVE_CHARS } from './limits';
 export const load = query({
   args: {},
   handler: async ctx => {
-    const userId = await getAuthUserId(ctx); if (!userId) return null;
+    const userId = await authUserId(ctx); if (!userId) return null;
     const s = await ctx.db.query('saves').withIndex('by_user', q => q.eq('userId', userId)).unique();
     return s ? { data: s.data, updatedAt: s.updatedAt } : null;
   },
@@ -32,8 +31,8 @@ export const put = mutation({
 /** An admin's cloud save, found by their sign-in email (admins only, for the command-line tools below). */
 async function adminSave(ctx: MutationCtx, email: string) {
   if (!isAdminEmail(email)) throw new Error('Not an admin email');
-  const acct = await ctx.db.query('authAccounts').withIndex('providerAndAccountId', q => q.eq('provider', 'password').eq('providerAccountId', email.toLowerCase())).unique();
-  const s = acct && await ctx.db.query('saves').withIndex('by_user', q => q.eq('userId', acct.userId)).unique();
+  const userId = await userIdByEmail(ctx, email);
+  const s = userId && await ctx.db.query('saves').withIndex('by_user', q => q.eq('userId', userId)).unique();
   if (!s) throw new Error('No cloud save for that account yet');
   return s;
 }

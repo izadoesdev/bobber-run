@@ -3,7 +3,7 @@ import { query, action, internalMutation, internalQuery, type QueryCtx, type Mut
 import type { Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
 import { getAuthUserId } from '@convex-dev/auth/server';
-import { profileOf, envVar } from './lib';
+import { authUserId, emailOf, profileOf, envVar } from './lib';
 import { jevYes } from './jev';
 import { cleanName, guestName } from './names';
 import { NAME_MIN_MS } from './limits';
@@ -11,10 +11,10 @@ import { NAME_MIN_MS } from './limits';
 export const me = query({
   args: {},
   handler: async ctx => {
-    const userId = await getAuthUserId(ctx); if (!userId) return null;
-    const [user, profile] = await Promise.all([ctx.db.get(userId), profileOf(ctx, userId)]);
+    const userId = await authUserId(ctx); if (!userId) return null;
+    const [user, profile, email] = await Promise.all([ctx.db.get(userId), profileOf(ctx, userId), emailOf(ctx, userId)]);
     // chosen: the player picked this name themselves (a generated guest name has no nameAt)
-    return { userId, name: profile?.name ?? 'Sailor', chosen: !!profile?.nameAt, guest: !!user?.isAnonymous, email: user?.email ?? null, sea: profile?.sea ?? null, admin: isAdminEmail(user?.email) };
+    return { userId, name: profile?.name ?? 'Sailor', chosen: !!profile?.nameAt, guest: !!user?.isAnonymous, email, sea: profile?.sea ?? null, admin: isAdminEmail(email) };
   },
 });
 // Names are checked twice: the local filter (names.ts) catches the obvious ones at once, then Jev is asked whether
@@ -51,7 +51,7 @@ export const setName = action({
  */
 export const isAdminEmail = (email: string | null | undefined): boolean =>
   !!email && (envVar('ADMIN_EMAILS') ?? '').split(',').map(s => s.trim().toLowerCase()).includes(email.toLowerCase());
-export const isAdminUser = async (ctx: QueryCtx | MutationCtx, userId: Id<'users'>): Promise<boolean> => isAdminEmail((await ctx.db.get(userId))?.email);
+export const isAdminUser = async (ctx: QueryCtx | MutationCtx, userId: Id<'users'>): Promise<boolean> => isAdminEmail(await emailOf(ctx, userId));
 export const isAdmin = internalQuery({
   args: { userId: v.id('users') },
   handler: async (ctx, { userId }): Promise<boolean> => isAdminUser(ctx, userId),
@@ -60,11 +60,15 @@ const TOO_SOON = { ok: false as const, why: 'You just changed your name. Try aga
 const isTooSoon = (nameAt: number | undefined) => !!nameAt && Date.now() - nameAt < NAME_MIN_MS;
 export const renamedRecently = internalQuery({
   args: { userId: v.id('users') },
-  handler: async (ctx, { userId }): Promise<boolean> => isTooSoon((await profileOf(ctx, userId))?.nameAt),
+  handler: async (ctx, { userId }): Promise<boolean> => {
+    if (!await ctx.db.get(userId)) throw new Error('Not signed in');           // a deleted account's token is still valid for a while: stop it here, before Jev is paid
+    return isTooSoon((await profileOf(ctx, userId))?.nameAt);
+  },
 });
 export const applyName = internalMutation({
   args: { userId: v.id('users'), name: v.string(), auto: v.boolean() },
   handler: async (ctx, { userId, name, auto }): Promise<NameResult> => {
+    if (!await ctx.db.get(userId)) return { ok: false, why: 'Not signed in' };   // actions only have the token's word for it
     const p = await profileOf(ctx, userId), now = Date.now();
     if (auto && p && p.name !== 'Sailor') return { ok: true, name: p.name };   // a generated name never replaces a chosen one
     if (!auto && isTooSoon(p?.nameAt)) return TOO_SOON;

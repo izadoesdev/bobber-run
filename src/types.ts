@@ -386,6 +386,8 @@ interface MapView {
 }
 export interface NetForm {
   name: string | null; email: string; pass: string; show: boolean; mode: 'signUp' | 'signIn';
+  /** the old password was right but too weak to move to the new sign-in, so ask for another */
+  needNew?: boolean;
   /** the account the form was last shown for; a change clears a half-typed name */
   uid?: string | null;
   /** when "Delete account" was first pressed (ms); a second press within a few seconds deletes */

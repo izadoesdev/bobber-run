@@ -1,11 +1,16 @@
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
-import { authTables } from '@convex-dev/auth/server';
 
 // Bobber Run online data. Fast-changing boat positions live in their own table so position
 // writes never re-run queries that read saves, records or the fund.
 export default defineSchema({
-  ...authTables,
+  // the fields other than isAnonymous and lastSeen are only on rows from Convex Auth v1, whose schema this was
+  users: defineTable({ name: v.optional(v.string()), image: v.optional(v.string()), email: v.optional(v.string()), emailVerificationTime: v.optional(v.number()),
+    phone: v.optional(v.string()), phoneVerificationTime: v.optional(v.number()), isAnonymous: v.optional(v.boolean()), lastSeen: v.optional(v.number()) }),
+  // Convex Auth v1's accounts, kept until their owners have moved to v2 (see legacyAccounts.ts). reserved: its email is held as a v2 username
+  authAccounts: defineTable({ userId: v.id('users'), provider: v.string(), providerAccountId: v.string(), secret: v.optional(v.string()),
+    emailVerified: v.optional(v.string()), phoneVerified: v.optional(v.string()), reserved: v.optional(v.boolean()) })
+    .index('userIdAndProvider', ['userId', 'provider']).index('by_provider_reserved', ['provider', 'reserved']),
   profiles: defineTable({ userId: v.id('users'), name: v.string(), nameAt: v.optional(v.number()), sea: v.optional(v.number()), catchAt: v.optional(v.number()) }).index('by_user', ['userId']),
   saves: defineTable({ userId: v.id('users'), data: v.string(), updatedAt: v.number(), putAt: v.optional(v.number()) }).index('by_user', ['userId']),
   // best catch per player per species
@@ -23,11 +28,15 @@ export default defineSchema({
     boat: v.string(), paint: v.string(), name: v.string(), at: v.number(),
     emote: v.optional(v.number()), emoteAt: v.optional(v.number()) })
     .index('by_cell', ['cell']).index('by_user', ['userId']).index('by_sea_at', ['sea', 'at']),
+  // who is sailing, for the roster and the map: a position row's name and rough whereabouts, rewritten only every
+  // ABOARD_MS or ABOARD_MOVE so reading the whole sea doesn't re-run on every boat's every move. pos: that row
+  aboard: defineTable({ userId: v.id('users'), pos: v.id('positions'), sea: v.number(), name: v.string(), x: v.number(), y: v.number(), at: v.number() })
+    .index('by_user', ['userId']).index('by_sea_at', ['sea', 'at']),
   // coastwide news: legendary catches and new world records
   events: defineTable({ kind: v.string(), name: v.string(), text: v.string(), at: v.number() }).index('by_at', ['at']),
-  // every chat line, kept permanently (written only by the relay): typed text, what others saw, and who said it
+  // every chat line, kept permanently (written only by chat.send): typed text, what others saw, and who said it
   chats: defineTable({ userId: v.string(), name: v.string(), sea: v.number(), text: v.string(), shown: v.string(), filtered: v.boolean(), whole: v.boolean(), source: v.string(), at: v.number() })
-    .index('by_at', ['at']).index('by_user', ['userId', 'at']),
+    .index('by_sea_at', ['sea', 'at']).index('by_user', ['userId', 'at']),
   // leaderboard totals per player (species and heaviest from records.submit; caught and earned reported, capped); spent
   // is what islands and their buildings have cost, paid from earned
   stats: defineTable({ userId: v.id('users'), caught: v.number(), earned: v.number(), spent: v.optional(v.number()), species: v.number(), heaviest: v.number(), heaviestSp: v.string(), at: v.number() })
@@ -38,6 +47,6 @@ export default defineSchema({
     buildings: v.optional(v.array(v.string())), claimedAt: v.number(), updatedAt: v.number(), seenAt: v.number(), url: v.optional(v.string()), linkFails: v.optional(v.number()) })
     .index('by_key', ['key']).index('by_owner', ['ownerId']).index('by_seen', ['seenAt']),
   islandReports: defineTable({ key: v.string(), userId: v.id('users'), name: v.string(), logo: v.optional(v.id('_storage')), at: v.number() }).index('by_key_user', ['key', 'userId']),
-  // small server-wide values (the relay's online count)
+  // small server-wide values (how many sailors are online, counted in sea.ts)
   meta: defineTable({ key: v.string(), value: v.number(), at: v.number() }).index('by_key', ['key']),
 });

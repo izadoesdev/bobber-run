@@ -12,12 +12,12 @@
     "bench": "bun scripts/bench.ts"
   },
   "dependencies": {
-    "@auth/core": "^0.41.1",
-    "@convex-dev/auth": "^0.0.96",
+    "@convex-dev/auth": "^2.0.0-beta.0",
     "@convex-dev/rate-limiter": "^0.4.2",
     "@databuddy/sdk": "^3.2.1",
     "alea": "^1.0.1",
-    "convex": "^1.47.0",
+    "convex": "^1.48.0",
+    "obscenity": "^0.4.6",
     "preact": "^11.0.1",
     "simplex-noise": "^4.0.3",
     "valibot": "^1.5.0"

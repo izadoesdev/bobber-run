@@ -4,7 +4,7 @@ export const MAX_KG: Record<string, number> = {"anchovy":1,"sardine":1,"mullet":
 /** Display names for news items, generated from src/species.ts. */
 export const SPECIES_NAMES: Record<string, string> = {"anchovy":"Anchovy","sardine":"Sardine","mullet":"Mullet","flounder":"Flounder","mackerel":"Mackerel","herring":"Herring","crab":"Blue Crab","squid":"Squid","rtrout":"Rain Trout","cod":"Cod","duskfin":"Duskfin","lantern":"Lanternfish","stormeel":"Thunder Eel","tuna":"Bluefin Tuna","opah":"Moonfish","marlin":"Marlin","swordfish":"Swordfish","perch":"Perch","bass":"Sea Bass","halibut":"Halibut","salmon":"Salmon","char":"Arctic Char","pollock":"Pollock","wolffish":"Wolffish","monkfish":"Monkfish","puffer":"Pufferfish","parrot":"Parrotfish","angel":"Angelfish","barracuda":"Barracuda","mahi":"Mahi-mahi","sailfish":"Sailfish","moray":"Moray Eel","grouper":"Grouper","beacon":"Beaconfish","ghost":"Ghost Carp","oarfish":"Oarfish","crystal":"Crystal Squid","goldmahi":"Golden Mahi","oldone":"The Old One","manta":"Manta Ray","goliath":"Goliath Grouper","gsquid":"Giant Squid","sunfish":"Ocean Sunfish","clown":"Clownfish","tang":"Blue Tang","lionfish":"Lionfish","octopus":"Reef Octopus","reefshark":"Reef Shark","rockfish":"Kelp Rockfish","opaleye":"Opaleye","kelpbass":"Kelp Bass","lingcod":"Lingcod","seabassgiant":"Giant Sea Bass","embersnap":"Ember Snapper","ventcrab":"Vent Crab","blackgrouper":"Black Grouper","cindereel":"Cinder Eel","mangsnap":"Mangrove Snapper","snook":"Snook","mudcrab":"Mud Crab","tarpon":"Tarpon","polarcod":"Polar Cod","lumpsucker":"Lumpsucker","snowcrab":"Snow Crab","ghalibut":"Greenland Halibut","jellyfish":"Moon Jellyfish","dolphin":"Bottlenose Dolphin","humpback":"Humpback Whale","sleepershark":"Sleeper Shark","ribboneel":"Ribbon Eel"};
 export const LEGENDS: Record<string, string> = { ghost: 'the Ghost Carp', oarfish: 'an Oarfish', crystal: 'a Crystal Squid', goldmahi: 'a Golden Mahi', oldone: 'the Old One' };
-export const NEAR_MAX = 40;             // most boats sea.near returns per map cell (the Convex fallback; the relay has its own range)
+export const NEAR_MAX = 40;             // most boats sea.near returns per map cell
 export const MOVE_MIN_MS = 300;         // ignore position writes faster than this (clients send about twice a second while moving)
 export const NAME_MIN_MS = 10_000;      // one name change every 10 s
 export const EMOTE_MIN_MS = 1_500;
@@ -18,5 +18,13 @@ export const NEWS_MIN_MS = 20_000;      // at most one coastwide news item this 
 export const GUESTS_PER_WINDOW = 300;   // new guest accounts per window, across everyone
 export const GUEST_WINDOW_MS = 10 * 60_000;
 export const GUEST_IDLE_MS = 30 * 86_400_000;   // guests unseen this long are deleted
+export const LEGACY_SIGN_INS_PER_HOUR = 10;
+export const CHAT_MAX = 120;            // characters in a chat line
+export const CHAT_GAP_MS = 1_200;       // a chat line at most this often, and CHAT_BURST lines per CHAT_WINDOW_MS
+export const CHAT_BURST = 6;
+export const CHAT_WINDOW_MS = 15_000;
+export const ABOARD_MAX = 300;          // most sailors sea.everyone lists (the map, the roster)
 export const SAVE_MIN_MS = 2_000;    // the client uploads at most every 4 s
 export const MAX_SAVE_CHARS = 200_000;
+/** Where the auth component serves its HTTP routes: convex.config.ts mounts it there and auth.config.ts reads the signing keys from it. */
+export const AUTH_PREFIX = '/auth';

@@ -1,12 +1,11 @@
-// Roblox-style chat filtering. Jev (TypeSafe's evaluation model, through the Vercel AI Gateway) answers yes/no
+// Roblox-style chat filtering. Jev (TypeSafe's evaluation model, through the Convex AI Gateway, see jev.ts) answers yes/no
 // questions about a message in one request: whole-message checks for what Roblox removes entirely (personal
 // information, moving the chat off the game, sexual content, hate, threats and self-harm, scams), and one question per
 // word so milder words are masked with # the way Roblox does, instead of dropping the message. If Jev is slow or
 // unreachable, a small local filter masks the obvious cases instead.
 import { RegExpMatcher, englishDataset, englishRecommendedTransformers } from 'obscenity';
+import { jevAsk } from './jev';
 
-const KEY = process.env.AI_GATEWAY_API_KEY;
-const ENDPOINT = 'https://ai-gateway.vercel.sh/v1/evaluate', MODEL = 'typesafe-ai/jev-1.14.0';
 // a little more relaxed than Roblox's under-13 filter: mild words and friendly teasing pass, but personal info and
 // moving off the game are still caught early
 const TIMEOUT_MS = 2500, MAX_WORDS = 24, WORD_AT = 0.65;
@@ -23,20 +22,6 @@ const WHOLE = {
 const WORD = (i: number) => `Is the word \`msg.w${i}\` in \`msg.text\` strong profanity, a slur, or a sexual word that a 13+ chat filter would hide? Mild words like damn, hell, crap, wtf, stupid or idiot are fine.`;
 
 type Verdict = { text: string; filtered: boolean; whole: boolean; source: 'jev' | 'local' };
-
-type Answers = Record<string, { type: string; probability: number }>;
-async function ask(state: Record<string, unknown>, questions: Record<string, { type: 'boolean'; instructions: string }>): Promise<Answers | null> {
-  if (!KEY) return null;
-  try {
-    const r = await fetch(ENDPOINT, {
-      method: 'POST', signal: AbortSignal.timeout(TIMEOUT_MS),
-      headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: MODEL, state, questions }),
-    });
-    if (!r.ok) return null;
-    return (await r.json()).answers ?? null;
-  } catch { return null; }
-}
 
 const mask = (w: string) => w.replace(/[^\s]/g, '#');
 // The local fallback, when Jev can't answer: obscenity's English list catches profanity and slurs through leetspeak,
@@ -62,16 +47,15 @@ export function local(text: string): Verdict {
 export async function filterChat(text: string): Promise<Verdict> {
   const words = text.split(/\s+/).filter(Boolean).slice(0, MAX_WORDS);
   const state = { msg: { text, ...Object.fromEntries(words.map((w, i) => [`w${i}`, w])) } };
-  const questions: Record<string, { type: 'boolean'; instructions: string }> = {};
-  for (const [k, q] of Object.entries(WHOLE)) questions[k] = { type: 'boolean', instructions: q };
-  words.forEach((_, i) => { questions[`w${i}`] = { type: 'boolean', instructions: WORD(i) }; });
-  const a = await ask(state, questions);
+  const questions: Record<string, string> = { ...WHOLE };
+  words.forEach((_, i) => { questions[`w${i}`] = WORD(i); });
+  const a = await jevAsk(state, questions, TIMEOUT_MS);
   if (!a) return local(text);
-  if (Object.keys(WHOLE).some(k => (a[k]?.probability ?? 0) >= WHOLE_AT[k])) return { text: mask(text), filtered: true, whole: true, source: 'jev' };
+  if (Object.keys(WHOLE).some(k => (a[k] ?? 0) >= WHOLE_AT[k])) return { text: mask(text), filtered: true, whole: true, source: 'jev' };
   let i = 0, filtered = false;
   const out = text.split(/(\s+)/).map(tok => {
     if (!tok.trim()) return tok;
-    const p = i < MAX_WORDS ? a[`w${i}`]?.probability ?? 0 : 0; i++;
+    const p = i < MAX_WORDS ? a[`w${i}`] ?? 0 : 0; i++;
     if (p >= WORD_AT) { filtered = true; return mask(tok); }
     return tok;
   }).join('');
