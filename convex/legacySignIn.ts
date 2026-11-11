@@ -7,7 +7,10 @@ import { internal } from './_generated/api';
 
 const KEY_BYTES = 64, N = 16384, R = 16;
 
-/** Checks a password against a Convex Auth v1 hash: Lucia's Scrypt, stored as "salt:hexkey", with the salt used as text. */
+/**
+ * Checks a password against a Convex Auth v1 hash: Lucia's Scrypt, stored as "salt:hexkey", with the salt used as text.
+ * Lucia hashed password.normalize('NFKC'), so the same normalization here is what makes accented passwords match; don't remove it.
+ */
 export async function matchesLegacyHash(hash: string, password: string): Promise<boolean> {
   const [salt, key, extra] = hash.split(':');
   if (!salt || !key || extra !== undefined) return false;
