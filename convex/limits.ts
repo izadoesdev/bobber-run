@@ -26,3 +26,5 @@ export const CHAT_WINDOW_MS = 15_000;
 export const ABOARD_MAX = 300;          // most sailors sea.everyone lists (the map, the roster)
 export const SAVE_MIN_MS = 2_000;    // the client uploads at most every 4 s
 export const MAX_SAVE_CHARS = 200_000;
+/** Where the auth component serves its HTTP routes: convex.config.ts mounts it there and auth.config.ts reads the signing keys from it. */
+export const AUTH_PREFIX = '/auth';
