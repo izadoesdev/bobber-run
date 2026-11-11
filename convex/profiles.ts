@@ -60,7 +60,10 @@ const TOO_SOON = { ok: false as const, why: 'You just changed your name. Try aga
 const isTooSoon = (nameAt: number | undefined) => !!nameAt && Date.now() - nameAt < NAME_MIN_MS;
 export const renamedRecently = internalQuery({
   args: { userId: v.id('users') },
-  handler: async (ctx, { userId }): Promise<boolean> => isTooSoon((await profileOf(ctx, userId))?.nameAt),
+  handler: async (ctx, { userId }): Promise<boolean> => {
+    if (!await ctx.db.get(userId)) throw new Error('Not signed in');           // a deleted account's token is still valid for a while: stop it here, before Jev is paid
+    return isTooSoon((await profileOf(ctx, userId))?.nameAt);
+  },
 });
 export const applyName = internalMutation({
   args: { userId: v.id('users'), name: v.string(), auto: v.boolean() },
