@@ -50,8 +50,11 @@ Each check must pass before you go on.
    ```
    - `AI_GATEWAY_API_KEY` should be in the list: chat is now filtered on Convex (it used to be on the relay). If it's
      missing, tell the person: chat still works, but only the local word filter runs until they set it.
-   - On v1 with no `AUTH_PRIVATE_KEY`/`AUTH_JWKS`: start at section 1.
-   - Backend already on v2: skip sections 2–3. Run section 4's check and continue from there.
+   - On v1: start at section 1, whether or not `AUTH_PRIVATE_KEY`/`AUTH_JWKS` are in the list. If they are (an earlier
+     attempt stopped after section 2), still take the backup, and run section 2 anyway: it leaves keys that are
+     already set alone, and its check confirms both are there.
+   - Backend already on v2: take the backup (section 1) if there isn't one yet, skip sections 2–3, then run section 4's
+     check and continue from there.
 
 ## 1. Back up `LOCAL`
 
