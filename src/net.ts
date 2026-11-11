@@ -11,7 +11,7 @@ import { track } from './analytics';
 import { celebrate } from './game/feedback';
 
 import { FORCED_OFFLINE } from './offline';
-import { FUND_KEYS } from '../convex/limits';
+import { FUND_KEYS, ABOARD_MAX } from '../convex/limits';
 const URL: string | undefined = FORCED_OFFLINE ? undefined : import.meta.env.VITE_CONVEX_URL;
 const SAVE_KEY = 'bobber-run-save-v3';
 const [FUND_KEY] = FUND_KEYS;
@@ -407,7 +407,8 @@ export function netTick(dt: number) {
   // twice a second while moving, every 10 s when still
   // Only watch the cells around us while the roster says someone else is within reach. sea.near reads our own boat's cell, so
   // alone it would re-run on each of our own moves: half of a solo sailor's function calls, for an empty answer.
-  if (ONLINE.far.some(f => Math.hypot(f.x - b.x, f.y - b.y) < COMPANY_DIST)) watch<Raw[]>('sailors', api.sea.near, { cells: cellsAround(NET.profile.sea, b.x, b.y) }, list => { raw = list; });
+  // (a roster at its cap may be leaving nearby boats out, so then we always watch)
+  if (ONLINE.far.length >= ABOARD_MAX - 1 || ONLINE.far.some(f => Math.hypot(f.x - b.x, f.y - b.y) < COMPANY_DIST)) watch<Raw[]>('sailors', api.sea.near, { cells: cellsAround(NET.profile.sea, b.x, b.y) }, list => { raw = list; });
   else if (watches.sailors) { unwatch('sailors'); raw = []; }
   for (const r of raw) serverLag.add(now, now - r.at);         // no server clock of its own: its stamps bound it
   if (G.mode === 'play' && !inFlight && ((moved && sendT > SEND_MOVING_S) || sendT > SEND_STILL_S)) {
