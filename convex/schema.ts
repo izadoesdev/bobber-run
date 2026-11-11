@@ -47,6 +47,6 @@ export default defineSchema({
     buildings: v.optional(v.array(v.string())), claimedAt: v.number(), updatedAt: v.number(), seenAt: v.number(), url: v.optional(v.string()), linkFails: v.optional(v.number()) })
     .index('by_key', ['key']).index('by_owner', ['ownerId']).index('by_seen', ['seenAt']),
   islandReports: defineTable({ key: v.string(), userId: v.id('users'), name: v.string(), logo: v.optional(v.id('_storage')), at: v.number() }).index('by_key_user', ['key', 'userId']),
-  // small server-wide values (how many sailors are online, from sea.sweep)
+  // small server-wide values (how many sailors are online, counted in sea.ts)
   meta: defineTable({ key: v.string(), value: v.number(), at: v.number() }).index('by_key', ['key']),
 });

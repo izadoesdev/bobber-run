@@ -1,5 +1,5 @@
 import { v } from 'convex/values';
-import { query, mutation, internalMutation } from './_generated/server';
+import { query, mutation } from './_generated/server';
 import { authUserId, requireUser, profileOf, cellOf, finite } from './lib';
 import { touchIslands } from './islands';
 import { NEAR_MAX, MOVE_MIN_MS, EMOTE_MIN_MS, ABOARD_MAX } from './limits';
@@ -8,8 +8,9 @@ import type { Id } from './_generated/dataModel';
 
 // Boat positions, who is sailing, and coast news.
 // Everyone sails one shared sea, sea 0; the sea field stays on rows and cell keys so the world could be split again.
-// a boat unheard for ACTIVE_MS is swept (crons.ts); still boats report every 10 s and aboard rows every 20 s at worst
-const ACTIVE_MS = 30_000, ABOARD_MS = 15_000, ABOARD_MOVE = 300, COUNT_MS = 55_000;   // COUNT_MS: just under a minute, so every fourth sweep recounts
+// A boat unheard for ACTIVE_MS is swept; still boats report every 10 s and aboard rows every 20 s at worst. There is no cron for
+// the sweep: every sailor's first report in each SWEEP_MS window runs it (see move), so it costs nothing while nobody is sailing.
+const ACTIVE_MS = 30_000, ABOARD_MS = 15_000, ABOARD_MOVE = 300, SWEEP_MS = 15_000, COUNT_MS = 55_000;
 /** Keep a sailor's aboard row (the roster and the map) roughly current, without rewriting it on every move: it is rewritten
  *  once the boat is ABOARD_MOVE away from it or ABOARD_MS old, so every subscriber to sea.everyone isn't re-run at 2 Hz per boat. */
 async function stayAboard(ctx: MutationCtx, row: { userId: Id<'users'>; sea: number; name: string; x: number; y: number }, pos: Id<'positions'>, now: number) {
@@ -22,12 +23,28 @@ async function goAshore(ctx: MutationCtx, userId: Id<'users'>) {
   const p = await ctx.db.query('positions').withIndex('by_user', q => q.eq('userId', userId)).unique(); if (p) await ctx.db.delete(p._id);
   const a = await ctx.db.query('aboard').withIndex('by_user', q => q.eq('userId', userId)).unique(); if (a) await ctx.db.delete(a._id);
 }
+/**
+ * Removes boats that have gone quiet (a closed laptop, a crashed tab) and, about once a minute, recounts who is sailing for the
+ * title screen (leaderboard.online) and drops day-old news. With nobody sailing nothing runs it: the last boat's rows stay until
+ * the next sailor's first report, and the count reads 0 once it is two minutes old.
+ */
+async function sweep(ctx: MutationCtx, now: number) {
+  for (const p of await ctx.db.query('positions').withIndex('by_sea_at', q => q.eq('sea', 0).lt('at', now - ACTIVE_MS)).take(100)) await goAshore(ctx, p.userId);
+  for (const a of await ctx.db.query('aboard').withIndex('by_sea_at', q => q.eq('sea', 0).lt('at', now - ACTIVE_MS)).take(100)) await ctx.db.delete(a._id);
+  const m = await ctx.db.query('meta').withIndex('by_key', q => q.eq('key', 'online')).unique();
+  if (m && now - m.at < COUNT_MS) return;
+  // shortcut: counts at most 1000, use @convex-dev/aggregate past that
+  const online = (await ctx.db.query('aboard').withIndex('by_sea_at', q => q.eq('sea', 0)).take(1000)).length;
+  if (m) await ctx.db.patch(m._id, { value: online, at: now }); else await ctx.db.insert('meta', { key: 'online', value: online, at: now });
+  for (const e of await ctx.db.query('events').withIndex('by_at', q => q.lt('at', now - 86_400_000)).take(200)) await ctx.db.delete(e._id);
+}
 export const join = mutation({
   args: {},
   handler: async ctx => {
     const userId = await requireUser(ctx), p = await profileOf(ctx, userId);
     await touchIslands(ctx, userId);                                      // their islands count as visited
     await ctx.db.patch(userId, { lastSeen: Date.now() });                 // keeps a guest from the idle sweep (cleanup.ts)
+    await sweep(ctx, Date.now());                                         // boats left behind while nobody sailed go before this sailor sees the roster
     if (p?.sea === 0) return 0;
     if (p) await ctx.db.patch(p._id, { sea: 0 }); else await ctx.db.insert('profiles', { userId, name: 'Sailor', sea: 0 });
     return 0;
@@ -45,6 +62,7 @@ export const move = mutation({
     const pos = p ? p._id : await ctx.db.insert('positions', row);
     if (p) await ctx.db.replace(p._id, row);
     await stayAboard(ctx, row, pos, now);
+    if (!p || Math.floor(now / SWEEP_MS) !== Math.floor(p.at / SWEEP_MS)) await sweep(ctx, now);   // this sailor's first report in the window
   },
 });
 // a preset greeting shown over your boat for a few seconds
@@ -99,20 +117,4 @@ export const news = query({
   args: { since: v.number() },
   handler: async (ctx, { since }) => (await ctx.db.query('events').withIndex('by_at', q => q.gt('at', since)).order('desc').take(8))
     .map(e => ({ id: e._id, name: e.name, text: e.text, at: e.at })),
-});
-export const sweep = internalMutation({
-  args: {},
-  handler: async ctx => {
-    const now = Date.now();
-    for (const p of await ctx.db.query('positions').withIndex('by_sea_at', q => q.eq('sea', 0).lt('at', now - ACTIVE_MS)).take(100)) await goAshore(ctx, p.userId);
-    for (const a of await ctx.db.query('aboard').withIndex('by_sea_at', q => q.eq('sea', 0).lt('at', now - ACTIVE_MS)).take(100)) await ctx.db.delete(a._id);
-    // About once a minute, not on every 15 s run: recount who is sailing, for the title screen (leaderboard.online), and drop day-old
-    // news. It rides on this cron rather than one of its own because every cron run is a billed function call.
-    const m = await ctx.db.query('meta').withIndex('by_key', q => q.eq('key', 'online')).unique();
-    if (m && now - m.at < COUNT_MS) return;
-    // shortcut: counts at most 1000, use @convex-dev/aggregate past that
-    const online = (await ctx.db.query('aboard').withIndex('by_sea_at', q => q.eq('sea', 0)).take(1000)).length;
-    if (m) await ctx.db.patch(m._id, { value: online, at: now }); else await ctx.db.insert('meta', { key: 'online', value: online, at: now });
-    for (const e of await ctx.db.query('events').withIndex('by_at', q => q.lt('at', now - 86_400_000)).take(200)) await ctx.db.delete(e._id);
-  },
 });

@@ -58,8 +58,8 @@ Each check must pass before you go on.
 
 ## 1. Deploy the backend `PROD WRITE`
 
-This adds the `aboard` table and the chat functions, removes the two `/relay/*` HTTP routes, and runs the stale-boat
-sweep every 15 seconds. Until section 2 is done, players on the old client keep sailing through the relay, but their
+This adds the `aboard` table and the chat functions and removes the two `/relay/*` HTTP routes. The once-a-minute
+stale-boat cron goes too: boats that go quiet are now swept by other sailors' position reports. Until section 2 is done, players on the old client keep sailing through the relay, but their
 chat lines are no longer recorded and the title screen's online count reads 0. Tell the person section 2 should
 follow within minutes.
 
