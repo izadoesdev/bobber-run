@@ -214,6 +214,7 @@ export function Online() {
   const submit = async (e: TargetedSubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     const data = new FormData(e.currentTarget), email = String(data.get('email') ?? ''), pass = String(data.get('password') ?? '');
+    if (email !== f.email) f.needNew = false;                // a password manager changed the email without an input event
     f.email = email; f.pass = pass;
     const fresh = f.needNew && f.mode === 'signIn' ? String(data.get('new-password') ?? '') : undefined;
     say(f.mode === 'signUp' ? 'Making your account...' : 'Signing in...');
@@ -252,13 +253,13 @@ export function Online() {
         <form class="account-box" onSubmit={submit}>
           <div class="seg-pick">
             {([['signUp', 'sign-up', 'Make an account'], ['signIn', 'sign-in', 'I have an account']] as const).map(([mode, id, label]) => (
-              <button data-track={`mode-${id}`} type="button" class={'seg-btn' + (f.mode === mode ? ' on' : '')} onClick={() => { f.mode = mode; G.netMsg = null; }}>{label}</button>
+              <button data-track={`mode-${id}`} type="button" class={'seg-btn' + (f.mode === mode ? ' on' : '')} onClick={() => { f.mode = mode; f.needNew = false; G.netMsg = null; }}>{label}</button>
             ))}
           </div>
           <div class="form-grid">
             <label class="caps" for="net-email">Email</label>
             <input id="net-email" name="email" ref={focusOnce} type="email" autocomplete="username" value={f.email}
-              onInput={e => { f.email = e.currentTarget.value; }} />
+              onInput={e => { f.email = e.currentTarget.value; f.needNew = false; }} />   {/* a new password was asked of the other account */}
             <label class="caps" for="net-pass">Password</label>
             <span class="row">
               {/* the cast: Preact's per-type input typings can't express a type that toggles on one element */}
