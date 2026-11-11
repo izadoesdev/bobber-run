@@ -10,7 +10,8 @@ import type { Id } from './_generated/dataModel';
 // Everyone sails one shared sea, sea 0; the sea field stays on rows and cell keys so the world could be split again.
 // a boat unheard for ACTIVE_MS is swept (crons.ts); still boats report every 10 s and aboard rows every 20 s at worst
 const ACTIVE_MS = 30_000, ABOARD_MS = 15_000, ABOARD_MOVE = 300;
-/** Keep a sailor's aboard row (the roster and the map) roughly current, without rewriting it on every move. */
+/** Keep a sailor's aboard row (the roster and the map) roughly current, without rewriting it on every move: it is rewritten
+ *  once the boat is ABOARD_MOVE away from it or ABOARD_MS old, so every subscriber to sea.everyone isn't re-run at 2 Hz per boat. */
 async function stayAboard(ctx: MutationCtx, row: { userId: Id<'users'>; sea: number; name: string; x: number; y: number }, pos: Id<'positions'>, now: number) {
   const a = await ctx.db.query('aboard').withIndex('by_user', q => q.eq('userId', row.userId)).unique();
   const next = { userId: row.userId, pos, sea: row.sea, name: row.name, x: row.x, y: row.y, at: now };
@@ -80,7 +81,8 @@ export const near = query({
     return out;
   },
 });
-/** Everyone sailing your sea, for the roster and the map (positions are a few seconds stale; uid matches sea.near's id). */
+/** Everyone sailing your sea, for the roster and the map. Positions lag the boat by up to ABOARD_MOVE (under one cell) or
+ *  ABOARD_MS, which is fine for far marks: boats in the cells around you come exact from sea.near (uid matches its id). */
 export const everyone = query({
   args: {},
   returns: v.array(v.object({ uid: v.string(), name: v.string(), x: v.number(), y: v.number(), me: v.boolean() })),
