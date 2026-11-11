@@ -7,6 +7,10 @@ same sitting. Players see a few minutes of failed sign-ins in between. The same 
 Afterwards everyone is signed out once, new passwords need at least 10 characters, and every account keeps its user id
 (and with it its save, records and islands).
 
+One exception: old accounts whose emails differ only by letter case (`Sara@x.com` and `sara@x.com`). Only one account
+in each such group can move, and the others can no longer sign in. Section 4 finds them, and the person decides what
+to do about them before the migration counts as done.
+
 ## Rules for the agent
 
 - **Each section is marked** `READ-ONLY` (run it freely), `LOCAL` (writes only on this machine) or `PROD WRITE`
@@ -107,9 +111,20 @@ bunx convex data authAccounts --limit 10000 --format jsonArray \
 10000 is the most `convex data` returns. If it prints `10000 rows`, the check can't see every account: stop and tell
 the person.
 
-Old accounts whose emails differ only by letter case can't all be reserved. The function logs a warning for each one
-(`legacy account of user … not reserved`), and those players can't move. Ask the person to look for that line in the
-dashboard logs.
+Then look for old accounts whose emails differ only by letter case. They can't all be reserved, and the check above
+still prints `0 unreserved` for them:
+```bash
+bunx convex data authAccounts --limit 10000 --format jsonArray \
+  | bun -e 'const g = {}; for (const r of await Bun.stdin.json()) if (r.provider === "password") (g[r.providerAccountId.toLowerCase()] ||= []).push(r.userId); const c = Object.values(g).filter(u => u.length > 1); console.log(c.length, "clashing groups"); for (const u of c) console.log(u.join(" "))'
+```
+It must print `0 clashing groups`. Otherwise each following line is one group, as user ids (never print the emails).
+In each group one account holds the email and moves at its next sign-in; the others can't sign in again, though their
+saves, records and islands stay in the database. Stop and show the person the user ids. They decide, before section 5,
+whether to accept that (a group may be one person's two accounts) or to sort those accounts out by hand first.
+Go on only when they say so.
+
+The function also logs a warning for every account it couldn't reserve, for any reason
+(`legacy account of user … not reserved`). Ask the person to look for that line in the dashboard logs.
 
 ## 5. Deploy the web client and stop the relay `PERSON`
 
