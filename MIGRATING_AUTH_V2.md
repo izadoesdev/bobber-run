@@ -56,9 +56,12 @@ Each check must pass before you go on.
 ## 1. Back up `LOCAL`
 
 ```bash
-bunx convex export --path ./backup-before-auth-v2.zip
-ls -lh ./backup-before-auth-v2.zip   # must exist and be larger than a few KB
+mkdir -p ~/bobber-backups && chmod 700 ~/bobber-backups
+bunx convex export --path ~/bobber-backups/backup-before-auth-v2.zip
+ls -lh ~/bobber-backups/backup-before-auth-v2.zip   # must exist and be larger than a few KB
 ```
+
+It goes outside the repo on purpose, so no `git add` can pick it up.
 
 This is the only way back once accounts have moved (see Rollback). Tell the person where it is, and that it holds
 password hashes and emails, so it mustn't be committed or shared.
