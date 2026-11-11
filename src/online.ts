@@ -7,9 +7,12 @@ export interface Sailor {
   w: number;
   online: true; emote: number | null; emoteAt: number;
 }
-/** A chat line as everyone sees it (already filtered by the server). `id` is the sailor's uid, or 'me'. */
+/**
+ * A chat line as everyone sees it (already filtered by the server). `id` is the speaker's boat (a Sailor's uid, so the line shows
+ * as their speech bubble), 'me' for your own line, the line's own key when the speaker isn't sailing, or 'sys' for a notice.
+ */
 export interface ChatLine { id: string; name: string; text: string; at: number; admin?: boolean }
-/** Everyone else in the world for the map, a few seconds stale (sea.everyone). */
+/** Everyone else in the world for the map; positions lag the boat a little (see sea.everyone). */
 interface FarSailor { uid: string; name: string; x: number; y: number }
 export const ONLINE: { sailors: Sailor[]; chat: Map<string, { text: string; at: number }>; log: ChatLine[]; note: string | null; roster: string[]; total: number; far: FarSailor[] } = {
   sailors: [], chat: new Map(), log: [], note: null, roster: [], total: 0, far: [],
