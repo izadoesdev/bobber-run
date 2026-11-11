@@ -84,8 +84,10 @@ boats (their chat stays off until they reload). Wait until the person says both 
 
 The live page no longer allows connections to the relay (ask the person for the game's address):
 ```bash
-curl -fsSI https://<the game's address>/ | grep -i content-security-policy | grep -c relay   # must print 0
+csp=$(curl -fsSI https://<the game's address>/ | grep -i '^content-security-policy:') && echo "$csp" | grep -c relay   # must print 0
 ```
+If it prints nothing, the request failed or the page has no Content-Security-Policy header: that is a failed check,
+not a pass.
 
 Then ask the person to check in the live game with two browsers:
 - Each sees the other's boat, and it follows when the other sails.
