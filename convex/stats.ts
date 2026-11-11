@@ -3,13 +3,12 @@ import { query, mutation, internalMutation, type MutationCtx } from './_generate
 import type { Doc, Id } from './_generated/dataModel';
 import { authUserId, requireUser, trusted, userIdByEmail } from './lib';
 import { GUEST_TRUST_MS, MAX_KG } from './limits';
+import { reported } from './statsRules';
 
 // Per-player totals for the leaderboards. Species logged and the heaviest fish come from records.submit (the server
 // already checks those); fish caught and coins earned come from the client's save, so they only ever go up and
 // can't climb faster than a fast player could manage (a ruler's islands add to what they earn, so earnings may climb
 // faster than fishing alone). Earnings, less what's been spent on islands (`spent`), are what islands are paid from.
-const CAUGHT_PER_MIN = 40, EARNED_PER_MIN = 12_000, SLACK_CAUGHT = 60, SLACK_EARNED = 20_000;
-
 export async function statsOf(ctx: MutationCtx, userId: Id<'users'>): Promise<Doc<'stats'>> {
   const s = await ctx.db.query('stats').withIndex('by_user', q => q.eq('userId', userId)).unique();
   if (s) return s;
@@ -41,11 +40,9 @@ export const report = mutation({
   args: { caught: v.number(), earned: v.number(), cheated: v.optional(v.boolean()) },
   handler: async (ctx, { caught, earned, cheated }) => {
     const userId = await requireUser(ctx);
-    if (cheated || !Number.isFinite(caught) || !Number.isFinite(earned) || !await trusted(ctx, userId, GUEST_TRUST_MS)) return;
-    const s = await statsOf(ctx, userId), now = Date.now(), mins = Math.min(10, Math.max(0, (now - s.at) / 60_000));   // idle time doesn't bank allowance
-    const nextCaught = Math.min(Math.max(s.caught, Math.floor(caught)), s.caught + SLACK_CAUGHT + mins * CAUGHT_PER_MIN);
-    const nextEarned = Math.min(Math.max(s.earned, Math.floor(earned)), s.earned + SLACK_EARNED + mins * EARNED_PER_MIN);
-    if (nextCaught !== s.caught || nextEarned !== s.earned) await ctx.db.patch(s._id, { caught: Math.floor(nextCaught), earned: Math.floor(nextEarned), at: now });
+    if (cheated || !await trusted(ctx, userId, GUEST_TRUST_MS)) return;
+    const s = await statsOf(ctx, userId), now = Date.now(), next = reported(s, caught, earned, now);
+    if (next) await ctx.db.patch(s._id, { ...next, at: now });
   },
 });
 
