@@ -50,7 +50,7 @@ Each check must pass before you go on.
    ```
    - Chat, names and island links are checked by Jev through the Convex AI Gateway, which needs the team to be on a
      paid Convex plan and no key of ours. Tell the person: on the free plan chat and names still work, with only the
-     local word filter, but island links can't be set. `AI_GATEWAY_API_KEY`, if it is in the list, is no longer read.
+     local word filter, but only admins can set island links. `AI_GATEWAY_API_KEY`, if it is in the list, is no longer read.
    - On v1: start at section 1, whether or not `AUTH_PRIVATE_KEY`/`AUTH_JWKS` are in the list. If they are (an earlier
      attempt stopped after section 2), still take the backup, and run section 2 anyway: it leaves keys that are
      already set alone, and its check confirms both are there.
@@ -166,7 +166,7 @@ Once the ones left are accounts nobody will come back for, on a new branch, dele
 `src/net.ts`. Run typecheck and tests, then open a pull request. Deploying it is section 3 again.
 
 Clearing v1's leftover tables (`authSessions`, `authRefreshTokens`, `authVerificationCodes`, `authVerifiers`,
-`authRateLimits`) and env vars (`JWT_PRIVATE_KEY`, `JWKS`, and the relay's `RELAY_SECRET`) is for the person to do in
+`authRateLimits`) and env vars (`JWT_PRIVATE_KEY`, `JWKS`, the relay's `RELAY_SECRET`, and `AI_GATEWAY_API_KEY`, which nothing reads now) is for the person to do in
 the dashboard. It's what makes
 rollback impossible.
 

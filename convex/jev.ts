@@ -11,8 +11,11 @@ const ENDPOINT = 'https://ai-gateway.convex.dev/alpha/decisions', MODEL = 'types
  */
 export async function jevAsk(state: Record<string, unknown>, questions: Record<string, string>, timeoutMs: number): Promise<Record<string, number> | null> {
   try {
+    // one deadline for the token and the request: a stalled token would otherwise hold up chat with no fallback
+    const signal = AbortSignal.timeout(timeoutMs);
+    const token = await Promise.race([getServiceToken('ai-gateway'), new Promise<never>((_, no) => signal.addEventListener('abort', () => no(signal.reason)))]);
     const r = await fetch(ENDPOINT, {
-      method: 'POST', signal: AbortSignal.timeout(timeoutMs), headers: { Authorization: `Bearer ${await getServiceToken('ai-gateway')}`, 'Content-Type': 'application/json' },
+      method: 'POST', signal, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: MODEL, state, questions: Object.fromEntries(Object.entries(questions).map(([k, instructions]) => [k, { type: 'noul', instructions }])) }),
     });
     if (!r.ok) { console.warn(`Jev answered ${r.status}: ${(await r.text()).slice(0, 200)}`); return null; }

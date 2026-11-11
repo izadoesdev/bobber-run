@@ -53,13 +53,14 @@ Each check must pass before you go on.
    ```
    - Chat, names and island links are checked by Jev through the Convex AI Gateway, which needs the team to be on a
      paid Convex plan and no key of ours. Tell the person: on the free plan chat and names still work, with only the
-     local word filter, but island links can't be set. `AI_GATEWAY_API_KEY`, if it is in the list, is no longer read.
+     local word filter, but only admins can set island links. `AI_GATEWAY_API_KEY`, if it is in the list, is no longer read.
    - Backend already moved: skip section 1 and continue from section 2.
 
 ## 1. Deploy the backend `PROD WRITE`
 
-This adds the `aboard` table and the chat functions and removes the two `/relay/*` HTTP routes. The once-a-minute
-stale-boat cron goes too: boats that go quiet are now swept by other sailors' position reports. Until section 2 is done, players on the old client keep sailing through the relay, but their
+This adds the `aboard` table and the chat functions and removes the two `/relay/*` HTTP routes. The stale-boat
+cron is removed, with nothing scheduled in its place: each sailor's position reports now run the sweep, at most once
+every 15 seconds per sailor, and the online count is recounted about once a minute while someone sails. Until section 2 is done, players on the old client keep sailing through the relay, but their
 chat lines are no longer recorded and the title screen's online count reads 0. Tell the person section 2 should
 follow within minutes.
 
@@ -119,4 +120,5 @@ The person then deletes the relay service on Railway (with its `CONVEX_URL`, `CO
 
 An agent never does this. Rolling back means starting the relay again and redeploying the commit before this change
 to the backend and the client. No data is lost: saves, accounts and recorded chat are untouched, and the leftover
-`aboard` table is harmless. Do it before section 4; after it, the relay needs `RELAY_SECRET` set again on both sides.
+`aboard` table is harmless. Do it before section 4; after it, the relay needs `RELAY_SECRET` set again on both sides, and the backend needs
+`AI_GATEWAY_API_KEY` set again, because the older code reads it.
