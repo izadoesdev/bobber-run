@@ -8,6 +8,8 @@ import { FUND_KEYS, GUEST_IDLE_MS } from './limits';
 // Removes a player's account and everything tied to it. World records stay, since they are the coast's history.
 async function erase(ctx: MutationCtx, userId: Id<'users'>) {
   // shortcut: Convex Auth v2 has no way to delete an account, so its session rows and any password hash stay, unlinked from the email; call its delete API once there is one
+  // Convex Auth v1's session and refresh-token rows stay as well: they hold a user id and expiry times, nothing personal, every one of them
+  // died at the switch to v2, and their tables are out of the schema; they are cleared wholesale (MIGRATING_AUTH_V2.md, section 7)
   await ctx.runMutation(components.authUsername.public.deleteUsername, { userId });
   for (const a of await ctx.db.query('authAccounts').withIndex('userIdAndProvider', q => q.eq('userId', userId)).collect()) await ctx.db.delete(a._id);
   for (const t of ['profiles', 'saves', 'positions', 'stats'] as const)
