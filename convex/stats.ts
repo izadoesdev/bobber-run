@@ -3,7 +3,7 @@ import { query, mutation, internalMutation, type MutationCtx } from './_generate
 import type { Doc, Id } from './_generated/dataModel';
 import { authUserId, requireUser, trusted, userIdByEmail } from './lib';
 import { GUEST_TRUST_MS, MAX_KG } from './limits';
-import { reported } from './statsRules';
+import { reported, START_MS } from './statsRules';
 
 // Per-player totals for the leaderboards. Species logged and the heaviest fish come from records.submit (the server
 // already checks those); fish caught and coins earned come from the client's save, so they only ever go up and
@@ -12,7 +12,7 @@ import { reported } from './statsRules';
 export async function statsOf(ctx: MutationCtx, userId: Id<'users'>): Promise<Doc<'stats'>> {
   const s = await ctx.db.query('stats').withIndex('by_user', q => q.eq('userId', userId)).unique();
   if (s) return s;
-  const id = await ctx.db.insert('stats', { userId, caught: 0, earned: 0, species: 0, heaviest: 0, heaviestSp: '', at: Date.now() });
+  const id = await ctx.db.insert('stats', { userId, caught: 0, earned: 0, species: 0, heaviest: 0, heaviestSp: '', at: Date.now() - START_MS });
   const made = await ctx.db.get(id);
   if (!made) throw new Error('stats row vanished');
   return made;
@@ -41,8 +41,8 @@ export const report = mutation({
   handler: async (ctx, { caught, earned, cheated }) => {
     const userId = await requireUser(ctx);
     if (cheated || !await trusted(ctx, userId, GUEST_TRUST_MS)) return;
-    const s = await statsOf(ctx, userId), now = Date.now(), next = reported(s, caught, earned, now);
-    if (next) await ctx.db.patch(s._id, { ...next, at: now });
+    const s = await statsOf(ctx, userId), next = reported(s, caught, earned, Date.now());
+    if (next) await ctx.db.patch(s._id, next);
   },
 });
 

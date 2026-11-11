@@ -9,7 +9,6 @@ export const MOVE_MIN_MS = 300;         // ignore position writes faster than th
 export const NAME_MIN_MS = 10_000;      // one name change every 10 s
 export const EMOTE_MIN_MS = 1_500;
 export const CATCH_MIN_MS = 2_500;     // record submissions closer together than this are ignored
-export const REPORT_MIN_MS = 55_000;    // stats.report is ignored sooner than this after the last one counted (the client reports once a minute)
 export const FUND_DAILY = 50_000;       // most a player can give in a day
 export const FUND_DAILY_ALL = 250_000;  // most the whole coast can give in a day, so fresh guests can't fill it at once
 export const FUND_KEYS = ['grand-harbour'];

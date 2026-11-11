@@ -166,7 +166,7 @@ Once the ones left are accounts nobody will come back for, on a new branch, dele
 `src/net.ts`. Run typecheck and tests, then open a pull request. Deploying it is section 3 again.
 
 Clearing v1's leftover tables (`authSessions`, `authRefreshTokens`, `authVerificationCodes`, `authVerifiers`,
-`authRateLimits`) and env vars (`JWT_PRIVATE_KEY`, `JWKS`, the relay's `RELAY_SECRET`, and `AI_GATEWAY_API_KEY`, which nothing reads now) is for the person to do in
+`authRateLimits`) and env vars (`JWT_PRIVATE_KEY`, `JWKS`, the relay's `RELAY_SECRET`, and `AI_GATEWAY_API_KEY`, which nothing at this commit reads) is for the person to do in
 the dashboard. It's what makes
 rollback impossible.
 
@@ -174,4 +174,5 @@ rollback impossible.
 
 An agent never does this. Rolling back means redeploying `ea68123` to the backend and the client and starting the relay again, and it loses data: every
 account that moved has had its v1 row deleted, so those players can't sign in on v1 again. Getting them back in
-takes the backup from section 1. Roll back only if a problem shows up before many people have signed in.
+takes the backup from section 1. Roll back only if a problem shows up before many people have signed in. The backend at
+`ea68123` reads `AI_GATEWAY_API_KEY` (Vercel's gateway) for name and link checks, so if that was removed, set it again.

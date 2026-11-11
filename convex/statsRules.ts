@@ -1,19 +1,23 @@
-import { REPORT_MIN_MS } from './limits';
-
 // How fast the totals a client reports may climb. Kept free of Convex imports so tests/statsRules.test.ts can run it.
-export const CAUGHT_PER_MIN = 40, EARNED_PER_MIN = 12_000, SLACK_CAUGHT = 60, SLACK_EARNED = 20_000;
+// The allowance is a bank that fills with time, up to BANK_MS worth, and is drawn down by what a report counts: reporting
+// more often gains nothing, and a report at any moment (the once-a-minute one, or the one just before a purchase) counts.
+export const CAUGHT_PER_MIN = 40, EARNED_PER_MIN = 12_000, BANK_MS = 10 * 60_000;
+/** What a new player's bank starts with: enough for about 20,000 coins and 66 fish straight away. */
+export const START_MS = 100_000;
 
 /**
- * The totals to store after a report, or null to ignore it. Totals only ever go up, by at most the slack plus a
- * per-minute rate (idle time banks at most 10 minutes). A report sooner than REPORT_MIN_MS after the last one counted
- * is ignored: the slack is per report, so without the gap a caller could bank it over and over.
+ * The totals to store after a report, with the new `at`, or null when nothing changes. Totals only ever go up. `s.at`
+ * is the time the bank was last empty: `now - s.at` (at most BANK_MS) is the allowance saved up, in ms, and a report
+ * that uses part of it moves `at` forward by that part only.
  */
-export function reported(s: { caught: number; earned: number; at: number }, caught: number, earned: number, now: number): { caught: number; earned: number } | null {
-  if (!Number.isFinite(caught) || !Number.isFinite(earned) || now - s.at < REPORT_MIN_MS) return null;
-  const mins = Math.min(10, (now - s.at) / 60_000);
+export function reported(s: { caught: number; earned: number; at: number }, caught: number, earned: number, now: number): { caught: number; earned: number; at: number } | null {
+  if (!Number.isFinite(caught) || !Number.isFinite(earned)) return null;
+  const bank = Math.max(0, Math.min(BANK_MS, now - s.at));
   const next = {
-    caught: Math.floor(Math.min(Math.max(s.caught, Math.floor(caught)), s.caught + SLACK_CAUGHT + mins * CAUGHT_PER_MIN)),
-    earned: Math.floor(Math.min(Math.max(s.earned, Math.floor(earned)), s.earned + SLACK_EARNED + mins * EARNED_PER_MIN)),
+    caught: Math.floor(Math.min(Math.max(s.caught, Math.floor(caught)), s.caught + bank * CAUGHT_PER_MIN / 60_000)),
+    earned: Math.floor(Math.min(Math.max(s.earned, Math.floor(earned)), s.earned + bank * EARNED_PER_MIN / 60_000)),
   };
-  return next.caught === s.caught && next.earned === s.earned ? null : next;
+  if (next.caught === s.caught && next.earned === s.earned) return null;
+  const used = Math.max((next.caught - s.caught) / CAUGHT_PER_MIN, (next.earned - s.earned) / EARNED_PER_MIN) * 60_000;
+  return { ...next, at: now - (bank - used) };
 }

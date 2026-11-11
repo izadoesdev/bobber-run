@@ -30,6 +30,7 @@ import type * as rotation from "../rotation.js";
 import type * as saves from "../saves.js";
 import type * as sea from "../sea.js";
 import type * as stats from "../stats.js";
+import type * as statsRules from "../statsRules.js";
 import type * as users from "../users.js";
 
 import type {
@@ -61,6 +62,7 @@ declare const fullApi: ApiFromModules<{
   saves: typeof saves;
   sea: typeof sea;
   stats: typeof stats;
+  statsRules: typeof statsRules;
   users: typeof users;
 }>;
 

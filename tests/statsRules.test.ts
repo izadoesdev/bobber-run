@@ -1,41 +1,47 @@
 import { expect, test } from 'bun:test';
-import { reported, SLACK_EARNED, EARNED_PER_MIN } from '../convex/statsRules';
-import { REPORT_MIN_MS } from '../convex/limits';
+import { reported, EARNED_PER_MIN, CAUGHT_PER_MIN, BANK_MS, START_MS } from '../convex/statsRules';
 
-const T = 1_700_000_000_000;
-
-test('a report one second after the last counted one is ignored', () => {
-  expect(reported({ caught: 0, earned: 0, at: T }, 1e9, 1e9, T + 1000)).toBeNull();
-});
-
-test('calling report every second cannot bank the slack over and over', () => {
+const T = 1_700_000_000_000, HUGE = 1e12;
+/** Report `HUGE` totals every `everyMs` for `forMs`, starting from an empty bank, and return what got counted. */
+function hammer(everyMs: number, forMs: number) {
   let s = { caught: 0, earned: 0, at: T };
-  for (let i = 1; i <= 100; i++) {
-    const now = T + i * 1000, n = reported(s, 1e9, 1e9, now);
-    if (n) s = { ...n, at: now };
-  }
-  expect(s.earned).toBeLessThanOrEqual(SLACK_EARNED + EARNED_PER_MIN * 2);
-});
+  for (let t = everyMs; t <= forMs; t += everyMs) s = reported(s, HUGE, HUGE, T + t) ?? s;
+  return s;
+}
 
-test('a report exactly REPORT_MIN_MS later is accepted and capped', () => {
-  const r = reported({ caught: 0, earned: 0, at: T }, 1e9, 1e9, T + REPORT_MIN_MS);
-  expect(r?.earned).toBe(Math.floor(SLACK_EARNED + (REPORT_MIN_MS / 60_000) * EARNED_PER_MIN));
+test('reporting every second counts no more than the rate allows', () => {
+  expect(hammer(1000, 100_000).earned).toBeLessThanOrEqual(EARNED_PER_MIN * 100 / 60);
+  expect(hammer(1000, 100_000).caught).toBeLessThanOrEqual(CAUGHT_PER_MIN * 100 / 60);
 });
-
-test('an honest report below the cap is stored as sent', () => {
-  expect(reported({ caught: 10, earned: 500, at: T }, 12, 900, T + 60_000)).toEqual({ caught: 12, earned: 900 });
+test('reporting every 55 s for an hour counts no more than an hour at the rate', () => {
+  expect(hammer(55_000, 3_600_000).earned).toBeLessThanOrEqual(EARNED_PER_MIN * 60);
 });
-
+test('however often a client reports, it ends up with the same total', () => {
+  const slow = hammer(60_000, 600_000).earned, fast = hammer(500, 600_000).earned;
+  expect(slow).toBe(EARNED_PER_MIN * 10);
+  expect(Math.abs(slow - fast)).toBeLessThan(EARNED_PER_MIN / 60);          // within a second's worth of rounding
+});
+test('an honest report below the allowance is stored as sent and keeps the rest of the bank', () => {
+  expect(reported({ caught: 10, earned: 500, at: T }, 12, 900, T + 60_000)).toEqual({ caught: 12, earned: 900, at: T + 3000 });
+});
+test('a second report a moment later still counts, as before a purchase', () => {
+  const first = reported({ caught: 10, earned: 500, at: T }, 12, 900, T + 60_000)!;
+  expect(reported(first, 12, 5000, T + 61_000)).toMatchObject({ caught: 12, earned: 5000 });
+});
 test('totals never go down', () => {
   expect(reported({ caught: 10, earned: 500, at: T }, 5, 100, T + 60_000)).toBeNull();
 });
-
-test('idle time banks at most 10 minutes', () => {
-  const r = reported({ caught: 0, earned: 0, at: T }, 1e12, 1e12, T + 3 * 3600_000);
-  expect(r?.earned).toBe(SLACK_EARNED + 10 * EARNED_PER_MIN);
+test('idle time banks at most BANK_MS', () => {
+  expect(reported({ caught: 0, earned: 0, at: T }, HUGE, HUGE, T + 3 * 3_600_000)).toEqual({ caught: CAUGHT_PER_MIN * 10, earned: EARNED_PER_MIN * 10, at: T + 3 * 3_600_000 });
+  expect(BANK_MS).toBe(600_000);
 });
-
+test("a new player's bank lets their first report count at once", () => {
+  expect(reported({ caught: 0, earned: 0, at: T - START_MS }, HUGE, HUGE, T)).toMatchObject({ caught: 66, earned: 20_000 });
+});
 test('NaN and Infinity are ignored', () => {
   const s = { caught: 0, earned: 0, at: T }, now = T + 60_000;
   for (const [c, e] of [[NaN, 1], [1, NaN], [Infinity, 1], [1, Infinity]]) expect(reported(s, c, e, now)).toBeNull();
+});
+test('a row stamped in the future gets no allowance', () => {
+  expect(reported({ caught: 0, earned: 0, at: T + 60_000 }, HUGE, HUGE, T)).toBeNull();
 });
