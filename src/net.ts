@@ -40,7 +40,7 @@ type News = { id: string; name: string; text: string; at: number };
 let client: ConvexReactClient | null = null;
 let actions: AuthActions | null = null;
 let G: Game | null = null, speciesIds: string[] = [], toast: (s: string, kind?: ToastKind) => void = () => { };
-let signingIn = false, switching = false, naming = false;
+let signingIn = false, switching = false, naming = false, socketUp = false;
 /** Re-runs the guest sign-in check (after an account switch or delete ends signed out, or a failed guest sign-in). */
 let wakeBridge = () => { };
 
@@ -64,7 +64,9 @@ export const bridge = {
   /** A guest session may start now (nobody signed in, and no account switch in progress). */
   mayStartGuest: (): boolean => !signingIn && !switching,
   guestStarting(on: boolean): void { signingIn = on; },
-  authChanged(authed: boolean): void { NET.authed = authed; if (authed) { NET.status = 'online'; void onSignedIn(); } else NET.profile = null; },
+  authChanged(authed: boolean): void { NET.authed = authed; if (authed) { NET.status = socketUp ? 'online' : 'connecting'; void onSignedIn(); } else NET.profile = null; },
+  /** The Convex socket opened or dropped: signed in but cut off reads as connecting, which closes the chat input. */
+  socketChanged(up: boolean): void { socketUp = up; if (NET.authed) NET.status = up ? 'online' : 'connecting'; },
 };
 export function initNet(game: Game, species: string[], notify: (s: string, kind?: ToastKind) => void) {
   G = game; speciesIds = species; toast = notify;

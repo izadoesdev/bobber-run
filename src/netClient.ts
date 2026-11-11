@@ -29,6 +29,8 @@ function Bridge() {
 /** Open the Convex connection and start the sign-in bridge; returns the client for net.ts to use. */
 export function connect(url: string): ConvexReactClient {
   const client = new ConvexReactClient(url);
+  bridge.socketChanged(client.connectionState().isWebSocketConnected);
+  client.subscribeToConnectionState(c => bridge.socketChanged(c.isWebSocketConnected));
   const host = document.createElement('div'); host.style.display = 'none'; document.body.appendChild(host);
   render(h(ConvexAuthProvider, { client, api: { refreshSession: api.auth.refreshSession, signOut: api.auth.signOut }, ambientSignIns: [], children: h(Bridge, null) }), host);
   return client;
