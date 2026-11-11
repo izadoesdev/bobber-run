@@ -63,8 +63,9 @@ export const recent = query({
     const rows = (await ctx.db.query('chats').withIndex('by_sea_at', q => q.eq('sea', sea).gt('at', since)).order('desc').take(RECENT)).reverse();
     return Promise.all(rows.map(async r => {
       const speaker = ctx.db.normalizeId('users', r.userId);
-      const boat = speaker && speaker !== userId ? await ctx.db.query('positions').withIndex('by_user', q => q.eq('userId', speaker)).unique() : null;
-      return { key: r._id, id: speaker === userId ? 'me' : boat?._id ?? r._id, name: r.name, text: r.shown, at: r.at, admin: r.source === 'admin' };
+      // aboard, not positions: positions rows change on every move, which would re-run this for every viewer twice a second
+      const boat = speaker && speaker !== userId ? await ctx.db.query('aboard').withIndex('by_user', q => q.eq('userId', speaker)).unique() : null;
+      return { key: r._id, id: speaker === userId ? 'me' : boat?.pos ?? r._id, name: r.name, text: r.shown, at: r.at, admin: r.source === 'admin' };
     }));
   },
 });
