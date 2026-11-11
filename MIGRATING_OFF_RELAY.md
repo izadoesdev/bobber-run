@@ -51,8 +51,9 @@ Each check must pass before you go on.
    bunx convex function-spec | grep -c '"chat.js:send"'    # 0: relay still in use. 1: backend already moved
    bunx convex env list --names-only
    ```
-   - `AI_GATEWAY_API_KEY` should be in the list: chat is filtered on Convex now (it used to be on the relay). If it's
-     missing, tell the person: chat still works, but only the local word filter runs until they set it.
+   - Chat, names and island links are checked by Jev through the Convex AI Gateway, which needs the team to be on a
+     paid Convex plan and no key of ours. Tell the person: on the free plan chat and names still work, with only the
+     local word filter, but island links can't be set. `AI_GATEWAY_API_KEY`, if it is in the list, is no longer read.
    - Backend already moved: skip section 1 and continue from section 2.
 
 ## 1. Deploy the backend `PROD WRITE`
@@ -104,10 +105,11 @@ bunx convex run leaderboard:online | grep -c '"total": [1-9]'   # must print 1 (
 
 Only after section 3 passes and the person says the relay is staying off.
 
-The backend no longer reads the relay's shared secret:
+The backend no longer reads the relay's shared secret, or the Vercel AI Gateway key. Remove each one that is in the list:
 ```bash
-bunx convex env list --names-only | grep -c '^RELAY_SECRET$'   # 1: remove it. 0: nothing to do
+bunx convex env list --names-only | grep -E '^(RELAY_SECRET|AI_GATEWAY_API_KEY)$'
 bunx convex env remove RELAY_SECRET
+bunx convex env remove AI_GATEWAY_API_KEY
 ```
 
 The person then deletes the relay service on Railway (with its `CONVEX_URL`, `CONVEX_SITE_URL`, `RELAY_SECRET` and

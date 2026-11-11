@@ -48,8 +48,9 @@ Each check must pass before you go on.
    bunx convex function-spec | grep -c legacySignIn   # 0: still on v1. 1 or more: backend already on v2
    bunx convex env list --names-only
    ```
-   - `AI_GATEWAY_API_KEY` should be in the list: chat is now filtered on Convex (it used to be on the relay). If it's
-     missing, tell the person: chat still works, but only the local word filter runs until they set it.
+   - Chat, names and island links are checked by Jev through the Convex AI Gateway, which needs the team to be on a
+     paid Convex plan and no key of ours. Tell the person: on the free plan chat and names still work, with only the
+     local word filter, but island links can't be set. `AI_GATEWAY_API_KEY`, if it is in the list, is no longer read.
    - On v1: start at section 1, whether or not `AUTH_PRIVATE_KEY`/`AUTH_JWKS` are in the list. If they are (an earlier
      attempt stopped after section 2), still take the backup, and run section 2 anyway: it leaves keys that are
      already set alone, and its check confirms both are there.
