@@ -103,7 +103,14 @@ export const sweep = internalMutation({
     const now = Date.now();
     for (const p of await ctx.db.query('positions').withIndex('by_sea_at', q => q.eq('sea', 0).lt('at', now - ACTIVE_MS)).take(100)) await goAshore(ctx, p.userId);
     for (const a of await ctx.db.query('aboard').withIndex('by_sea_at', q => q.eq('sea', 0).lt('at', now - ACTIVE_MS)).take(100)) await ctx.db.delete(a._id);
-    // how many are sailing, for the title screen (leaderboard.online); shortcut: counts at most 1000, use @convex-dev/aggregate past that
+  },
+});
+/** Once a minute: recount who is sailing, for the title screen (leaderboard.online), and drop day-old news. Kept off the 15 s sweep so that stays cheap. */
+export const count = internalMutation({
+  args: {},
+  handler: async ctx => {
+    const now = Date.now();
+    // shortcut: counts at most 1000, use @convex-dev/aggregate past that
     const online = (await ctx.db.query('aboard').withIndex('by_sea_at', q => q.eq('sea', 0)).take(1000)).length;
     const m = await ctx.db.query('meta').withIndex('by_key', q => q.eq('key', 'online')).unique();
     if (m) await ctx.db.patch(m._id, { value: online, at: now }); else await ctx.db.insert('meta', { key: 'online', value: online, at: now });
