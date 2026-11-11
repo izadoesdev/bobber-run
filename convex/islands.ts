@@ -3,7 +3,7 @@ import { query, mutation, action, internalAction, internalMutation, internalQuer
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { getAuthUserId } from '@convex-dev/auth/server';
-import { authUserId, emailOf, requireUser, nameOf } from './lib';
+import { authUserId, requireUser, nameOf } from './lib';
 import { jevYes } from './jev';
 import { cleanName } from './names';
 import { jevAllowsName, isAdminUser } from './profiles';
@@ -82,7 +82,7 @@ export const accountOf = internalQuery({
   args: { userId: v.id('users') },
   handler: async (ctx, { userId }) => {
     const u = await ctx.db.get(userId);
-    return { guest: !u || !!u.isAnonymous, admin: await isAdminUser(ctx, userId), email: await emailOf(ctx, userId) };
+    return { guest: !u || !!u.isAnonymous, admin: await isAdminUser(ctx, userId) };
   },
 });
 
