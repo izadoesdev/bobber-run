@@ -12,7 +12,7 @@ async function erase(ctx: MutationCtx, userId: Id<'users'>) {
   // died at the switch to v2, and their tables are out of the schema; they are cleared wholesale (MIGRATING_AUTH_V2.md, section 7)
   await ctx.runMutation(components.authUsername.public.deleteUsername, { userId });
   for (const a of await ctx.db.query('authAccounts').withIndex('userIdAndProvider', q => q.eq('userId', userId)).collect()) await ctx.db.delete(a._id);
-  for (const t of ['profiles', 'saves', 'positions', 'stats'] as const)
+  for (const t of ['profiles', 'saves', 'positions', 'aboard', 'stats'] as const)
     for (const r of await ctx.db.query(t).withIndex('by_user', q => q.eq('userId', userId)).collect()) await ctx.db.delete(r._id);
   for (const key of FUND_KEYS)
     for (const g of await ctx.db.query('gifts').withIndex('by_key_user', q => q.eq('key', key).eq('userId', userId)).collect()) await ctx.db.delete(g._id);
